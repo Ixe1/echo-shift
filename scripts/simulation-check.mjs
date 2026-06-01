@@ -1,0 +1,209 @@
+import { createServer } from "vite";
+
+const assert = (condition, message) => {
+  if (!condition) throw new Error(message);
+};
+
+const frame = (floorY = 120) => [
+  { id: "floor", x: 0, y: floorY, w: 320, h: 40 },
+  { id: "left-wall", x: -20, y: 0, w: 20, h: 180 },
+  { id: "right-wall", x: 320, y: 0, w: 20, h: 180 }
+];
+
+const baseLevel = {
+  id: "test-room",
+  index: 0,
+  name: "Test Room",
+  subtitle: "Simulation",
+  start: { x: 20, y: 86 },
+  exit: { x: 280, y: 82, w: 28, h: 38 },
+  bounds: { x: 0, y: 0, w: 320, h: 180 },
+  solids: frame(),
+  perfectEchoes: 1,
+  medalFrames: { gold: 600, silver: 900 },
+  hint: "test"
+};
+
+const right = { left: false, right: true, jump: false };
+const idle = { left: false, right: false, jump: false };
+const jump = { left: false, right: false, jump: true };
+
+const runFrames = (simulation, frames, input) => {
+  for (let i = 0; i < frames; i += 1) {
+    simulation.step(input);
+  }
+};
+
+const server = await createServer({
+  appType: "custom",
+  server: { middlewareMode: true },
+  logLevel: "silent"
+});
+
+try {
+  const { RoomSimulation } = await server.ssrLoadModule("/src/game/state.ts");
+  const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
+  const { isBetterLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
+
+  assert(levels.length === 10, `Expected 10 handcrafted levels, found ${levels.length}`);
+  assert(levels.some((level) => (level.plates || []).length > 0), "Expected at least one pressure-plate level");
+  assert(levels.some((level) => (level.doors || []).length > 0), "Expected at least one door level");
+  assert(levels.some((level) => (level.lasers || []).length > 0), "Expected at least one laser level");
+  assert(levels.some((level) => (level.platforms || []).length > 0), "Expected at least one moving-platform level");
+  assert(levels.some((level) => (level.cores || []).length > 0), "Expected at least one core level");
+
+  const goldScore = { levelId: "score-test", frames: 600, echoes: 3, medal: "Gold" };
+  const slowBronzeFewerEchoes = { levelId: "score-test", frames: 2400, echoes: 0, medal: "Bronze" };
+  const fasterGold = { levelId: "score-test", frames: 540, echoes: 3, medal: "Gold" };
+  const fewerEchoGold = { levelId: "score-test", frames: 660, echoes: 2, medal: "Gold" };
+  assert(!isBetterLevelScore(slowBronzeFewerEchoes, goldScore), "Worse medal should not replace better medal");
+  assert(isBetterLevelScore(fewerEchoGold, goldScore), "Same medal with fewer echoes should replace previous score");
+  assert(isBetterLevelScore(fasterGold, goldScore), "Same medal and echoes with faster time should replace previous score");
+
+  const echoPlateLevel = {
+    ...baseLevel,
+    plates: [{ id: "plate-a", x: 94, y: 112, w: 58, h: 8 }],
+    doors: [{ id: "door-a", x: 220, y: 70, w: 18, h: 50, opensWith: ["plate-a"] }]
+  };
+  const plateSim = new RoomSimulation(echoPlateLevel);
+  runFrames(plateSim, 34, right);
+  assert(plateSim.rewindToEcho(), "Expected first attempt to become an echo");
+  runFrames(plateSim, 46, idle);
+  assert(plateSim.echoRecordings.length === 1, "Expected exactly one stored echo");
+  assert(plateSim.objectState.activePlates.has("plate-a"), "Echo did not activate the pressure plate");
+  assert(plateSim.objectState.openDoors.has("door-a"), "Pressure plate did not open the linked door");
+
+  const coreLevel = {
+    ...baseLevel,
+    cores: [{ id: "core-a", x: 22, y: 88, w: 20, h: 20 }],
+    doors: [{ id: "core-door", x: 90, y: 70, w: 18, h: 50, opensWith: [], requiresCore: "core-a" }]
+  };
+  const coreSim = new RoomSimulation(coreLevel);
+  const coreEvent = coreSim.step(idle);
+  assert(coreSim.objectState.collectedCores.has("core-a"), "Player did not collect overlapping core");
+  assert(coreSim.objectState.openDoors.has("core-door"), "Core-locked door did not open after collection");
+  assert(coreEvent.core && coreEvent.core.x > 20 && coreEvent.core.x < 50, "Core pickup event did not report player location");
+
+  const echoCoreLevel = {
+    ...baseLevel,
+    cores: [{ id: "core-echo", x: 118, y: 88, w: 20, h: 20 }]
+  };
+  const echoCoreSim = new RoomSimulation(echoCoreLevel);
+  runFrames(echoCoreSim, 34, right);
+  assert(echoCoreSim.rewindToEcho(), "Expected core setup attempt to become an echo");
+  let echoCoreEvent = null;
+  for (let i = 0; i < 60; i += 1) {
+    const event = echoCoreSim.step(idle);
+    if (event.core) {
+      echoCoreEvent = event.core;
+      break;
+    }
+  }
+  assert(echoCoreEvent, "Echo did not collect the core during replay");
+  assert(echoCoreEvent.x > 100, `Echo core pickup event used the wrong origin: ${JSON.stringify(echoCoreEvent)}`);
+
+  const laserLevel = {
+    ...baseLevel,
+    plates: [{ id: "beam-safe", x: 18, y: 112, w: 38, h: 8, once: true }],
+    lasers: [{ id: "beam-a", x: 82, y: 88, w: 70, h: 28, startsOn: true, disabledBy: ["beam-safe"] }]
+  };
+  const laserSim = new RoomSimulation(laserLevel);
+  laserSim.step(idle);
+  runFrames(laserSim, 26, right);
+  assert(laserSim.rewindToEcho(), "Expected laser setup attempt to become an echo");
+  let blocked = false;
+  for (let i = 0; i < 48; i += 1) {
+    laserSim.step(i < 32 ? right : idle);
+    blocked ||= laserSim.objectState.blockedLasers.has("beam-a");
+  }
+  assert(blocked, "Echo did not block the laser beam");
+  assert(!laserSim.dead, "Player died while the laser was blocked by an echo");
+
+  const deathLevel = {
+    ...baseLevel,
+    hazards: [{ id: "death-zone", x: 20, y: 86, w: 28, h: 34 }]
+  };
+  const deathSim = new RoomSimulation(deathLevel);
+  deathSim.step(idle);
+  assert(deathSim.dead, "Expected overlapping hazard to kill the player");
+  const deadTick = deathSim.tick;
+  const deadFrames = deathSim.totalFrames;
+  runFrames(deathSim, 30, right);
+  assert(deathSim.tick === deadTick, "Dead attempt should not continue ticking");
+  assert(deathSim.totalFrames === deadFrames, "Dead attempt should not continue scoring time");
+
+  const fallLevel = {
+    ...baseLevel,
+    start: { x: 20, y: 20 },
+    bounds: { x: 0, y: 0, w: 320, h: 90 },
+    solids: [
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 220 },
+      { id: "right-wall", x: 320, y: 0, w: 20, h: 220 }
+    ]
+  };
+  const fallSim = new RoomSimulation(fallLevel);
+  runFrames(fallSim, 90, idle);
+  assert(fallSim.dead, "Falling out of bounds should mark the attempt dead");
+  assert(!fallSim.player.alive, "Falling out of bounds should mark the player not alive");
+  const fallTick = fallSim.tick;
+  const fallFrames = fallSim.totalFrames;
+  runFrames(fallSim, 30, right);
+  assert(fallSim.tick === fallTick, "Out-of-bounds death should not continue ticking");
+  assert(fallSim.totalFrames === fallFrames, "Out-of-bounds death should not continue scoring time");
+
+  const deterministicLevel = {
+    ...baseLevel,
+    platforms: [{ id: "lift-test", x: 108, y: 96, w: 72, h: 14, axis: "y", distance: 24, period: 90 }]
+  };
+  const inputSequence = [
+    ...Array.from({ length: 16 }, () => right),
+    ...Array.from({ length: 8 }, () => jump),
+    ...Array.from({ length: 30 }, () => right),
+    ...Array.from({ length: 16 }, () => idle)
+  ];
+  const baseline = new RoomSimulation(deterministicLevel);
+  for (const input of inputSequence) baseline.step(input);
+  const expected = {
+    x: Number(baseline.player.x.toFixed(3)),
+    y: Number(baseline.player.y.toFixed(3)),
+    tick: baseline.tick
+  };
+  const replay = new RoomSimulation(deterministicLevel);
+  for (const input of inputSequence) replay.step(input);
+  assert(replay.rewindToEcho(), "Expected deterministic setup attempt to become an echo");
+  runFrames(replay, inputSequence.length, idle);
+  const echo = replay.echoes[0];
+  const actual = {
+    x: Number(echo.x.toFixed(3)),
+    y: Number(echo.y.toFixed(3)),
+    tick: replay.tick
+  };
+  assert(
+    actual.x === expected.x && actual.y === expected.y && actual.tick === expected.tick,
+    `Echo replay diverged: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`
+  );
+
+  console.log(
+    JSON.stringify(
+      {
+        ok: true,
+        levels: levels.length,
+        checks: [
+          "level-data",
+          "score-ranking",
+          "echo-plate-door",
+          "core-door",
+          "echo-core-origin",
+          "laser-blocking",
+          "death-freeze",
+          "fall-death-freeze",
+          "deterministic-replay"
+        ]
+      },
+      null,
+      2
+    )
+  );
+} finally {
+  await server.close();
+}

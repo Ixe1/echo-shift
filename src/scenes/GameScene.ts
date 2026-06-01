@@ -1,0 +1,412 @@
+import Phaser from "phaser";
+import { getLevel, levels } from "../data/levels";
+import { audio } from "../game/audio";
+import { rectCenter } from "../game/geometry";
+import { laserIsActive } from "../game/objects";
+import { platformRectAt } from "../game/player";
+import { recordLevelScore } from "../game/progress";
+import { RoomSimulation } from "../game/state";
+import type { ActorBody, InputFrame, Level, LevelScore, Rect } from "../game/types";
+import { Hud } from "../ui/hud";
+
+const STEP_MS = 1000 / 60;
+
+type KeyMap = {
+  left: Phaser.Input.Keyboard.Key;
+  right: Phaser.Input.Keyboard.Key;
+  up: Phaser.Input.Keyboard.Key;
+  a: Phaser.Input.Keyboard.Key;
+  d: Phaser.Input.Keyboard.Key;
+  w: Phaser.Input.Keyboard.Key;
+  space: Phaser.Input.Keyboard.Key;
+  r: Phaser.Input.Keyboard.Key;
+  t: Phaser.Input.Keyboard.Key;
+  esc: Phaser.Input.Keyboard.Key;
+};
+
+export class GameScene extends Phaser.Scene {
+  private levelIndex = 0;
+  private level!: Level;
+  private simulation!: RoomSimulation;
+  private keys!: KeyMap;
+  private hud!: Hud;
+  private world!: Phaser.GameObjects.Graphics;
+  private fx!: Phaser.GameObjects.Graphics;
+  private accumulator = 0;
+  private pausedByHud = false;
+  private completeHandled = false;
+  private virtualInput: InputFrame = { left: false, right: false, jump: false };
+  private echoTrails = new Map<string, Array<{ x: number; y: number }>>();
+
+  constructor() {
+    super("GameScene");
+  }
+
+  init(data: { levelIndex?: number }): void {
+    this.levelIndex = data.levelIndex || 0;
+    this.level = getLevel(this.levelIndex);
+    this.simulation = new RoomSimulation(this.level);
+    this.accumulator = 0;
+    this.pausedByHud = false;
+    this.completeHandled = false;
+    this.virtualInput = { left: false, right: false, jump: false };
+    this.echoTrails.clear();
+  }
+
+  create(): void {
+    this.cameras.main.setBounds(0, 0, 960, 540);
+    this.cameras.main.setBackgroundColor("#05070d");
+    this.world = this.add.graphics();
+    this.fx = this.add.graphics();
+    this.keys = this.createKeys();
+    this.hud = new Hud({
+      onRewind: () => this.rewind(),
+      onRetry: () => this.retryAttempt(),
+      onPause: () => this.togglePause(),
+      onTitle: () => this.scene.start("MenuScene"),
+      onNext: () => this.nextLevel(),
+      onReplay: () => this.restartLevel(),
+      onLevelSelect: () => this.scene.start("LevelSelectScene"),
+      onResume: () => this.togglePause(false),
+      onVirtualInput: (control, active) => {
+        this.virtualInput[control] = active;
+      }
+    });
+    this.hud.toast(`${this.level.index + 1}: ${this.level.name}`);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.hud.destroy());
+    this.renderWorld();
+  }
+
+  update(_time: number, delta: number): void {
+    this.handleHotkeys();
+    if (this.pausedByHud || this.completeHandled) {
+      this.renderWorld();
+      return;
+    }
+
+    this.accumulator += Math.min(delta, 80);
+    while (this.accumulator >= STEP_MS) {
+      const events = this.simulation.step(this.readInput());
+      this.handleEvents(events);
+      this.accumulator -= STEP_MS;
+      if (this.completeHandled) break;
+    }
+
+    this.renderWorld();
+    this.hud.update({
+      levelNumber: this.level.index + 1,
+      levelName: this.level.name,
+      frames: this.simulation.totalFrames,
+      echoes: this.simulation.echoRecordings.length,
+      medal: this.simulation.scoreMedal(),
+      dead: this.simulation.dead
+    });
+  }
+
+  private createKeys(): KeyMap {
+    const keyboard = this.input.keyboard;
+    if (!keyboard) throw new Error("Keyboard input unavailable");
+    return {
+      left: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT),
+      right: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT),
+      up: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP),
+      a: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+      d: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+      w: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+      space: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
+      r: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R),
+      t: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.T),
+      esc: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
+    };
+  }
+
+  private readInput(): InputFrame {
+    return {
+      left: this.keys.left.isDown || this.keys.a.isDown || this.virtualInput.left,
+      right: this.keys.right.isDown || this.keys.d.isDown || this.virtualInput.right,
+      jump: this.keys.up.isDown || this.keys.w.isDown || this.keys.space.isDown || this.virtualInput.jump
+    };
+  }
+
+  private handleHotkeys(): void {
+    if (Phaser.Input.Keyboard.JustDown(this.keys.r)) this.rewind();
+    if (Phaser.Input.Keyboard.JustDown(this.keys.t)) this.retryAttempt();
+    if (Phaser.Input.Keyboard.JustDown(this.keys.esc)) this.togglePause();
+  }
+
+  private handleEvents(events: ReturnType<RoomSimulation["step"]>): void {
+    if (events.jumped) audio.play("jump");
+    if (events.landed) audio.play("land");
+    if (events.switched) audio.play("switch");
+    if (events.core) {
+      audio.play("core");
+      this.spawnBurst(events.core, 0xffe35a);
+    }
+    if (events.died) {
+      audio.play("death");
+      this.cameras.main.shake(180, 0.006);
+      this.hud.toast("Signal lost. Rewind or retry.");
+    }
+    if (events.won) this.completeLevel();
+  }
+
+  private rewind(): void {
+    if (this.completeHandled || this.pausedByHud) return;
+    const added = this.simulation.rewindToEcho();
+    audio.play("rewind");
+    this.hud.scan();
+    this.cameras.main.flash(220, 67, 247, 255, false);
+    this.echoTrails.clear();
+    this.hud.toast(added ? `Echo ${this.simulation.echoRecordings.length} anchored` : "Attempt reset");
+  }
+
+  private retryAttempt(): void {
+    if (this.completeHandled || this.pausedByHud) return;
+    this.simulation.resetAttempt(false);
+    this.echoTrails.clear();
+    audio.play("select");
+    this.hud.toast("Attempt reset");
+  }
+
+  private restartLevel(): void {
+    this.completeHandled = false;
+    this.pausedByHud = false;
+    this.virtualInput = { left: false, right: false, jump: false };
+    this.simulation.resetLevel();
+    this.echoTrails.clear();
+    this.hud.hideModal();
+    this.hud.toast(`${this.level.index + 1}: ${this.level.name}`);
+  }
+
+  private togglePause(force?: boolean): void {
+    if (this.completeHandled) return;
+    this.pausedByHud = force ?? !this.pausedByHud;
+    if (this.pausedByHud) this.hud.showPause(this.level.name);
+    else this.hud.hideModal();
+    audio.play("select");
+  }
+
+  private completeLevel(): void {
+    if (this.completeHandled) return;
+    this.completeHandled = true;
+    audio.play("portal");
+    const score: LevelScore = {
+      levelId: this.level.id,
+      frames: this.simulation.totalFrames,
+      echoes: this.simulation.echoRecordings.length,
+      medal: this.simulation.scoreMedal()
+    };
+    recordLevelScore(score, this.level.index);
+    this.cameras.main.flash(280, 255, 227, 90, false);
+    this.hud.showComplete(score, this.level.index === levels.length - 1);
+  }
+
+  private nextLevel(): void {
+    const next = Math.min(this.levelIndex + 1, levels.length - 1);
+    this.scene.start("GameScene", { levelIndex: next });
+  }
+
+  private renderWorld(): void {
+    const snapshot = this.simulation.snapshot();
+    this.world.clear();
+    this.fx.clear();
+    this.drawBackground();
+    this.drawSolids();
+    this.drawPlatforms(snapshot.tick);
+    this.drawDoors(snapshot.openDoors);
+    this.drawPlates(snapshot.activePlates);
+    this.drawCores(snapshot.collectedCores);
+    this.drawLasers(snapshot.activePlates, snapshot.blockedLasers);
+    this.drawHazards();
+    this.drawExit(this.level.exit, snapshot.won);
+    this.drawEchoes(snapshot.echoes);
+    this.drawActor(snapshot.player, snapshot.dead ? 0xff4f8b : 0x43f7ff, 1);
+    this.drawForegroundText(snapshot.tick);
+  }
+
+  private drawBackground(): void {
+    this.world.fillStyle(0x05070d, 1);
+    this.world.fillRect(0, 0, 960, 540);
+    this.world.lineStyle(1, 0x123246, 0.36);
+    for (let x = 0; x <= 960; x += 40) this.world.lineBetween(x, 0, x, 540);
+    for (let y = 20; y <= 540; y += 40) this.world.lineBetween(0, y, 960, y);
+    this.world.lineStyle(1, 0x5d2f83, 0.22);
+    for (let x = -120; x < 960; x += 120) this.world.lineBetween(x, 540, x + 300, 0);
+    this.world.fillStyle(0x09111d, 0.86);
+    this.world.fillRect(0, 500, 960, 40);
+  }
+
+  private drawSolids(): void {
+    for (const solid of this.level.solids) {
+      const color = solid.tone === "dark" ? 0x111827 : solid.tone === "warning" ? 0x473b18 : 0x17243a;
+      this.drawNeonRect(solid, color, 0x43f7ff, 0.34);
+      this.world.lineStyle(1, 0xffffff, 0.06);
+      this.world.lineBetween(solid.x, solid.y + 4, solid.x + solid.w, solid.y + 4);
+    }
+  }
+
+  private drawPlatforms(tick: number): void {
+    for (const platform of this.level.platforms || []) {
+      const rect = platformRectAt(platform, tick);
+      this.drawNeonRect(rect, 0x1f2e46, 0xffe35a, 0.72);
+      this.world.lineStyle(1, 0xffe35a, 0.28);
+      if (platform.axis === "y") {
+        this.world.lineBetween(platform.x + platform.w / 2, platform.y - platform.distance, platform.x + platform.w / 2, platform.y + platform.distance);
+      } else {
+        this.world.lineBetween(platform.x - platform.distance, platform.y + platform.h / 2, platform.x + platform.distance, platform.y + platform.h / 2);
+      }
+    }
+  }
+
+  private drawDoors(openDoors: Set<string>): void {
+    for (const door of this.level.doors || []) {
+      const open = openDoors.has(door.id);
+      this.world.fillStyle(open ? 0x43f7ff : 0x29122d, open ? 0.09 : 0.92);
+      this.world.fillRect(door.x, door.y, door.w, door.h);
+      this.world.lineStyle(2, open ? 0x43f7ff : 0xff4f8b, open ? 0.38 : 0.9);
+      this.world.strokeRect(door.x, door.y, door.w, door.h);
+      for (let y = door.y + 10; y < door.y + door.h; y += 14) {
+        this.world.lineStyle(1, open ? 0x43f7ff : 0xff4f8b, open ? 0.18 : 0.3);
+        this.world.lineBetween(door.x + 3, y, door.x + door.w - 3, y);
+      }
+    }
+  }
+
+  private drawPlates(activePlates: Set<string>): void {
+    for (const plate of this.level.plates || []) {
+      const active = activePlates.has(plate.id);
+      this.world.fillStyle(active ? 0xffe35a : 0x163247, active ? 0.9 : 0.78);
+      this.world.fillRect(plate.x, plate.y, plate.w, plate.h);
+      this.world.lineStyle(2, active ? 0xfff4a0 : 0x43f7ff, active ? 0.86 : 0.36);
+      this.world.strokeRect(plate.x, plate.y, plate.w, plate.h);
+    }
+  }
+
+  private drawCores(collectedCores: Set<string>): void {
+    for (const core of this.level.cores || []) {
+      if (collectedCores.has(core.id)) continue;
+      const center = rectCenter(core);
+      const pulse = 1 + Math.sin(this.time.now / 140) * 0.12;
+      this.world.fillStyle(0xffe35a, 0.18);
+      this.world.fillCircle(center.x, center.y, 22 * pulse);
+      this.world.fillStyle(0xffe35a, 0.92);
+      this.world.fillCircle(center.x, center.y, 10);
+      this.world.lineStyle(2, 0xffffff, 0.7);
+      this.world.strokeCircle(center.x, center.y, 15 * pulse);
+    }
+  }
+
+  private drawLasers(activePlates: Set<string>, blockedLasers: Set<string>): void {
+    for (const laser of this.level.lasers || []) {
+      const active = laserIsActive(laser, activePlates);
+      if (!active) {
+        this.world.lineStyle(2, 0x43f7ff, 0.16);
+        this.world.strokeRect(laser.x, laser.y, laser.w, laser.h);
+        continue;
+      }
+      const blocked = blockedLasers.has(laser.id);
+      this.world.fillStyle(blocked ? 0xffe35a : 0xff2f6c, blocked ? 0.3 : 0.72);
+      this.world.fillRect(laser.x, laser.y, laser.w, laser.h);
+      this.world.lineStyle(2, blocked ? 0xffe35a : 0xff4f8b, blocked ? 0.9 : 1);
+      this.world.strokeRect(laser.x, laser.y, laser.w, laser.h);
+      this.world.fillStyle(0xffffff, blocked ? 0.18 : 0.34);
+      this.world.fillRect(laser.x, laser.y + laser.h / 2 - 1, laser.w, 2);
+    }
+  }
+
+  private drawHazards(): void {
+    for (const hazard of this.level.hazards || []) {
+      this.world.fillStyle(0xff4f8b, 0.7);
+      for (let x = hazard.x; x < hazard.x + hazard.w; x += 12) {
+        this.world.fillTriangle(x, hazard.y + hazard.h, x + 6, hazard.y, x + 12, hazard.y + hazard.h);
+      }
+    }
+  }
+
+  private drawExit(exit: Rect, won: boolean): void {
+    const center = rectCenter(exit);
+    const spin = this.time.now / 260;
+    this.world.fillStyle(won ? 0xffe35a : 0x43f7ff, 0.13);
+    this.world.fillEllipse(center.x, center.y, exit.w * 1.4, exit.h * 1.2);
+    this.world.lineStyle(3, won ? 0xffe35a : 0x43f7ff, 0.82);
+    this.world.strokeEllipse(center.x, center.y, exit.w, exit.h);
+    this.world.lineStyle(2, 0xbd5cff, 0.72);
+    this.world.beginPath();
+    for (let i = 0; i < 5; i += 1) {
+      const angle = spin + i * 1.26;
+      const x = center.x + Math.cos(angle) * exit.w * 0.32;
+      const y = center.y + Math.sin(angle) * exit.h * 0.42;
+      if (i === 0) this.world.moveTo(x, y);
+      else this.world.lineTo(x, y);
+    }
+    this.world.closePath();
+    this.world.strokePath();
+  }
+
+  private drawEchoes(echoes: ActorBody[]): void {
+    for (let index = 0; index < echoes.length; index += 1) {
+      const echo = echoes[index];
+      this.updateTrail(echo);
+      const trail = this.echoTrails.get(echo.id) || [];
+      for (let i = 0; i < trail.length; i += 1) {
+        const point = trail[i];
+        this.world.fillStyle(index % 2 === 0 ? 0xbd5cff : 0x50ffc2, (i + 1) / trail.length * 0.12);
+        this.world.fillRect(point.x, point.y, echo.w, echo.h);
+      }
+      this.drawActor(echo, index % 2 === 0 ? 0xbd5cff : 0x50ffc2, 0.42);
+    }
+  }
+
+  private drawActor(actor: ActorBody, color: number, alpha: number): void {
+    this.world.fillStyle(color, alpha * 0.16);
+    this.world.fillCircle(actor.x + actor.w / 2, actor.y + actor.h / 2, 25);
+    this.world.fillStyle(0x08111f, alpha);
+    this.world.fillRoundedRect(actor.x, actor.y, actor.w, actor.h, 5);
+    this.world.lineStyle(2, color, alpha);
+    this.world.strokeRoundedRect(actor.x, actor.y, actor.w, actor.h, 5);
+    this.world.fillStyle(color, alpha);
+    const eyeX = actor.facing > 0 ? actor.x + actor.w - 8 : actor.x + 5;
+    this.world.fillRect(eyeX, actor.y + 9, 4, 4);
+    this.world.fillStyle(0xffffff, alpha * 0.5);
+    this.world.fillRect(actor.x + 5, actor.y + actor.h - 7, actor.w - 10, 2);
+  }
+
+  private drawForegroundText(tick: number): void {
+    const subtitleAlpha = 0.34 + Math.sin(tick / 45) * 0.08;
+    this.world.lineStyle(1, 0x43f7ff, 0.16);
+    this.world.strokeRect(18, 66, 260, 34);
+    this.world.fillStyle(0x43f7ff, subtitleAlpha);
+    this.world.fillRect(24, 76, Math.min(210, this.level.subtitle.length * 7), 3);
+  }
+
+  private drawNeonRect(rect: Rect, fill: number, stroke: number, alpha: number): void {
+    this.world.fillStyle(fill, 0.95);
+    this.world.fillRect(rect.x, rect.y, rect.w, rect.h);
+    this.world.lineStyle(2, stroke, alpha);
+    this.world.strokeRect(rect.x, rect.y, rect.w, rect.h);
+  }
+
+  private updateTrail(actor: ActorBody): void {
+    const trail = this.echoTrails.get(actor.id) || [];
+    trail.push({ x: actor.x, y: actor.y });
+    while (trail.length > 16) trail.shift();
+    this.echoTrails.set(actor.id, trail);
+  }
+
+  private spawnBurst(origin: { x: number; y: number }, color: number): void {
+    for (let i = 0; i < 9; i += 1) {
+      const dot = this.add.circle(origin.x, origin.y, 3, color, 0.85);
+      const angle = (Math.PI * 2 * i) / 9;
+      this.tweens.add({
+        targets: dot,
+        x: dot.x + Math.cos(angle) * 38,
+        y: dot.y + Math.sin(angle) * 28,
+        alpha: 0,
+        scale: 0.3,
+        duration: 360,
+        ease: "Cubic.easeOut",
+        onComplete: () => dot.destroy()
+      });
+    }
+  }
+}

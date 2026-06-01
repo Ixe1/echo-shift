@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 220" role="img" aria-labelledby="title desc">
+  <title id="title">Echo Shift logo mark</title>
+  <desc id="desc">A neon portal ring and angular Echo Shift wordmark.</desc>
+  <defs>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="ring" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#43f7ff"/>
+      <stop offset="0.48" stop-color="#bd5cff"/>
+      <stop offset="1" stop-color="#ffe35a"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="220" rx="22" fill="#05070d"/>
+  <g filter="url(#glow)">
+    <path d="M123 35a74 74 0 1 1-59 119 64 64 0 1 0 44-109Z" fill="none" stroke="url(#ring)" stroke-width="18" stroke-linecap="round"/>
+    <path d="M116 70h62l-38 40h48l-82 66 28-48H91Z" fill="#ffe35a"/>
+    <text x="230" y="98" font-family="Orbitron, Rajdhani, Arial, sans-serif" font-weight="900" font-size="54" fill="#ecfbff" letter-spacing="3">ECHO</text>
+    <text x="230" y="158" font-family="Orbitron, Rajdhani, Arial, sans-serif" font-weight="900" font-size="54" fill="#74f4ff" letter-spacing="3">SHIFT</text>
+  </g>
+</svg>
