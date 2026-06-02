@@ -207,7 +207,7 @@ const defaultSizeFor = (kind: RectCollection): { w: number; h: number } => {
 };
 
 const movingPath = (item: MovingPlatform | PatrolDrone): { start: number; end: number; center: number; speed: number } => {
-  const center = item.axis === "x" ? item.x + item.w / 2 : item.y + item.h / 2;
+  const center = item.axis === "x" ? item.x : item.y;
   const distance = Math.max(0, item.distance);
   return {
     start: center - distance,
@@ -218,16 +218,15 @@ const movingPath = (item: MovingPlatform | PatrolDrone): { start: number; end: n
 };
 
 const movingPathPoints = (item: MovingPlatform | PatrolDrone): { start: Vec2; end: Vec2 } => {
-  const center = { x: item.x + item.w / 2, y: item.y + item.h / 2 };
   return {
     start:
       item.axis === "x"
-        ? { x: center.x - item.distance, y: center.y }
-        : { x: center.x, y: center.y - item.distance },
+        ? { x: item.x - item.distance, y: item.y + item.h / 2 }
+        : { x: item.x + item.w / 2, y: item.y - item.distance },
     end:
       item.axis === "x"
-        ? { x: center.x + item.distance, y: center.y }
-        : { x: center.x, y: center.y + item.distance }
+        ? { x: item.x + item.distance, y: item.y + item.h / 2 }
+        : { x: item.x + item.w / 2, y: item.y + item.distance }
   };
 };
 
@@ -240,8 +239,8 @@ const setMovingPath = (
   const end = Math.max(nextStart, nextEnd);
   const center = (start + end) / 2;
   item.distance = Math.max(0, (end - start) / 2);
-  if (item.axis === "x") item.x = center - item.w / 2;
-  else item.y = center - item.h / 2;
+  if (item.axis === "x") item.x = center;
+  else item.y = center;
 };
 
 const resizeHandlesForRect = (rect: Rect): Array<{ handle: ResizeHandle; point: Vec2 }> => [

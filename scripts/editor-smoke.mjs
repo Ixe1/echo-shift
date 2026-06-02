@@ -335,20 +335,24 @@ try {
   await page.locator("[data-object-field='speed']").fill("120");
   await dispatchChange(page.locator("[data-object-field='speed']"));
   const dronePeriod = Number(await page.locator("[data-object-field='period']").inputValue());
-  const droneCenterX = (await objectNumber(page, "x")) + (await objectNumber(page, "w")) / 2;
+  const droneHandleX = (await objectNumber(page, "x")) + (await objectNumber(page, "w")) / 2;
   await page.locator("[data-tool='select']").click();
-  await dragWorld(page, { x: droneCenterX, y: 360 }, { x: droneCenterX, y: 340 });
+  await dragWorld(page, { x: droneHandleX, y: 360 }, { x: droneHandleX, y: 340 });
   const dronePathStartAfterDrag = Number(await page.locator("[data-object-field='pathStart']").inputValue());
   const droneExportJson = await page.locator("[data-export-json]").inputValue();
+  const droneExport = JSON.parse(droneExportJson)[0].drones.find((drone) => drone.id === "drone-a");
 
   await page.locator("[data-level-select]").selectOption("4");
   await openTab(page, "objects");
   await page.locator("[data-object-list] [data-id='lift-a']").click();
-  const platformCenterX = (await objectNumber(page, "x")) + (await objectNumber(page, "w")) / 2;
+  const platformHandleX = (await objectNumber(page, "x")) + (await objectNumber(page, "w")) / 2;
   await page.locator("[data-tool='select']").click();
-  await dragWorld(page, { x: platformCenterX, y: 347 }, { x: platformCenterX, y: 320 });
+  await dragWorld(page, { x: platformHandleX, y: 338 }, { x: platformHandleX, y: 320 });
   const platformPathStartAfterDrag = Number(await page.locator("[data-object-field='pathStart']").inputValue());
   const platformEndpointValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const platformExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[4].platforms.find(
+    (platform) => platform.id === "lift-a"
+  );
   await page.locator("[data-level-select]").selectOption("0");
 
   await page.locator("[data-save-draft]").click();
@@ -465,7 +469,11 @@ try {
   assert(dronePeriod === 100, `Expected speed 120 over 50px drone distance to produce period 100, got ${dronePeriod}`);
   assert(dronePathStartAfterDrag === 340, `Expected draggable drone path endpoint to set start to 340, got ${dronePathStartAfterDrag}`);
   assert(droneExportJson.includes('"axis": "y"'), "Expected drone export JSON to include vertical axis");
+  assert(droneExport.y === 400, `Expected exported drone origin y to match snapped gameplay midpoint 400, got ${droneExport.y}`);
+  assert(droneExport.distance === 60, `Expected exported drone distance 60 after snapped endpoint edit, got ${droneExport.distance}`);
   assert(platformPathStartAfterDrag === 320, `Expected draggable platform endpoint to set start to 320, got ${platformPathStartAfterDrag}`);
+  assert(platformExport.y === 421, `Expected exported platform origin y to match gameplay midpoint 421, got ${platformExport.y}`);
+  assert(platformExport.distance === 101, `Expected exported platform distance 101 after endpoint edit, got ${platformExport.distance}`);
   assert(platformEndpointValidation === "clean", `Expected clean validation after platform endpoint drag, got ${platformEndpointValidation}`);
   assert(importedName?.includes("Smoke Edited"), `Import did not update the level name: ${importedName}`);
   assert(importedValidation === "clean", `Expected clean validation after import, got ${importedValidation}`);
