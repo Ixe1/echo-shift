@@ -14,12 +14,16 @@ const artifacts = {
   desktopGame: `${outDir}/game-desktop.png`,
   desktopEcho: `${outDir}/echo-desktop.png`,
   desktopPause: `${outDir}/pause-desktop.png`,
+  desktopComplete: `${outDir}/complete-desktop.png`,
+  desktopNext: `${outDir}/next-desktop.png`,
   mobileMenu: `${outDir}/menu-mobile.png`,
   mobileGame: `${outDir}/game-mobile.png`,
   mobileTouch: `${outDir}/touch-mobile.png`,
   mobileLevels: `${outDir}/levels-mobile.png`,
   tabletGame: `${outDir}/game-tablet.png`,
-  tabletTouch: `${outDir}/touch-tablet.png`
+  tabletTouch: `${outDir}/touch-tablet.png`,
+  tabletJump: `${outDir}/jump-tablet.png`,
+  tabletPause: `${outDir}/pause-tablet.png`
 };
 
 const launchOptions = {
@@ -44,6 +48,59 @@ const collectConsole = (page, bucket) => {
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
+};
+
+// Simulation-derived public-input route for clearing Portal Primer without test hooks.
+const firstRoomRoute = [
+  ["idle", 17],
+  ["left", 4],
+  ["right", 53],
+  ["jumpRight", 6],
+  ["right", 19],
+  ["idle", 14],
+  ["right", 17],
+  ["jump", 14],
+  ["right", 26],
+  ["jump", 12],
+  ["idle", 4],
+  ["jumpRight", 9],
+  ["idle", 34],
+  ["jumpRight", 30],
+  ["right", 7],
+  ["jumpRight", 6],
+  ["right", 30]
+];
+
+const inputKeys = {
+  idle: [],
+  right: ["KeyD"],
+  left: ["KeyA"],
+  jump: ["Space"],
+  jumpRight: ["KeyD", "Space"],
+  jumpLeft: ["KeyA", "Space"]
+};
+
+const runKeyboardRoute = async (page, route) => {
+  const active = new Set();
+  for (const [action, frames] of route) {
+    const next = new Set(inputKeys[action]);
+    for (const key of active) {
+      if (!next.has(key)) {
+        await page.keyboard.up(key);
+        active.delete(key);
+      }
+    }
+    for (const key of next) {
+      if (!active.has(key)) {
+        await page.keyboard.down(key);
+        active.add(key);
+      }
+    }
+    await page.waitForTimeout(Math.max(20, Math.round((frames * 1000) / 60)));
+  }
+  for (const key of active) {
+    await page.keyboard.up(key);
+  }
 };
 
 const playerCentroidX = async (page) =>
@@ -71,6 +128,60 @@ const playerCentroidX = async (page) =>
     }
     return count > 0 ? total / count : null;
   });
+
+const playerCentroid = async (page) =>
+  page.evaluate(() => {
+    const canvas = document.querySelector("canvas");
+    if (!(canvas instanceof HTMLCanvasElement)) return null;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return null;
+    const { width } = canvas;
+    const data = context.getImageData(0, 0, width, canvas.height).data;
+    let totalX = 0;
+    let totalY = 0;
+    let count = 0;
+    for (let y = 300; y < 492; y += 1) {
+      for (let x = 0; x < 240; x += 1) {
+        const index = (y * width + x) * 4;
+        const red = data[index];
+        const green = data[index + 1];
+        const blue = data[index + 2];
+        const alpha = data[index + 3];
+        if (alpha > 160 && red < 130 && green > 150 && blue > 150) {
+          totalX += x;
+          totalY += y;
+          count += 1;
+        }
+      }
+    }
+    return count > 0 ? { x: totalX / count, y: totalY / count } : null;
+  });
+
+const centerOf = (box) => ({
+  x: box.x + box.width / 2,
+  y: box.y + box.height / 2
+});
+
+const multiTouchPress = async (context, page, points, duration = 320) => {
+  const client = await context.newCDPSession(page);
+  await client.send("Input.dispatchTouchEvent", {
+    type: "touchStart",
+    touchPoints: points.map((point, index) => ({
+      x: point.x,
+      y: point.y,
+      radiusX: 18,
+      radiusY: 18,
+      force: 0.9,
+      id: index + 1
+    }))
+  });
+  await page.waitForTimeout(duration);
+  await client.send("Input.dispatchTouchEvent", {
+    type: "touchEnd",
+    touchPoints: []
+  });
+  await client.detach();
+};
 
 const browser = await chromium.launch(launchOptions);
 
@@ -105,6 +216,22 @@ try {
   await page.locator("[data-exit-menu]").click();
   await page.locator("[data-play]").waitFor({ state: "visible" });
   const returnedToTitle = await page.locator("[data-play]").isVisible();
+  await page.evaluate(() => window.localStorage.clear());
+  await page.locator("[data-play]").click();
+  await page.waitForTimeout(650);
+  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  await runKeyboardRoute(page, firstRoomRoute);
+  await page.locator("[data-modal].show").waitFor({ state: "visible", timeout: 3000 });
+  const completionTitle = await page.locator("[data-modal].show h1").textContent();
+  const storedProgress = await page.evaluate(() => {
+    const raw = window.localStorage.getItem("echo-shift-progress-v1");
+    return raw ? JSON.parse(raw) : null;
+  });
+  await page.screenshot({ path: artifacts.desktopComplete });
+  await page.locator("[data-next]").click();
+  await page.waitForFunction(() => document.querySelector("[data-level]")?.textContent?.includes("2. First Afterimage"));
+  const nextLevelLabel = await page.locator("[data-level]").textContent();
+  await page.screenshot({ path: artifacts.desktopNext });
   await desktop.close();
 
   const mobileMessages = [];
@@ -178,10 +305,43 @@ try {
   await tablet.screenshot({ path: artifacts.tabletTouch });
   await tabletContext.close();
 
+  const touchFlowMessages = [];
+  const touchFlowContext = await browser.newContext({
+    viewport: { width: 820, height: 1180 },
+    isMobile: true,
+    hasTouch: true
+  });
+  const touchFlow = await touchFlowContext.newPage();
+  collectConsole(touchFlow, touchFlowMessages);
+  await touchFlow.goto(url, { waitUntil: "domcontentloaded" });
+  await touchFlow.locator("[data-play]").waitFor({ state: "visible" });
+  await touchFlow.locator("[data-play]").click();
+  await touchFlow.locator("[data-touch-control='right']").waitFor({ state: "visible" });
+  await touchFlow.waitForTimeout(450);
+  const beforeTouchJump = await playerCentroid(touchFlow);
+  const comboJumpButton = await touchFlow.locator("[data-touch-control='jump']").boundingBox();
+  assert(comboJumpButton, "Could not locate tablet jump touch control");
+  await multiTouchPress(touchFlowContext, touchFlow, [centerOf(comboJumpButton)], 180);
+  await touchFlow.waitForTimeout(80);
+  const afterTouchJump = await playerCentroid(touchFlow);
+  await touchFlow.screenshot({ path: artifacts.tabletJump });
+  await touchFlow.locator("[data-menu]").click();
+  await touchFlow.locator("[data-modal].show").waitFor({ state: "visible" });
+  const tabletPauseVisible = await touchFlow.locator("[data-modal].show").isVisible();
+  await touchFlow.screenshot({ path: artifacts.tabletPause });
+  await touchFlow.locator("[data-resume]").click();
+  await touchFlow.waitForTimeout(150);
+  const tabletPauseClosed = !(await touchFlow.locator("[data-modal].show").isVisible());
+  await touchFlowContext.close();
+
   assert(title === "Echo Shift", `Unexpected title: ${title}`);
   assert(echoesText === "1", `Expected one echo after rewind, got ${echoesText}`);
   assert(pauseVisible, "Pause modal did not become visible");
   assert(returnedToTitle, "Title button did not return to the menu");
+  assert(completionTitle === "Room Clear", `Expected first room completion modal, got ${completionTitle}`);
+  assert(storedProgress?.unlocked >= 2, `Expected completion to unlock level 2: ${JSON.stringify(storedProgress)}`);
+  assert(storedProgress?.scores?.["portal-primer"], "Expected first room score to persist");
+  assert(nextLevelLabel?.includes("2. First Afterimage"), `Expected Next Room to load level 2, got ${nextLevelLabel}`);
   assert(levelButtons === 10, `Expected 10 level buttons, got ${levelButtons}`);
   assert(touchControlsVisible, "Mobile touch controls were not visible in-game");
   assert(beforeTouchX !== null && afterTouchX !== null, "Could not locate player pixels for touch movement check");
@@ -195,9 +355,17 @@ try {
     afterTabletTouchX > beforeTabletTouchX + 8,
     `Expected tablet touch-right to move player right: ${beforeTabletTouchX} -> ${afterTabletTouchX}`
   );
+  assert(beforeTouchJump && afterTouchJump, "Could not locate player pixels for tablet touch jump check");
+  assert(
+    afterTouchJump.y < beforeTouchJump.y - 8,
+    `Expected touch jump to move player upward: ${JSON.stringify(beforeTouchJump)} -> ${JSON.stringify(afterTouchJump)}`
+  );
+  assert(tabletPauseVisible, "Tablet pause modal did not become visible");
+  assert(tabletPauseClosed, "Tablet pause modal did not close after resume");
   assert(relevantMessages.length === 0, `Desktop console issues: ${JSON.stringify(relevantMessages)}`);
   assert(mobileMessages.length === 0, `Mobile console issues: ${JSON.stringify(mobileMessages)}`);
   assert(tabletMessages.length === 0, `Tablet console issues: ${JSON.stringify(tabletMessages)}`);
+  assert(touchFlowMessages.length === 0, `Tablet touch-flow console issues: ${JSON.stringify(touchFlowMessages)}`);
 
   console.log(
     JSON.stringify(
@@ -208,11 +376,16 @@ try {
         echoesText,
         pauseVisible,
         returnedToTitle,
+        completionTitle,
+        nextLevelLabel,
         levelButtons,
         touchControlsVisible,
         mobileTouchDelta: Number((afterTouchX - beforeTouchX).toFixed(2)),
         tabletTouchControlsVisible,
         tabletTouchDelta: Number((afterTabletTouchX - beforeTabletTouchX).toFixed(2)),
+        tabletJumpDeltaY: Number((afterTouchJump.y - beforeTouchJump.y).toFixed(2)),
+        tabletPauseVisible,
+        tabletPauseClosed,
         artifacts
       },
       null,
