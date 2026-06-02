@@ -344,6 +344,9 @@ try {
   const narrowPlateY = await objectNumber(page, "y");
   const narrowPlateBottom = narrowPlateY + (await objectNumber(page, "h"));
   await page.locator("[data-delete-object]").click();
+  await dragToolToWorld(page, "lasers", { x: 646, y: 440 });
+  const underSupportLaserY = await objectNumber(page, "y");
+  await page.locator("[data-delete-object]").click();
 
   await page.locator("[data-tool='solids']").click();
   await page.locator("[data-add-object]").click();
@@ -392,6 +395,16 @@ try {
   await page.locator("[data-duplicate-object]").evaluate((button) => button.click());
   const exitXAfterDuplicate = await objectNumber(page, "x");
   const exitYAfterDuplicate = await objectNumber(page, "y");
+  await setObjectField(page, "w", 64);
+  await setObjectField(page, "h", 70);
+  await page.locator("[data-tool='exit']").click();
+  await clickWorld(page, { x: 2200, y: 420 });
+  const exitWidthAfterRePlace = await objectNumber(page, "w");
+  const exitHeightAfterRePlace = await objectNumber(page, "h");
+  await setObjectField(page, "x", 2286);
+  await setObjectField(page, "y", 438);
+  await setObjectField(page, "w", 48);
+  await setObjectField(page, "h", 62);
   const exitWidthBefore = await objectNumber(page, "w");
   await page.locator("[data-tool='select']").click();
   await dragWorld(page, { x: 2334, y: 469 }, { x: 2380, y: 469 });
@@ -574,6 +587,7 @@ try {
     `Expected clean validation after global ID generation cleanup, got ${generatedGlobalCleanupValidation}`
   );
   assert(narrowPlateBottom === 420, `Expected dropped plate bottom to snap flush to narrow support y=420, got ${narrowPlateY}+h=${narrowPlateBottom}`);
+  assert(underSupportLaserY === 440, `Expected laser placed below support to stay at y=440 instead of snapping upward, got ${underSupportLaserY}`);
   assert(surfaceSnapValidation === "clean", `Expected clean validation after surface snap checks, got ${surfaceSnapValidation}`);
   assert(rejectedDuplicateObjectId === "smoke-hazard", `Expected duplicate object id rename to be rejected, got ${rejectedDuplicateObjectId}`);
   assert(rejectedBlankObjectId === "smoke-hazard", `Expected blank object id rename to be rejected, got ${rejectedBlankObjectId}`);
@@ -639,6 +653,8 @@ try {
     exitXAfterDuplicate === exitXBeforeDuplicate && exitYAfterDuplicate === exitYBeforeDuplicate,
     `Expected exit duplicate action not to move the singleton exit: ${exitXBeforeDuplicate},${exitYBeforeDuplicate} -> ${exitXAfterDuplicate},${exitYAfterDuplicate}`
   );
+  assert(exitWidthAfterRePlace === 64, `Expected re-placed exit to preserve custom width 64, got ${exitWidthAfterRePlace}`);
+  assert(exitHeightAfterRePlace === 70, `Expected re-placed exit to preserve custom height 70, got ${exitHeightAfterRePlace}`);
   assert(exitWidthAfter === exitWidthBefore, `Expected exit portal width to stay locked during handle drag: ${exitWidthBefore} -> ${exitWidthAfter}`);
   assert(plateWidthAfter === plateWidthBefore, `Expected pressure plate width to stay locked during handle drag: ${plateWidthBefore} -> ${plateWidthAfter}`);
   assert(droneWidthAfter === droneWidthBefore, `Expected drone body width to stay locked during handle drag: ${droneWidthBefore} -> ${droneWidthAfter}`);

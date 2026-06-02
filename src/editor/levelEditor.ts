@@ -1107,7 +1107,7 @@ class LevelEditor {
       return null;
     }
     if (tool === "exit") {
-      this.level.exit = { x: world.x, y: world.y, w: 48, h: 62 };
+      this.level.exit = { ...this.level.exit, x: world.x, y: world.y };
       this.selection = { kind: "exit" };
       this.activePanel = "inspect";
       this.afterMutation("Exit placed");
@@ -1138,9 +1138,8 @@ class LevelEditor {
       .filter((surface) => rectsOverlapX(rect, surface))
       .map((surface) => surface.y)
       .filter((surfaceY) => {
-        const topDistance = Math.abs(rect.y - surfaceY);
         const bottomDistance = Math.abs(rect.y + rect.h - surfaceY);
-        return Math.min(topDistance, bottomDistance) <= SURFACE_SNAP_DISTANCE;
+        return rect.y <= surfaceY && bottomDistance <= SURFACE_SNAP_DISTANCE;
       })
       .sort((a, b) => Math.abs(rect.y + rect.h - a) - Math.abs(rect.y + rect.h - b));
 
@@ -1175,7 +1174,7 @@ class LevelEditor {
       ...(JSON.parse(JSON.stringify(object)) as RectObject),
       id: this.nextObjectId(this.selection.kind),
       x: object.x + GRID,
-      y: object.y + GRID
+      y: this.isSurfaceMounted(this.selection.kind) ? object.y : object.y + GRID
     };
     this.snapToNearbySurface(this.selection.kind, copy);
     ensureCollection(this.level, this.selection.kind).push(copy);
