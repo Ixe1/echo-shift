@@ -655,7 +655,12 @@ class LevelEditor {
     if (field === "x" || field === "y" || field === "w" || field === "h") {
       target[field] = field === "w" || field === "h" ? Math.max(1, Number(value)) : Number(value);
     } else if (field === "id") {
-      target.id = String(value);
+      const nextId = String(value);
+      if (this.objectIdExists(nextId, target)) {
+        this.afterMutation(`Object id ${nextId} already exists`);
+        return;
+      }
+      target.id = nextId;
       if ("id" in this.selection) this.selection.id = target.id;
     } else {
       this.updateSpecificObjectField(target, field, value);
@@ -1080,7 +1085,7 @@ class LevelEditor {
 
   private nearestSurfaceTop(rect: Rect): number | null {
     const candidates = [...this.level.solids, ...readCollection(this.level, "platforms")]
-      .filter((surface) => surface.w >= 40 && rectsOverlapX(rect, surface))
+      .filter((surface) => rectsOverlapX(rect, surface))
       .map((surface) => surface.y)
       .filter((surfaceY) => {
         const topDistance = Math.abs(rect.y - surfaceY);
@@ -1090,6 +1095,11 @@ class LevelEditor {
       .sort((a, b) => Math.abs(rect.y + rect.h - a) - Math.abs(rect.y + rect.h - b));
 
     return candidates[0] ?? null;
+  }
+
+  private objectIdExists(id: string, ignored: RectObject): boolean {
+    if (!id) return false;
+    return rectCollections.some((kind) => readCollection(this.level, kind).some((object) => object !== ignored && object.id === id));
   }
 
   private duplicateSelection(): void {

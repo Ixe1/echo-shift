@@ -270,6 +270,19 @@ try {
 
   await page.locator("[data-tool='solids']").click();
   await page.locator("[data-add-object]").click();
+  await page.locator("[data-object-field='id']").fill("smoke-narrow-support");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await setObjectField(page, "x", 640);
+  await setObjectField(page, "y", 420);
+  await setObjectField(page, "w", 30);
+  await setObjectField(page, "h", 18);
+  await dragToolToWorld(page, "plates", { x: 646, y: 420 });
+  const narrowPlateY = await objectNumber(page, "y");
+  const narrowPlateBottom = narrowPlateY + (await objectNumber(page, "h"));
+  await page.locator("[data-delete-object]").click();
+
+  await page.locator("[data-tool='solids']").click();
+  await page.locator("[data-add-object]").click();
   await page.locator("[data-object-field='id']").fill("smoke-floor");
   await dispatchChange(page.locator("[data-object-field='id']"));
   await setObjectField(page, "x", 500);
@@ -290,6 +303,12 @@ try {
   await setObjectField(page, "y", 430);
   await setObjectField(page, "w", 60);
   await setObjectField(page, "h", 8);
+  await page.locator("[data-object-field='id']").fill("spark-strip-a");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  const rejectedDuplicateObjectId = await page.locator("[data-object-field='id']").inputValue();
+  const duplicateObjectIdValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const duplicateObjectIdValidationText = await page.locator("[data-validation]").textContent();
+  const duplicateObjectIdStatus = await page.locator("[data-editor-status]").textContent();
   const hazardWidthBefore = Number(await page.locator("[data-object-field='w']").inputValue());
   await page.locator("[data-tool='select']").click();
   await dragWorld(page, { x: 780, y: 434 }, { x: 860, y: 434 });
@@ -433,7 +452,17 @@ try {
   assert(surfacePlateBottom === 500, `Expected dropped plate bottom to snap flush to floor y=500, got ${surfacePlateY}+h=${surfacePlateBottom}`);
   assert(duplicatedPlateBottom === 500, `Expected duplicated plate bottom to stay flush to floor y=500, got ${duplicatedPlateY}+h=${duplicatedPlateBottom}`);
   assert(surfaceLaserBottom === 500, `Expected dropped laser bottom to snap flush to floor y=500, got ${surfaceLaserY}+h=${surfaceLaserBottom}`);
+  assert(narrowPlateBottom === 420, `Expected dropped plate bottom to snap flush to narrow support y=420, got ${narrowPlateY}+h=${narrowPlateBottom}`);
   assert(surfaceSnapValidation === "clean", `Expected clean validation after surface snap checks, got ${surfaceSnapValidation}`);
+  assert(rejectedDuplicateObjectId === "smoke-hazard", `Expected duplicate object id rename to be rejected, got ${rejectedDuplicateObjectId}`);
+  assert(
+    duplicateObjectIdValidation === "clean",
+    `Expected clean validation after rejected duplicate object id, got ${duplicateObjectIdValidation}: ${duplicateObjectIdValidationText}`
+  );
+  assert(
+    duplicateObjectIdStatus?.includes("already exists"),
+    `Expected duplicate object id status to mention already exists, got ${duplicateObjectIdStatus}`
+  );
   assert(duplicateLevelValidation === "issues", "Expected duplicate level id to fail validation");
   assert(
     duplicateLevelText?.includes("Duplicate level id first-afterimage"),
