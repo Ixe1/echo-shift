@@ -132,7 +132,7 @@ export const levels: Level[] = [
     lasers: [{ id: "beam-a", ...r(414, 458, 230, 12), startsOn: true }],
     perfectEchoes: 1,
     medalFrames: { gold: 1620, silver: 2220 },
-    hint: "Record a run that jumps into the beam, then let the echo shade the crossing."
+    hint: "Record an echo that falls into the beam, then cross while that echo interrupts the light."
   },
   {
     id: "dual-lock",
@@ -185,18 +185,18 @@ export const levels: Level[] = [
     bounds,
     solids: [
       ...frame(),
-      s("upper-left", 190, 382, 140, 18),
-      s("upper-mid", 410, 330, 146, 18),
-      s("upper-right", 666, 386, 126, 18)
+      s("upper-left", 190, 420, 140, 18),
+      s("upper-mid", 384, 386, 156, 18),
+      s("upper-right", 648, 420, 126, 18)
     ],
     platforms: [{ id: "lift-c", ...r(560, 438, 98, 18), axis: "x", distance: 70, period: 190 }],
-    plates: [p("plate-f1", 222, 374, 66, 8), p("plate-f2", 698, 378, 66, 8)],
+    plates: [p("plate-f1", 222, 412, 66, 8), p("plate-f2", 680, 412, 66, 8)],
     doors: [{ id: "gate-f", ...r(808, 392, 28, 108), opensWith: ["plate-f1", "plate-f2"], requiresCore: "core-f" }],
-    cores: [{ id: "core-f", ...r(466, 292, 24, 24), label: "F" }],
+    cores: [{ id: "core-f", ...r(456, 348, 24, 24), label: "F" }],
     lasers: [{ id: "beam-f", ...r(340, 462, 194, 12), startsOn: true }],
     perfectEchoes: 2,
     medalFrames: { gold: 2700, silver: 3540 },
-    hint: "One echo shades the lower beam. Another can wait on the high plate."
+    hint: "Two echoes hold the upper plates. The live route braids through the core and open gate."
   },
   {
     id: "echo-shift",
@@ -219,11 +219,11 @@ export const levels: Level[] = [
     ],
     plates: [p("plate-g1", 210, 400, 68, 8), p("plate-g2", 420, 346, 68, 8), p("plate-g3", 728, 334, 68, 8)],
     doors: [{ id: "final-gate", ...r(812, 252, 28, 108), opensWith: ["plate-g1", "plate-g2", "plate-g3"], requiresCore: "core-g" }],
-    cores: [{ id: "core-g", ...r(640, 404, 24, 24), label: "G" }],
+    cores: [{ id: "core-g", ...r(636, 248, 24, 24), label: "G" }],
     lasers: [{ id: "beam-g", ...r(526, 462, 170, 12), startsOn: true }],
     perfectEchoes: 3,
     medalFrames: { gold: 3300, silver: 4380 },
-    hint: "The final gate wants three plates and the core. Record deliberate jobs."
+    hint: "Three echoes hold the perches. Take the lift arc through the core, then cross the open gate."
   }
 ];
 

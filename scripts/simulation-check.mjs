@@ -25,13 +25,30 @@ const baseLevel = {
 };
 
 const right = { left: false, right: true, jump: false };
+const left = { left: true, right: false, jump: false };
 const idle = { left: false, right: false, jump: false };
 const jump = { left: false, right: false, jump: true };
 const jumpRight = { left: false, right: true, jump: true };
+const jumpLeft = { left: true, right: false, jump: true };
+const routeInputs = { idle, right, left, jump, jumpRight, jumpLeft };
 
 const runFrames = (simulation, frames, input) => {
   for (let i = 0; i < frames; i += 1) {
     simulation.step(input);
+  }
+};
+
+const runRoute = (simulation, route) => {
+  for (const step of route) {
+    if (step[0] === "rewind") {
+      assert(simulation.rewindToEcho(), `Expected ${simulation.level.name} route rewind to create an echo`);
+      continue;
+    }
+
+    const [action, frames] = step;
+    const input = routeInputs[action];
+    assert(input, `Unknown route action: ${action}`);
+    runFrames(simulation, frames, input);
   }
 };
 
@@ -53,6 +70,232 @@ try {
   assert(levels.some((level) => (level.lasers || []).length > 0), "Expected at least one laser level");
   assert(levels.some((level) => (level.platforms || []).length > 0), "Expected at least one moving-platform level");
   assert(levels.some((level) => (level.cores || []).length > 0), "Expected at least one core level");
+
+  const handcraftedRoutes = [
+    {
+      id: "portal-primer",
+      route: [
+        ["idle", 17],
+        ["left", 4],
+        ["right", 53],
+        ["jumpRight", 6],
+        ["right", 19],
+        ["idle", 14],
+        ["right", 17],
+        ["jump", 14],
+        ["right", 26],
+        ["jump", 12],
+        ["idle", 4],
+        ["jumpRight", 9],
+        ["idle", 34],
+        ["jumpRight", 30],
+        ["right", 7],
+        ["jumpRight", 6],
+        ["right", 72]
+      ]
+    },
+    {
+      id: "first-afterimage",
+      route: [["right", 42], ["rewind"], ["right", 300]]
+    },
+    {
+      id: "held-open",
+      route: [
+        ["right", 42],
+        ["rewind"],
+        ["right", 65],
+        ["jumpRight", 12],
+        ["right", 22],
+        ["jumpRight", 14],
+        ["right", 53],
+        ["jumpRight", 12],
+        ["right", 90]
+      ]
+    },
+    {
+      id: "relay-key",
+      route: [
+        ["right", 50],
+        ["rewind"],
+        ["right", 80],
+        ["jumpRight", 12],
+        ["right", 60],
+        ["jumpRight", 14],
+        ["right", 70],
+        ["jumpRight", 12],
+        ["right", 160]
+      ]
+    },
+    {
+      id: "lift-phase",
+      route: [
+        ["idle", 17],
+        ["right", 18],
+        ["jumpRight", 8],
+        ["right", 42],
+        ["idle", 184],
+        ["right", 39],
+        ["jumpRight", 14],
+        ["right", 37],
+        ["jumpRight", 8],
+        ["right", 120]
+      ]
+    },
+    {
+      id: "laser-shadow",
+      route: [
+        ["right", 60],
+        ["jumpRight", 12],
+        ["right", 80],
+        ["rewind"],
+        ["right", 60],
+        ["jumpRight", 12],
+        ["right", 115],
+        ["jumpRight", 14],
+        ["right", 140]
+      ],
+      blockedLasers: ["beam-a"]
+    },
+    {
+      id: "dual-lock",
+      route: [
+        ["right", 35],
+        ["rewind"],
+        ["right", 90],
+        ["rewind"],
+        ["right", 110],
+        ["jumpRight", 12],
+        ["right", 50],
+        ["jumpRight", 12],
+        ["right", 180]
+      ]
+    },
+    {
+      id: "cross-current",
+      route: [
+        ["right", 20],
+        ["jumpRight", 14],
+        ["right", 8],
+        ["idle", 30],
+        ["rewind"],
+        ["right", 20],
+        ["jumpRight", 14],
+        ["right", 45],
+        ["jumpRight", 14],
+        ["right", 40],
+        ["right", 5],
+        ["idle", 105],
+        ["jumpRight", 14],
+        ["right", 16],
+        ["jumpRight", 14],
+        ["right", 100]
+      ]
+    },
+    {
+      id: "phase-braid",
+      route: [
+        ["right", 20],
+        ["jumpRight", 14],
+        ["right", 18],
+        ["idle", 90],
+        ["rewind"],
+        ["right", 20],
+        ["jumpRight", 14],
+        ["right", 18],
+        ["idle", 10],
+        ["right", 16],
+        ["jumpRight", 14],
+        ["right", 67],
+        ["jumpRight", 14],
+        ["right", 24],
+        ["idle", 100],
+        ["rewind"],
+        ["right", 20],
+        ["jumpRight", 14],
+        ["right", 18],
+        ["idle", 10],
+        ["right", 16],
+        ["jumpRight", 14],
+        ["right", 67],
+        ["jumpRight", 14],
+        ["right", 130]
+      ]
+    },
+    {
+      id: "echo-shift",
+      route: [
+        ["right", 20],
+        ["jumpRight", 14],
+        ["right", 18],
+        ["idle", 90],
+        ["rewind"],
+        ["right", 20],
+        ["jumpRight", 14],
+        ["right", 18],
+        ["idle", 8],
+        ["right", 20],
+        ["jumpRight", 14],
+        ["right", 20],
+        ["idle", 90],
+        ["rewind"],
+        ["right", 20],
+        ["jumpRight", 14],
+        ["right", 18],
+        ["idle", 8],
+        ["right", 20],
+        ["jumpRight", 14],
+        ["right", 20],
+        ["idle", 120],
+        ["right", 50],
+        ["jumpRight", 14],
+        ["right", 18],
+        ["idle", 120],
+        ["rewind"],
+        ["right", 20],
+        ["jumpRight", 14],
+        ["right", 18],
+        ["idle", 8],
+        ["right", 20],
+        ["jumpRight", 14],
+        ["right", 20],
+        ["idle", 120],
+        ["right", 50],
+        ["jumpRight", 14],
+        ["right", 180]
+      ]
+    }
+  ];
+
+  const routeSummaries = [];
+  for (const routeSpec of handcraftedRoutes) {
+    const level = levels.find((item) => item.id === routeSpec.id);
+    assert(level, `Missing handcrafted route level: ${routeSpec.id}`);
+
+    const simulation = new RoomSimulation(level);
+    runRoute(simulation, routeSpec.route);
+
+    assert(simulation.won, `${level.name} route should reach the portal`);
+    assert(!simulation.dead, `${level.name} route should not end dead`);
+    assert(
+      simulation.echoRecordings.length <= level.perfectEchoes,
+      `${level.name} route used ${simulation.echoRecordings.length} echoes, perfect budget is ${level.perfectEchoes}`
+    );
+    assert(simulation.scoreMedal() === "Quantum", `${level.name} route should score Quantum`);
+
+    const goldSlack = level.medalFrames.gold - simulation.totalFrames;
+    assert(goldSlack >= 420, `${level.name} Quantum route leaves only ${goldSlack} gold-threshold slack frames`);
+
+    for (const laserId of routeSpec.blockedLasers || []) {
+      assert(simulation.objectState.blockedLasers.has(laserId), `${level.name} route did not block ${laserId}`);
+    }
+
+    routeSummaries.push({
+      id: level.id,
+      frames: simulation.totalFrames,
+      echoes: simulation.echoRecordings.length,
+      goldSlack
+    });
+  }
 
   const heldOpen = levels[2];
   const midLedge = heldOpen.solids.find((solid) => solid.id === "mid-ledge");
@@ -238,8 +481,10 @@ try {
           "laser-blocking",
           "death-freeze",
           "fall-death-freeze",
-          "deterministic-replay"
-        ]
+          "deterministic-replay",
+          "all-level-quantum-routes"
+        ],
+        routeSummaries
       },
       null,
       2
