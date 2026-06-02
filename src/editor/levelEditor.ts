@@ -518,6 +518,8 @@ class LevelEditor {
       if (key === "w" || key === "h") level.bounds[key] = Math.max(1, level.bounds[key]);
     } else if (field === "perfectEchoes") {
       level.perfectEchoes = Math.max(0, Math.round(Number(value)));
+    } else if (field === "index") {
+      level.index = Math.max(0, Math.round(Number(value)));
     } else if (field === "medalFrames.gold" || field === "medalFrames.silver") {
       const key = field.split(".")[1] as "gold" | "silver";
       level.medalFrames[key] = Math.max(1, Math.round(Number(value)));
@@ -867,6 +869,7 @@ class LevelEditor {
         ${this.textField("ID", "id", level.id, "level")}
         ${this.textField("Name", "name", level.name, "level")}
         ${this.textField("Subtitle", "subtitle", level.subtitle, "level")}
+        ${this.numberField("Index", "index", level.index, "level", 1)}
         <div class="inspector-grid four">
           ${this.numberField("X", "bounds.x", level.bounds.x, "level")}
           ${this.numberField("Y", "bounds.y", level.bounds.y, "level")}

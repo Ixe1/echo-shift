@@ -59,6 +59,9 @@ try {
   await page.goto(`${url}?editor=0`, { waitUntil: "domcontentloaded" });
   await page.locator("[data-play]").waitFor({ state: "visible" });
   const inactiveEditorVisible = await page.locator("[data-level-editor]").isVisible();
+  await page.locator("[data-editor]").click();
+  await page.locator("[data-level-editor]").waitFor({ state: "visible" });
+  const menuEditorUrl = page.url();
   await page.goto(`${url}?editor=1`, { waitUntil: "domcontentloaded" });
   await page.locator("[data-level-editor]").waitFor({ state: "visible" });
   await page.locator("[data-editor-canvas]").waitFor({ state: "visible" });
@@ -74,6 +77,15 @@ try {
   await levelIdField.fill("portal-primer");
   await dispatchChange(levelIdField);
   const restoredLevelValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+
+  const levelIndexField = page.locator("[data-level-field='index']");
+  await levelIndexField.fill("1");
+  await dispatchChange(levelIndexField);
+  const invalidIndexValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const invalidIndexText = await page.locator("[data-validation]").textContent();
+  await levelIndexField.fill("0");
+  await dispatchChange(levelIndexField);
+  const restoredIndexValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
   await page.locator("[data-import-json]").fill("{broken json");
   await page.locator("[data-apply-import]").click();
@@ -193,6 +205,7 @@ try {
   await mobile.close();
 
   assert(!inactiveEditorVisible, "Editor should not activate for ?editor=0");
+  assert(menuEditorUrl.includes("editor=1"), `Expected menu editor button to navigate to ?editor=1, got ${menuEditorUrl}`);
   assert(levelOptions === 10, `Expected 10 editable levels, got ${levelOptions}`);
   assert(initialValidation === "clean", `Expected clean initial validation, got ${initialValidation}`);
   assert(duplicateLevelValidation === "issues", "Expected duplicate level id to fail validation");
@@ -201,6 +214,9 @@ try {
     `Expected duplicate level id validation text, got ${duplicateLevelText}`
   );
   assert(restoredLevelValidation === "clean", `Expected clean validation after restoring level id, got ${restoredLevelValidation}`);
+  assert(invalidIndexValidation === "issues", "Expected mismatched level index to fail validation");
+  assert(invalidIndexText?.includes("index is 1; expected 0"), `Expected index mismatch validation text, got ${invalidIndexText}`);
+  assert(restoredIndexValidation === "clean", `Expected clean validation after restoring level index, got ${restoredIndexValidation}`);
   assert(
     malformedImportStatus && malformedImportStatus !== "Import applied",
     `Expected malformed import to report an error, got ${malformedImportStatus}`
