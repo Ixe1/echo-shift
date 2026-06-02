@@ -13,6 +13,7 @@ const artifacts = {
   desktopMenu: `${outDir}/menu-desktop.png`,
   desktopGame: `${outDir}/game-desktop.png`,
   desktopEcho: `${outDir}/echo-desktop.png`,
+  desktopRetryAfterRewind: `${outDir}/retry-after-rewind-desktop.png`,
   desktopPause: `${outDir}/pause-desktop.png`,
   desktopComplete: `${outDir}/complete-desktop.png`,
   desktopNext: `${outDir}/next-desktop.png`,
@@ -157,6 +158,27 @@ const playerCentroid = async (page) =>
     return count > 0 ? { x: totalX / count, y: totalY / count } : null;
   });
 
+const rewindCastPixelsNearStart = async (page) =>
+  page.evaluate(() => {
+    const canvas = document.querySelector("canvas");
+    if (!(canvas instanceof HTMLCanvasElement)) return 0;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return 0;
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let count = 0;
+    for (let y = 438; y < 492; y += 1) {
+      for (let x = 104; x < 156; x += 1) {
+        const index = (y * canvas.width + x) * 4;
+        const red = data[index];
+        const green = data[index + 1];
+        const blue = data[index + 2];
+        const alpha = data[index + 3];
+        if (alpha > 170 && red < 90 && green > 170 && blue > 170) count += 1;
+      }
+    }
+    return count;
+  });
+
 const centerOf = (box) => ({
   x: box.x + box.width / 2,
   y: box.y + box.height / 2
@@ -207,6 +229,13 @@ try {
   await page.waitForTimeout(500);
   const echoesText = await page.locator("[data-echoes]").textContent();
   await page.screenshot({ path: artifacts.desktopEcho });
+  await page.keyboard.down("KeyR");
+  await page.waitForTimeout(80);
+  await page.keyboard.up("KeyR");
+  await page.locator("[data-retry]").click();
+  await page.waitForTimeout(120);
+  const retryCastPixels = await rewindCastPixelsNearStart(page);
+  await page.screenshot({ path: artifacts.desktopRetryAfterRewind });
   await page.keyboard.down("Escape");
   await page.waitForTimeout(100);
   await page.keyboard.up("Escape");
@@ -336,6 +365,7 @@ try {
 
   assert(title === "Echo Shift", `Unexpected title: ${title}`);
   assert(echoesText === "1", `Expected one echo after rewind, got ${echoesText}`);
+  assert(retryCastPixels < 24, `Expected retry to clear rewind-cast sprite pixels, got ${retryCastPixels}`);
   assert(pauseVisible, "Pause modal did not become visible");
   assert(returnedToTitle, "Title button did not return to the menu");
   assert(completionTitle === "Room Clear", `Expected first room completion modal, got ${completionTitle}`);
@@ -374,6 +404,7 @@ try {
         url,
         title,
         echoesText,
+        retryCastPixels,
         pauseVisible,
         returnedToTitle,
         completionTitle,

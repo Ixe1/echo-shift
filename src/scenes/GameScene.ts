@@ -173,6 +173,7 @@ export class GameScene extends Phaser.Scene {
   private retryAttempt(): void {
     if (this.completeHandled || this.pausedByHud) return;
     this.simulation.resetAttempt(false);
+    this.playerCastUntil = 0;
     this.echoTrails.clear();
     audio.play("select");
     this.hud.toast("Attempt reset");
@@ -183,6 +184,7 @@ export class GameScene extends Phaser.Scene {
     this.pausedByHud = false;
     this.virtualInput = { left: false, right: false, jump: false };
     this.simulation.resetLevel();
+    this.playerCastUntil = 0;
     this.echoTrails.clear();
     this.hud.hideModal();
     this.hud.toast(`${this.level.index + 1}: ${this.level.name}`);
