@@ -1110,6 +1110,7 @@ class LevelEditor {
       x: object.x + GRID,
       y: object.y + GRID
     };
+    this.snapToNearbySurface(this.selection.kind, copy);
     ensureCollection(this.level, this.selection.kind).push(copy);
     this.selection = { kind: this.selection.kind, id: copy.id };
     this.activePanel = "inspect";

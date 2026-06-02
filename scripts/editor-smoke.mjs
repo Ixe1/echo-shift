@@ -257,6 +257,9 @@ try {
   await dragToolToWorld(page, "plates", { x: 300, y: 500 });
   const surfacePlateY = await objectNumber(page, "y");
   const surfacePlateBottom = surfacePlateY + (await objectNumber(page, "h"));
+  await page.locator("[data-duplicate-object]").click();
+  const duplicatedPlateY = await objectNumber(page, "y");
+  const duplicatedPlateBottom = duplicatedPlateY + (await objectNumber(page, "h"));
   await page.locator("[data-delete-object]").click();
 
   await dragToolToWorld(page, "lasers", { x: 1280, y: 500 });
@@ -428,6 +431,7 @@ try {
   assert(!keyboardDeleteExport.includes("smoke-laser-drop"), "Expected keyboard Delete to remove selected smoke-laser-drop");
   assert(keyboardDeleteValidation === "clean", `Expected clean validation after keyboard delete, got ${keyboardDeleteValidation}`);
   assert(surfacePlateBottom === 500, `Expected dropped plate bottom to snap flush to floor y=500, got ${surfacePlateY}+h=${surfacePlateBottom}`);
+  assert(duplicatedPlateBottom === 500, `Expected duplicated plate bottom to stay flush to floor y=500, got ${duplicatedPlateY}+h=${duplicatedPlateBottom}`);
   assert(surfaceLaserBottom === 500, `Expected dropped laser bottom to snap flush to floor y=500, got ${surfaceLaserY}+h=${surfaceLaserBottom}`);
   assert(surfaceSnapValidation === "clean", `Expected clean validation after surface snap checks, got ${surfaceSnapValidation}`);
   assert(duplicateLevelValidation === "issues", "Expected duplicate level id to fail validation");
