@@ -18,6 +18,7 @@ const artifacts = {
   desktopComplete: `${outDir}/complete-desktop.png`,
   desktopNext: `${outDir}/next-desktop.png`,
   desktopCoreRoom: `${outDir}/core-room-desktop.png`,
+  desktopHeldOpenComplete: `${outDir}/held-open-complete-desktop.png`,
   mobileMenu: `${outDir}/menu-mobile.png`,
   mobileGame: `${outDir}/game-mobile.png`,
   mobileTouch: `${outDir}/touch-mobile.png`,
@@ -71,6 +72,23 @@ const firstRoomRoute = [
   ["right", 7],
   ["jumpRight", 6],
   ["right", 72]
+];
+
+// Public-input route for Level 3: record a plate echo, then clear the adjusted final jump.
+const heldOpenEchoRoute = [
+  ["idle", 17],
+  ["right", 42]
+];
+
+const heldOpenClearRoute = [
+  ["idle", 10],
+  ["right", 65],
+  ["jumpRight", 12],
+  ["right", 22],
+  ["jumpRight", 14],
+  ["right", 53],
+  ["jumpRight", 12],
+  ["right", 90]
 ];
 
 const inputKeys = {
@@ -294,6 +312,21 @@ try {
   await page.waitForTimeout(600);
   const corePixels = await coreSpritePixels(page);
   await page.screenshot({ path: artifacts.desktopCoreRoom });
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.locator("[data-levels]").waitFor({ state: "visible" });
+  await page.locator("[data-levels]").click();
+  await page.locator("[data-level='2']").click();
+  await page.waitForTimeout(600);
+  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  await runKeyboardRoute(page, heldOpenEchoRoute);
+  await page.keyboard.down("KeyR");
+  await page.waitForTimeout(100);
+  await page.keyboard.up("KeyR");
+  await page.waitForTimeout(350);
+  await runKeyboardRoute(page, heldOpenClearRoute);
+  await page.locator("[data-modal].show").waitFor({ state: "visible", timeout: 3000 });
+  const heldOpenCompletionTitle = await page.locator("[data-modal].show h1").textContent();
+  await page.screenshot({ path: artifacts.desktopHeldOpenComplete });
   await desktop.close();
 
   const mobileMessages = [];
@@ -406,6 +439,7 @@ try {
   assert(storedProgress?.scores?.["portal-primer"], "Expected first room score to persist");
   assert(nextLevelLabel?.includes("2. First Afterimage"), `Expected Next Room to load level 2, got ${nextLevelLabel}`);
   assert(corePixels > 60, `Expected generated core/effect sprite pixels in Relay Key, got ${corePixels}`);
+  assert(heldOpenCompletionTitle === "Room Clear", `Expected Held Open completion modal, got ${heldOpenCompletionTitle}`);
   assert(levelButtons === 10, `Expected 10 level buttons, got ${levelButtons}`);
   assert(touchControlsVisible, "Mobile touch controls were not visible in-game");
   assert(beforeTouchX !== null && afterTouchX !== null, "Could not locate player pixels for touch movement check");
@@ -444,6 +478,7 @@ try {
         completionTitle,
         nextLevelLabel,
         corePixels,
+        heldOpenCompletionTitle,
         levelButtons,
         touchControlsVisible,
         mobileTouchDelta: Number((afterTouchX - beforeTouchX).toFixed(2)),
