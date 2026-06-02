@@ -64,6 +64,7 @@ try {
   const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
   const { platformRectAt } = await server.ssrLoadModule("/src/game/player.ts");
   const { isBetterLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
+  const { soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
 
   assert(levels.length === 10, `Expected 10 handcrafted levels, found ${levels.length}`);
   assert(levels.some((level) => (level.plates || []).length > 0), "Expected at least one pressure-plate level");
@@ -71,6 +72,7 @@ try {
   assert(levels.some((level) => (level.lasers || []).length > 0), "Expected at least one laser level");
   assert(levels.some((level) => (level.platforms || []).length > 0), "Expected at least one moving-platform level");
   assert(levels.some((level) => (level.cores || []).length > 0), "Expected at least one core level");
+  assert(Boolean(soundtracks.menu), "Expected a main menu soundtrack");
 
   const handcraftedRoutes = [
     {
@@ -300,6 +302,13 @@ try {
   assert(
     missingRouteIds.length === 0 && extraRouteIds.length === 0,
     `Expected handcrafted routes to exactly match levels; missing ${missingRouteIds.join(", ") || "none"}, extra ${extraRouteIds.join(", ") || "none"}`
+  );
+  const missingSoundtrackIds = levels
+    .filter((level) => !soundtrackForLevel(level))
+    .map((level) => level.id);
+  assert(
+    missingSoundtrackIds.length === 0,
+    `Expected every level to have a soundtrack; missing ${missingSoundtrackIds.join(", ")}`
   );
 
   const lowClosedGates = levels.flatMap((level) =>
@@ -555,6 +564,7 @@ try {
           "death-freeze",
           "fall-death-freeze",
           "deterministic-replay",
+          "soundtrack-manifest",
           "closed-gate-top-contract",
           "closed-floor-gate-bypass",
           "all-level-quantum-routes"

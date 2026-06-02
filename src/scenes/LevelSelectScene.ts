@@ -11,6 +11,7 @@ export class LevelSelectScene extends Phaser.Scene {
   }
 
   create(): void {
+    audio.playMusic("menu");
     clearUi();
     const root = uiRoot();
     const unlocked = levels.length;
@@ -54,7 +55,6 @@ export class LevelSelectScene extends Phaser.Scene {
       button.addEventListener("click", () => {
         const levelIndex = Number(button.dataset.level || 0);
         audio.play("select");
-        audio.startMusic();
         this.scene.start("GameScene", { levelIndex });
       });
     });

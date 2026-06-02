@@ -8,6 +8,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create(): void {
+    audio.playMusic("menu");
     clearUi();
     const root = uiRoot();
     root.innerHTML = `
@@ -32,7 +33,6 @@ export class MenuScene extends Phaser.Scene {
 
     root.querySelector("[data-play]")?.addEventListener("click", () => {
       audio.play("select");
-      audio.startMusic();
       this.scene.start("GameScene", { levelIndex: 0 });
     });
     root.querySelector("[data-levels]")?.addEventListener("click", () => {

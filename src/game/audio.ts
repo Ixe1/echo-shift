@@ -1,3 +1,5 @@
+import { soundtracks, type SoundtrackKey } from "./soundtracks";
+
 type ToneName =
   | "jump"
   | "land"
@@ -11,8 +13,11 @@ type ToneName =
 export class SynthAudio {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
-  private musicGain: GainNode | null = null;
-  private musicStarted = false;
+  private music: HTMLAudioElement | null = null;
+  private musicKey: SoundtrackKey | null = null;
+  private fadeToken = 0;
+  private musicMuted = false;
+  private readonly musicVolume = 0.28;
 
   resume(): void {
     if (!this.context) {
@@ -23,6 +28,7 @@ export class SynthAudio {
       this.master.connect(context.destination);
     }
     void this.context.resume();
+    void this.music?.play().catch(() => undefined);
   }
 
   play(name: ToneName): void {
@@ -67,39 +73,74 @@ export class SynthAudio {
   }
 
   startMusic(): void {
-    this.resume();
-    if (!this.context || !this.master || this.musicStarted) return;
-    this.musicStarted = true;
-    const context = this.context;
-    const musicGain = context.createGain();
-    musicGain.gain.value = 0.045;
-    musicGain.connect(this.master);
-    this.musicGain = musicGain;
+    this.playMusic("menu");
+  }
 
-    const notes = [110, 146.83, 164.81, 220, 246.94, 329.63, 293.66, 220];
-    notes.forEach((note, index) => {
-      const osc = context.createOscillator();
-      const gain = context.createGain();
-      osc.type = index % 3 === 0 ? "triangle" : "sine";
-      osc.frequency.value = note;
-      gain.gain.value = index % 2 === 0 ? 0.22 : 0.14;
-      osc.connect(gain);
-      gain.connect(musicGain);
-      osc.start();
-      const lfo = context.createOscillator();
-      const lfoGain = context.createGain();
-      lfo.frequency.value = 0.03 + index * 0.004;
-      lfoGain.gain.value = 14;
-      lfo.connect(lfoGain);
-      lfoGain.connect(osc.frequency);
-      lfo.start();
+  playMusic(key: SoundtrackKey, options: { restart?: boolean } = {}): void {
+    this.resume();
+    if (this.music && this.musicKey === key && !options.restart) {
+      this.applyMusicVolume(this.music);
+      void this.music.play();
+      return;
+    }
+
+    const previous = this.music;
+    const next = new Audio(soundtracks[key].src);
+    next.loop = true;
+    next.preload = "auto";
+    next.volume = this.musicMuted ? 0 : 0;
+    this.music = next;
+    this.musicKey = key;
+
+    const token = ++this.fadeToken;
+    void next.play().catch(() => {
+      if (this.music === next) this.applyMusicVolume(next);
     });
+
+    this.fadeMusic(previous, next, token);
   }
 
   setMusicMuted(muted: boolean): void {
-    if (this.musicGain) {
-      this.musicGain.gain.value = muted ? 0 : 0.045;
-    }
+    this.musicMuted = muted;
+    if (this.music) this.applyMusicVolume(this.music);
+  }
+
+  stopMusic(): void {
+    this.fadeToken += 1;
+    this.music?.pause();
+    this.music = null;
+    this.musicKey = null;
+  }
+
+  private applyMusicVolume(element: HTMLAudioElement): void {
+    element.volume = this.musicMuted ? 0 : this.musicVolume;
+  }
+
+  private fadeMusic(previous: HTMLAudioElement | null, next: HTMLAudioElement, token: number): void {
+    const started = performance.now();
+    const duration = 760;
+    const previousStart = previous?.volume || 0;
+
+    const step = (now: number) => {
+      if (token !== this.fadeToken) return;
+      const progress = Math.min(1, (now - started) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      next.volume = this.musicMuted ? 0 : this.musicVolume * eased;
+      if (previous) previous.volume = this.musicMuted ? 0 : previousStart * (1 - eased);
+
+      if (progress < 1) {
+        requestAnimationFrame(step);
+        return;
+      }
+
+      this.applyMusicVolume(next);
+      if (previous) {
+        previous.pause();
+        previous.currentTime = 0;
+      }
+    };
+
+    requestAnimationFrame(step);
   }
 
   private settings(name: ToneName) {

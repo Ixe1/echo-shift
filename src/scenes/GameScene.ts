@@ -5,6 +5,7 @@ import { rectCenter } from "../game/geometry";
 import { laserIsActive } from "../game/objects";
 import { platformRectAt } from "../game/player";
 import { recordLevelScore } from "../game/progress";
+import { soundtrackForLevel } from "../game/soundtracks";
 import { RoomSimulation } from "../game/state";
 import type { ActorBody, InputFrame, Level, LevelScore, Rect, SimulationSnapshot } from "../game/types";
 import { Hud } from "../ui/hud";
@@ -62,6 +63,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
+    audio.playMusic(soundtrackForLevel(this.level).key);
     this.cameras.main.setBounds(0, 0, 960, 540);
     this.cameras.main.setBackgroundColor("#05070d");
     this.world = this.add.graphics().setDepth(0);
