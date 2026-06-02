@@ -242,6 +242,7 @@ try {
   await setObjectField(page, "x", 1120);
   await setObjectField(page, "y", 420);
   const dragDropLaserExport = await page.locator("[data-export-json]").inputValue();
+  const activeToolAfterDrop = await page.locator(".editor-tool.active").getAttribute("data-tool");
   await clickWorld(page, { x: 1130, y: 426 });
   await page.keyboard.press("Delete");
   const keyboardDeleteExport = await page.locator("[data-export-json]").inputValue();
@@ -386,6 +387,7 @@ try {
   assert(zoomBeforeWheel !== zoomAfterWheel, `Expected wheel input to zoom canvas, got ${zoomBeforeWheel} -> ${zoomAfterWheel}`);
   assert(zoomAfterWheel !== zoomAfterButton, `Expected zoom-out button to change zoom, got ${zoomAfterWheel} -> ${zoomAfterButton}`);
   assert(dragDropLaserExport.includes("smoke-laser-drop"), "Expected palette drag/drop to create smoke-laser-drop");
+  assert(activeToolAfterDrop === "select", `Expected drag/drop creation to return toolbar to select mode, got ${activeToolAfterDrop}`);
   assert(!keyboardDeleteExport.includes("smoke-laser-drop"), "Expected keyboard Delete to remove selected smoke-laser-drop");
   assert(keyboardDeleteValidation === "clean", `Expected clean validation after keyboard delete, got ${keyboardDeleteValidation}`);
   assert(duplicateLevelValidation === "issues", "Expected duplicate level id to fail validation");

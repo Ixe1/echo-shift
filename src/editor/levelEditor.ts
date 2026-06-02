@@ -754,6 +754,8 @@ class LevelEditor {
     const rect = this.canvas.getBoundingClientRect();
     const world = snapPoint(this.screenToWorld({ x: event.clientX - rect.left, y: event.clientY - rect.top }));
     this.placeToolAt(tool, world);
+    this.tool = "select";
+    this.renderToolbar();
   }
 
   private toolFromDataTransfer(dataTransfer: DataTransfer | null): PlaceableTool | null {
