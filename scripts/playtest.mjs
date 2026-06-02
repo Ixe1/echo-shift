@@ -17,6 +17,7 @@ const artifacts = {
   desktopPause: `${outDir}/pause-desktop.png`,
   desktopComplete: `${outDir}/complete-desktop.png`,
   desktopNext: `${outDir}/next-desktop.png`,
+  desktopCoreRoom: `${outDir}/core-room-desktop.png`,
   mobileMenu: `${outDir}/menu-mobile.png`,
   mobileGame: `${outDir}/game-mobile.png`,
   mobileTouch: `${outDir}/touch-mobile.png`,
@@ -69,7 +70,7 @@ const firstRoomRoute = [
   ["jumpRight", 30],
   ["right", 7],
   ["jumpRight", 6],
-  ["right", 30]
+  ["right", 72]
 ];
 
 const inputKeys = {
@@ -179,6 +180,29 @@ const rewindCastPixelsNearStart = async (page) =>
     return count;
   });
 
+const coreSpritePixels = async (page) =>
+  page.evaluate(() => {
+    const canvas = document.querySelector("canvas");
+    if (!(canvas instanceof HTMLCanvasElement)) return 0;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return 0;
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let count = 0;
+    for (let y = 348; y < 410; y += 1) {
+      for (let x = 448; x < 512; x += 1) {
+        const index = (y * canvas.width + x) * 4;
+        const red = data[index];
+        const green = data[index + 1];
+        const blue = data[index + 2];
+        const alpha = data[index + 3];
+        const generatedCyan = red < 140 && green > 140 && blue > 150;
+        const generatedViolet = red > 120 && green < 140 && blue > 155;
+        if (alpha > 150 && (generatedCyan || generatedViolet)) count += 1;
+      }
+    }
+    return count;
+  });
+
 const centerOf = (box) => ({
   x: box.x + box.width / 2,
   y: box.y + box.height / 2
@@ -245,6 +269,8 @@ try {
   await page.locator("[data-exit-menu]").click();
   await page.locator("[data-play]").waitFor({ state: "visible" });
   const returnedToTitle = await page.locator("[data-play]").isVisible();
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.locator("[data-play]").waitFor({ state: "visible" });
   await page.evaluate(() => window.localStorage.clear());
   await page.locator("[data-play]").click();
   await page.waitForTimeout(650);
@@ -261,6 +287,13 @@ try {
   await page.waitForFunction(() => document.querySelector("[data-level]")?.textContent?.includes("2. First Afterimage"));
   const nextLevelLabel = await page.locator("[data-level]").textContent();
   await page.screenshot({ path: artifacts.desktopNext });
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.locator("[data-levels]").waitFor({ state: "visible" });
+  await page.locator("[data-levels]").click();
+  await page.locator("[data-level='3']").click();
+  await page.waitForTimeout(600);
+  const corePixels = await coreSpritePixels(page);
+  await page.screenshot({ path: artifacts.desktopCoreRoom });
   await desktop.close();
 
   const mobileMessages = [];
@@ -372,6 +405,7 @@ try {
   assert(storedProgress?.unlocked >= 2, `Expected completion to unlock level 2: ${JSON.stringify(storedProgress)}`);
   assert(storedProgress?.scores?.["portal-primer"], "Expected first room score to persist");
   assert(nextLevelLabel?.includes("2. First Afterimage"), `Expected Next Room to load level 2, got ${nextLevelLabel}`);
+  assert(corePixels > 60, `Expected generated core/effect sprite pixels in Relay Key, got ${corePixels}`);
   assert(levelButtons === 10, `Expected 10 level buttons, got ${levelButtons}`);
   assert(touchControlsVisible, "Mobile touch controls were not visible in-game");
   assert(beforeTouchX !== null && afterTouchX !== null, "Could not locate player pixels for touch movement check");
@@ -409,6 +443,7 @@ try {
         returnedToTitle,
         completionTitle,
         nextLevelLabel,
+        corePixels,
         levelButtons,
         touchControlsVisible,
         mobileTouchDelta: Number((afterTouchX - beforeTouchX).toFixed(2)),
