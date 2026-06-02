@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { getLevel, levels } from "../data/levels";
 import { audio } from "../game/audio";
 import { rectCenter } from "../game/geometry";
-import { laserIsActive } from "../game/objects";
+import { droneRectAt, laserIsActive } from "../game/objects";
 import { platformRectAt } from "../game/player";
 import { recordLevelScore } from "../game/progress";
 import { soundtrackForLevel } from "../game/soundtracks";
@@ -238,6 +238,7 @@ export class GameScene extends Phaser.Scene {
     this.drawCores(snapshot.collectedCores);
     this.drawLasers(snapshot.activePlates, snapshot.blockedLasers);
     this.drawHazards();
+    this.drawDrones(snapshot.tick);
     this.drawExit(this.level.exit, snapshot.won);
     this.drawEchoes(snapshot.echoes);
     this.drawActor(snapshot.player, snapshot.dead ? 0xff4f8b : 0x43f7ff, 1);
@@ -394,6 +395,30 @@ export class GameScene extends Phaser.Scene {
         this.world.lineStyle(1, 0xffffff, 0.16);
         this.world.lineBetween(x + 6, hazard.y + 2, x + 6, hazard.y + hazard.h - 3);
       }
+    }
+  }
+
+  private drawDrones(tick: number): void {
+    for (const drone of this.level.drones || []) {
+      const rect = droneRectAt(drone, tick);
+      const center = rectCenter(rect);
+      this.world.lineStyle(1, 0xff4f8b, 0.2);
+      if (drone.axis === "x") {
+        this.world.lineBetween(drone.x - drone.distance, center.y, drone.x + drone.w + drone.distance, center.y);
+      } else {
+        this.world.lineBetween(center.x, drone.y - drone.distance, center.x, drone.y + drone.h + drone.distance);
+      }
+      this.world.fillStyle(0xff4f8b, 0.16);
+      this.world.fillCircle(center.x, center.y, 24);
+      this.world.fillStyle(0x160915, 0.94);
+      this.world.fillRoundedRect(rect.x, rect.y, rect.w, rect.h, 5);
+      this.world.lineStyle(2, 0xff4f8b, 0.86);
+      this.world.strokeRoundedRect(rect.x, rect.y, rect.w, rect.h, 5);
+      this.world.fillStyle(0xffe35a, 0.88);
+      this.world.fillCircle(center.x - 5, center.y - 2, 2.5);
+      this.world.fillCircle(center.x + 5, center.y - 2, 2.5);
+      this.world.lineStyle(1, 0xffffff, 0.18);
+      this.world.lineBetween(rect.x + 5, rect.y + rect.h - 6, rect.x + rect.w - 5, rect.y + rect.h - 6);
     }
   }
 

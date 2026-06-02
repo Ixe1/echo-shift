@@ -43,6 +43,14 @@ export type MovingPlatform = Rect & {
   phase?: number;
 };
 
+export type PatrolDrone = Rect & {
+  id: string;
+  axis: "x" | "y";
+  distance: number;
+  period: number;
+  phase?: number;
+};
+
 export type PressurePlate = Rect & {
   id: string;
   label?: string;
@@ -81,6 +89,7 @@ export type Level = {
   bounds: Rect;
   solids: Solid[];
   platforms?: MovingPlatform[];
+  drones?: PatrolDrone[];
   plates?: PressurePlate[];
   doors?: Door[];
   lasers?: Laser[];

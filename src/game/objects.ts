@@ -6,6 +6,7 @@ import type {
   Hazard,
   Laser,
   Level,
+  PatrolDrone,
   PressurePlate,
   Rect
 } from "./types";
@@ -76,9 +77,11 @@ export const closedDoorRects = (level: Level, openDoors: Set<string>): Rect[] =>
 export const playerTouchesHazard = (
   level: Level,
   player: ActorBody,
-  objectState: ObjectState
+  objectState: ObjectState,
+  tick = 0
 ): boolean => {
   if ((level.hazards || []).some((hazard) => rectsOverlap(player, hazard))) return true;
+  if ((level.drones || []).some((drone) => rectsOverlap(player, droneRectAt(drone, tick)))) return true;
 
   for (const laser of level.lasers || []) {
     if (!laserIsActive(laser, objectState.activePlates)) continue;
@@ -87,6 +90,18 @@ export const playerTouchesHazard = (
   }
 
   return false;
+};
+
+export const droneRectAt = (drone: PatrolDrone, tick: number): Rect => {
+  const phase = drone.phase || 0;
+  const wave = Math.sin(((tick / drone.period) * Math.PI * 2) + phase);
+  const offset = wave * drone.distance;
+  return {
+    x: drone.x + (drone.axis === "x" ? offset : 0),
+    y: drone.y + (drone.axis === "y" ? offset : 0),
+    w: drone.w,
+    h: drone.h
+  };
 };
 
 export const laserIsActive = (laser: Laser, activePlates: Set<string>): boolean => {

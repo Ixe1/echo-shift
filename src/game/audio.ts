@@ -77,7 +77,7 @@ export class SynthAudio {
   }
 
   playMusic(key: SoundtrackKey, options: { restart?: boolean } = {}): void {
-    this.resume();
+    if (this.context) void this.context.resume();
     if (this.music && this.musicKey === key && !options.restart) {
       this.applyMusicVolume(this.music);
       void this.music.play();

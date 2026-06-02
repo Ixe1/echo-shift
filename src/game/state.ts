@@ -104,7 +104,7 @@ export class RoomSimulation {
     events.switched = objectUpdate.switched;
     events.core = objectUpdate.core;
 
-    if (!this.dead && playerTouchesHazard(this.level, this.player, this.objectState)) {
+    if (!this.dead && playerTouchesHazard(this.level, this.player, this.objectState, this.tick)) {
       this.dead = true;
       this.player.alive = false;
       events.died = true;

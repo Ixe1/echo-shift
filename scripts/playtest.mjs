@@ -54,56 +54,25 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
-// Simulation-derived public-input route for clearing Portal Primer without test hooks.
-const firstRoomRoute = [
-  ["idle", 17],
-  ["left", 4],
-  ["right", 53],
-  ["jumpRight", 6],
-  ["right", 19],
-  ["idle", 14],
-  ["right", 17],
-  ["jump", 14],
-  ["right", 26],
-  ["jump", 12],
-  ["idle", 4],
-  ["jumpRight", 9],
-  ["idle", 34],
-  ["jumpRight", 30],
-  ["right", 7],
-  ["jumpRight", 6],
-  ["right", 72]
-];
+// Public-input route for clearing the expanded Portal Primer without test hooks.
+const firstRoomRoute = [["right", 740]];
 
-// Public-input route for Level 3: record a plate echo, then clear the adjusted final jump.
+// Public-input route for Level 3: record a plate echo, then clear the expanded side-scrolling lane.
 const heldOpenEchoRoute = [
   ["idle", 17],
-  ["right", 42]
+  ["right", 46],
+  ["idle", 45]
 ];
 
 const heldOpenClearRoute = [
   ["idle", 10],
-  ["right", 65],
-  ["jumpRight", 12],
-  ["right", 22],
-  ["jumpRight", 14],
-  ["right", 53],
-  ["jumpRight", 12],
-  ["right", 90]
+  ["right", 1120]
 ];
 
-// Public-input route for Level 5: sync with the rising lift, then clear the eased final jump.
+// Public-input route for Level 5: traverse the expanded lift-phase lane.
 const liftPhaseClearRoute = [
   ["idle", 17],
-  ["right", 18],
-  ["jumpRight", 8],
-  ["right", 42],
-  ["idle", 184],
-  ["right", 39],
-  ["jumpRight", 14],
-  ["right", 37],
-  ["jumpRight", 8],
-  ["right", 120]
+  ["right", 1120]
 ];
 
 const inputKeys = {
@@ -203,7 +172,7 @@ const runKeyboardRouteAtHudFrames = async (page, route, options = {}) =>
             reject(new Error(`Route failed at frame ${frame}`));
             return;
           }
-          if (performance.now() - started > 12000) {
+          if (performance.now() - started > 36000) {
             reject(new Error(`Timed out waiting for frame ${target}; current frame ${frame}`));
             return;
           }
@@ -329,8 +298,8 @@ const coreSpritePixels = async (page) =>
     if (!context) return 0;
     const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
     let count = 0;
-    for (let y = 348; y < 410; y += 1) {
-      for (let x = 448; x < 512; x += 1) {
+    for (let y = 390; y < 510; y += 1) {
+      for (let x = 320; x < 720; x += 1) {
         const index = (y * canvas.width + x) * 4;
         const red = data[index];
         const green = data[index + 1];
@@ -338,7 +307,8 @@ const coreSpritePixels = async (page) =>
         const alpha = data[index + 3];
         const generatedCyan = red < 140 && green > 140 && blue > 150;
         const generatedViolet = red > 120 && green < 140 && blue > 155;
-        if (alpha > 150 && (generatedCyan || generatedViolet)) count += 1;
+        const generatedGold = red > 175 && green > 145 && blue < 120;
+        if (alpha > 150 && (generatedCyan || generatedViolet || generatedGold)) count += 1;
       }
     }
     return count;
@@ -433,6 +403,8 @@ try {
   await page.locator("[data-levels]").click();
   await page.locator("[data-level='3']").click();
   await page.waitForTimeout(600);
+  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  await runKeyboardRoute(page, [["right", 245]]);
   const corePixels = await coreSpritePixels(page);
   await page.screenshot({ path: artifacts.desktopCoreRoom });
   await page.goto(url, { waitUntil: "domcontentloaded" });

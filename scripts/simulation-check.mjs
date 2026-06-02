@@ -39,10 +39,70 @@ const runFrames = (simulation, frames, input) => {
   }
 };
 
+const routeObstacleRects = (simulation) => {
+  const actor = simulation.player;
+  const footY = actor.y + actor.h;
+  const activeLasers = (simulation.level.lasers || []).filter((laser) => {
+    const startsOn = laser.startsOn !== false;
+    const disabled = (laser.disabledBy || []).some((id) => simulation.objectState.activePlates.has(id));
+    return (
+      startsOn &&
+      !disabled &&
+      !simulation.objectState.blockedLasers.has(laser.id) &&
+      laser.y < footY &&
+      laser.y + laser.h > actor.y + 2
+    );
+  });
+  const activeHazards = (simulation.level.hazards || []).filter(
+    (hazard) => hazard.y < footY && hazard.y + hazard.h > actor.y + 2
+  );
+  const lowSolids = simulation.level.solids.filter(
+    (solid) =>
+      !["floor", "left-wall", "right-wall"].includes(solid.id) &&
+      solid.h <= 58 &&
+      solid.y < footY &&
+      solid.y + solid.h > actor.y + 10
+  );
+  return [...activeHazards, ...activeLasers, ...lowSolids];
+};
+
+const shouldSmartJump = (simulation) => {
+  const actor = simulation.player;
+  if (!actor.onGround) return false;
+  const aheadMin = actor.x + actor.w;
+  const aheadMax = actor.x + actor.w + 34;
+  return routeObstacleRects(simulation).some(
+    (rect) => rect.x <= aheadMax && rect.x + rect.w >= aheadMin
+  );
+};
+
+const runSmartRight = (simulation, maxFrames, options = {}) => {
+  let jumpFrames = 0;
+  for (let i = 0; i < maxFrames; i += 1) {
+    if (jumpFrames <= 0 && shouldSmartJump(simulation)) jumpFrames = 24;
+    simulation.step({ left: false, right: true, jump: jumpFrames > 0 });
+    jumpFrames -= 1;
+    if (options.untilWin && simulation.won) return;
+    if (typeof options.untilX === "number" && simulation.player.x >= options.untilX) return;
+  }
+};
+
 const runRoute = (simulation, route) => {
   for (const step of route) {
     if (step[0] === "rewind") {
       assert(simulation.rewindToEcho(), `Expected ${simulation.level.name} route rewind to create an echo`);
+      continue;
+    }
+    if (step[0] === "smartRight") {
+      runSmartRight(simulation, step[1], { untilWin: true });
+      continue;
+    }
+    if (step[0] === "smartRightUntilX") {
+      runSmartRight(simulation, step[2], { untilX: step[1] });
+      assert(
+        simulation.player.x >= step[1],
+        `Expected ${simulation.level.name} route to reach x=${step[1]}, got ${simulation.player.x.toFixed(1)}`
+      );
       continue;
     }
 
@@ -62,7 +122,6 @@ const server = await createServer({
 try {
   const { RoomSimulation } = await server.ssrLoadModule("/src/game/state.ts");
   const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
-  const { platformRectAt } = await server.ssrLoadModule("/src/game/player.ts");
   const { isBetterLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
   const { soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
 
@@ -71,200 +130,81 @@ try {
   assert(levels.some((level) => (level.doors || []).length > 0), "Expected at least one door level");
   assert(levels.some((level) => (level.lasers || []).length > 0), "Expected at least one laser level");
   assert(levels.some((level) => (level.platforms || []).length > 0), "Expected at least one moving-platform level");
+  assert(levels.some((level) => (level.drones || []).length > 0), "Expected at least one patrol-drone level");
   assert(levels.some((level) => (level.cores || []).length > 0), "Expected at least one core level");
+  assert(
+    levels.every((level) => level.bounds.w >= 2400 && level.exit.x > 2200),
+    "Expected every level to use expanded side-scrolling bounds and a distant exit"
+  );
   assert(Boolean(soundtracks.menu), "Expected a main menu soundtrack");
 
   const handcraftedRoutes = [
     {
       id: "portal-primer",
-      route: [
-        ["idle", 17],
-        ["left", 4],
-        ["right", 53],
-        ["jumpRight", 6],
-        ["right", 19],
-        ["idle", 14],
-        ["right", 17],
-        ["jump", 14],
-        ["right", 26],
-        ["jump", 12],
-        ["idle", 4],
-        ["jumpRight", 9],
-        ["idle", 34],
-        ["jumpRight", 30],
-        ["right", 7],
-        ["jumpRight", 6],
-        ["right", 72]
-      ]
+      route: [["smartRight", 1400]]
     },
     {
       id: "first-afterimage",
-      route: [["right", 42], ["rewind"], ["right", 300]]
+      route: [["smartRightUntilX", 164, 120], ["idle", 45], ["rewind"], ["smartRight", 1600]]
     },
     {
       id: "held-open",
-      route: [
-        ["right", 42],
-        ["rewind"],
-        ["right", 65],
-        ["jumpRight", 12],
-        ["right", 22],
-        ["jumpRight", 14],
-        ["right", 53],
-        ["jumpRight", 12],
-        ["right", 90]
-      ]
+      route: [["smartRightUntilX", 194, 140], ["idle", 45], ["rewind"], ["smartRight", 1900]]
     },
     {
       id: "relay-key",
-      route: [
-        ["right", 50],
-        ["rewind"],
-        ["right", 80],
-        ["jumpRight", 12],
-        ["right", 60],
-        ["jumpRight", 14],
-        ["right", 70],
-        ["jumpRight", 12],
-        ["right", 160]
-      ]
+      route: [["smartRightUntilX", 200, 150], ["idle", 45], ["rewind"], ["smartRight", 2100]]
     },
     {
       id: "lift-phase",
-      route: [
-        ["idle", 17],
-        ["right", 18],
-        ["jumpRight", 8],
-        ["right", 42],
-        ["idle", 184],
-        ["right", 39],
-        ["jumpRight", 14],
-        ["right", 37],
-        ["jumpRight", 8],
-        ["right", 120]
-      ]
+      route: [["smartRight", 1900]]
     },
     {
       id: "laser-shadow",
-      route: [
-        ["right", 60],
-        ["jumpRight", 12],
-        ["right", 80],
-        ["rewind"],
-        ["right", 60],
-        ["jumpRight", 12],
-        ["right", 115],
-        ["jumpRight", 14],
-        ["right", 140]
-      ],
+      route: [["smartRightUntilX", 390, 260], ["idle", 45], ["rewind"], ["smartRight", 2200]],
       blockedLasers: ["beam-a"]
     },
     {
       id: "dual-lock",
       route: [
-        ["right", 35],
+        ["smartRightUntilX", 160, 120],
+        ["idle", 45],
         ["rewind"],
-        ["right", 90],
+        ["smartRightUntilX", 332, 180],
+        ["idle", 45],
         ["rewind"],
-        ["right", 110],
-        ["jumpRight", 12],
-        ["right", 50],
-        ["jumpRight", 12],
-        ["right", 180]
+        ["smartRight", 2300]
       ]
     },
     {
       id: "cross-current",
-      route: [
-        ["right", 20],
-        ["jumpRight", 14],
-        ["right", 8],
-        ["idle", 30],
-        ["rewind"],
-        ["right", 20],
-        ["jumpRight", 14],
-        ["right", 45],
-        ["jumpRight", 14],
-        ["right", 40],
-        ["right", 5],
-        ["idle", 105],
-        ["jumpRight", 14],
-        ["right", 16],
-        ["jumpRight", 14],
-        ["right", 100]
-      ]
+      route: [["smartRightUntilX", 206, 150], ["idle", 45], ["rewind"], ["smartRight", 2500]]
     },
     {
       id: "phase-braid",
       route: [
-        ["right", 20],
-        ["jumpRight", 14],
-        ["right", 18],
-        ["idle", 90],
+        ["smartRightUntilX", 232, 150],
+        ["idle", 45],
         ["rewind"],
-        ["right", 20],
-        ["jumpRight", 14],
-        ["right", 18],
-        ["idle", 10],
-        ["right", 16],
-        ["jumpRight", 14],
-        ["right", 67],
-        ["jumpRight", 14],
-        ["right", 24],
-        ["idle", 100],
+        ["smartRightUntilX", 1470, 720],
+        ["idle", 45],
         ["rewind"],
-        ["right", 20],
-        ["jumpRight", 14],
-        ["right", 18],
-        ["idle", 10],
-        ["right", 16],
-        ["jumpRight", 14],
-        ["right", 67],
-        ["jumpRight", 14],
-        ["right", 130]
+        ["smartRight", 2600]
       ]
     },
     {
       id: "echo-shift",
       route: [
-        ["right", 20],
-        ["jumpRight", 14],
-        ["right", 18],
-        ["idle", 90],
+        ["smartRightUntilX", 220, 150],
+        ["idle", 45],
         ["rewind"],
-        ["right", 20],
-        ["jumpRight", 14],
-        ["right", 18],
-        ["idle", 8],
-        ["right", 20],
-        ["jumpRight", 14],
-        ["right", 20],
-        ["idle", 90],
+        ["smartRightUntilX", 902, 500],
+        ["idle", 45],
         ["rewind"],
-        ["right", 20],
-        ["jumpRight", 14],
-        ["right", 18],
-        ["idle", 8],
-        ["right", 20],
-        ["jumpRight", 14],
-        ["right", 20],
-        ["idle", 120],
-        ["right", 50],
-        ["jumpRight", 14],
-        ["right", 18],
-        ["idle", 120],
+        ["smartRightUntilX", 1610, 720],
+        ["idle", 45],
         ["rewind"],
-        ["right", 20],
-        ["jumpRight", 14],
-        ["right", 18],
-        ["idle", 8],
-        ["right", 20],
-        ["jumpRight", 14],
-        ["right", 20],
-        ["idle", 120],
-        ["right", 50],
-        ["jumpRight", 14],
-        ["right", 180]
+        ["smartRight", 3200]
       ]
     }
   ];
@@ -366,6 +306,10 @@ try {
 
     const goldSlack = level.medalFrames.gold - simulation.totalFrames;
     assert(goldSlack >= 420, `${level.name} Quantum route leaves only ${goldSlack} gold-threshold slack frames`);
+    assert(
+      simulation.totalFrames >= 600,
+      `${level.name} route completed too quickly for the expanded side-scrolling soundtrack target: ${simulation.totalFrames}`
+    );
 
     for (const laserId of routeSpec.blockedLasers || []) {
       assert(simulation.objectState.blockedLasers.has(laserId), `${level.name} route did not block ${laserId}`);
@@ -380,41 +324,17 @@ try {
   }
 
   const heldOpen = levels[2];
-  const midLedge = heldOpen.solids.find((solid) => solid.id === "mid-ledge");
-  const exitLedge = heldOpen.solids.find((solid) => solid.id === "exit-ledge");
-  assert(midLedge && exitLedge, "Expected Held Open to include mid and exit ledges");
-  const heldOpenJump = new RoomSimulation(heldOpen);
-  heldOpenJump.objectState.latchedPlates.add("plate-b");
-  heldOpenJump.player.x = midLedge.x + midLedge.w - heldOpenJump.player.w - 8;
-  heldOpenJump.player.y = midLedge.y - heldOpenJump.player.h;
-  heldOpenJump.player.vx = 0;
-  heldOpenJump.player.vy = 0;
-  heldOpenJump.player.onGround = true;
-  heldOpenJump.player.coyote = 7;
-  runFrames(heldOpenJump, 2, right);
-  runFrames(heldOpenJump, 12, jumpRight);
-  runFrames(heldOpenJump, 90, right);
-  assert(heldOpenJump.won, "Held Open final jump should reach the exit ledge and portal with the gate held open");
+  const heldOpenExpanded = new RoomSimulation(heldOpen);
+  heldOpenExpanded.objectState.latchedPlates.add("plate-b");
+  runSmartRight(heldOpenExpanded, 1900, { untilWin: true });
+  assert(heldOpenExpanded.won, "Held Open expanded route should reach the portal with the gate held open");
 
   const liftPhase = levels[4];
   const lift = liftPhase.platforms?.find((platform) => platform.id === "lift-a");
   assert(lift, "Expected Lift Phase to include lift-a");
-  const liftPhaseJump = new RoomSimulation(liftPhase);
-  const liftLaunchTick = 150;
-  // A grounded rider is carried from the previous platform frame to the current one before jumping.
-  const liftRect = platformRectAt(lift, liftLaunchTick - 1);
-  liftPhaseJump.tick = liftLaunchTick;
-  liftPhaseJump.totalFrames = liftLaunchTick;
-  liftPhaseJump.player.x = liftRect.x + liftRect.w - liftPhaseJump.player.w;
-  liftPhaseJump.player.y = liftRect.y - liftPhaseJump.player.h;
-  liftPhaseJump.player.vx = 205 / 60;
-  liftPhaseJump.player.vy = 0;
-  liftPhaseJump.player.onGround = true;
-  liftPhaseJump.player.coyote = 7;
-  liftPhaseJump.player.standingOn = "lift-a";
-  runFrames(liftPhaseJump, 12, jumpRight);
-  runFrames(liftPhaseJump, 95, right);
-  assert(liftPhaseJump.won, "Lift Phase final lift jump should reach the right ledge and portal");
+  const liftPhaseExpanded = new RoomSimulation(liftPhase);
+  runSmartRight(liftPhaseExpanded, 1900, { untilWin: true });
+  assert(liftPhaseExpanded.won, "Lift Phase expanded route should reach the side-scrolling portal");
 
   const goldScore = { levelId: "score-test", frames: 600, echoes: 3, medal: "Gold" };
   const slowBronzeFewerEchoes = { levelId: "score-test", frames: 2400, echoes: 0, medal: "Bronze" };
@@ -496,6 +416,14 @@ try {
   assert(deathSim.tick === deadTick, "Dead attempt should not continue ticking");
   assert(deathSim.totalFrames === deadFrames, "Dead attempt should not continue scoring time");
 
+  const droneLevel = {
+    ...baseLevel,
+    drones: [{ id: "drone-test", x: 20, y: 86, w: 28, h: 34, axis: "x", distance: 0, period: 120 }]
+  };
+  const droneSim = new RoomSimulation(droneLevel);
+  droneSim.step(idle);
+  assert(droneSim.dead, "Expected overlapping patrol drone to kill the player");
+
   const fallLevel = {
     ...baseLevel,
     start: { x: 20, y: 20 },
@@ -554,17 +482,19 @@ try {
         levels: levels.length,
         checks: [
           "level-data",
-          "held-open-final-jump",
-          "lift-phase-final-jump",
+          "held-open-expanded-route",
+          "lift-phase-expanded-route",
           "score-ranking",
           "echo-plate-door",
           "core-door",
           "echo-core-origin",
           "laser-blocking",
           "death-freeze",
+          "drone-hazard",
           "fall-death-freeze",
           "deterministic-replay",
           "soundtrack-manifest",
+          "side-scrolling-bounds",
           "closed-gate-top-contract",
           "closed-floor-gate-bypass",
           "all-level-quantum-routes"
