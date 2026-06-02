@@ -24,4 +24,12 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [BootScene, MenuScene, LevelSelectScene, GameScene]
 };
 
-new Phaser.Game(config);
+if (new URLSearchParams(window.location.search).has("editor")) {
+  const app = document.getElementById("app");
+  if (!app) throw new Error("Missing #app");
+  void import("./editor/levelEditor").then(({ mountLevelEditor }) => {
+    mountLevelEditor(app);
+  });
+} else {
+  new Phaser.Game(config);
+}

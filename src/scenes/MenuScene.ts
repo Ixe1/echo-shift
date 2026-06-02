@@ -11,6 +11,9 @@ export class MenuScene extends Phaser.Scene {
     audio.playMusic("menu");
     clearUi();
     const root = uiRoot();
+    const editorButton = import.meta.env.DEV
+      ? `<button class="ui-button" data-editor>${icon("levels")} Level Editor</button>`
+      : "";
     root.innerHTML = `
       <main class="screen art-screen menu-screen">
         <div class="menu-shell">
@@ -24,6 +27,7 @@ export class MenuScene extends Phaser.Scene {
             <div class="button-grid">
               <button class="ui-button primary" data-play>${icon("play")} Play</button>
               <button class="ui-button" data-levels>${icon("levels")} Level Select</button>
+              ${editorButton}
               <button class="ui-button" data-credits>${icon("credits")} Credits</button>
             </div>
           </section>
@@ -38,6 +42,12 @@ export class MenuScene extends Phaser.Scene {
     root.querySelector("[data-levels]")?.addEventListener("click", () => {
       audio.play("select");
       this.scene.start("LevelSelectScene");
+    });
+    root.querySelector("[data-editor]")?.addEventListener("click", () => {
+      audio.play("select");
+      const url = new URL(window.location.href);
+      url.searchParams.set("editor", "1");
+      window.location.href = `${url.pathname}${url.search}${url.hash}`;
     });
     root.querySelector("[data-credits]")?.addEventListener("click", () => this.showCredits());
   }
