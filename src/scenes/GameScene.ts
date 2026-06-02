@@ -41,6 +41,7 @@ export class GameScene extends Phaser.Scene {
   private actorSprites = new Map<string, Phaser.GameObjects.Image>();
   private coreSprites = new Map<string, Phaser.GameObjects.Image>();
   private exitSprite?: Phaser.GameObjects.Image;
+  private cameraTarget?: Phaser.GameObjects.Zone;
   private playerCastUntil = 0;
 
   constructor() {
@@ -60,12 +61,16 @@ export class GameScene extends Phaser.Scene {
     this.actorSprites.clear();
     this.coreSprites.clear();
     this.exitSprite = undefined;
+    this.cameraTarget = undefined;
   }
 
   create(): void {
     audio.playMusic(soundtrackForLevel(this.level).key);
-    this.cameras.main.setBounds(0, 0, 960, 540);
+    this.cameras.main.setBounds(this.level.bounds.x, this.level.bounds.y, this.level.bounds.w, this.level.bounds.h);
     this.cameras.main.setBackgroundColor("#05070d");
+    this.cameraTarget = this.add.zone(this.level.start.x, this.level.start.y, 1, 1);
+    this.cameras.main.startFollow(this.cameraTarget, true, 0.12, 0.08);
+    this.cameras.main.setDeadzone(250, 130);
     this.world = this.add.graphics().setDepth(0);
     this.fx = this.add.graphics().setDepth(30);
     this.keys = this.createKeys();
@@ -222,6 +227,7 @@ export class GameScene extends Phaser.Scene {
 
   private renderWorld(): void {
     const snapshot = this.simulation.snapshot();
+    this.cameraTarget?.setPosition(snapshot.player.x + snapshot.player.w / 2, snapshot.player.y + snapshot.player.h / 2);
     this.world.clear();
     this.fx.clear();
     this.drawBackground();
@@ -240,30 +246,51 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawBackground(): void {
+    const bounds = this.level.bounds;
+    const floorTop = bounds.y + bounds.h - 40;
     const pulse = 0.5 + Math.sin(this.time.now / 900) * 0.5;
     this.world.fillStyle(0x05070d, 1);
-    this.world.fillRect(0, 0, 960, 540);
+    this.world.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
     this.world.fillStyle(0x081322, 0.92);
-    this.world.fillRect(0, 0, 960, 540);
-    this.world.fillStyle(0x0f1830, 0.64);
-    this.world.fillRect(42, 90, 188, 300);
-    this.world.fillRect(704, 70, 174, 330);
-    this.world.lineStyle(1, 0x43f7ff, 0.16 + pulse * 0.06);
-    for (let y = 112; y <= 360; y += 38) {
-      this.world.lineBetween(56, y, 216, y + 10);
-      this.world.lineBetween(718, y + 8, 866, y - 8);
+    this.world.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
+
+    for (let x = bounds.x + 42; x < bounds.x + bounds.w; x += 660) {
+      this.world.fillStyle(0x0f1830, 0.64);
+      this.world.fillRect(x, bounds.y + 90, 188, 300);
+      this.world.fillRect(x + 410, bounds.y + 70, 174, 330);
     }
+
+    this.world.lineStyle(1, 0x43f7ff, 0.16 + pulse * 0.06);
+    for (let x = bounds.x + 56; x < bounds.x + bounds.w; x += 660) {
+      for (let y = bounds.y + 112; y <= bounds.y + 360; y += 38) {
+        this.world.lineBetween(x, y, x + 160, y + 10);
+        this.world.lineBetween(x + 662, y + 8, x + 810, y - 8);
+      }
+    }
+
     this.world.lineStyle(1, 0x123246, 0.36);
-    for (let x = 0; x <= 960; x += 40) this.world.lineBetween(x, 0, x, 540);
-    for (let y = 20; y <= 540; y += 40) this.world.lineBetween(0, y, 960, y);
+    for (let x = bounds.x; x <= bounds.x + bounds.w; x += 40) {
+      this.world.lineBetween(x, bounds.y, x, bounds.y + bounds.h);
+    }
+    for (let y = bounds.y + 20; y <= bounds.y + bounds.h; y += 40) {
+      this.world.lineBetween(bounds.x, y, bounds.x + bounds.w, y);
+    }
+
     this.world.lineStyle(1, 0x5d2f83, 0.22);
-    for (let x = -120; x < 960; x += 120) this.world.lineBetween(x, 540, x + 300, 0);
+    for (let x = bounds.x - 120; x < bounds.x + bounds.w; x += 120) {
+      this.world.lineBetween(x, bounds.y + bounds.h, x + 300, bounds.y);
+    }
+
     this.world.fillStyle(0x09111d, 0.86);
-    this.world.fillRect(0, 500, 960, 40);
+    this.world.fillRect(bounds.x, floorTop, bounds.w, 40);
     this.world.fillStyle(0x43f7ff, 0.1 + pulse * 0.08);
-    this.world.fillRect(330, 507, 310, 4);
+    for (let x = bounds.x + 330; x < bounds.x + bounds.w; x += 720) {
+      this.world.fillRect(x, floorTop + 7, 310, 4);
+    }
     this.world.fillStyle(0xbd5cff, 0.12);
-    this.world.fillRect(76, 508, 150, 3);
+    for (let x = bounds.x + 76; x < bounds.x + bounds.w; x += 560) {
+      this.world.fillRect(x, floorTop + 8, 150, 3);
+    }
   }
 
   private drawSolids(): void {
