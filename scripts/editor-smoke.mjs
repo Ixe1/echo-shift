@@ -142,6 +142,53 @@ try {
   await page.locator("[data-editor]").click();
   await page.locator("[data-level-editor]").waitFor({ state: "visible" });
   const menuEditorUrl = page.url();
+
+  const staleDraft = await browser.newContext({ viewport: { width: 900, height: 700 } });
+  const stalePage = await staleDraft.newPage();
+  collectConsole(stalePage);
+  await stalePage.goto(`${url}?editor=1`, { waitUntil: "domcontentloaded" });
+  await stalePage.evaluate(() => {
+    window.localStorage.setItem(
+      "echo-shift-level-editor-draft-v1",
+      JSON.stringify({
+        currentIndex: 0.5,
+        levels: [
+          {
+            id: "draft-index-smoke",
+            index: 0,
+            name: "Draft Index Smoke",
+            subtitle: "",
+            start: { x: 60, y: 450 },
+            exit: { x: 850, y: 438, w: 48, h: 62 },
+            bounds: { x: 0, y: 0, w: 960, h: 540 },
+            solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
+            perfectEchoes: 0,
+            medalFrames: { gold: 1800, silver: 2400 },
+            hint: ""
+          },
+          {
+            id: "draft-index-smoke-b",
+            index: 1,
+            name: "Draft Index Smoke B",
+            subtitle: "",
+            start: { x: 60, y: 450 },
+            exit: { x: 850, y: 438, w: 48, h: 62 },
+            bounds: { x: 0, y: 0, w: 960, h: 540 },
+            solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
+            perfectEchoes: 0,
+            medalFrames: { gold: 1800, silver: 2400 },
+            hint: ""
+          }
+        ]
+      })
+    );
+  });
+  await stalePage.reload({ waitUntil: "domcontentloaded" });
+  await stalePage.locator("[data-level-editor]").waitFor({ state: "visible" });
+  const fractionalDraftLevelName = await stalePage.locator("[data-level-field='name']").inputValue();
+  const fractionalDraftValidation = await stalePage.locator("[data-validation]").getAttribute("data-editor-validation");
+  await staleDraft.close();
+
   await page.goto(`${url}?editor=1`, { waitUntil: "domcontentloaded" });
   await page.locator("[data-level-editor]").waitFor({ state: "visible" });
   await page.locator("[data-editor-canvas]").waitFor({ state: "visible" });
@@ -489,6 +536,11 @@ try {
 
   assert(!inactiveEditorVisible, "Editor should not activate for ?editor=0");
   assert(menuEditorUrl.includes("editor=1"), `Expected menu editor button to navigate to ?editor=1, got ${menuEditorUrl}`);
+  assert(
+    fractionalDraftLevelName === "Draft Index Smoke B",
+    `Expected fractional draft currentIndex to normalize to second level, got ${fractionalDraftLevelName}`
+  );
+  assert(fractionalDraftValidation === "clean", `Expected clean validation after fractional draft boot, got ${fractionalDraftValidation}`);
   assert(levelOptions > 0, `Expected at least one editable level, got ${levelOptions}`);
   assert(
     levelOptions === initialExportLevelCount,

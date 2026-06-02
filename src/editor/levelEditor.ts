@@ -141,6 +141,8 @@ const nonNegativeInteger = (value: unknown, fallback: number): number => Math.ma
 
 const positiveInteger = (value: unknown, fallback: number): number => Math.max(1, Math.round(positiveNumber(value, fallback)));
 
+const levelIndex = (value: unknown, maxIndex: number, fallback = 0): number => clamp(nonNegativeInteger(value, fallback), 0, Math.max(0, maxIndex));
+
 const csvToList = (value: string): string[] =>
   value
     .split(",")
@@ -440,7 +442,7 @@ class LevelEditor {
     this.host = host;
     const draft = this.loadDraft();
     this.levels = draft?.levels || cloneLevels(sourceLevels);
-    this.currentIndex = clamp(draft?.currentIndex || 0, 0, this.levels.length - 1);
+    this.currentIndex = levelIndex(draft?.currentIndex, this.levels.length - 1);
   }
 
   mount(): void {
@@ -568,7 +570,7 @@ class LevelEditor {
 
     this.require<HTMLSelectElement>("[data-level-select]").addEventListener("change", (event) => {
       const target = event.target as HTMLSelectElement;
-      this.currentIndex = clamp(Number(target.value), 0, this.levels.length - 1);
+      this.currentIndex = levelIndex(target.value, this.levels.length - 1);
       this.selection = null;
       this.centerOnStart();
       this.renderAll();
@@ -1922,7 +1924,7 @@ class LevelEditor {
       if (levels.length === 0) return null;
       return {
         levels,
-        currentIndex: clamp(positiveNumber(parsed.currentIndex, 0), 0, levels.length - 1)
+        currentIndex: levelIndex(parsed.currentIndex, levels.length - 1)
       };
     } catch {
       return null;
@@ -1951,7 +1953,7 @@ class LevelEditor {
           .filter((level): level is Level => Boolean(level));
         if (imported.length === 0) throw new Error("No valid levels found");
         this.levels = imported;
-        this.currentIndex = clamp(this.currentIndex, 0, this.levels.length - 1);
+        this.currentIndex = levelIndex(this.currentIndex, this.levels.length - 1);
       } else {
         const imported = normalizeImportedLevel(parsed, this.currentIndex);
         if (!imported) throw new Error("No valid level found");
