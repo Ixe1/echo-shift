@@ -24,7 +24,7 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [BootScene, MenuScene, LevelSelectScene, GameScene]
 };
 
-if (new URLSearchParams(window.location.search).has("editor")) {
+if (new URLSearchParams(window.location.search).get("editor") === "1") {
   const app = document.getElementById("app");
   if (!app) throw new Error("Missing #app");
   void import("./editor/levelEditor").then(({ mountLevelEditor }) => {

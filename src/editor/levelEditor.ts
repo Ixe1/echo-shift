@@ -474,7 +474,7 @@ class LevelEditor {
       this.levels = cloneLevels(sourceLevels);
       this.currentIndex = 0;
       this.selection = null;
-      window.localStorage.removeItem(STORAGE_KEY);
+      this.clearDraft();
       this.fitLevel();
       this.renderAll();
       this.setStatus("Source data restored");
@@ -999,7 +999,34 @@ class LevelEditor {
   }
 
   private validateLevels(): ValidationMessage[] {
-    return this.levels.flatMap((level, index) => this.validateLevel(level, index));
+    const messages = this.levels.flatMap((level, index) => this.validateLevel(level, index));
+    const ids = new Map<string, number[]>();
+    const indexes = new Map<number, string[]>();
+
+    this.levels.forEach((level, index) => {
+      const id = level.id.trim();
+      if (id) ids.set(id, [...(ids.get(id) || []), index + 1]);
+      indexes.set(level.index, [...(indexes.get(level.index) || []), level.name || `Level ${index + 1}`]);
+    });
+
+    for (const [id, positions] of ids) {
+      if (positions.length > 1) {
+        messages.push({
+          severity: "error",
+          text: `Duplicate level id ${id} appears at positions ${positions.join(", ")}.`
+        });
+      }
+    }
+    for (const [index, names] of indexes) {
+      if (names.length > 1) {
+        messages.push({
+          severity: "error",
+          text: `Duplicate level index ${index} is used by ${names.join(", ")}.`
+        });
+      }
+    }
+
+    return messages;
   }
 
   private validateLevel(level: Level, index: number): ValidationMessage[] {
@@ -1357,14 +1384,18 @@ class LevelEditor {
       levels: this.levels,
       currentIndex: this.currentIndex
     };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
-    this.setStatus(status);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
+      this.setStatus(status);
+    } catch {
+      this.setStatus(`${status}; draft storage unavailable`);
+    }
   }
 
   private loadDraft(): EditorDraft | null {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
     try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
       const parsed = JSON.parse(raw) as unknown;
       if (!isRecord(parsed) || !Array.isArray(parsed.levels)) return null;
       const levels = parsed.levels
@@ -1377,6 +1408,14 @@ class LevelEditor {
       };
     } catch {
       return null;
+    }
+  }
+
+  private clearDraft(): void {
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      this.setStatus("Draft storage unavailable");
     }
   }
 

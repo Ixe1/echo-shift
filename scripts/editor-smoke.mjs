@@ -32,6 +32,12 @@ const collectConsole = (page) => {
   page.on("pageerror", (error) => messages.push({ type: "pageerror", text: error.message }));
 };
 
+const dispatchChange = async (locator) => {
+  await locator.evaluate((element) => {
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+};
+
 const server = await createServer({
   logLevel: "silent",
   server: {
@@ -50,12 +56,52 @@ try {
   await desktop.addInitScript(() => window.localStorage.clear());
   const page = await desktop.newPage();
   collectConsole(page);
+  await page.goto(`${url}?editor=0`, { waitUntil: "domcontentloaded" });
+  await page.locator("[data-play]").waitFor({ state: "visible" });
+  const inactiveEditorVisible = await page.locator("[data-level-editor]").isVisible();
   await page.goto(`${url}?editor=1`, { waitUntil: "domcontentloaded" });
   await page.locator("[data-level-editor]").waitFor({ state: "visible" });
   await page.locator("[data-editor-canvas]").waitFor({ state: "visible" });
   await page.locator("[data-level-select]").selectOption("0");
   const levelOptions = await page.locator("[data-level-select] option").count();
   const initialValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+
+  const levelIdField = page.locator("[data-level-field='id']");
+  await levelIdField.fill("first-afterimage");
+  await dispatchChange(levelIdField);
+  const duplicateLevelValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const duplicateLevelText = await page.locator("[data-validation]").textContent();
+  await levelIdField.fill("portal-primer");
+  await dispatchChange(levelIdField);
+  const restoredLevelValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+
+  await page.locator("[data-import-json]").fill("{broken json");
+  await page.locator("[data-apply-import]").click();
+  const malformedImportStatus = await page.locator("[data-editor-status]").textContent();
+  const malformedImportValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+
+  await page.evaluate(() => {
+    const originalSetItem = Storage.prototype.setItem;
+    Object.defineProperty(window, "__restoreEditorStorage", {
+      configurable: true,
+      value: () => {
+        Storage.prototype.setItem = originalSetItem;
+      }
+    });
+    Storage.prototype.setItem = () => {
+      throw new Error("quota");
+    };
+  });
+  const levelNameField = page.locator("[data-level-field='name']");
+  await levelNameField.fill("Storage Smoke");
+  await dispatchChange(levelNameField);
+  const storageFailureStatus = await page.locator("[data-editor-status]").textContent();
+  await page.evaluate(() => {
+    window.__restoreEditorStorage();
+    delete window.__restoreEditorStorage;
+  });
+  await levelNameField.fill("Portal Primer");
+  await dispatchChange(levelNameField);
 
   await page.locator("[data-tool='hazards']").click();
   const canvas = page.locator("[data-editor-canvas]");
@@ -66,9 +112,7 @@ try {
   await page.mouse.move(box.x + 540, box.y + 448);
   await page.mouse.up();
   await page.locator("[data-object-field='id']").fill("smoke-hazard");
-  await page.locator("[data-object-field='id']").evaluate((element) => {
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await dispatchChange(page.locator("[data-object-field='id']"));
 
   const exportJson = await page.locator("[data-export-json]").inputValue();
   assert(exportJson.includes("smoke-hazard"), "Export JSON did not include the edited hazard");
@@ -115,8 +159,27 @@ try {
   const mobileValidation = await mobilePage.locator("[data-validation]").getAttribute("data-editor-validation");
   await mobile.close();
 
+  assert(!inactiveEditorVisible, "Editor should not activate for ?editor=0");
   assert(levelOptions === 10, `Expected 10 editable levels, got ${levelOptions}`);
   assert(initialValidation === "clean", `Expected clean initial validation, got ${initialValidation}`);
+  assert(duplicateLevelValidation === "issues", "Expected duplicate level id to fail validation");
+  assert(
+    duplicateLevelText?.includes("Duplicate level id first-afterimage"),
+    `Expected duplicate level id validation text, got ${duplicateLevelText}`
+  );
+  assert(restoredLevelValidation === "clean", `Expected clean validation after restoring level id, got ${restoredLevelValidation}`);
+  assert(
+    malformedImportStatus && malformedImportStatus !== "Import applied",
+    `Expected malformed import to report an error, got ${malformedImportStatus}`
+  );
+  assert(
+    malformedImportValidation === "clean",
+    `Expected malformed import to preserve clean validation, got ${malformedImportValidation}`
+  );
+  assert(
+    storageFailureStatus?.includes("draft storage unavailable"),
+    `Expected guarded storage failure status, got ${storageFailureStatus}`
+  );
   assert(afterEditValidation === "clean", `Expected clean validation after edit, got ${afterEditValidation}`);
   assert(importedName?.includes("Smoke Edited"), `Import did not update the level name: ${importedName}`);
   assert(importedValidation === "clean", `Expected clean validation after import, got ${importedValidation}`);
