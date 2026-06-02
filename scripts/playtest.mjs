@@ -19,6 +19,7 @@ const artifacts = {
   desktopNext: `${outDir}/next-desktop.png`,
   desktopCoreRoom: `${outDir}/core-room-desktop.png`,
   desktopHeldOpenComplete: `${outDir}/held-open-complete-desktop.png`,
+  desktopLiftPhaseComplete: `${outDir}/lift-phase-complete-desktop.png`,
   mobileMenu: `${outDir}/menu-mobile.png`,
   mobileGame: `${outDir}/game-mobile.png`,
   mobileTouch: `${outDir}/touch-mobile.png`,
@@ -91,6 +92,20 @@ const heldOpenClearRoute = [
   ["right", 90]
 ];
 
+// Public-input route for Level 5: sync with the rising lift, then clear the eased final jump.
+const liftPhaseClearRoute = [
+  ["idle", 17],
+  ["right", 18],
+  ["jumpRight", 8],
+  ["right", 42],
+  ["idle", 184],
+  ["right", 39],
+  ["jumpRight", 14],
+  ["right", 37],
+  ["jumpRight", 8],
+  ["right", 120]
+];
+
 const inputKeys = {
   idle: [],
   right: ["KeyD"],
@@ -122,6 +137,108 @@ const runKeyboardRoute = async (page, route) => {
     await page.keyboard.up(key);
   }
 };
+
+const runKeyboardRouteAtHudFrames = async (page, route) =>
+  page.evaluate(async (routeToRun) => {
+    const actionKeys = {
+      idle: [],
+      right: ["KeyD"],
+      left: ["KeyA"],
+      jump: ["Space"],
+      jumpRight: ["KeyD", "Space"],
+      jumpLeft: ["KeyA", "Space"]
+    };
+    const keyInfo = {
+      KeyA: { key: "a", code: "KeyA", keyCode: 65 },
+      KeyD: { key: "d", code: "KeyD", keyCode: 68 },
+      Space: { key: " ", code: "Space", keyCode: 32 }
+    };
+    const active = new Set();
+    const readFrame = () => {
+      const text = document.querySelector("[data-time]")?.textContent || "0:00.00";
+      const [minutes, seconds] = text.split(":");
+      return Math.round((Number(minutes) * 60 + Number(seconds)) * 60);
+    };
+    const dispatchKey = (type, code) => {
+      const info = keyInfo[code];
+      const event = new KeyboardEvent(type, {
+        key: info.key,
+        code: info.code,
+        bubbles: true,
+        cancelable: true,
+        composed: true
+      });
+      Object.defineProperty(event, "keyCode", { get: () => info.keyCode });
+      Object.defineProperty(event, "which", { get: () => info.keyCode });
+      window.dispatchEvent(event);
+      document.dispatchEvent(event);
+    };
+    const setKeys = (codes) => {
+      const next = new Set(codes);
+      for (const code of [...active]) {
+        if (!next.has(code)) {
+          dispatchKey("keyup", code);
+          active.delete(code);
+        }
+      }
+      for (const code of next) {
+        if (!active.has(code)) {
+          dispatchKey("keydown", code);
+          active.add(code);
+        }
+      }
+    };
+    const waitUntilFrame = (target) =>
+      new Promise((resolve, reject) => {
+        const started = performance.now();
+        const check = () => {
+          const frame = readFrame();
+          const modal = document.querySelector("[data-modal].show h1")?.textContent || null;
+          const status = document.querySelector("[data-status]")?.textContent || "";
+          if (frame >= target || modal) {
+            resolve({ frame, modal, status });
+            return;
+          }
+          if (status === "Signal lost") {
+            reject(new Error(`Route failed at frame ${frame}`));
+            return;
+          }
+          if (performance.now() - started > 12000) {
+            reject(new Error(`Timed out waiting for frame ${target}; current frame ${frame}`));
+            return;
+          }
+          requestAnimationFrame(check);
+        };
+        check();
+      });
+
+    let elapsed = 0;
+    const states = [];
+    routeToRun.forEach(([, frames], index) => {
+      elapsed += frames;
+      const nextAction = routeToRun[index + 1]?.[0] || "idle";
+      states.push({ at: elapsed, keys: actionKeys[nextAction] });
+    });
+
+    const startFrame = readFrame();
+    try {
+      setKeys(actionKeys[routeToRun[0]?.[0] || "idle"]);
+      for (const state of states) {
+        const result = await waitUntilFrame(state.at);
+        setKeys(state.keys);
+        if (result.modal) break;
+      }
+      const endFrame = readFrame();
+      return {
+        startFrame,
+        endFrame,
+        modal: document.querySelector("[data-modal].show h1")?.textContent || null,
+        status: document.querySelector("[data-status]")?.textContent || ""
+      };
+    } finally {
+      setKeys([]);
+    }
+  }, route);
 
 const playerCentroidX = async (page) =>
   page.evaluate(() => {
@@ -327,6 +444,16 @@ try {
   await page.locator("[data-modal].show").waitFor({ state: "visible", timeout: 3000 });
   const heldOpenCompletionTitle = await page.locator("[data-modal].show h1").textContent();
   await page.screenshot({ path: artifacts.desktopHeldOpenComplete });
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.locator("[data-levels]").waitFor({ state: "visible" });
+  await page.locator("[data-levels]").click();
+  await page.locator("[data-level='4']").click();
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  const liftPhaseRouteResult = await runKeyboardRouteAtHudFrames(page, liftPhaseClearRoute);
+  await page.locator("[data-modal].show").waitFor({ state: "visible", timeout: 3000 });
+  const liftPhaseCompletionTitle = await page.locator("[data-modal].show h1").textContent();
+  await page.screenshot({ path: artifacts.desktopLiftPhaseComplete });
   await desktop.close();
 
   const mobileMessages = [];
@@ -440,6 +567,11 @@ try {
   assert(nextLevelLabel?.includes("2. First Afterimage"), `Expected Next Room to load level 2, got ${nextLevelLabel}`);
   assert(corePixels > 60, `Expected generated core/effect sprite pixels in Relay Key, got ${corePixels}`);
   assert(heldOpenCompletionTitle === "Room Clear", `Expected Held Open completion modal, got ${heldOpenCompletionTitle}`);
+  assert(
+    liftPhaseRouteResult.modal === "Room Clear",
+    `Expected Lift Phase route to open completion modal: ${JSON.stringify(liftPhaseRouteResult)}`
+  );
+  assert(liftPhaseCompletionTitle === "Room Clear", `Expected Lift Phase completion modal, got ${liftPhaseCompletionTitle}`);
   assert(levelButtons === 10, `Expected 10 level buttons, got ${levelButtons}`);
   assert(touchControlsVisible, "Mobile touch controls were not visible in-game");
   assert(beforeTouchX !== null && afterTouchX !== null, "Could not locate player pixels for touch movement check");
@@ -479,6 +611,8 @@ try {
         nextLevelLabel,
         corePixels,
         heldOpenCompletionTitle,
+        liftPhaseRouteResult,
+        liftPhaseCompletionTitle,
         levelButtons,
         touchControlsVisible,
         mobileTouchDelta: Number((afterTouchX - beforeTouchX).toFixed(2)),

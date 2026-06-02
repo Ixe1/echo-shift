@@ -75,8 +75,9 @@ try {
   const lift = liftPhase.platforms?.find((platform) => platform.id === "lift-a");
   assert(lift, "Expected Lift Phase to include lift-a");
   const liftPhaseJump = new RoomSimulation(liftPhase);
-  const liftLaunchTick = 136;
-  const liftRect = platformRectAt(lift, liftLaunchTick);
+  const liftLaunchTick = 150;
+  // A grounded rider is carried from the previous platform frame to the current one before jumping.
+  const liftRect = platformRectAt(lift, liftLaunchTick - 1);
   liftPhaseJump.tick = liftLaunchTick;
   liftPhaseJump.totalFrames = liftLaunchTick;
   liftPhaseJump.player.x = liftRect.x + liftRect.w - liftPhaseJump.player.w;
