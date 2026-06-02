@@ -266,6 +266,22 @@ try {
     }
   ];
 
+  const levelIds = levels.map((level) => level.id);
+  const routeIds = handcraftedRoutes.map((route) => route.id);
+  const duplicateRouteIds = routeIds.filter((id, index) => routeIds.indexOf(id) !== index);
+  const routeIdSet = new Set(routeIds);
+  const levelIdSet = new Set(levelIds);
+  const missingRouteIds = levelIds.filter((id) => !routeIdSet.has(id));
+  const extraRouteIds = routeIds.filter((id) => !levelIdSet.has(id));
+  assert(
+    duplicateRouteIds.length === 0,
+    `Expected unique handcrafted route IDs, found duplicates: ${duplicateRouteIds.join(", ")}`
+  );
+  assert(
+    missingRouteIds.length === 0 && extraRouteIds.length === 0,
+    `Expected handcrafted routes to exactly match levels; missing ${missingRouteIds.join(", ") || "none"}, extra ${extraRouteIds.join(", ") || "none"}`
+  );
+
   const routeSummaries = [];
   for (const routeSpec of handcraftedRoutes) {
     const level = levels.find((item) => item.id === routeSpec.id);
