@@ -7,6 +7,14 @@ export class BootScene extends Phaser.Scene {
 
   preload(): void {
     this.load.svg("echo-logo", "/assets/echo-shift-mark.svg", { width: 640, height: 220 });
+    this.load.spritesheet("time-runner", "/assets/sprites/time-runner-sheet.png", {
+      frameWidth: 64,
+      frameHeight: 64
+    });
+    this.load.spritesheet("time-effects", "/assets/sprites/time-effects-sheet.png", {
+      frameWidth: 96,
+      frameHeight: 96
+    });
   }
 
   create(): void {

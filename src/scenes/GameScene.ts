@@ -6,7 +6,7 @@ import { laserIsActive } from "../game/objects";
 import { platformRectAt } from "../game/player";
 import { recordLevelScore } from "../game/progress";
 import { RoomSimulation } from "../game/state";
-import type { ActorBody, InputFrame, Level, LevelScore, Rect } from "../game/types";
+import type { ActorBody, InputFrame, Level, LevelScore, Rect, SimulationSnapshot } from "../game/types";
 import { Hud } from "../ui/hud";
 
 const STEP_MS = 1000 / 60;
@@ -37,6 +37,10 @@ export class GameScene extends Phaser.Scene {
   private completeHandled = false;
   private virtualInput: InputFrame = { left: false, right: false, jump: false };
   private echoTrails = new Map<string, Array<{ x: number; y: number }>>();
+  private actorSprites = new Map<string, Phaser.GameObjects.Image>();
+  private coreSprites = new Map<string, Phaser.GameObjects.Image>();
+  private exitSprite?: Phaser.GameObjects.Image;
+  private playerCastUntil = 0;
 
   constructor() {
     super("GameScene");
@@ -50,14 +54,18 @@ export class GameScene extends Phaser.Scene {
     this.pausedByHud = false;
     this.completeHandled = false;
     this.virtualInput = { left: false, right: false, jump: false };
+    this.playerCastUntil = 0;
     this.echoTrails.clear();
+    this.actorSprites.clear();
+    this.coreSprites.clear();
+    this.exitSprite = undefined;
   }
 
   create(): void {
     this.cameras.main.setBounds(0, 0, 960, 540);
     this.cameras.main.setBackgroundColor("#05070d");
-    this.world = this.add.graphics();
-    this.fx = this.add.graphics();
+    this.world = this.add.graphics().setDepth(0);
+    this.fx = this.add.graphics().setDepth(30);
     this.keys = this.createKeys();
     this.hud = new Hud({
       onRewind: () => this.rewind(),
@@ -141,6 +149,7 @@ export class GameScene extends Phaser.Scene {
     if (events.core) {
       audio.play("core");
       this.spawnBurst(events.core, 0xffe35a);
+      this.spawnEffectFrame(events.core, 2, 0.42);
     }
     if (events.died) {
       audio.play("death");
@@ -154,6 +163,7 @@ export class GameScene extends Phaser.Scene {
     if (this.completeHandled || this.pausedByHud) return;
     const added = this.simulation.rewindToEcho();
     audio.play("rewind");
+    this.playerCastUntil = this.time.now + 360;
     this.hud.scan();
     this.cameras.main.flash(220, 67, 247, 255, false);
     this.echoTrails.clear();
@@ -222,6 +232,7 @@ export class GameScene extends Phaser.Scene {
     this.drawEchoes(snapshot.echoes);
     this.drawActor(snapshot.player, snapshot.dead ? 0xff4f8b : 0x43f7ff, 1);
     this.drawForegroundText(snapshot.tick);
+    this.syncSpriteLayer(snapshot);
   }
 
   private drawBackground(): void {
@@ -310,7 +321,9 @@ export class GameScene extends Phaser.Scene {
       const pulse = 1 + Math.sin(this.time.now / 140) * 0.12;
       this.world.fillStyle(0xffe35a, 0.18);
       this.world.fillCircle(center.x, center.y, 22 * pulse);
-      this.drawDiamond(center.x, center.y, 12 * pulse, 0xffe35a, 0.9, 0xffffff, 0.72);
+      if (!this.textures.exists("time-effects")) {
+        this.drawDiamond(center.x, center.y, 12 * pulse, 0xffe35a, 0.9, 0xffffff, 0.72);
+      }
       this.world.lineStyle(2, 0xffffff, 0.7);
       this.world.strokeCircle(center.x, center.y, 17 * pulse);
       this.world.lineStyle(1, 0xffe35a, 0.5);
@@ -398,6 +411,8 @@ export class GameScene extends Phaser.Scene {
     this.world.fillCircle(centerX, centerY, 28);
     this.world.fillStyle(0x000000, alpha * 0.26);
     this.world.fillEllipse(centerX, actor.y + actor.h + 3, actor.w * 0.94, 8);
+    if (this.textures.exists("time-runner")) return;
+
     this.world.fillStyle(0x08111f, alpha);
     this.world.fillRoundedRect(actor.x + 2, actor.y + 9, actor.w - 4, actor.h - 13, 6);
     this.world.fillStyle(0x13233b, alpha);
@@ -416,6 +431,101 @@ export class GameScene extends Phaser.Scene {
     this.world.lineStyle(1, color, alpha * 0.42);
     this.world.lineBetween(centerX, actor.y + 20, centerX, actor.y + actor.h - 10);
     this.drawDiamond(centerX, actor.y + 24, 4, color, alpha * 0.9, 0xffffff, alpha * 0.3);
+  }
+
+  private syncSpriteLayer(snapshot: SimulationSnapshot): void {
+    this.syncActorSprites(snapshot);
+    this.syncCoreSprites(snapshot);
+    this.syncExitSprite(snapshot);
+  }
+
+  private syncActorSprites(snapshot: SimulationSnapshot): void {
+    if (!this.textures.exists("time-runner")) return;
+
+    const activeIds = new Set<string>();
+    this.syncActorSprite(snapshot.player, snapshot.dead, 0x43f7ff, 1, snapshot.tick);
+    activeIds.add(snapshot.player.id);
+
+    for (let index = 0; index < snapshot.echoes.length; index += 1) {
+      const echo = snapshot.echoes[index];
+      const tint = index % 2 === 0 ? 0xbd5cff : 0x50ffc2;
+      this.syncActorSprite(echo, false, tint, 0.58, snapshot.tick);
+      activeIds.add(echo.id);
+    }
+
+    for (const [id, sprite] of this.actorSprites) {
+      if (!activeIds.has(id)) sprite.setVisible(false);
+    }
+  }
+
+  private syncActorSprite(actor: ActorBody, dead: boolean, tint: number, alpha: number, tick: number): void {
+    let sprite = this.actorSprites.get(actor.id);
+    if (!sprite) {
+      sprite = this.add.image(0, 0, "time-runner", 0).setOrigin(0.5, 1).setDepth(16);
+      this.actorSprites.set(actor.id, sprite);
+    }
+
+    sprite
+      .setVisible(true)
+      .setFrame(this.actorFrame(actor, dead, tick))
+      .setPosition(Math.round(actor.x + actor.w / 2), Math.round(actor.y + actor.h + 5))
+      .setFlipX(actor.facing < 0)
+      .setAlpha(alpha)
+      .setScale(actor.kind === "echo" ? 0.88 : 1);
+
+    if (actor.kind === "echo") sprite.setTint(tint);
+    else if (dead) sprite.setTint(0xff4f8b);
+    else sprite.clearTint();
+  }
+
+  private actorFrame(actor: ActorBody, dead: boolean, tick: number): number {
+    if (dead) return 7;
+    if (actor.kind === "player" && this.time.now < this.playerCastUntil) return 6;
+    if (!actor.onGround && actor.vy < -1.2) return 3;
+    if (!actor.onGround && actor.vy > 1.2) return 4;
+    if (actor.onGround && Math.abs(actor.vx) > 1.1) return tick % 16 < 8 ? 1 : 2;
+    if (actor.onGround && Math.abs(actor.vx) > 0.2) return 5;
+    return 0;
+  }
+
+  private syncCoreSprites(snapshot: SimulationSnapshot): void {
+    if (!this.textures.exists("time-effects")) return;
+    const activeIds = new Set<string>();
+
+    for (const core of this.level.cores || []) {
+      if (snapshot.collectedCores.has(core.id)) continue;
+      const center = rectCenter(core);
+      let sprite = this.coreSprites.get(core.id);
+      if (!sprite) {
+        sprite = this.add.image(0, 0, "time-effects", 0).setDepth(11);
+        this.coreSprites.set(core.id, sprite);
+      }
+      sprite
+        .setVisible(true)
+        .setFrame(snapshot.tick % 44 < 22 ? 0 : 1)
+        .setPosition(Math.round(center.x), Math.round(center.y))
+        .setScale(0.34)
+        .setAlpha(0.94);
+      activeIds.add(core.id);
+    }
+
+    for (const [id, sprite] of this.coreSprites) {
+      if (!activeIds.has(id)) sprite.setVisible(false);
+    }
+  }
+
+  private syncExitSprite(snapshot: SimulationSnapshot): void {
+    if (!this.textures.exists("time-effects")) return;
+    const center = rectCenter(this.level.exit);
+    if (!this.exitSprite) {
+      this.exitSprite = this.add.image(0, 0, "time-effects", 3).setDepth(10);
+    }
+    this.exitSprite
+      .setVisible(true)
+      .setFrame(snapshot.won ? 5 : snapshot.tick % 48 < 24 ? 3 : 4)
+      .setPosition(Math.round(center.x), Math.round(center.y))
+      .setScale(snapshot.won ? 0.72 : 0.66)
+      .setAlpha(0.9);
   }
 
   private drawForegroundText(tick: number): void {
@@ -465,7 +575,7 @@ export class GameScene extends Phaser.Scene {
 
   private spawnBurst(origin: { x: number; y: number }, color: number): void {
     for (let i = 0; i < 9; i += 1) {
-      const dot = this.add.circle(origin.x, origin.y, 3, color, 0.85);
+      const dot = this.add.circle(origin.x, origin.y, 3, color, 0.85).setDepth(26);
       const angle = (Math.PI * 2 * i) / 9;
       this.tweens.add({
         targets: dot,
@@ -478,5 +588,18 @@ export class GameScene extends Phaser.Scene {
         onComplete: () => dot.destroy()
       });
     }
+  }
+
+  private spawnEffectFrame(origin: { x: number; y: number }, frame: number, scale: number): void {
+    if (!this.textures.exists("time-effects")) return;
+    const sprite = this.add.image(origin.x, origin.y, "time-effects", frame).setDepth(25).setScale(scale).setAlpha(0.9);
+    this.tweens.add({
+      targets: sprite,
+      alpha: 0,
+      scale: scale * 1.5,
+      duration: 420,
+      ease: "Cubic.easeOut",
+      onComplete: () => sprite.destroy()
+    });
   }
 }
