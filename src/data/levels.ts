@@ -49,7 +49,7 @@ export const levels: Level[] = [
     bounds,
     solids: [...frame(), s("ceiling-ledger", 604, 370, 96, 18)],
     plates: [p("plate-a", 154, 492, 70, 8)],
-    doors: [{ id: "gate-a", ...r(562, 392, 26, 108), opensWith: ["plate-a"] }],
+    doors: [{ id: "gate-a", ...r(562, 200, 26, 300), opensWith: ["plate-a"] }],
     perfectEchoes: 1,
     medalFrames: { gold: 1320, silver: 1800 },
     hint: "Leave an echo standing on the left pressure plate, then take the open lane."
@@ -69,7 +69,7 @@ export const levels: Level[] = [
       s("exit-ledge", 710, 350, 210, 18)
     ],
     plates: [p("plate-b", 184, 492, 70, 8)],
-    doors: [{ id: "gate-b", ...r(664, 260, 28, 108), opensWith: ["plate-b"] }],
+    doors: [{ id: "gate-b", ...r(664, 200, 28, 168), opensWith: ["plate-b"] }],
     perfectEchoes: 1,
     medalFrames: { gold: 1560, silver: 2100 },
     hint: "The upper gate closes fast. Make a patient echo on the floor plate."
@@ -89,8 +89,8 @@ export const levels: Level[] = [
     ],
     plates: [p("plate-c", 190, 492, 70, 8)],
     doors: [
-      { id: "gate-c", ...r(338, 392, 28, 108), opensWith: ["plate-c"] },
-      { id: "core-lock", ...r(760, 392, 28, 108), requiresCore: "core-c", opensWith: [] }
+      { id: "gate-c", ...r(338, 200, 28, 300), opensWith: ["plate-c"] },
+      { id: "core-lock", ...r(760, 200, 28, 300), requiresCore: "core-c", opensWith: [] }
     ],
     cores: [{ id: "core-c", ...r(466, 370, 24, 24), label: "C" }],
     perfectEchoes: 1,
@@ -148,7 +148,7 @@ export const levels: Level[] = [
       s("right-hop", 604, 426, 94, 18)
     ],
     plates: [p("plate-d1", 150, 492, 64, 8), p("plate-d2", 322, 492, 64, 8)],
-    doors: [{ id: "gate-d", ...r(736, 392, 28, 108), opensWith: ["plate-d1", "plate-d2"] }],
+    doors: [{ id: "gate-d", ...r(736, 200, 28, 300), opensWith: ["plate-d1", "plate-d2"] }],
     perfectEchoes: 2,
     medalFrames: { gold: 2100, silver: 2820 },
     hint: "Make one echo for each floor plate. The third run is the escape."
@@ -169,7 +169,7 @@ export const levels: Level[] = [
     ],
     platforms: [{ id: "lift-b", ...r(574, 442, 104, 18), axis: "y", distance: 86, period: 180, phase: 1.5 }],
     plates: [p("plate-e", 196, 412, 68, 8)],
-    doors: [{ id: "gate-e", ...r(682, 284, 28, 108), opensWith: ["plate-e"], requiresCore: "core-e" }],
+    doors: [{ id: "gate-e", ...r(682, 200, 28, 192), opensWith: ["plate-e"], requiresCore: "core-e" }],
     cores: [{ id: "core-e", ...r(468, 314, 24, 24), label: "E" }],
     perfectEchoes: 1,
     medalFrames: { gold: 2160, silver: 3000 },
@@ -191,7 +191,7 @@ export const levels: Level[] = [
     ],
     platforms: [{ id: "lift-c", ...r(560, 438, 98, 18), axis: "x", distance: 70, period: 190 }],
     plates: [p("plate-f1", 222, 412, 66, 8), p("plate-f2", 680, 412, 66, 8)],
-    doors: [{ id: "gate-f", ...r(808, 392, 28, 108), opensWith: ["plate-f1", "plate-f2"], requiresCore: "core-f" }],
+    doors: [{ id: "gate-f", ...r(808, 200, 28, 300), opensWith: ["plate-f1", "plate-f2"], requiresCore: "core-f" }],
     cores: [{ id: "core-f", ...r(456, 348, 24, 24), label: "F" }],
     lasers: [{ id: "beam-f", ...r(340, 462, 194, 12), startsOn: true }],
     perfectEchoes: 2,
@@ -218,7 +218,7 @@ export const levels: Level[] = [
       { id: "shuttle-d", ...r(318, 454, 92, 18), axis: "x", distance: 62, period: 150, phase: 0.9 }
     ],
     plates: [p("plate-g1", 210, 400, 68, 8), p("plate-g2", 420, 346, 68, 8), p("plate-g3", 728, 334, 68, 8)],
-    doors: [{ id: "final-gate", ...r(812, 252, 28, 108), opensWith: ["plate-g1", "plate-g2", "plate-g3"], requiresCore: "core-g" }],
+    doors: [{ id: "final-gate", ...r(812, 200, 28, 160), opensWith: ["plate-g1", "plate-g2", "plate-g3"], requiresCore: "core-g" }],
     cores: [{ id: "core-g", ...r(636, 248, 24, 24), label: "G" }],
     lasers: [{ id: "beam-g", ...r(526, 462, 170, 12), startsOn: true }],
     perfectEchoes: 3,

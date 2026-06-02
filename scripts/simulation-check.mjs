@@ -31,6 +31,7 @@ const jump = { left: false, right: false, jump: true };
 const jumpRight = { left: false, right: true, jump: true };
 const jumpLeft = { left: true, right: false, jump: true };
 const routeInputs = { idle, right, left, jump, jumpRight, jumpLeft };
+const CLOSED_GATE_MAX_TOP = 220;
 
 const runFrames = (simulation, frames, input) => {
   for (let i = 0; i < frames; i += 1) {
@@ -301,6 +302,43 @@ try {
     `Expected handcrafted routes to exactly match levels; missing ${missingRouteIds.join(", ") || "none"}, extra ${extraRouteIds.join(", ") || "none"}`
   );
 
+  const lowClosedGates = levels.flatMap((level) =>
+    (level.doors || [])
+      .filter((door) => door.y > CLOSED_GATE_MAX_TOP)
+      .map((door) => `${level.id}:${door.id}@${door.y}`)
+  );
+  assert(
+    lowClosedGates.length === 0,
+    `Expected closed gate tops at or above y=${CLOSED_GATE_MAX_TOP}; low gates: ${lowClosedGates.join(", ")}`
+  );
+
+  const bypassedFloorGates = [];
+  for (const level of levels) {
+    for (const door of (level.doors || []).filter((item) => item.y + item.h >= 490)) {
+      const closedGateLevel = { ...level, plates: [], cores: [] };
+      const simulation = new RoomSimulation(closedGateLevel);
+      simulation.player.x = Math.max(level.bounds.x, door.x - 170);
+      simulation.player.y = door.y + door.h - simulation.player.h;
+      simulation.player.vx = 0;
+      simulation.player.vy = 0;
+      simulation.player.onGround = true;
+      simulation.player.coyote = 7;
+      simulation.player.standingOn = null;
+
+      runFrames(simulation, 18, right);
+      runFrames(simulation, 18, jumpRight);
+      runFrames(simulation, 120, right);
+
+      if (simulation.player.x > door.x + door.w) {
+        bypassedFloorGates.push(`${level.id}:${door.id}`);
+      }
+    }
+  }
+  assert(
+    bypassedFloorGates.length === 0,
+    `Expected closed floor-height gates to stop jump bypasses; bypassed: ${bypassedFloorGates.join(", ")}`
+  );
+
   const routeSummaries = [];
   for (const routeSpec of handcraftedRoutes) {
     const level = levels.find((item) => item.id === routeSpec.id);
@@ -517,6 +555,8 @@ try {
           "death-freeze",
           "fall-death-freeze",
           "deterministic-replay",
+          "closed-gate-top-contract",
+          "closed-floor-gate-bypass",
           "all-level-quantum-routes"
         ],
         routeSummaries
