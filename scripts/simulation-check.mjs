@@ -268,11 +268,16 @@ try {
 
   const levelIds = levels.map((level) => level.id);
   const routeIds = handcraftedRoutes.map((route) => route.id);
+  const duplicateLevelIds = levelIds.filter((id, index) => levelIds.indexOf(id) !== index);
   const duplicateRouteIds = routeIds.filter((id, index) => routeIds.indexOf(id) !== index);
   const routeIdSet = new Set(routeIds);
   const levelIdSet = new Set(levelIds);
   const missingRouteIds = levelIds.filter((id) => !routeIdSet.has(id));
   const extraRouteIds = routeIds.filter((id) => !levelIdSet.has(id));
+  assert(
+    duplicateLevelIds.length === 0,
+    `Expected unique level IDs, found duplicates: ${duplicateLevelIds.join(", ")}`
+  );
   assert(
     duplicateRouteIds.length === 0,
     `Expected unique handcrafted route IDs, found duplicates: ${duplicateRouteIds.join(", ")}`
