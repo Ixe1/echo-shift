@@ -269,12 +269,46 @@ const ensureCollection = (level: Level, kind: RectCollection): RectObject[] => {
   return record[kind] || [];
 };
 
+const objectIdStem = (kind: RectCollection): string => kind.slice(0, -1) || kind;
+
+const normalizedObjectIdValue = (value: unknown): string => {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+};
+
+const explicitImportedObjectIds = (value: Record<string, unknown>): Set<string> => {
+  const ids = new Set<string>();
+  for (const kind of rectCollections) {
+    const collection = value[kind];
+    if (!Array.isArray(collection)) continue;
+    for (const item of collection) {
+      if (!isRecord(item)) continue;
+      const id = normalizedObjectIdValue(item.id);
+      if (id) ids.add(id);
+    }
+  }
+  return ids;
+};
+
+const nextImportedObjectId = (kind: RectCollection, usedIds: Set<string>): string => {
+  const stem = objectIdStem(kind);
+  let index = 1;
+  let id = `${stem}-${index}`;
+  while (usedIds.has(id)) {
+    index += 1;
+    id = `${stem}-${index}`;
+  }
+  usedIds.add(id);
+  return id;
+};
+
 const normalizeImportedLevel = (value: unknown, fallbackIndex: number): Level | null => {
   if (!isRecord(value)) return null;
   const boundsRecord = isRecord(value.bounds) ? value.bounds : {};
   const exitRecord = isRecord(value.exit) ? value.exit : {};
   const startRecord = isRecord(value.start) ? value.start : {};
   const medalRecord = isRecord(value.medalFrames) ? value.medalFrames : {};
+  const usedObjectIds = explicitImportedObjectIds(value);
 
   const level: Level = {
     id: String(value.id || `level-${fallbackIndex + 1}`),
@@ -297,14 +331,14 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number): Level | 
       w: positiveNumber(boundsRecord.w, 960),
       h: positiveNumber(boundsRecord.h, 540)
     }),
-    solids: Array.isArray(value.solids) ? (value.solids as Solid[]).map((item) => normalizeObject(item, "solids")) : [],
-    platforms: normalizeOptionalCollection(value.platforms, "platforms") as MovingPlatform[],
-    drones: normalizeOptionalCollection(value.drones, "drones") as PatrolDrone[],
-    plates: normalizeOptionalCollection(value.plates, "plates") as PressurePlate[],
-    doors: normalizeOptionalCollection(value.doors, "doors") as Door[],
-    lasers: normalizeOptionalCollection(value.lasers, "lasers") as Laser[],
-    cores: normalizeOptionalCollection(value.cores, "cores") as Core[],
-    hazards: normalizeOptionalCollection(value.hazards, "hazards") as Hazard[],
+    solids: Array.isArray(value.solids) ? (value.solids as Solid[]).map((item) => normalizeObject(item, "solids", usedObjectIds)) : [],
+    platforms: normalizeOptionalCollection(value.platforms, "platforms", usedObjectIds) as MovingPlatform[],
+    drones: normalizeOptionalCollection(value.drones, "drones", usedObjectIds) as PatrolDrone[],
+    plates: normalizeOptionalCollection(value.plates, "plates", usedObjectIds) as PressurePlate[],
+    doors: normalizeOptionalCollection(value.doors, "doors", usedObjectIds) as Door[],
+    lasers: normalizeOptionalCollection(value.lasers, "lasers", usedObjectIds) as Laser[],
+    cores: normalizeOptionalCollection(value.cores, "cores", usedObjectIds) as Core[],
+    hazards: normalizeOptionalCollection(value.hazards, "hazards", usedObjectIds) as Hazard[],
     perfectEchoes: positiveNumber(value.perfectEchoes, 0),
     medalFrames: {
       gold: positiveNumber(medalRecord.gold, 1800),
@@ -316,10 +350,10 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number): Level | 
   return level;
 };
 
-const normalizeOptionalCollection = (value: unknown, kind: RectCollection): RectObject[] | undefined =>
-  Array.isArray(value) ? value.map((item) => normalizeObject(item, kind)) : undefined;
+const normalizeOptionalCollection = (value: unknown, kind: RectCollection, usedIds: Set<string>): RectObject[] | undefined =>
+  Array.isArray(value) ? value.map((item) => normalizeObject(item, kind, usedIds)) : undefined;
 
-const normalizeObject = (value: unknown, kind: RectCollection): RectObject => {
+const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<string>): RectObject => {
   const record = isRecord(value) ? value : {};
   const base = normalizeRect({
     x: positiveNumber(record.x, 0),
@@ -327,7 +361,8 @@ const normalizeObject = (value: unknown, kind: RectCollection): RectObject => {
     w: positiveNumber(record.w, defaultSizeFor(kind).w),
     h: positiveNumber(record.h, defaultSizeFor(kind).h)
   });
-  const id = String(record.id || `${kind}-${Date.now().toString(36)}`);
+  const explicitId = normalizedObjectIdValue(record.id);
+  const id = explicitId || nextImportedObjectId(kind, usedIds);
 
   if (kind === "solids") return { ...base, id, tone: record.tone as Solid["tone"] };
   if (kind === "platforms" || kind === "drones") {
@@ -655,7 +690,11 @@ class LevelEditor {
     if (field === "x" || field === "y" || field === "w" || field === "h") {
       target[field] = field === "w" || field === "h" ? Math.max(1, Number(value)) : Number(value);
     } else if (field === "id") {
-      const nextId = String(value);
+      const nextId = normalizedObjectIdValue(value);
+      if (!nextId) {
+        this.afterMutation("Object id cannot be empty");
+        return;
+      }
       if (this.objectIdExists(nextId, target)) {
         this.afterMutation(`Object id ${nextId} already exists`);
         return;
@@ -1162,7 +1201,7 @@ class LevelEditor {
   }
 
   private nextObjectId(kind: RectCollection): string {
-    const stem = kind.slice(0, -1) || kind;
+    const stem = objectIdStem(kind);
     let index = readCollection(this.level, kind).length + 1;
     let id = `${stem}-${index}`;
     while (this.objectIdExists(id)) {

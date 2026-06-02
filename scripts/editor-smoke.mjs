@@ -22,6 +22,8 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
+const objectKinds = ["solids", "platforms", "hazards", "plates", "doors", "lasers", "cores", "drones"];
+
 const messages = [];
 const collectConsole = (page) => {
   page.on("console", (msg) => {
@@ -276,9 +278,7 @@ try {
   const generatedGlobalIdValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   const generatedGlobalIdText = await page.locator("[data-validation]").textContent();
   const generatedGlobalIdLevel = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
-  const generatedGlobalObjectIds = ["solids", "platforms", "hazards", "plates", "doors", "lasers", "cores", "drones"].flatMap((kind) =>
-    (generatedGlobalIdLevel[kind] || []).map((object) => object.id)
-  );
+  const generatedGlobalObjectIds = objectKinds.flatMap((kind) => (generatedGlobalIdLevel[kind] || []).map((object) => object.id));
   await page.locator("[data-delete-object]").click();
   await openTab(page, "objects");
   await page.locator("[data-object-list] [data-kind='plates'][data-id='laser-1']").click();
@@ -326,6 +326,12 @@ try {
   const duplicateObjectIdValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   const duplicateObjectIdValidationText = await page.locator("[data-validation]").textContent();
   const duplicateObjectIdStatus = await page.locator("[data-editor-status]").textContent();
+  await page.locator("[data-object-field='id']").fill("");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  const rejectedBlankObjectId = await page.locator("[data-object-field='id']").inputValue();
+  const blankObjectIdValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const blankObjectIdValidationText = await page.locator("[data-validation]").textContent();
+  const blankObjectIdStatus = await page.locator("[data-editor-status]").textContent();
   const hazardWidthBefore = Number(await page.locator("[data-object-field='w']").inputValue());
   await page.locator("[data-tool='select']").click();
   await dragWorld(page, { x: 780, y: 434 }, { x: 860, y: 434 });
@@ -418,6 +424,31 @@ try {
   const parsedExport = JSON.parse(exportJson);
   parsedExport[0].name = "Smoke Edited";
   await openTab(page, "export");
+  const fallbackImportLevel = {
+    id: "portal-primer",
+    index: 0,
+    name: "Fallback ID Smoke",
+    subtitle: "",
+    start: { x: 60, y: 450 },
+    exit: { x: 850, y: 438, w: 48, h: 62 },
+    bounds: { x: 0, y: 0, w: 960, h: 540 },
+    solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
+    hazards: [
+      { x: 200, y: 496, w: 58, h: 4 },
+      { id: "", x: 300, y: 496, w: 58, h: 4 }
+    ],
+    perfectEchoes: 0,
+    medalFrames: { gold: 1800, silver: 2400 },
+    hint: ""
+  };
+  await page.locator("[data-import-json]").fill(JSON.stringify(fallbackImportLevel, null, 2));
+  await page.locator("[data-apply-import]").click();
+  await page.waitForFunction(() => document.querySelector("[data-level-select] option")?.textContent?.includes("Fallback ID Smoke"));
+  const fallbackImportExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
+  const fallbackImportHazardIds = fallbackImportExport.hazards.map((hazard) => hazard.id);
+  const fallbackImportObjectIds = objectKinds.flatMap((kind) => (fallbackImportExport[kind] || []).map((object) => object.id));
+  const fallbackImportValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const fallbackImportValidationText = await page.locator("[data-validation]").textContent();
   await page.locator("[data-import-json]").fill(JSON.stringify(parsedExport[0], null, 2));
   await page.locator("[data-apply-import]").click();
   await page.waitForFunction(() => document.querySelector("[data-level-select] option")?.textContent?.includes("Smoke Edited"));
@@ -491,6 +522,12 @@ try {
   assert(narrowPlateBottom === 420, `Expected dropped plate bottom to snap flush to narrow support y=420, got ${narrowPlateY}+h=${narrowPlateBottom}`);
   assert(surfaceSnapValidation === "clean", `Expected clean validation after surface snap checks, got ${surfaceSnapValidation}`);
   assert(rejectedDuplicateObjectId === "smoke-hazard", `Expected duplicate object id rename to be rejected, got ${rejectedDuplicateObjectId}`);
+  assert(rejectedBlankObjectId === "smoke-hazard", `Expected blank object id rename to be rejected, got ${rejectedBlankObjectId}`);
+  assert(
+    blankObjectIdValidation === "clean",
+    `Expected clean validation after rejected blank object id, got ${blankObjectIdValidation}: ${blankObjectIdValidationText}`
+  );
+  assert(blankObjectIdStatus?.includes("cannot be empty"), `Expected blank object id status to mention empty id, got ${blankObjectIdStatus}`);
   assert(
     duplicateObjectIdValidation === "clean",
     `Expected clean validation after rejected duplicate object id, got ${duplicateObjectIdValidation}: ${duplicateObjectIdValidationText}`
@@ -563,6 +600,19 @@ try {
   assert(platformExport.y === 421, `Expected exported platform origin y to match gameplay midpoint 421, got ${platformExport.y}`);
   assert(platformExport.distance === 101, `Expected exported platform distance 101 after endpoint edit, got ${platformExport.distance}`);
   assert(platformEndpointValidation === "clean", `Expected clean validation after platform endpoint drag, got ${platformEndpointValidation}`);
+  assert(fallbackImportHazardIds.length === 2, `Expected two fallback-imported hazards, got ${fallbackImportHazardIds.join(", ")}`);
+  assert(
+    fallbackImportHazardIds.every(Boolean) && fallbackImportHazardIds.length === new Set(fallbackImportHazardIds).size,
+    `Expected unique fallback hazard ids, got ${fallbackImportHazardIds.join(", ")}`
+  );
+  assert(
+    fallbackImportObjectIds.length === new Set(fallbackImportObjectIds).size,
+    `Expected imported fallback object IDs to be level-unique, got ${fallbackImportObjectIds.join(", ")}`
+  );
+  assert(
+    fallbackImportValidation === "clean",
+    `Expected clean validation after fallback import, got ${fallbackImportValidation}: ${fallbackImportValidationText}`
+  );
   assert(importedName?.includes("Smoke Edited"), `Import did not update the level name: ${importedName}`);
   assert(importedValidation === "clean", `Expected clean validation after import, got ${importedValidation}`);
   assert(mobileValidation === "clean", `Expected clean mobile validation, got ${mobileValidation}`);
