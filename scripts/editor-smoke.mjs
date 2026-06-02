@@ -38,6 +38,10 @@ const dispatchChange = async (locator) => {
   });
 };
 
+const openTab = async (page, tab) => {
+  await page.locator(`[data-editor-tab='${tab}']`).click();
+};
+
 const server = await createServer({
   logLevel: "silent",
   server: {
@@ -87,11 +91,13 @@ try {
   await dispatchChange(levelIndexField);
   const restoredIndexValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
+  await openTab(page, "export");
   await page.locator("[data-import-json]").fill("{broken json");
   await page.locator("[data-apply-import]").click();
   const malformedImportStatus = await page.locator("[data-editor-status]").textContent();
   const malformedImportValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
+  await openTab(page, "inspect");
   await page.evaluate(() => {
     const originalSetItem = Storage.prototype.setItem;
     Object.defineProperty(window, "__restoreEditorStorage", {
@@ -115,6 +121,7 @@ try {
   await levelNameField.fill("Portal Primer");
   await dispatchChange(levelNameField);
 
+  await openTab(page, "objects");
   await page.locator("[data-object-list] [data-kind='start']").click();
   await page.locator("[data-object-field='x']").fill("2390");
   await dispatchChange(page.locator("[data-object-field='x']"));
@@ -128,6 +135,7 @@ try {
   const shiftedLevelInitialValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   await page.locator("[data-level-field='bounds.y']").fill("100");
   await dispatchChange(page.locator("[data-level-field='bounds.y']"));
+  await openTab(page, "objects");
   await page.locator("[data-object-list] [data-kind='doors']").click();
   await page.locator("[data-object-field='y']").fill("350");
   await dispatchChange(page.locator("[data-object-field='y']"));
@@ -150,6 +158,13 @@ try {
   await page.mouse.up();
   await page.locator("[data-object-field='id']").fill("smoke-hazard");
   await dispatchChange(page.locator("[data-object-field='id']"));
+  const hazardWidthBefore = Number(await page.locator("[data-object-field='w']").inputValue());
+  await page.locator("[data-tool='select']").click();
+  await page.mouse.move(box.x + 540, box.y + 448);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 620, box.y + 468);
+  await page.mouse.up();
+  const hazardWidthAfter = Number(await page.locator("[data-object-field='w']").inputValue());
 
   const exportJson = await page.locator("[data-export-json]").inputValue();
   assert(exportJson.includes("smoke-hazard"), "Export JSON did not include the edited hazard");
@@ -162,12 +177,25 @@ try {
   await page.locator("[data-delete-object]").click();
   const afterDoorDeleteValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
+  await openTab(page, "objects");
+  await page.locator("[data-object-list] [data-id='drone-a']").click();
+  await page.locator("[data-object-field='axis']").selectOption("y");
+  await page.locator("[data-object-field='pathStart']").fill("360");
+  await dispatchChange(page.locator("[data-object-field='pathStart']"));
+  await page.locator("[data-object-field='pathEnd']").fill("460");
+  await dispatchChange(page.locator("[data-object-field='pathEnd']"));
+  await page.locator("[data-object-field='speed']").fill("120");
+  await dispatchChange(page.locator("[data-object-field='speed']"));
+  const dronePeriod = Number(await page.locator("[data-object-field='period']").inputValue());
+  const droneExportJson = await page.locator("[data-export-json]").inputValue();
+
   await page.locator("[data-save-draft]").click();
   const storedDraft = await page.evaluate(() => window.localStorage.getItem("echo-shift-level-editor-draft-v1"));
   assert(storedDraft?.includes("smoke-hazard"), "Draft did not persist edited hazard");
 
   const parsedExport = JSON.parse(exportJson);
   parsedExport[0].name = "Smoke Edited";
+  await openTab(page, "export");
   await page.locator("[data-import-json]").fill(JSON.stringify(parsedExport[0], null, 2));
   await page.locator("[data-apply-import]").click();
   await page.waitForFunction(() => document.querySelector("[data-level-select] option")?.textContent?.includes("Smoke Edited"));
@@ -246,9 +274,12 @@ try {
   );
   assert(restoredBoundsValidation === "clean", `Expected clean validation after restoring bounds and door, got ${restoredBoundsValidation}`);
   assert(afterEditValidation === "clean", `Expected clean validation after edit, got ${afterEditValidation}`);
+  assert(hazardWidthAfter > hazardWidthBefore, `Expected resize drag to widen hazard: ${hazardWidthBefore} -> ${hazardWidthAfter}`);
   assert(doorYValue !== "200", `Expected single-click door placement to use clicked world y instead of hardcoded 200, got ${doorYValue}`);
   assert(doorPlacementValidation === "clean", `Expected clean validation after door placement, got ${doorPlacementValidation}`);
   assert(afterDoorDeleteValidation === "clean", `Expected clean validation after deleting smoke door, got ${afterDoorDeleteValidation}`);
+  assert(dronePeriod === 100, `Expected speed 120 over 50px drone distance to produce period 100, got ${dronePeriod}`);
+  assert(droneExportJson.includes('"axis": "y"'), "Expected drone export JSON to include vertical axis");
   assert(importedName?.includes("Smoke Edited"), `Import did not update the level name: ${importedName}`);
   assert(importedValidation === "clean", `Expected clean validation after import, got ${importedValidation}`);
   assert(mobileValidation === "clean", `Expected clean mobile validation, got ${mobileValidation}`);

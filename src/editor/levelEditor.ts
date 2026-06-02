@@ -19,7 +19,9 @@ type RectCollection = (typeof rectCollections)[number];
 type RectObject = Solid | MovingPlatform | Hazard | PressurePlate | Door | Laser | Core | PatrolDrone;
 type SelectableKind = RectCollection | "start" | "exit";
 type Tool = SelectableKind | "select";
+type EditorPanel = "inspect" | "objects" | "validation" | "export";
 type ValidationSeverity = "error" | "warning";
+type ResizeHandle = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 
 type Selection =
   | { kind: "start" }
@@ -38,6 +40,13 @@ type DragState =
   | {
       mode: "move";
       selection: Selection;
+      pointerStartWorld: Vec2;
+      startRect: Rect;
+    }
+  | {
+      mode: "resize";
+      selection: Selection;
+      handle: ResizeHandle;
       pointerStartWorld: Vec2;
       startRect: Rect;
     }
@@ -61,6 +70,7 @@ type EditorDraft = {
 
 const STORAGE_KEY = "echo-shift-level-editor-draft-v1";
 const GRID = 20;
+const MIN_RECT_SIZE = 4;
 const PLAYER_RECT = { w: 24, h: 34 };
 const CLOSED_GATE_MAX_TOP = 220;
 
@@ -178,6 +188,41 @@ const defaultSizeFor = (kind: RectCollection): { w: number; h: number } => {
       return { w: 30, h: 24 };
   }
 };
+
+const movingPath = (item: MovingPlatform | PatrolDrone): { start: number; end: number; center: number; speed: number } => {
+  const center = item.axis === "x" ? item.x + item.w / 2 : item.y + item.h / 2;
+  const distance = Math.max(0, item.distance);
+  return {
+    start: center - distance,
+    end: center + distance,
+    center,
+    speed: item.period > 0 ? Math.round((240 * distance) / item.period) : 0
+  };
+};
+
+const setMovingPath = (
+  item: MovingPlatform | PatrolDrone,
+  nextStart: number,
+  nextEnd: number
+): void => {
+  const start = Math.min(nextStart, nextEnd);
+  const end = Math.max(nextStart, nextEnd);
+  const center = (start + end) / 2;
+  item.distance = Math.max(0, (end - start) / 2);
+  if (item.axis === "x") item.x = center - item.w / 2;
+  else item.y = center - item.h / 2;
+};
+
+const resizeHandlesForRect = (rect: Rect): Array<{ handle: ResizeHandle; point: Vec2 }> => [
+  { handle: "nw", point: { x: rect.x, y: rect.y } },
+  { handle: "n", point: { x: rect.x + rect.w / 2, y: rect.y } },
+  { handle: "ne", point: { x: rect.x + rect.w, y: rect.y } },
+  { handle: "e", point: { x: rect.x + rect.w, y: rect.y + rect.h / 2 } },
+  { handle: "se", point: { x: rect.x + rect.w, y: rect.y + rect.h } },
+  { handle: "s", point: { x: rect.x + rect.w / 2, y: rect.y + rect.h } },
+  { handle: "sw", point: { x: rect.x, y: rect.y + rect.h } },
+  { handle: "w", point: { x: rect.x, y: rect.y + rect.h / 2 } }
+];
 
 const readCollection = (level: Level, kind: RectCollection): RectObject[] => {
   if (kind === "solids") return level.solids;
@@ -303,6 +348,7 @@ class LevelEditor {
   private currentIndex = 0;
   private tool: Tool = "select";
   private selection: Selection | null = null;
+  private activePanel: EditorPanel = "inspect";
   private canvas!: HTMLCanvasElement;
   private context!: CanvasRenderingContext2D;
   private exportArea!: HTMLTextAreaElement;
@@ -389,32 +435,40 @@ class LevelEditor {
                 <button type="button" class="editor-button" data-center-start>Start</button>
               </div>
             </section>
-            <section class="editor-panel object-list-panel">
-              <h2>Objects</h2>
-              <div class="editor-object-list" data-object-list></div>
-            </section>
           </aside>
           <section class="editor-canvas-panel">
             <canvas data-editor-canvas></canvas>
           </section>
-          <aside class="editor-sidebar right">
-            <section class="editor-panel inspector-panel">
-              <h2>Inspector</h2>
-              <div data-inspector></div>
-            </section>
-            <section class="editor-panel validation-panel">
-              <h2>Validation</h2>
-              <div data-validation></div>
-            </section>
-            <section class="editor-panel export-panel">
-              <h2>Export</h2>
-              <div class="editor-viewport-actions">
-                <button type="button" class="editor-button" data-copy-export>Copy JSON</button>
-                <button type="button" class="editor-button" data-download-export>Download</button>
-                <button type="button" class="editor-button" data-apply-import>Import</button>
+          <aside class="editor-sidebar right editor-dock">
+            <section class="editor-panel editor-tabs-panel">
+              <div class="editor-tabs" data-editor-tabs>
+                <button type="button" data-editor-tab="inspect">Inspect</button>
+                <button type="button" data-editor-tab="objects">Objects</button>
+                <button type="button" data-editor-tab="validation">Validate</button>
+                <button type="button" data-editor-tab="export">Export</button>
               </div>
-              <textarea readonly data-export-json spellcheck="false"></textarea>
-              <textarea data-import-json spellcheck="false" placeholder="Paste exported Level or Level[] JSON"></textarea>
+              <section class="editor-tab-panel inspector-panel" data-tab-panel="inspect">
+                <h2>Inspector</h2>
+                <div data-inspector></div>
+              </section>
+              <section class="editor-tab-panel object-list-panel" data-tab-panel="objects">
+                <h2>Objects</h2>
+                <div class="editor-object-list" data-object-list></div>
+              </section>
+              <section class="editor-tab-panel validation-panel" data-tab-panel="validation">
+                <h2>Validation</h2>
+                <div data-validation></div>
+              </section>
+              <section class="editor-tab-panel export-panel" data-tab-panel="export">
+                <h2>Export</h2>
+                <div class="editor-viewport-actions">
+                  <button type="button" class="editor-button" data-copy-export>Copy JSON</button>
+                  <button type="button" class="editor-button" data-download-export>Download</button>
+                  <button type="button" class="editor-button" data-apply-import>Import</button>
+                </div>
+                <textarea readonly data-export-json spellcheck="false"></textarea>
+                <textarea data-import-json spellcheck="false" placeholder="Paste exported Level or Level[] JSON"></textarea>
+              </section>
             </section>
           </aside>
         </section>
@@ -440,12 +494,20 @@ class LevelEditor {
       this.setStatus(`${toolLabels[this.tool]} tool`);
     });
 
+    this.require<HTMLElement>("[data-editor-tabs]").addEventListener("click", (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-editor-tab]");
+      if (!button) return;
+      this.activePanel = button.dataset.editorTab as EditorPanel;
+      this.renderPanelTabs();
+    });
+
     this.require<HTMLElement>("[data-object-list]").addEventListener("click", (event) => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-kind]");
       if (!button) return;
       const kind = button.dataset.kind as SelectableKind;
       this.selection = kind === "start" || kind === "exit" ? { kind } : { kind, id: button.dataset.id || "" };
       this.tool = "select";
+      this.activePanel = "inspect";
       this.renderAll();
     });
 
@@ -565,6 +627,18 @@ class LevelEditor {
       record.axis = value === "y" ? "y" : "x";
       return;
     }
+    if (field === "pathStart" || field === "pathEnd") {
+      const moving = target as MovingPlatform | PatrolDrone;
+      const path = movingPath(moving);
+      setMovingPath(moving, field === "pathStart" ? Number(value) : path.start, field === "pathEnd" ? Number(value) : path.end);
+      return;
+    }
+    if (field === "speed") {
+      const moving = target as MovingPlatform | PatrolDrone;
+      const speed = Math.max(1, Number(value));
+      moving.period = Math.max(1, Math.round((240 * Math.max(1, moving.distance)) / speed));
+      return;
+    }
     if (field === "distance" || field === "period" || field === "phase") {
       record[field] = field === "period" ? Math.max(1, Number(value)) : Number(value);
       return;
@@ -581,7 +655,8 @@ class LevelEditor {
 
   private handlePointerDown(event: PointerEvent): void {
     this.canvas.setPointerCapture(event.pointerId);
-    const world = snapPoint(this.screenToWorld({ x: event.offsetX, y: event.offsetY }));
+    const rawWorld = this.screenToWorld({ x: event.offsetX, y: event.offsetY });
+    const world = snapPoint(rawWorld);
 
     if (event.button === 1 || event.altKey) {
       this.drag = {
@@ -593,6 +668,20 @@ class LevelEditor {
     }
 
     if (this.tool === "select") {
+      const resizeHit = this.hitResizeHandle(rawWorld);
+      if (resizeHit) {
+        this.drag = {
+          mode: "resize",
+          selection: resizeHit.selection,
+          handle: resizeHit.handle,
+          pointerStartWorld: world,
+          startRect: resizeHit.rect
+        };
+        this.activePanel = "inspect";
+        this.renderAll();
+        return;
+      }
+
       const hit = this.hitTest(world);
       this.selection = hit;
       if (!hit) {
@@ -613,6 +702,7 @@ class LevelEditor {
             startRect
           }
         : null;
+      this.activePanel = "inspect";
       this.renderAll();
       return;
     }
@@ -620,6 +710,7 @@ class LevelEditor {
     if (this.tool === "start") {
       this.level.start = { x: world.x, y: world.y };
       this.selection = { kind: "start" };
+      this.activePanel = "inspect";
       this.afterMutation("Start placed");
       return;
     }
@@ -627,6 +718,7 @@ class LevelEditor {
     if (this.tool === "exit") {
       this.level.exit = { x: world.x, y: world.y, w: 48, h: 62 };
       this.selection = { kind: "exit" };
+      this.activePanel = "inspect";
       this.afterMutation("Exit placed");
       return;
     }
@@ -634,6 +726,7 @@ class LevelEditor {
     const object = this.createObject(this.tool, world);
     ensureCollection(this.level, this.tool).push(object);
     this.selection = { kind: this.tool, id: object.id };
+    this.activePanel = "inspect";
     this.drag = {
       mode: "create",
       kind: this.tool,
@@ -660,6 +753,18 @@ class LevelEditor {
       const dx = world.x - this.drag.pointerStartWorld.x;
       const dy = world.y - this.drag.pointerStartWorld.y;
       this.moveSelection(this.drag.selection, this.drag.startRect, dx, dy);
+      this.renderObjectList();
+      this.renderInspector();
+      this.renderValidation();
+      this.renderExport();
+      this.renderCanvas();
+      return;
+    }
+
+    if (this.drag.mode === "resize") {
+      const dx = world.x - this.drag.pointerStartWorld.x;
+      const dy = world.y - this.drag.pointerStartWorld.y;
+      this.resizeSelection(this.drag.selection, this.drag.startRect, this.drag.handle, dx, dy);
       this.renderObjectList();
       this.renderInspector();
       this.renderValidation();
@@ -722,6 +827,40 @@ class LevelEditor {
     rect.y = startRect.y + dy;
   }
 
+  private resizeSelection(selection: Selection, startRect: Rect, handle: ResizeHandle, dx: number, dy: number): void {
+    if (selection.kind === "start") return;
+    const rect = selection.kind === "exit" ? this.level.exit : this.findObject(selection.kind, selection.id);
+    if (!rect) return;
+
+    let left = startRect.x;
+    let right = startRect.x + startRect.w;
+    let top = startRect.y;
+    let bottom = startRect.y + startRect.h;
+
+    if (handle.includes("w")) left = Math.min(startRect.x + dx, right - MIN_RECT_SIZE);
+    if (handle.includes("e")) right = Math.max(startRect.x + MIN_RECT_SIZE, startRect.x + startRect.w + dx);
+    if (handle.includes("n")) top = Math.min(startRect.y + dy, bottom - MIN_RECT_SIZE);
+    if (handle.includes("s")) bottom = Math.max(startRect.y + MIN_RECT_SIZE, startRect.y + startRect.h + dy);
+
+    rect.x = left;
+    rect.y = top;
+    rect.w = right - left;
+    rect.h = bottom - top;
+  }
+
+  private hitResizeHandle(point: Vec2): { selection: Selection; handle: ResizeHandle; rect: Rect } | null {
+    if (!this.selection || this.selection.kind === "start") return null;
+    const rect = this.rectForSelection(this.selection);
+    if (!rect) return null;
+    const tolerance = Math.max(8 / this.view.w, 5);
+    for (const { handle, point: handlePoint } of resizeHandlesForRect(rect)) {
+      if (Math.abs(point.x - handlePoint.x) <= tolerance && Math.abs(point.y - handlePoint.y) <= tolerance) {
+        return { selection: this.selection, handle, rect };
+      }
+    }
+    return null;
+  }
+
   private addObjectAtViewCenter(): void {
     if (!rectCollections.includes(this.tool as RectCollection)) {
       this.setStatus("Choose an object tool first");
@@ -735,6 +874,7 @@ class LevelEditor {
     const object = this.createObject(kind, world);
     ensureCollection(this.level, kind).push(object);
     this.selection = { kind, id: object.id };
+    this.activePanel = "inspect";
     this.afterMutation(`${collectionLabels[kind]} object added`);
   }
 
@@ -758,6 +898,7 @@ class LevelEditor {
     };
     ensureCollection(this.level, this.selection.kind).push(copy);
     this.selection = { kind: this.selection.kind, id: copy.id };
+    this.activePanel = "inspect";
     this.afterMutation("Object duplicated");
   }
 
@@ -803,6 +944,7 @@ class LevelEditor {
   private renderAll(): void {
     this.renderLevelSelect();
     this.renderToolbar();
+    this.renderPanelTabs();
     this.renderObjectList();
     this.renderInspector();
     this.renderValidation();
@@ -813,6 +955,15 @@ class LevelEditor {
       this.hasFitInitialLevel = true;
       this.renderCanvas();
     }
+  }
+
+  private renderPanelTabs(): void {
+    this.host.querySelectorAll<HTMLButtonElement>("[data-editor-tab]").forEach((button) => {
+      button.classList.toggle("active", button.dataset.editorTab === this.activePanel);
+    });
+    this.host.querySelectorAll<HTMLElement>("[data-tab-panel]").forEach((panel) => {
+      panel.hidden = panel.dataset.tabPanel !== this.activePanel;
+    });
   }
 
   private renderLevelSelect(): void {
@@ -930,11 +1081,18 @@ class LevelEditor {
       return this.selectField("Tone", "tone", String(record.tone || ""), ["", "steel", "glass", "warning", "dark"]);
     }
     if (kind === "platforms" || kind === "drones") {
+      const moving = object as MovingPlatform | PatrolDrone;
+      const path = movingPath(moving);
+      const axisName = moving.axis === "x" ? "X" : "Y";
       return `
-        <div class="inspector-grid four">
+        <div class="inspector-grid two">
           ${this.selectField("Axis", "axis", String(record.axis || "x"), ["x", "y"])}
-          ${this.numberField("Distance", "distance", Number(record.distance || 0), "object")}
-          ${this.numberField("Period", "period", Number(record.period || 1), "object")}
+          ${this.numberField("Speed", "speed", path.speed || 1, "object", 5)}
+        </div>
+        <div class="inspector-grid four">
+          ${this.numberField(`Start ${axisName}`, "pathStart", path.start, "object")}
+          ${this.numberField(`End ${axisName}`, "pathEnd", path.end, "object")}
+          ${this.numberField("Cycle", "period", Number(record.period || 1), "object", 1)}
           ${this.numberField("Phase", "phase", Number(record.phase || 0), "object", 0.1)}
         </div>
       `;
@@ -1116,6 +1274,7 @@ class LevelEditor {
     this.drawBounds();
     this.drawCollections();
     this.drawStartAndExit();
+    this.drawSelectionHandles();
     ctx.restore();
   }
 
@@ -1174,17 +1333,7 @@ class LevelEditor {
 
     if (kind === "platforms" || kind === "drones") {
       const moving = object as MovingPlatform | PatrolDrone;
-      ctx.strokeStyle = kind === "platforms" ? "rgba(255, 227, 90, 0.38)" : "rgba(255, 79, 139, 0.32)";
-      ctx.lineWidth = 2 / this.view.w;
-      ctx.beginPath();
-      if (moving.axis === "x") {
-        ctx.moveTo(moving.x - moving.distance, moving.y + moving.h / 2);
-        ctx.lineTo(moving.x + moving.w + moving.distance, moving.y + moving.h / 2);
-      } else {
-        ctx.moveTo(moving.x + moving.w / 2, moving.y - moving.distance);
-        ctx.lineTo(moving.x + moving.w / 2, moving.y + moving.h + moving.distance);
-      }
-      ctx.stroke();
+      this.drawMotionPath(kind, moving, selected);
     }
 
     if (kind === "cores") {
@@ -1278,6 +1427,54 @@ class LevelEditor {
     ctx.fill();
     ctx.stroke();
     this.drawObjectLabel(exit, "exit", exitStyle.text);
+  }
+
+  private drawMotionPath(kind: "platforms" | "drones", object: MovingPlatform | PatrolDrone, selected: boolean): void {
+    const ctx = this.context;
+    const center = { x: object.x + object.w / 2, y: object.y + object.h / 2 };
+    const start =
+      object.axis === "x"
+        ? { x: center.x - object.distance, y: center.y }
+        : { x: center.x, y: center.y - object.distance };
+    const end =
+      object.axis === "x"
+        ? { x: center.x + object.distance, y: center.y }
+        : { x: center.x, y: center.y + object.distance };
+    const color = kind === "platforms" ? "#ffe35a" : "#ff4f8b";
+    const fill = kind === "platforms" ? "rgba(255, 227, 90, 0.95)" : "rgba(255, 79, 139, 0.95)";
+    const radius = selected ? 6 / this.view.w : 4 / this.view.w;
+
+    ctx.strokeStyle = selected ? color : kind === "platforms" ? "rgba(255, 227, 90, 0.38)" : "rgba(255, 79, 139, 0.34)";
+    ctx.lineWidth = selected ? 3 / this.view.w : 2 / this.view.w;
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = "#ecfbff";
+    ctx.lineWidth = 1.5 / this.view.w;
+    for (const point of [start, end]) {
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  private drawSelectionHandles(): void {
+    if (!this.selection || this.selection.kind === "start") return;
+    const rect = this.rectForSelection(this.selection);
+    if (!rect) return;
+    const ctx = this.context;
+    const size = Math.max(8 / this.view.w, 5);
+    ctx.fillStyle = "#fff8bf";
+    ctx.strokeStyle = "#05070d";
+    ctx.lineWidth = 1.5 / this.view.w;
+    for (const { point } of resizeHandlesForRect(rect)) {
+      ctx.fillRect(point.x - size / 2, point.y - size / 2, size, size);
+      ctx.strokeRect(point.x - size / 2, point.y - size / 2, size, size);
+    }
   }
 
   private drawObjectLabel(rect: Rect, label: string, color: string): void {
@@ -1376,6 +1573,7 @@ class LevelEditor {
   }
 
   private afterMutation(status: string): void {
+    this.renderPanelTabs();
     this.renderObjectList();
     this.renderInspector();
     this.renderValidation();

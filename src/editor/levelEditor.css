@@ -19,12 +19,12 @@
   position: sticky;
   top: 0;
   z-index: 4;
-  min-height: 68px;
+  min-height: 60px;
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(220px, 360px) minmax(260px, auto);
-  gap: 14px;
+  grid-template-columns: minmax(210px, 0.8fr) minmax(260px, 1fr) auto;
+  gap: 12px;
   align-items: center;
-  padding: 12px 16px;
+  padding: 10px 14px;
   border-bottom: 1px solid rgba(67, 247, 255, 0.28);
   background: rgba(5, 8, 16, 0.88);
 }
@@ -68,20 +68,20 @@
 .editor-workspace {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(280px, 360px);
-  gap: 10px;
-  padding: 10px;
+  grid-template-columns: minmax(172px, 210px) minmax(0, 1fr) minmax(320px, 400px);
+  gap: 8px;
+  padding: 8px;
 }
 
 .editor-sidebar {
   min-height: 0;
   display: grid;
-  gap: 10px;
+  gap: 8px;
   grid-auto-rows: min-content;
 }
 
 .editor-sidebar.right {
-  grid-template-rows: min-content minmax(130px, 0.45fr) minmax(220px, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .editor-panel {
@@ -90,7 +90,7 @@
   background: rgba(8, 14, 29, 0.78);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28), inset 0 0 32px rgba(67, 247, 255, 0.04);
   border-radius: 8px;
-  padding: 12px;
+  padding: 10px;
   overflow: hidden;
 }
 
@@ -105,14 +105,23 @@
 
 .editor-tool-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: 1fr;
+  gap: 7px;
   margin-bottom: 10px;
+}
+
+.toolbar-panel .editor-viewport-actions {
+  justify-content: stretch;
+}
+
+.toolbar-panel .editor-button {
+  flex: 1 1 72px;
 }
 
 .editor-tool,
 .editor-button,
 .object-row,
+.editor-tabs button,
 .editor-field input,
 .editor-field select,
 .editor-field textarea,
@@ -125,12 +134,14 @@
 
 .editor-tool,
 .editor-button,
+.editor-tabs button,
 .object-row {
   cursor: pointer;
 }
 
 .editor-tool,
-.editor-button {
+.editor-button,
+.editor-tabs button {
   min-height: 34px;
   padding: 0 10px;
   font-weight: 900;
@@ -149,6 +160,7 @@
 }
 
 .editor-tool.active,
+.editor-tabs button.active,
 .object-row.active {
   border-color: #ffe35a;
   background: rgba(255, 227, 90, 0.14);
@@ -157,6 +169,7 @@
 
 .editor-tool:hover,
 .editor-button:hover,
+.editor-tabs button:hover,
 .object-row:hover {
   border-color: #ffe35a;
   background: rgba(20, 30, 52, 0.94);
@@ -164,6 +177,7 @@
 
 .editor-tool:focus-visible,
 .editor-button:focus-visible,
+.editor-tabs button:focus-visible,
 .object-row:focus-visible,
 .editor-field input:focus-visible,
 .editor-field select:focus-visible,
@@ -171,6 +185,34 @@
 .editor-level-select select:focus-visible {
   outline: 2px solid #ffe35a;
   outline-offset: 2px;
+}
+
+.editor-tabs-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+}
+
+.editor-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.editor-tabs button {
+  min-width: 0;
+  padding: 0 7px;
+  font-size: 0.76rem;
+}
+
+.editor-tab-panel {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.editor-tab-panel[hidden] {
+  display: none !important;
 }
 
 .object-list-panel,
@@ -186,6 +228,15 @@
 [data-validation] {
   min-height: 0;
   overflow: auto;
+}
+
+.editor-dock,
+.editor-tabs-panel,
+.editor-tab-panel,
+[data-inspector],
+.editor-object-list,
+[data-validation] {
+  min-width: 0;
 }
 
 .object-group {
@@ -382,13 +433,12 @@
 
 @media (max-width: 1120px) {
   .editor-workspace {
-    grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
+    grid-template-columns: minmax(170px, 210px) minmax(0, 1fr);
   }
 
   .editor-sidebar.right {
     grid-column: 1 / -1;
-    grid-template-columns: minmax(260px, 1fr) minmax(220px, 0.7fr) minmax(260px, 1fr);
-    grid-template-rows: minmax(220px, 1fr);
+    min-height: 320px;
   }
 }
 
@@ -424,9 +474,13 @@
     overflow: visible;
   }
 
-  .editor-sidebar,
-  .editor-sidebar.right {
+  .editor-sidebar {
     display: contents;
+  }
+
+  .editor-sidebar.right {
+    display: block;
+    min-height: 560px;
   }
 
   .toolbar-panel {
@@ -437,20 +491,8 @@
     order: 2;
   }
 
-  .inspector-panel {
-    order: 3;
-  }
-
-  .validation-panel {
+  .editor-dock {
     order: 4;
-  }
-
-  .export-panel {
-    order: 5;
-  }
-
-  .object-list-panel {
-    order: 6;
   }
 
   .editor-panel {
