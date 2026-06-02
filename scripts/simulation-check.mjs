@@ -267,8 +267,14 @@ try {
   ];
 
   const levelIds = levels.map((level) => level.id);
+  const levelIndexes = levels.map((level) => level.index);
   const routeIds = handcraftedRoutes.map((route) => route.id);
   const duplicateLevelIds = levelIds.filter((id, index) => levelIds.indexOf(id) !== index);
+  const duplicateLevelIndexes = levelIndexes.filter((index, position) => levelIndexes.indexOf(index) !== position);
+  const misorderedLevelIndexes = levels
+    .map((level, position) => ({ level, position }))
+    .filter(({ level, position }) => level.index !== position)
+    .map(({ level, position }) => `${level.id}:${level.index}->${position}`);
   const duplicateRouteIds = routeIds.filter((id, index) => routeIds.indexOf(id) !== index);
   const routeIdSet = new Set(routeIds);
   const levelIdSet = new Set(levelIds);
@@ -277,6 +283,14 @@ try {
   assert(
     duplicateLevelIds.length === 0,
     `Expected unique level IDs, found duplicates: ${duplicateLevelIds.join(", ")}`
+  );
+  assert(
+    duplicateLevelIndexes.length === 0,
+    `Expected unique level indexes, found duplicates: ${duplicateLevelIndexes.join(", ")}`
+  );
+  assert(
+    misorderedLevelIndexes.length === 0,
+    `Expected level indexes to match array order, found mismatches: ${misorderedLevelIndexes.join(", ")}`
   );
   assert(
     duplicateRouteIds.length === 0,
