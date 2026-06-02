@@ -108,7 +108,7 @@ export const levels: Level[] = [
     solids: [
       ...frame(),
       s("left-rise", 210, 432, 110, 18),
-      s("right-rise", 696, 362, 210, 18)
+      s("right-rise", 640, 362, 266, 18)
     ],
     platforms: [{ id: "lift-a", ...r(414, 430, 120, 18), axis: "y", distance: 92, period: 210 }],
     hazards: [h("spark-strip-b", 548, 492, 118, 8)],

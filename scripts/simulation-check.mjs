@@ -44,6 +44,7 @@ const server = await createServer({
 try {
   const { RoomSimulation } = await server.ssrLoadModule("/src/game/state.ts");
   const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
+  const { platformRectAt } = await server.ssrLoadModule("/src/game/player.ts");
   const { isBetterLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
 
   assert(levels.length === 10, `Expected 10 handcrafted levels, found ${levels.length}`);
@@ -69,6 +70,25 @@ try {
   runFrames(heldOpenJump, 12, jumpRight);
   runFrames(heldOpenJump, 90, right);
   assert(heldOpenJump.won, "Held Open final jump should reach the exit ledge and portal with the gate held open");
+
+  const liftPhase = levels[4];
+  const lift = liftPhase.platforms?.find((platform) => platform.id === "lift-a");
+  assert(lift, "Expected Lift Phase to include lift-a");
+  const liftPhaseJump = new RoomSimulation(liftPhase);
+  const liftLaunchTick = 136;
+  const liftRect = platformRectAt(lift, liftLaunchTick);
+  liftPhaseJump.tick = liftLaunchTick;
+  liftPhaseJump.totalFrames = liftLaunchTick;
+  liftPhaseJump.player.x = liftRect.x + liftRect.w - liftPhaseJump.player.w;
+  liftPhaseJump.player.y = liftRect.y - liftPhaseJump.player.h;
+  liftPhaseJump.player.vx = 205 / 60;
+  liftPhaseJump.player.vy = 0;
+  liftPhaseJump.player.onGround = true;
+  liftPhaseJump.player.coyote = 7;
+  liftPhaseJump.player.standingOn = "lift-a";
+  runFrames(liftPhaseJump, 12, jumpRight);
+  runFrames(liftPhaseJump, 95, right);
+  assert(liftPhaseJump.won, "Lift Phase final lift jump should reach the right ledge and portal");
 
   const goldScore = { levelId: "score-test", frames: 600, echoes: 3, medal: "Gold" };
   const slowBronzeFewerEchoes = { levelId: "score-test", frames: 2400, echoes: 0, medal: "Bronze" };
@@ -209,6 +229,7 @@ try {
         checks: [
           "level-data",
           "held-open-final-jump",
+          "lift-phase-final-jump",
           "score-ranking",
           "echo-plate-door",
           "core-door",
