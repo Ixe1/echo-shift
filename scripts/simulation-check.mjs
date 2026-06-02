@@ -27,6 +27,7 @@ const baseLevel = {
 const right = { left: false, right: true, jump: false };
 const idle = { left: false, right: false, jump: false };
 const jump = { left: false, right: false, jump: true };
+const jumpRight = { left: false, right: true, jump: true };
 
 const runFrames = (simulation, frames, input) => {
   for (let i = 0; i < frames; i += 1) {
@@ -51,6 +52,23 @@ try {
   assert(levels.some((level) => (level.lasers || []).length > 0), "Expected at least one laser level");
   assert(levels.some((level) => (level.platforms || []).length > 0), "Expected at least one moving-platform level");
   assert(levels.some((level) => (level.cores || []).length > 0), "Expected at least one core level");
+
+  const heldOpen = levels[2];
+  const midLedge = heldOpen.solids.find((solid) => solid.id === "mid-ledge");
+  const exitLedge = heldOpen.solids.find((solid) => solid.id === "exit-ledge");
+  assert(midLedge && exitLedge, "Expected Held Open to include mid and exit ledges");
+  const heldOpenJump = new RoomSimulation(heldOpen);
+  heldOpenJump.objectState.latchedPlates.add("plate-b");
+  heldOpenJump.player.x = midLedge.x + midLedge.w - heldOpenJump.player.w - 8;
+  heldOpenJump.player.y = midLedge.y - heldOpenJump.player.h;
+  heldOpenJump.player.vx = 0;
+  heldOpenJump.player.vy = 0;
+  heldOpenJump.player.onGround = true;
+  heldOpenJump.player.coyote = 7;
+  runFrames(heldOpenJump, 2, right);
+  runFrames(heldOpenJump, 12, jumpRight);
+  runFrames(heldOpenJump, 90, right);
+  assert(heldOpenJump.won, "Held Open final jump should reach the exit ledge and portal with the gate held open");
 
   const goldScore = { levelId: "score-test", frames: 600, echoes: 3, medal: "Gold" };
   const slowBronzeFewerEchoes = { levelId: "score-test", frames: 2400, echoes: 0, medal: "Bronze" };
@@ -190,6 +208,7 @@ try {
         levels: levels.length,
         checks: [
           "level-data",
+          "held-open-final-jump",
           "score-ranking",
           "echo-plate-door",
           "core-door",

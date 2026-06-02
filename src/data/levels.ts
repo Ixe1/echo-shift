@@ -66,7 +66,7 @@ export const levels: Level[] = [
       ...frame(),
       s("low-block", 296, 456, 78, 44),
       s("mid-ledge", 452, 398, 172, 18),
-      s("exit-ledge", 742, 350, 178, 18)
+      s("exit-ledge", 710, 350, 210, 18)
     ],
     plates: [p("plate-b", 184, 492, 70, 8)],
     doors: [{ id: "gate-b", ...r(664, 260, 28, 108), opensWith: ["plate-b"] }],
