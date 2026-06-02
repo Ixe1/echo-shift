@@ -135,6 +135,12 @@ const positiveNumber = (value: unknown, fallback: number): number => {
   return Number.isFinite(numeric) ? numeric : fallback;
 };
 
+const nonNegativeNumber = (value: unknown, fallback: number): number => Math.max(0, positiveNumber(value, fallback));
+
+const nonNegativeInteger = (value: unknown, fallback: number): number => Math.max(0, Math.round(positiveNumber(value, fallback)));
+
+const positiveInteger = (value: unknown, fallback: number): number => Math.max(1, Math.round(positiveNumber(value, fallback)));
+
 const csvToList = (value: string): string[] =>
   value
     .split(",")
@@ -211,7 +217,7 @@ const defaultSizeFor = (kind: RectCollection): { w: number; h: number } => {
 
 const movingPath = (item: MovingPlatform | PatrolDrone): { start: number; end: number; center: number; speed: number } => {
   const center = item.axis === "x" ? item.x : item.y;
-  const distance = Math.max(0, item.distance);
+  const distance = nonNegativeNumber(item.distance, 0);
   return {
     start: center - distance,
     end: center + distance,
@@ -221,15 +227,16 @@ const movingPath = (item: MovingPlatform | PatrolDrone): { start: number; end: n
 };
 
 const movingPathPoints = (item: MovingPlatform | PatrolDrone): { start: Vec2; end: Vec2 } => {
+  const distance = nonNegativeNumber(item.distance, 0);
   return {
     start:
       item.axis === "x"
-        ? { x: item.x - item.distance, y: item.y + item.h / 2 }
-        : { x: item.x + item.w / 2, y: item.y - item.distance },
+        ? { x: item.x - distance, y: item.y + item.h / 2 }
+        : { x: item.x + item.w / 2, y: item.y - distance },
     end:
       item.axis === "x"
-        ? { x: item.x + item.distance, y: item.y + item.h / 2 }
-        : { x: item.x + item.w / 2, y: item.y + item.distance }
+        ? { x: item.x + distance, y: item.y + item.h / 2 }
+        : { x: item.x + item.w / 2, y: item.y + distance }
   };
 };
 
@@ -312,7 +319,7 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number): Level | 
 
   const level: Level = {
     id: String(value.id || `level-${fallbackIndex + 1}`),
-    index: positiveNumber(value.index, fallbackIndex),
+    index: nonNegativeInteger(value.index, fallbackIndex),
     name: String(value.name || `Level ${fallbackIndex + 1}`),
     subtitle: String(value.subtitle || ""),
     start: {
@@ -339,10 +346,10 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number): Level | 
     lasers: normalizeOptionalCollection(value.lasers, "lasers", usedObjectIds) as Laser[],
     cores: normalizeOptionalCollection(value.cores, "cores", usedObjectIds) as Core[],
     hazards: normalizeOptionalCollection(value.hazards, "hazards", usedObjectIds) as Hazard[],
-    perfectEchoes: positiveNumber(value.perfectEchoes, 0),
+    perfectEchoes: nonNegativeInteger(value.perfectEchoes, 0),
     medalFrames: {
-      gold: positiveNumber(medalRecord.gold, 1800),
-      silver: positiveNumber(medalRecord.silver, 2400)
+      gold: positiveInteger(medalRecord.gold, 1800),
+      silver: positiveInteger(medalRecord.silver, 2400)
     },
     hint: String(value.hint || "")
   };
@@ -370,8 +377,8 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
       ...base,
       id,
       axis: record.axis === "y" ? "y" : "x",
-      distance: positiveNumber(record.distance, 100),
-      period: Math.max(1, positiveNumber(record.period, 180)),
+      distance: nonNegativeNumber(record.distance, 100),
+      period: positiveInteger(record.period, 180),
       phase: positiveNumber(record.phase, 0)
     } as MovingPlatform | PatrolDrone;
   }
@@ -738,7 +745,9 @@ class LevelEditor {
       return;
     }
     if (field === "distance" || field === "period" || field === "phase") {
-      record[field] = field === "period" ? Math.max(1, Number(value)) : Number(value);
+      if (field === "distance") record.distance = nonNegativeNumber(value, 0);
+      else if (field === "period") record.period = positiveInteger(value, 1);
+      else record.phase = Number(value);
       return;
     }
     if (field === "once" || field === "inverted") {
@@ -1466,6 +1475,12 @@ class LevelEditor {
     if (level.index !== index) {
       messages.push({ severity: "warning", text: `${level.name} index is ${level.index}; expected ${index}.` });
     }
+    if (!Number.isInteger(level.index) || level.index < 0) {
+      messages.push({ severity: "error", text: `${level.name} index must be a non-negative integer.` });
+    }
+    if (!Number.isInteger(level.perfectEchoes) || level.perfectEchoes < 0) {
+      messages.push({ severity: "error", text: `${level.name} perfect echoes must be a non-negative integer.` });
+    }
     if (level.bounds.w <= 0 || level.bounds.h <= 0) {
       messages.push({ severity: "error", text: `${level.name} bounds must have positive size.` });
     }
@@ -1477,6 +1492,9 @@ class LevelEditor {
     }
     if (level.medalFrames.gold <= 0 || level.medalFrames.silver <= 0 || level.medalFrames.silver < level.medalFrames.gold) {
       messages.push({ severity: "error", text: `${level.name} medal frame thresholds are invalid.` });
+    }
+    if (!Number.isInteger(level.medalFrames.gold) || !Number.isInteger(level.medalFrames.silver)) {
+      messages.push({ severity: "error", text: `${level.name} medal frame thresholds must be integers.` });
     }
 
     const objectIds = new Map<string, string>();
@@ -1490,6 +1508,15 @@ class LevelEditor {
         objectIds.set(object.id, kind);
         if (object.w <= 0 || object.h <= 0) {
           messages.push({ severity: "error", text: `${level.name}:${object.id} has non-positive size.` });
+        }
+        if (kind === "platforms" || kind === "drones") {
+          const moving = object as MovingPlatform | PatrolDrone;
+          if (!Number.isFinite(moving.distance) || moving.distance < 0) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid movement distance.` });
+          }
+          if (!Number.isFinite(moving.period) || moving.period <= 0) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid movement period.` });
+          }
         }
         const structuralSolid =
           kind === "solids" &&

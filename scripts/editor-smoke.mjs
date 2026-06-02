@@ -433,12 +433,13 @@ try {
     exit: { x: 850, y: 438, w: 48, h: 62 },
     bounds: { x: 0, y: 0, w: 960, h: 540 },
     solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
+    platforms: [{ id: "bad-lift", x: 420, y: 450, w: 120, h: 18, axis: "x", distance: -80, period: -12 }],
     hazards: [
       { x: 200, y: 496, w: 58, h: 4 },
       { id: "", x: 300, y: 496, w: 58, h: 4 }
     ],
-    perfectEchoes: 0,
-    medalFrames: { gold: 1800, silver: 2400 },
+    perfectEchoes: -2.6,
+    medalFrames: { gold: 1800.4, silver: 2400.4 },
     hint: ""
   };
   await page.locator("[data-import-json]").fill(JSON.stringify(fallbackImportLevel, null, 2));
@@ -446,6 +447,7 @@ try {
   await page.waitForFunction(() => document.querySelector("[data-level-select] option")?.textContent?.includes("Fallback ID Smoke"));
   const fallbackImportExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
   const fallbackImportHazardIds = fallbackImportExport.hazards.map((hazard) => hazard.id);
+  const fallbackImportPlatform = fallbackImportExport.platforms.find((platform) => platform.id === "bad-lift");
   const fallbackImportObjectIds = objectKinds.flatMap((kind) => (fallbackImportExport[kind] || []).map((object) => object.id));
   const fallbackImportValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   const fallbackImportValidationText = await page.locator("[data-validation]").textContent();
@@ -612,6 +614,20 @@ try {
   assert(
     fallbackImportValidation === "clean",
     `Expected clean validation after fallback import, got ${fallbackImportValidation}: ${fallbackImportValidationText}`
+  );
+  assert(fallbackImportExport.perfectEchoes === 0, `Expected imported perfectEchoes to normalize to 0, got ${fallbackImportExport.perfectEchoes}`);
+  assert(
+    fallbackImportPlatform?.distance === 0,
+    `Expected imported negative platform distance to normalize to 0, got ${fallbackImportPlatform?.distance}`
+  );
+  assert(
+    fallbackImportPlatform?.period === 1,
+    `Expected imported negative platform period to normalize to 1, got ${fallbackImportPlatform?.period}`
+  );
+  assert(fallbackImportExport.medalFrames.gold === 1800, `Expected imported gold medal frames to round to 1800, got ${fallbackImportExport.medalFrames.gold}`);
+  assert(
+    fallbackImportExport.medalFrames.silver === 2400,
+    `Expected imported silver medal frames to round to 2400, got ${fallbackImportExport.medalFrames.silver}`
   );
   assert(importedName?.includes("Smoke Edited"), `Import did not update the level name: ${importedName}`);
   assert(importedValidation === "clean", `Expected clean validation after import, got ${importedValidation}`);
