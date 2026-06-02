@@ -268,6 +268,23 @@ try {
   await page.locator("[data-delete-object]").click();
   const surfaceSnapValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
+  await dragToolToWorld(page, "plates", { x: 420, y: 500 });
+  await page.locator("[data-object-field='id']").fill("laser-1");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await dragToolToWorld(page, "lasers", { x: 470, y: 500 });
+  const generatedGlobalLaserId = await page.locator("[data-object-field='id']").inputValue();
+  const generatedGlobalIdValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const generatedGlobalIdText = await page.locator("[data-validation]").textContent();
+  const generatedGlobalIdLevel = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
+  const generatedGlobalObjectIds = ["solids", "platforms", "hazards", "plates", "doors", "lasers", "cores", "drones"].flatMap((kind) =>
+    (generatedGlobalIdLevel[kind] || []).map((object) => object.id)
+  );
+  await page.locator("[data-delete-object]").click();
+  await openTab(page, "objects");
+  await page.locator("[data-object-list] [data-kind='plates'][data-id='laser-1']").click();
+  await page.locator("[data-delete-object]").click();
+  const generatedGlobalCleanupValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+
   await page.locator("[data-tool='solids']").click();
   await page.locator("[data-add-object]").click();
   await page.locator("[data-object-field='id']").fill("smoke-narrow-support");
@@ -316,6 +333,12 @@ try {
 
   await openTab(page, "objects");
   await page.locator("[data-object-list] [data-kind='exit']").click();
+  const exitXBeforeDuplicate = await objectNumber(page, "x");
+  const exitYBeforeDuplicate = await objectNumber(page, "y");
+  const exitDuplicateDisabled = await page.locator("[data-duplicate-object]").isDisabled();
+  await page.locator("[data-duplicate-object]").evaluate((button) => button.click());
+  const exitXAfterDuplicate = await objectNumber(page, "x");
+  const exitYAfterDuplicate = await objectNumber(page, "y");
   const exitWidthBefore = await objectNumber(page, "w");
   await page.locator("[data-tool='select']").click();
   await dragWorld(page, { x: 2334, y: 469 }, { x: 2380, y: 469 });
@@ -452,6 +475,19 @@ try {
   assert(surfacePlateBottom === 500, `Expected dropped plate bottom to snap flush to floor y=500, got ${surfacePlateY}+h=${surfacePlateBottom}`);
   assert(duplicatedPlateBottom === 500, `Expected duplicated plate bottom to stay flush to floor y=500, got ${duplicatedPlateY}+h=${duplicatedPlateBottom}`);
   assert(surfaceLaserBottom === 500, `Expected dropped laser bottom to snap flush to floor y=500, got ${surfaceLaserY}+h=${surfaceLaserBottom}`);
+  assert(generatedGlobalLaserId !== "laser-1", `Expected generated laser id to avoid cross-kind laser-1 collision, got ${generatedGlobalLaserId}`);
+  assert(
+    generatedGlobalObjectIds.length === new Set(generatedGlobalObjectIds).size,
+    `Expected generated editor IDs to remain level-unique, got ${generatedGlobalObjectIds.join(", ")}`
+  );
+  assert(
+    generatedGlobalIdValidation === "clean",
+    `Expected clean validation after global ID generation, got ${generatedGlobalIdValidation}: ${generatedGlobalIdText}`
+  );
+  assert(
+    generatedGlobalCleanupValidation === "clean",
+    `Expected clean validation after global ID generation cleanup, got ${generatedGlobalCleanupValidation}`
+  );
   assert(narrowPlateBottom === 420, `Expected dropped plate bottom to snap flush to narrow support y=420, got ${narrowPlateY}+h=${narrowPlateBottom}`);
   assert(surfaceSnapValidation === "clean", `Expected clean validation after surface snap checks, got ${surfaceSnapValidation}`);
   assert(rejectedDuplicateObjectId === "smoke-hazard", `Expected duplicate object id rename to be rejected, got ${rejectedDuplicateObjectId}`);
@@ -507,6 +543,11 @@ try {
   assert(floorDefaultHeight >= 40, `Expected new solid/floor defaults to be selectable, got height ${floorDefaultHeight}`);
   assert(reselectedThinSolidId === "smoke-floor", `Expected thin solid canvas hit tolerance to reselect smoke-floor, got ${reselectedThinSolidId}`);
   assert(hazardWidthAfter > hazardWidthBefore, `Expected resize drag to widen hazard: ${hazardWidthBefore} -> ${hazardWidthAfter}`);
+  assert(exitDuplicateDisabled, "Expected exit duplicate action to be disabled");
+  assert(
+    exitXAfterDuplicate === exitXBeforeDuplicate && exitYAfterDuplicate === exitYBeforeDuplicate,
+    `Expected exit duplicate action not to move the singleton exit: ${exitXBeforeDuplicate},${exitYBeforeDuplicate} -> ${exitXAfterDuplicate},${exitYAfterDuplicate}`
+  );
   assert(exitWidthAfter === exitWidthBefore, `Expected exit portal width to stay locked during handle drag: ${exitWidthBefore} -> ${exitWidthAfter}`);
   assert(plateWidthAfter === plateWidthBefore, `Expected pressure plate width to stay locked during handle drag: ${plateWidthBefore} -> ${plateWidthAfter}`);
   assert(droneWidthAfter === droneWidthBefore, `Expected drone body width to stay locked during handle drag: ${droneWidthBefore} -> ${droneWidthAfter}`);

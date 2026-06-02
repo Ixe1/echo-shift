@@ -1097,19 +1097,26 @@ class LevelEditor {
     return candidates[0] ?? null;
   }
 
-  private objectIdExists(id: string, ignored: RectObject): boolean {
+  private objectIdExists(id: string, ignored?: RectObject): boolean {
     if (!id) return false;
     return rectCollections.some((kind) => readCollection(this.level, kind).some((object) => object !== ignored && object.id === id));
   }
 
+  private canDuplicateSelection(): boolean {
+    return !!this.selection && this.selection.kind !== "start" && this.selection.kind !== "exit";
+  }
+
   private duplicateSelection(): void {
-    if (!this.selection || this.selection.kind === "start") {
+    if (!this.selection) {
       this.setStatus("Select an object to duplicate");
       return;
     }
     if (this.selection.kind === "exit") {
-      this.level.exit = { ...this.level.exit, x: this.level.exit.x + GRID, y: this.level.exit.y + GRID };
-      this.afterMutation("Exit duplicated in place");
+      this.setStatus("Exit is unique and cannot be duplicated");
+      return;
+    }
+    if (this.selection.kind === "start") {
+      this.setStatus("Start is unique and cannot be duplicated");
       return;
     }
     const object = this.findObject(this.selection.kind, this.selection.id);
@@ -1156,10 +1163,9 @@ class LevelEditor {
 
   private nextObjectId(kind: RectCollection): string {
     const stem = kind.slice(0, -1) || kind;
-    const existing = new Set(readCollection(this.level, kind).map((item) => item.id));
     let index = readCollection(this.level, kind).length + 1;
     let id = `${stem}-${index}`;
-    while (existing.has(id)) {
+    while (this.objectIdExists(id)) {
       index += 1;
       id = `${stem}-${index}`;
     }
@@ -1205,6 +1211,9 @@ class LevelEditor {
     this.host.querySelectorAll<HTMLButtonElement>("[data-tool]").forEach((button) => {
       button.classList.toggle("active", button.dataset.tool === this.tool);
     });
+    const duplicateButton = this.require<HTMLButtonElement>("[data-duplicate-object]");
+    duplicateButton.disabled = !this.canDuplicateSelection();
+    duplicateButton.title = duplicateButton.disabled ? "Select a placed object that can be duplicated" : "Duplicate selected object";
   }
 
   private renderObjectList(): void {

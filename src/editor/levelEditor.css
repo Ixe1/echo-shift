@@ -211,6 +211,14 @@
   background: rgba(20, 30, 52, 0.94);
 }
 
+.editor-button:disabled,
+.editor-button:disabled:hover {
+  cursor: not-allowed;
+  border-color: rgba(67, 247, 255, 0.16);
+  background: rgba(4, 9, 18, 0.42);
+  color: rgba(236, 251, 255, 0.38);
+}
+
 .editor-tool:focus-visible,
 .editor-button:focus-visible,
 .editor-tabs button:focus-visible,
