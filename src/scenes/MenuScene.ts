@@ -11,7 +11,7 @@ export class MenuScene extends Phaser.Scene {
     clearUi();
     const root = uiRoot();
     root.innerHTML = `
-      <main class="screen">
+      <main class="screen art-screen menu-screen">
         <div class="menu-shell">
           <section class="brand-block">
             <img class="brand-logo" src="/assets/echo-shift-mark.svg" alt="Echo Shift" />
@@ -46,7 +46,7 @@ export class MenuScene extends Phaser.Scene {
     audio.play("select");
     const root = uiRoot();
     root.innerHTML = `
-      <main class="screen">
+      <main class="screen art-screen menu-screen">
         <section class="panel menu-panel">
           <h1>Credits</h1>
           <p class="credits-text">Echo Shift was designed and built with Codex-assisted development for the Community Dev Challenge.</p>

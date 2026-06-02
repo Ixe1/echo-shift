@@ -225,8 +225,19 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawBackground(): void {
+    const pulse = 0.5 + Math.sin(this.time.now / 900) * 0.5;
     this.world.fillStyle(0x05070d, 1);
     this.world.fillRect(0, 0, 960, 540);
+    this.world.fillStyle(0x081322, 0.92);
+    this.world.fillRect(0, 0, 960, 540);
+    this.world.fillStyle(0x0f1830, 0.64);
+    this.world.fillRect(42, 90, 188, 300);
+    this.world.fillRect(704, 70, 174, 330);
+    this.world.lineStyle(1, 0x43f7ff, 0.16 + pulse * 0.06);
+    for (let y = 112; y <= 360; y += 38) {
+      this.world.lineBetween(56, y, 216, y + 10);
+      this.world.lineBetween(718, y + 8, 866, y - 8);
+    }
     this.world.lineStyle(1, 0x123246, 0.36);
     for (let x = 0; x <= 960; x += 40) this.world.lineBetween(x, 0, x, 540);
     for (let y = 20; y <= 540; y += 40) this.world.lineBetween(0, y, 960, y);
@@ -234,6 +245,10 @@ export class GameScene extends Phaser.Scene {
     for (let x = -120; x < 960; x += 120) this.world.lineBetween(x, 540, x + 300, 0);
     this.world.fillStyle(0x09111d, 0.86);
     this.world.fillRect(0, 500, 960, 40);
+    this.world.fillStyle(0x43f7ff, 0.1 + pulse * 0.08);
+    this.world.fillRect(330, 507, 310, 4);
+    this.world.fillStyle(0xbd5cff, 0.12);
+    this.world.fillRect(76, 508, 150, 3);
   }
 
   private drawSolids(): void {
@@ -269,6 +284,12 @@ export class GameScene extends Phaser.Scene {
         this.world.lineStyle(1, open ? 0x43f7ff : 0xff4f8b, open ? 0.18 : 0.3);
         this.world.lineBetween(door.x + 3, y, door.x + door.w - 3, y);
       }
+      const nodeColor = open ? 0x43f7ff : 0xff4f8b;
+      this.world.fillStyle(nodeColor, open ? 0.42 : 0.86);
+      this.world.fillCircle(door.x + door.w / 2, door.y + 15, 4);
+      this.world.fillCircle(door.x + door.w / 2, door.y + door.h - 15, 4);
+      this.world.lineStyle(1, nodeColor, open ? 0.2 : 0.56);
+      this.world.lineBetween(door.x + door.w / 2, door.y + 21, door.x + door.w / 2, door.y + door.h - 21);
     }
   }
 
@@ -289,10 +310,11 @@ export class GameScene extends Phaser.Scene {
       const pulse = 1 + Math.sin(this.time.now / 140) * 0.12;
       this.world.fillStyle(0xffe35a, 0.18);
       this.world.fillCircle(center.x, center.y, 22 * pulse);
-      this.world.fillStyle(0xffe35a, 0.92);
-      this.world.fillCircle(center.x, center.y, 10);
+      this.drawDiamond(center.x, center.y, 12 * pulse, 0xffe35a, 0.9, 0xffffff, 0.72);
       this.world.lineStyle(2, 0xffffff, 0.7);
-      this.world.strokeCircle(center.x, center.y, 15 * pulse);
+      this.world.strokeCircle(center.x, center.y, 17 * pulse);
+      this.world.lineStyle(1, 0xffe35a, 0.5);
+      this.world.lineBetween(center.x - 18, center.y, center.x + 18, center.y);
     }
   }
 
@@ -311,14 +333,22 @@ export class GameScene extends Phaser.Scene {
       this.world.strokeRect(laser.x, laser.y, laser.w, laser.h);
       this.world.fillStyle(0xffffff, blocked ? 0.18 : 0.34);
       this.world.fillRect(laser.x, laser.y + laser.h / 2 - 1, laser.w, 2);
+      this.world.fillStyle(blocked ? 0xffe35a : 0xffffff, blocked ? 0.14 : 0.28);
+      for (let x = laser.x + ((this.simulation.tick * 2) % 16); x < laser.x + laser.w; x += 18) {
+        this.world.fillRect(x, laser.y + 2, 7, Math.max(2, laser.h - 4));
+      }
     }
   }
 
   private drawHazards(): void {
     for (const hazard of this.level.hazards || []) {
+      this.world.fillStyle(0xff4f8b, 0.14);
+      this.world.fillRect(hazard.x, hazard.y - 6, hazard.w, hazard.h + 10);
       this.world.fillStyle(0xff4f8b, 0.7);
       for (let x = hazard.x; x < hazard.x + hazard.w; x += 12) {
         this.world.fillTriangle(x, hazard.y + hazard.h, x + 6, hazard.y, x + 12, hazard.y + hazard.h);
+        this.world.lineStyle(1, 0xffffff, 0.16);
+        this.world.lineBetween(x + 6, hazard.y + 2, x + 6, hazard.y + hazard.h - 3);
       }
     }
   }
@@ -328,8 +358,12 @@ export class GameScene extends Phaser.Scene {
     const spin = this.time.now / 260;
     this.world.fillStyle(won ? 0xffe35a : 0x43f7ff, 0.13);
     this.world.fillEllipse(center.x, center.y, exit.w * 1.4, exit.h * 1.2);
+    this.world.fillStyle(0xbd5cff, 0.12);
+    this.world.fillEllipse(center.x, center.y, exit.w * 1.1, exit.h * 0.88);
     this.world.lineStyle(3, won ? 0xffe35a : 0x43f7ff, 0.82);
     this.world.strokeEllipse(center.x, center.y, exit.w, exit.h);
+    this.world.lineStyle(1, 0xffffff, 0.3);
+    this.world.strokeEllipse(center.x, center.y, exit.w * 0.7, exit.h * 0.7);
     this.world.lineStyle(2, 0xbd5cff, 0.72);
     this.world.beginPath();
     for (let i = 0; i < 5; i += 1) {
@@ -358,17 +392,30 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawActor(actor: ActorBody, color: number, alpha: number): void {
-    this.world.fillStyle(color, alpha * 0.16);
-    this.world.fillCircle(actor.x + actor.w / 2, actor.y + actor.h / 2, 25);
+    const centerX = actor.x + actor.w / 2;
+    const centerY = actor.y + actor.h / 2;
+    this.world.fillStyle(color, alpha * 0.13);
+    this.world.fillCircle(centerX, centerY, 28);
+    this.world.fillStyle(0x000000, alpha * 0.26);
+    this.world.fillEllipse(centerX, actor.y + actor.h + 3, actor.w * 0.94, 8);
     this.world.fillStyle(0x08111f, alpha);
-    this.world.fillRoundedRect(actor.x, actor.y, actor.w, actor.h, 5);
+    this.world.fillRoundedRect(actor.x + 2, actor.y + 9, actor.w - 4, actor.h - 13, 6);
+    this.world.fillStyle(0x13233b, alpha);
+    this.world.fillRoundedRect(actor.x + 5, actor.y, actor.w - 10, 18, 6);
     this.world.lineStyle(2, color, alpha);
-    this.world.strokeRoundedRect(actor.x, actor.y, actor.w, actor.h, 5);
-    this.world.fillStyle(color, alpha);
-    const eyeX = actor.facing > 0 ? actor.x + actor.w - 8 : actor.x + 5;
-    this.world.fillRect(eyeX, actor.y + 9, 4, 4);
-    this.world.fillStyle(0xffffff, alpha * 0.5);
-    this.world.fillRect(actor.x + 5, actor.y + actor.h - 7, actor.w - 10, 2);
+    this.world.strokeRoundedRect(actor.x + 2, actor.y + 9, actor.w - 4, actor.h - 13, 6);
+    this.world.strokeRoundedRect(actor.x + 5, actor.y, actor.w - 10, 18, 6);
+    const visorX = actor.facing > 0 ? actor.x + actor.w - 14 : actor.x + 6;
+    this.world.fillStyle(color, alpha * 0.88);
+    this.world.fillRoundedRect(visorX, actor.y + 6, 8, 5, 2);
+    this.world.fillStyle(0xffffff, alpha * 0.52);
+    this.world.fillRect(visorX + 1, actor.y + 7, 3, 1);
+    this.world.fillStyle(color, alpha * 0.52);
+    this.world.fillRect(actor.x + 7, actor.y + actor.h - 8, 7, 3);
+    this.world.fillRect(actor.x + actor.w - 14, actor.y + actor.h - 8, 7, 3);
+    this.world.lineStyle(1, color, alpha * 0.42);
+    this.world.lineBetween(centerX, actor.y + 20, centerX, actor.y + actor.h - 10);
+    this.drawDiamond(centerX, actor.y + 24, 4, color, alpha * 0.9, 0xffffff, alpha * 0.3);
   }
 
   private drawForegroundText(tick: number): void {
@@ -384,6 +431,29 @@ export class GameScene extends Phaser.Scene {
     this.world.fillRect(rect.x, rect.y, rect.w, rect.h);
     this.world.lineStyle(2, stroke, alpha);
     this.world.strokeRect(rect.x, rect.y, rect.w, rect.h);
+    this.world.fillStyle(0xffffff, 0.04);
+    this.world.fillRect(rect.x + 3, rect.y + 3, Math.max(0, rect.w - 6), 3);
+  }
+
+  private drawDiamond(
+    x: number,
+    y: number,
+    radius: number,
+    fill: number,
+    alpha: number,
+    stroke: number,
+    strokeAlpha: number
+  ): void {
+    this.world.fillStyle(fill, alpha);
+    this.world.beginPath();
+    this.world.moveTo(x, y - radius);
+    this.world.lineTo(x + radius * 0.78, y);
+    this.world.lineTo(x, y + radius);
+    this.world.lineTo(x - radius * 0.78, y);
+    this.world.closePath();
+    this.world.fillPath();
+    this.world.lineStyle(1, stroke, strokeAlpha);
+    this.world.strokePath();
   }
 
   private updateTrail(actor: ActorBody): void {

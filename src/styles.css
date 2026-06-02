@@ -95,7 +95,27 @@ button {
   pointer-events: none;
 }
 
+.art-screen {
+  background:
+    linear-gradient(90deg, rgba(5, 7, 13, 0.2), rgba(5, 7, 13, 0.72) 54%, rgba(5, 7, 13, 0.36)),
+    linear-gradient(180deg, rgba(5, 7, 13, 0.16), rgba(5, 7, 13, 0.84)),
+    url("/assets/time-lab-background.png") center / cover no-repeat;
+}
+
+.art-screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 22% 48%, rgba(189, 92, 255, 0.18), transparent 25%),
+    radial-gradient(circle at 72% 38%, rgba(67, 247, 255, 0.1), transparent 28%),
+    linear-gradient(180deg, transparent 74%, rgba(5, 7, 13, 0.54));
+  pointer-events: none;
+}
+
 .menu-shell {
+  position: relative;
+  z-index: 1;
   width: min(900px, 94vw);
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 330px);
@@ -105,6 +125,7 @@ button {
 
 .brand-block {
   min-width: 0;
+  text-shadow: 0 3px 24px rgba(0, 0, 0, 0.72);
 }
 
 .brand-logo {
@@ -216,6 +237,8 @@ button {
 }
 
 .level-select {
+  position: relative;
+  z-index: 1;
   width: min(960px, 96vw);
   display: grid;
   gap: 16px;

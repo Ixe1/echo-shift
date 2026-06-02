@@ -49,6 +49,21 @@ export class SynthAudio {
     gain.connect(this.master);
     osc.start(now);
     osc.stop(now + settings.duration + 0.02);
+
+    if (name === "rewind" || name === "core" || name === "portal") {
+      const shimmer = context.createOscillator();
+      const shimmerGain = context.createGain();
+      shimmer.type = "sine";
+      shimmer.frequency.setValueAtTime(settings.end * 1.5, now);
+      shimmer.frequency.exponentialRampToValueAtTime(settings.start * 1.2, now + settings.duration * 0.85);
+      shimmerGain.gain.setValueAtTime(0.0001, now);
+      shimmerGain.gain.exponentialRampToValueAtTime(settings.volume * 0.42, now + 0.02);
+      shimmerGain.gain.exponentialRampToValueAtTime(0.0001, now + settings.duration * 1.35);
+      shimmer.connect(shimmerGain);
+      shimmerGain.connect(this.master);
+      shimmer.start(now + 0.01);
+      shimmer.stop(now + settings.duration * 1.35 + 0.02);
+    }
   }
 
   startMusic(): void {

@@ -31,7 +31,7 @@ export class LevelSelectScene extends Phaser.Scene {
       .join("");
 
     root.innerHTML = `
-      <main class="screen scroll-screen">
+      <main class="screen scroll-screen art-screen">
         <section class="panel level-select">
           <div>
             <h1>Level Select</h1>
