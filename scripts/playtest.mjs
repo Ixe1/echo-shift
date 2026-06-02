@@ -138,8 +138,8 @@ const runKeyboardRoute = async (page, route) => {
   }
 };
 
-const runKeyboardRouteAtHudFrames = async (page, route) =>
-  page.evaluate(async (routeToRun) => {
+const runKeyboardRouteAtHudFrames = async (page, route, options = {}) =>
+  page.evaluate(async ({ routeToRun, trimInitialIdleByHudFrame }) => {
     const actionKeys = {
       idle: [],
       right: ["KeyD"],
@@ -212,19 +212,24 @@ const runKeyboardRouteAtHudFrames = async (page, route) =>
         check();
       });
 
+    const startFrame = readFrame();
+    const adjustedRoute = routeToRun.map(([action, frames]) => [action, frames]);
+    if (trimInitialIdleByHudFrame && adjustedRoute[0]?.[0] === "idle") {
+      adjustedRoute[0] = ["idle", Math.max(0, adjustedRoute[0][1] - startFrame)];
+    }
+
     let elapsed = 0;
     const states = [];
-    routeToRun.forEach(([, frames], index) => {
+    adjustedRoute.forEach(([, frames], index) => {
       elapsed += frames;
-      const nextAction = routeToRun[index + 1]?.[0] || "idle";
+      const nextAction = adjustedRoute[index + 1]?.[0] || "idle";
       states.push({ at: elapsed, keys: actionKeys[nextAction] });
     });
 
-    const startFrame = readFrame();
     try {
-      setKeys(actionKeys[routeToRun[0]?.[0] || "idle"]);
+      setKeys(actionKeys[adjustedRoute[0]?.[0] || "idle"]);
       for (const state of states) {
-        const result = await waitUntilFrame(state.at);
+        const result = await waitUntilFrame(startFrame + state.at);
         setKeys(state.keys);
         if (result.modal) break;
       }
@@ -232,13 +237,14 @@ const runKeyboardRouteAtHudFrames = async (page, route) =>
       return {
         startFrame,
         endFrame,
+        adjustedFirstIdle: adjustedRoute[0]?.[0] === "idle" ? adjustedRoute[0][1] : null,
         modal: document.querySelector("[data-modal].show h1")?.textContent || null,
         status: document.querySelector("[data-status]")?.textContent || ""
       };
     } finally {
       setKeys([]);
     }
-  }, route);
+  }, { routeToRun: route, trimInitialIdleByHudFrame: Boolean(options.trimInitialIdleByHudFrame) });
 
 const playerCentroidX = async (page) =>
   page.evaluate(() => {
@@ -450,7 +456,9 @@ try {
   await page.locator("[data-level='4']").click();
   await page.locator("canvas").waitFor({ state: "visible" });
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
-  const liftPhaseRouteResult = await runKeyboardRouteAtHudFrames(page, liftPhaseClearRoute);
+  const liftPhaseRouteResult = await runKeyboardRouteAtHudFrames(page, liftPhaseClearRoute, {
+    trimInitialIdleByHudFrame: true
+  });
   await page.locator("[data-modal].show").waitFor({ state: "visible", timeout: 3000 });
   const liftPhaseCompletionTitle = await page.locator("[data-modal].show h1").textContent();
   await page.screenshot({ path: artifacts.desktopLiftPhaseComplete });
