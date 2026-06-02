@@ -578,6 +578,16 @@ button {
   }
 }
 
+@media (pointer: coarse) {
+  .touch-controls {
+    display: flex;
+  }
+
+  .command-chip {
+    display: none;
+  }
+}
+
 @media (max-width: 460px) {
   .screen {
     padding: 12px;

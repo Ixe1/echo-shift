@@ -17,7 +17,9 @@ const artifacts = {
   mobileMenu: `${outDir}/menu-mobile.png`,
   mobileGame: `${outDir}/game-mobile.png`,
   mobileTouch: `${outDir}/touch-mobile.png`,
-  mobileLevels: `${outDir}/levels-mobile.png`
+  mobileLevels: `${outDir}/levels-mobile.png`,
+  tabletGame: `${outDir}/game-tablet.png`,
+  tabletTouch: `${outDir}/touch-tablet.png`
 };
 
 const launchOptions = {
@@ -143,6 +145,39 @@ try {
   const levelButtons = await mobile.locator("[data-level]").count();
   await mobileContext.close();
 
+  const tabletMessages = [];
+  const tabletContext = await browser.newContext({
+    viewport: { width: 820, height: 1180 },
+    isMobile: true,
+    hasTouch: true
+  });
+  const tablet = await tabletContext.newPage();
+  collectConsole(tablet, tabletMessages);
+  await tablet.goto(url, { waitUntil: "domcontentloaded" });
+  await tablet.locator("[data-play]").waitFor({ state: "visible" });
+  await tablet.locator("[data-play]").click();
+  await tablet.locator("[data-touch-control='right']").waitFor({ state: "visible" });
+  await tablet.waitForTimeout(450);
+  const tabletTouchControlsVisible =
+    (await tablet.locator("[data-touch-control='left']").isVisible()) &&
+    (await tablet.locator("[data-touch-control='right']").isVisible()) &&
+    (await tablet.locator("[data-touch-control='jump']").isVisible());
+  const beforeTabletTouchX = await playerCentroidX(tablet);
+  await tablet.screenshot({ path: artifacts.tabletGame });
+  const tabletRightButton = await tablet.locator("[data-touch-control='right']").boundingBox();
+  assert(tabletRightButton, "Could not locate tablet right touch button");
+  await tablet.mouse.move(
+    tabletRightButton.x + tabletRightButton.width / 2,
+    tabletRightButton.y + tabletRightButton.height / 2
+  );
+  await tablet.mouse.down();
+  await tablet.waitForTimeout(800);
+  await tablet.mouse.up();
+  await tablet.waitForTimeout(120);
+  const afterTabletTouchX = await playerCentroidX(tablet);
+  await tablet.screenshot({ path: artifacts.tabletTouch });
+  await tabletContext.close();
+
   assert(title === "Echo Shift", `Unexpected title: ${title}`);
   assert(echoesText === "1", `Expected one echo after rewind, got ${echoesText}`);
   assert(pauseVisible, "Pause modal did not become visible");
@@ -151,8 +186,18 @@ try {
   assert(touchControlsVisible, "Mobile touch controls were not visible in-game");
   assert(beforeTouchX !== null && afterTouchX !== null, "Could not locate player pixels for touch movement check");
   assert(afterTouchX > beforeTouchX + 8, `Expected touch-right to move player right: ${beforeTouchX} -> ${afterTouchX}`);
+  assert(tabletTouchControlsVisible, "Tablet touch controls were not visible in-game");
+  assert(
+    beforeTabletTouchX !== null && afterTabletTouchX !== null,
+    "Could not locate player pixels for tablet touch movement check"
+  );
+  assert(
+    afterTabletTouchX > beforeTabletTouchX + 8,
+    `Expected tablet touch-right to move player right: ${beforeTabletTouchX} -> ${afterTabletTouchX}`
+  );
   assert(relevantMessages.length === 0, `Desktop console issues: ${JSON.stringify(relevantMessages)}`);
   assert(mobileMessages.length === 0, `Mobile console issues: ${JSON.stringify(mobileMessages)}`);
+  assert(tabletMessages.length === 0, `Tablet console issues: ${JSON.stringify(tabletMessages)}`);
 
   console.log(
     JSON.stringify(
@@ -166,6 +211,8 @@ try {
         levelButtons,
         touchControlsVisible,
         mobileTouchDelta: Number((afterTouchX - beforeTouchX).toFixed(2)),
+        tabletTouchControlsVisible,
+        tabletTouchDelta: Number((afterTabletTouchX - beforeTabletTouchX).toFixed(2)),
         artifacts
       },
       null,
