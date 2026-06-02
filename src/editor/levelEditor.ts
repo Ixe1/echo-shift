@@ -19,6 +19,7 @@ type RectCollection = (typeof rectCollections)[number];
 type RectObject = Solid | MovingPlatform | Hazard | PressurePlate | Door | Laser | Core | PatrolDrone;
 type SelectableKind = RectCollection | "start" | "exit";
 type Tool = SelectableKind | "select";
+type PlaceableTool = Exclude<Tool, "select">;
 type EditorPanel = "inspect" | "objects" | "validation" | "export";
 type ValidationSeverity = "error" | "warning";
 type ResizeHandle = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
@@ -385,6 +386,8 @@ class LevelEditor {
   private importArea!: HTMLTextAreaElement;
   private statusElement!: HTMLElement;
   private readonly view: Rect = { x: -60, y: -60, w: 1, h: 1 };
+  private readonly handleDocumentKeyDown = (event: KeyboardEvent): void => this.handleKeyDown(event);
+  private paletteDragTool: PlaceableTool | null = null;
   private drag: DragState | null = null;
   private resizeObserver?: ResizeObserver;
   private hasFitInitialLevel = false;
@@ -418,6 +421,7 @@ class LevelEditor {
 
   destroy(): void {
     this.resizeObserver?.disconnect();
+    document.removeEventListener("keydown", this.handleDocumentKeyDown);
     document.body.classList.remove("level-editor-mode");
   }
 
@@ -428,8 +432,12 @@ class LevelEditor {
   private shellHtml(): string {
     const tools = (["select", "start", "exit", ...rectCollections] as Tool[])
       .map(
-        (tool) =>
-          `<button class="editor-tool" type="button" data-tool="${tool}" title="${escapeHtml(toolLabels[tool])}">${escapeHtml(toolLabels[tool])}</button>`
+        (tool) => {
+          const placeable = tool !== "select";
+          const dragAttributes = placeable ? ` draggable="true" data-palette-kind="${tool}"` : "";
+          const title = placeable ? `Drag ${toolLabels[tool]} into the level` : toolLabels[tool];
+          return `<button class="editor-tool" type="button" data-tool="${tool}" title="${escapeHtml(title)}"${dragAttributes}>${escapeHtml(toolLabels[tool])}</button>`;
+        }
       )
       .join("");
 
@@ -472,7 +480,7 @@ class LevelEditor {
             </section>
           </aside>
           <section class="editor-canvas-panel">
-            <canvas data-editor-canvas></canvas>
+            <canvas data-editor-canvas tabindex="0"></canvas>
           </section>
           <aside class="editor-sidebar right editor-dock">
             <section class="editor-panel editor-tabs-panel">
@@ -512,6 +520,8 @@ class LevelEditor {
   }
 
   private bindEvents(): void {
+    document.addEventListener("keydown", this.handleDocumentKeyDown);
+
     this.require<HTMLSelectElement>("[data-level-select]").addEventListener("change", (event) => {
       const target = event.target as HTMLSelectElement;
       this.currentIndex = clamp(Number(target.value), 0, this.levels.length - 1);
@@ -528,6 +538,8 @@ class LevelEditor {
       this.renderToolbar();
       this.setStatus(`${toolLabels[this.tool]} tool`);
     });
+    this.require<HTMLElement>("[data-tool-grid]").addEventListener("dragstart", (event) => this.handleToolDragStart(event));
+    this.require<HTMLElement>("[data-tool-grid]").addEventListener("dragend", (event) => this.handleToolDragEnd(event));
 
     this.require<HTMLElement>("[data-editor-tabs]").addEventListener("click", (event) => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-editor-tab]");
@@ -589,6 +601,9 @@ class LevelEditor {
     this.canvas.addEventListener("pointerup", (event) => this.handlePointerUp(event));
     this.canvas.addEventListener("pointercancel", (event) => this.handlePointerUp(event));
     this.canvas.addEventListener("wheel", (event) => this.handleWheel(event), { passive: false });
+    this.canvas.addEventListener("dragover", (event) => this.handleCanvasDragOver(event));
+    this.canvas.addEventListener("dragleave", () => this.setCanvasDragOver(false));
+    this.canvas.addEventListener("drop", (event) => this.handleCanvasDrop(event));
   }
 
   private handleInspectorChange(event: Event): void {
@@ -690,7 +705,69 @@ class LevelEditor {
     }
   }
 
+  private handleKeyDown(event: KeyboardEvent): void {
+    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key !== "Delete" && event.key !== "Backspace") return;
+    if (this.isEditableTarget(event.target)) return;
+    if (!this.selection || this.selection.kind === "start" || this.selection.kind === "exit") return;
+    event.preventDefault();
+    this.deleteSelection();
+  }
+
+  private isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+  }
+
+  private handleToolDragStart(event: DragEvent): void {
+    const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-palette-kind]");
+    if (!button || !event.dataTransfer) return;
+    const tool = button.dataset.paletteKind as PlaceableTool;
+    this.paletteDragTool = tool;
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("application/x-echo-shift-tool", tool);
+    event.dataTransfer.setData("text/plain", tool);
+    button.classList.add("dragging");
+    this.setStatus(`Drop ${toolLabels[tool]} into the level`);
+  }
+
+  private handleToolDragEnd(event: DragEvent): void {
+    (event.target as HTMLElement).closest<HTMLButtonElement>("[data-palette-kind]")?.classList.remove("dragging");
+    this.paletteDragTool = null;
+    this.setCanvasDragOver(false);
+  }
+
+  private handleCanvasDragOver(event: DragEvent): void {
+    const tool = this.toolFromDataTransfer(event.dataTransfer);
+    if (!tool) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    this.setCanvasDragOver(true);
+  }
+
+  private handleCanvasDrop(event: DragEvent): void {
+    const tool = this.toolFromDataTransfer(event.dataTransfer);
+    if (!tool) return;
+    event.preventDefault();
+    this.setCanvasDragOver(false);
+    this.paletteDragTool = null;
+    const rect = this.canvas.getBoundingClientRect();
+    const world = snapPoint(this.screenToWorld({ x: event.clientX - rect.left, y: event.clientY - rect.top }));
+    this.placeToolAt(tool, world);
+  }
+
+  private toolFromDataTransfer(dataTransfer: DataTransfer | null): PlaceableTool | null {
+    const raw = dataTransfer?.getData("application/x-echo-shift-tool") || dataTransfer?.getData("text/plain") || this.paletteDragTool;
+    if (raw === "start" || raw === "exit" || rectCollections.includes(raw as RectCollection)) return raw as PlaceableTool;
+    return null;
+  }
+
+  private setCanvasDragOver(active: boolean): void {
+    this.canvas.closest(".editor-canvas-panel")?.classList.toggle("drag-over", active);
+  }
+
   private handlePointerDown(event: PointerEvent): void {
+    this.canvas.focus({ preventScroll: true });
     this.canvas.setPointerCapture(event.pointerId);
     const rawWorld = this.screenToWorld({ x: event.offsetX, y: event.offsetY });
     const world = snapPoint(rawWorld);
@@ -758,33 +835,25 @@ class LevelEditor {
     }
 
     if (this.tool === "start") {
-      this.level.start = { x: world.x, y: world.y };
-      this.selection = { kind: "start" };
-      this.activePanel = "inspect";
-      this.afterMutation("Start placed");
+      this.placeToolAt("start", world);
       return;
     }
 
     if (this.tool === "exit") {
-      this.level.exit = { x: world.x, y: world.y, w: 48, h: 62 };
-      this.selection = { kind: "exit" };
-      this.activePanel = "inspect";
-      this.afterMutation("Exit placed");
+      this.placeToolAt("exit", world);
       return;
     }
 
-    const object = this.createObject(this.tool, world);
-    ensureCollection(this.level, this.tool).push(object);
-    this.selection = { kind: this.tool, id: object.id };
-    this.activePanel = "inspect";
+    const kind = this.tool as RectCollection;
+    const object = this.placeToolAt(kind, world);
+    if (!object) return;
     this.drag = {
       mode: "create",
-      kind: this.tool,
+      kind,
       id: object.id,
       origin: world,
       startRect: { x: object.x, y: object.y, w: object.w, h: object.h }
     };
-    this.afterMutation(`${collectionLabels[this.tool]} object added`);
   }
 
   private handlePointerMove(event: PointerEvent): void {
@@ -964,11 +1033,30 @@ class LevelEditor {
       x: this.view.x + this.canvas.width / this.view.w / 2,
       y: this.view.y + this.canvas.height / this.view.w / 2
     });
-    const object = this.createObject(kind, world);
-    ensureCollection(this.level, kind).push(object);
-    this.selection = { kind, id: object.id };
+    this.placeToolAt(kind, world);
+  }
+
+  private placeToolAt(tool: PlaceableTool, world: Vec2): RectObject | null {
+    if (tool === "start") {
+      this.level.start = world;
+      this.selection = { kind: "start" };
+      this.activePanel = "inspect";
+      this.afterMutation("Start placed");
+      return null;
+    }
+    if (tool === "exit") {
+      this.level.exit = { x: world.x, y: world.y, w: 48, h: 62 };
+      this.selection = { kind: "exit" };
+      this.activePanel = "inspect";
+      this.afterMutation("Exit placed");
+      return null;
+    }
+    const object = this.createObject(tool, world);
+    ensureCollection(this.level, tool).push(object);
+    this.selection = { kind: tool, id: object.id };
     this.activePanel = "inspect";
-    this.afterMutation(`${collectionLabels[kind]} object added`);
+    this.afterMutation(`${collectionLabels[tool]} object added`);
+    return object;
   }
 
   private duplicateSelection(): void {

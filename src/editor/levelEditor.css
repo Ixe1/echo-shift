@@ -166,6 +166,15 @@
   cursor: pointer;
 }
 
+.editor-tool[draggable="true"] {
+  cursor: grab;
+}
+
+.editor-tool[draggable="true"]:active,
+.editor-tool.dragging {
+  cursor: grabbing;
+}
+
 .editor-tool,
 .editor-button,
 .editor-tabs button {
@@ -316,11 +325,21 @@
   overflow: hidden;
 }
 
+.editor-canvas-panel.drag-over {
+  border-color: rgba(255, 227, 90, 0.82);
+  box-shadow: 0 0 0 2px rgba(255, 227, 90, 0.18), 0 18px 44px rgba(0, 0, 0, 0.28);
+}
+
 .editor-canvas-panel canvas {
   width: 100%;
   height: 100%;
   display: block;
   cursor: crosshair;
+}
+
+.editor-canvas-panel canvas:focus-visible {
+  outline: 2px solid #ffe35a;
+  outline-offset: -3px;
 }
 
 .inspector-section {

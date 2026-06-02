@@ -81,6 +81,41 @@ const dragWorld = async (page, start, end) => {
   await page.mouse.up();
 };
 
+const dragToolToWorld = async (page, tool, point) => {
+  await page.evaluate(({ toolName, worldPoint }) => {
+    const canvas = document.querySelector("[data-editor-canvas]");
+    const source = document.querySelector(`[data-tool='${toolName}']`);
+    if (!(canvas instanceof HTMLCanvasElement) || !(source instanceof HTMLElement)) {
+      throw new Error(`Missing drag source or canvas for ${toolName}`);
+    }
+    const view = JSON.parse(canvas.dataset.editorView || "{}");
+    const canvasRect = canvas.getBoundingClientRect();
+    const sourceRect = source.getBoundingClientRect();
+    const clientX = canvasRect.left + (worldPoint.x - view.x) * view.w;
+    const clientY = canvasRect.top + (worldPoint.y - view.y) * view.w;
+    const dataTransfer = new DataTransfer();
+    const eventInit = {
+      bubbles: true,
+      cancelable: true,
+      dataTransfer
+    };
+
+    source.dispatchEvent(
+      new DragEvent("dragstart", {
+        ...eventInit,
+        clientX: sourceRect.left + sourceRect.width / 2,
+        clientY: sourceRect.top + sourceRect.height / 2
+      })
+    );
+    canvas.dispatchEvent(new DragEvent("dragover", { ...eventInit, clientX, clientY }));
+    canvas.dispatchEvent(new DragEvent("drop", { ...eventInit, clientX, clientY }));
+    source.dispatchEvent(new DragEvent("dragend", { ...eventInit, clientX, clientY }));
+  }, {
+    toolName: tool,
+    worldPoint: point
+  });
+};
+
 const server = await createServer({
   logLevel: "silent",
   server: {
@@ -200,6 +235,17 @@ try {
   await page.locator("[data-zoom-out]").click();
   const zoomAfterButton = await page.locator("[data-zoom-readout]").textContent();
   await page.locator("[data-fit-level]").click();
+
+  await dragToolToWorld(page, "lasers", { x: 1120, y: 420 });
+  await page.locator("[data-object-field='id']").fill("smoke-laser-drop");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await setObjectField(page, "x", 1120);
+  await setObjectField(page, "y", 420);
+  const dragDropLaserExport = await page.locator("[data-export-json]").inputValue();
+  await clickWorld(page, { x: 1130, y: 426 });
+  await page.keyboard.press("Delete");
+  const keyboardDeleteExport = await page.locator("[data-export-json]").inputValue();
+  const keyboardDeleteValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
   await page.locator("[data-tool='solids']").click();
   await page.locator("[data-add-object]").click();
@@ -339,6 +385,9 @@ try {
   assert(toolbarOverflowY === "auto", `Expected toolbar panel to scroll independently, got overflow-y ${toolbarOverflowY}`);
   assert(zoomBeforeWheel !== zoomAfterWheel, `Expected wheel input to zoom canvas, got ${zoomBeforeWheel} -> ${zoomAfterWheel}`);
   assert(zoomAfterWheel !== zoomAfterButton, `Expected zoom-out button to change zoom, got ${zoomAfterWheel} -> ${zoomAfterButton}`);
+  assert(dragDropLaserExport.includes("smoke-laser-drop"), "Expected palette drag/drop to create smoke-laser-drop");
+  assert(!keyboardDeleteExport.includes("smoke-laser-drop"), "Expected keyboard Delete to remove selected smoke-laser-drop");
+  assert(keyboardDeleteValidation === "clean", `Expected clean validation after keyboard delete, got ${keyboardDeleteValidation}`);
   assert(duplicateLevelValidation === "issues", "Expected duplicate level id to fail validation");
   assert(
     duplicateLevelText?.includes("Duplicate level id first-afterimage"),
