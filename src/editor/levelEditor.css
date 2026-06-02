@@ -80,6 +80,12 @@
   grid-auto-rows: min-content;
 }
 
+.editor-sidebar.left {
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
 .editor-sidebar.right {
   grid-template-rows: minmax(0, 1fr);
 }
@@ -116,6 +122,27 @@
 
 .toolbar-panel .editor-button {
   flex: 1 1 72px;
+}
+
+.toolbar-panel {
+  overflow: auto;
+}
+
+.editor-zoom-actions {
+  align-items: center;
+}
+
+.editor-zoom-readout {
+  flex: 0 0 58px;
+  min-height: 34px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(67, 247, 255, 0.24);
+  background: rgba(4, 9, 18, 0.58);
+  border-radius: 6px;
+  color: rgba(236, 251, 255, 0.78);
+  font-size: 0.78rem;
+  font-weight: 900;
 }
 
 .editor-tool,
@@ -476,6 +503,11 @@
 
   .editor-sidebar {
     display: contents;
+  }
+
+  .editor-sidebar.left {
+    overflow: visible;
+    padding-right: 0;
   }
 
   .editor-sidebar.right {

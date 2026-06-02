@@ -22,6 +22,8 @@ type Tool = SelectableKind | "select";
 type EditorPanel = "inspect" | "objects" | "validation" | "export";
 type ValidationSeverity = "error" | "warning";
 type ResizeHandle = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
+type MovingKind = "platforms" | "drones";
+type PathEndpoint = "start" | "end";
 
 type Selection =
   | { kind: "start" }
@@ -51,6 +53,14 @@ type DragState =
       startRect: Rect;
     }
   | {
+      mode: "path";
+      selection: {
+        kind: MovingKind;
+        id: string;
+      };
+      endpoint: PathEndpoint;
+    }
+  | {
       mode: "create";
       kind: RectCollection;
       id: string;
@@ -71,6 +81,7 @@ type EditorDraft = {
 const STORAGE_KEY = "echo-shift-level-editor-draft-v1";
 const GRID = 20;
 const MIN_RECT_SIZE = 4;
+const HIT_TOLERANCE_PX = 8;
 const PLAYER_RECT = { w: 24, h: 34 };
 const CLOSED_GATE_MAX_TOP = 220;
 
@@ -130,8 +141,13 @@ const csvToList = (value: string): string[] =>
 
 const listToCsv = (value: string[] | undefined): string => (value || []).join(", ");
 
-const rectContains = (rect: Rect, point: Vec2): boolean =>
-  point.x >= rect.x && point.x <= rect.x + rect.w && point.y >= rect.y && point.y <= rect.y + rect.h;
+const rectContainsWithTolerance = (rect: Rect, point: Vec2, tolerance: number): boolean =>
+  point.x >= rect.x - tolerance &&
+  point.x <= rect.x + rect.w + tolerance &&
+  point.y >= rect.y - tolerance &&
+  point.y <= rect.y + rect.h + tolerance;
+
+const pointDistance = (a: Vec2, b: Vec2): number => Math.hypot(a.x - b.x, a.y - b.y);
 
 const rectInside = (inner: Rect, outer: Rect): boolean =>
   inner.x >= outer.x &&
@@ -171,7 +187,7 @@ const styleForKind = (kind: SelectableKind, item?: RectObject): { fill: string; 
 const defaultSizeFor = (kind: RectCollection): { w: number; h: number } => {
   switch (kind) {
     case "solids":
-      return { w: 140, h: 18 };
+      return { w: 180, h: 40 };
     case "platforms":
       return { w: 120, h: 18 };
     case "hazards":
@@ -197,6 +213,20 @@ const movingPath = (item: MovingPlatform | PatrolDrone): { start: number; end: n
     end: center + distance,
     center,
     speed: item.period > 0 ? Math.round((240 * distance) / item.period) : 0
+  };
+};
+
+const movingPathPoints = (item: MovingPlatform | PatrolDrone): { start: Vec2; end: Vec2 } => {
+  const center = { x: item.x + item.w / 2, y: item.y + item.h / 2 };
+  return {
+    start:
+      item.axis === "x"
+        ? { x: center.x - item.distance, y: center.y }
+        : { x: center.x, y: center.y - item.distance },
+    end:
+      item.axis === "x"
+        ? { x: center.x + item.distance, y: center.y }
+        : { x: center.x, y: center.y + item.distance }
   };
 };
 
@@ -434,6 +464,11 @@ class LevelEditor {
                 <button type="button" class="editor-button" data-fit-level>Fit</button>
                 <button type="button" class="editor-button" data-center-start>Start</button>
               </div>
+              <div class="editor-viewport-actions editor-zoom-actions">
+                <button type="button" class="editor-button" data-zoom-out>Zoom -</button>
+                <span class="editor-zoom-readout" data-zoom-readout>100%</span>
+                <button type="button" class="editor-button" data-zoom-in>Zoom +</button>
+              </div>
             </section>
           </aside>
           <section class="editor-canvas-panel">
@@ -528,6 +563,8 @@ class LevelEditor {
       this.centerOnStart();
       this.renderCanvas();
     });
+    this.require<HTMLButtonElement>("[data-zoom-out]").addEventListener("click", () => this.zoomAtCanvasCenter(0.86));
+    this.require<HTMLButtonElement>("[data-zoom-in]").addEventListener("click", () => this.zoomAtCanvasCenter(1.16));
     this.require<HTMLButtonElement>("[data-save-draft]").addEventListener("click", () => this.persistDraft("Draft saved"));
     this.require<HTMLButtonElement>("[data-reset-source]").addEventListener("click", () => {
       this.levels = cloneLevels(sourceLevels);
@@ -668,6 +705,19 @@ class LevelEditor {
     }
 
     if (this.tool === "select") {
+      const pathHit = this.hitMotionEndpoint(rawWorld);
+      if (pathHit) {
+        this.selection = pathHit.selection;
+        this.drag = {
+          mode: "path",
+          selection: pathHit.selection,
+          endpoint: pathHit.endpoint
+        };
+        this.activePanel = "inspect";
+        this.renderAll();
+        return;
+      }
+
       const resizeHit = this.hitResizeHandle(rawWorld);
       if (resizeHit) {
         this.drag = {
@@ -773,6 +823,21 @@ class LevelEditor {
       return;
     }
 
+    if (this.drag.mode === "path") {
+      const target = this.findObject(this.drag.selection.kind, this.drag.selection.id);
+      if (!target) return;
+      const moving = target as MovingPlatform | PatrolDrone;
+      const axisValue = moving.axis === "x" ? world.x : world.y;
+      const path = movingPath(moving);
+      setMovingPath(moving, this.drag.endpoint === "start" ? axisValue : path.start, this.drag.endpoint === "end" ? axisValue : path.end);
+      this.renderObjectList();
+      this.renderInspector();
+      this.renderValidation();
+      this.renderExport();
+      this.renderCanvas();
+      return;
+    }
+
     const target = this.findObject(this.drag.kind, this.drag.id);
     if (!target) return;
     const size = defaultSizeFor(this.drag.kind);
@@ -802,18 +867,10 @@ class LevelEditor {
 
   private handleWheel(event: WheelEvent): void {
     event.preventDefault();
-    if (event.ctrlKey || event.metaKey) {
-      const before = this.screenToWorld({ x: event.offsetX, y: event.offsetY });
-      const nextZoom = clamp(this.view.w * (event.deltaY > 0 ? 0.88 : 1.12), 0.16, 2.2);
-      this.view.w = nextZoom;
-      const after = this.screenToWorld({ x: event.offsetX, y: event.offsetY });
-      this.view.x += before.x - after.x;
-      this.view.y += before.y - after.y;
-    } else {
-      this.view.x += (event.deltaX || event.deltaY) / this.view.w;
-      if (event.shiftKey) this.view.y += event.deltaY / this.view.w;
-    }
-    this.renderCanvas();
+    const delta = event.deltaY || event.deltaX;
+    if (delta === 0) return;
+    const factor = clamp(Math.exp(-delta * 0.002), 0.72, 1.32);
+    this.zoomAtScreenPoint({ x: event.offsetX, y: event.offsetY }, factor);
   }
 
   private moveSelection(selection: Selection, startRect: Rect, dx: number, dy: number): void {
@@ -828,8 +885,9 @@ class LevelEditor {
   }
 
   private resizeSelection(selection: Selection, startRect: Rect, handle: ResizeHandle, dx: number, dy: number): void {
-    if (selection.kind === "start") return;
-    const rect = selection.kind === "exit" ? this.level.exit : this.findObject(selection.kind, selection.id);
+    if (!this.canResizeSelection(selection)) return;
+    if (selection.kind === "start" || selection.kind === "exit") return;
+    const rect = this.findObject(selection.kind, selection.id);
     if (!rect) return;
 
     let left = startRect.x;
@@ -849,7 +907,7 @@ class LevelEditor {
   }
 
   private hitResizeHandle(point: Vec2): { selection: Selection; handle: ResizeHandle; rect: Rect } | null {
-    if (!this.selection || this.selection.kind === "start") return null;
+    if (!this.selection || !this.canResizeSelection(this.selection)) return null;
     const rect = this.rectForSelection(this.selection);
     if (!rect) return null;
     const tolerance = Math.max(8 / this.view.w, 5);
@@ -859,6 +917,41 @@ class LevelEditor {
       }
     }
     return null;
+  }
+
+  private hitMotionEndpoint(point: Vec2): { selection: { kind: MovingKind; id: string }; endpoint: PathEndpoint } | null {
+    const tolerance = Math.max(HIT_TOLERANCE_PX / this.view.w, 6);
+    const candidates: Array<{ kind: MovingKind; object: MovingPlatform | PatrolDrone }> = [];
+    const selected = this.selection;
+
+    if (selected && (selected.kind === "platforms" || selected.kind === "drones")) {
+      const object = this.findObject(selected.kind, selected.id);
+      if (object) candidates.push({ kind: selected.kind, object: object as MovingPlatform | PatrolDrone });
+    }
+
+    for (const kind of ["drones", "platforms"] as MovingKind[]) {
+      const objects = [...readCollection(this.level, kind)].reverse() as Array<MovingPlatform | PatrolDrone>;
+      for (const object of objects) candidates.push({ kind, object });
+    }
+
+    const seen = new Set<string>();
+    for (const candidate of candidates) {
+      const key = `${candidate.kind}:${candidate.object.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const points = movingPathPoints(candidate.object);
+      if (pointDistance(point, points.start) <= tolerance) {
+        return { selection: { kind: candidate.kind, id: candidate.object.id }, endpoint: "start" };
+      }
+      if (pointDistance(point, points.end) <= tolerance) {
+        return { selection: { kind: candidate.kind, id: candidate.object.id }, endpoint: "end" };
+      }
+    }
+    return null;
+  }
+
+  private canResizeSelection(selection: Selection): boolean {
+    return selection.kind !== "start" && selection.kind !== "exit" && selection.kind !== "plates" && selection.kind !== "drones";
   }
 
   private addObjectAtViewCenter(): void {
@@ -1260,6 +1353,7 @@ class LevelEditor {
   private renderCanvas(): void {
     if (!this.context) return;
     this.resizeCanvas();
+    this.canvas.dataset.editorView = JSON.stringify({ x: this.view.x, y: this.view.y, w: this.view.w });
     const ctx = this.context;
     const width = this.canvas.width;
     const height = this.canvas.height;
@@ -1276,6 +1370,7 @@ class LevelEditor {
     this.drawStartAndExit();
     this.drawSelectionHandles();
     ctx.restore();
+    this.renderZoomReadout();
   }
 
   private drawGrid(): void {
@@ -1431,15 +1526,7 @@ class LevelEditor {
 
   private drawMotionPath(kind: "platforms" | "drones", object: MovingPlatform | PatrolDrone, selected: boolean): void {
     const ctx = this.context;
-    const center = { x: object.x + object.w / 2, y: object.y + object.h / 2 };
-    const start =
-      object.axis === "x"
-        ? { x: center.x - object.distance, y: center.y }
-        : { x: center.x, y: center.y - object.distance };
-    const end =
-      object.axis === "x"
-        ? { x: center.x + object.distance, y: center.y }
-        : { x: center.x, y: center.y + object.distance };
+    const { start, end } = movingPathPoints(object);
     const color = kind === "platforms" ? "#ffe35a" : "#ff4f8b";
     const fill = kind === "platforms" ? "rgba(255, 227, 90, 0.95)" : "rgba(255, 79, 139, 0.95)";
     const radius = selected ? 6 / this.view.w : 4 / this.view.w;
@@ -1463,7 +1550,7 @@ class LevelEditor {
   }
 
   private drawSelectionHandles(): void {
-    if (!this.selection || this.selection.kind === "start") return;
+    if (!this.selection || !this.canResizeSelection(this.selection)) return;
     const rect = this.rectForSelection(this.selection);
     if (!rect) return;
     const ctx = this.context;
@@ -1487,12 +1574,13 @@ class LevelEditor {
   }
 
   private hitTest(point: Vec2): Selection | null {
-    if (rectContains(this.level.exit, point)) return { kind: "exit" };
-    if (rectContains(this.startRect(), point)) return { kind: "start" };
+    const tolerance = HIT_TOLERANCE_PX / this.view.w;
+    if (rectContainsWithTolerance(this.level.exit, point, tolerance)) return { kind: "exit" };
+    if (rectContainsWithTolerance(this.startRect(), point, tolerance)) return { kind: "start" };
     for (const kind of [...rectCollections].reverse()) {
       const objects = [...readCollection(this.level, kind)].reverse();
       for (const object of objects) {
-        if (rectContains(object, point)) return { kind, id: object.id };
+        if (rectContainsWithTolerance(object, point, tolerance)) return { kind, id: object.id };
       }
     }
     return null;
@@ -1564,12 +1652,32 @@ class LevelEditor {
     this.view.w = clamp(Math.min(zoomX, zoomY), 0.16, 1.4);
     this.view.x = bounds.x - margin;
     this.view.y = bounds.y - margin;
+    this.renderZoomReadout();
   }
 
   private centerOnStart(): void {
     this.view.w = clamp(this.view.w || 1, 0.65, 1.25);
     this.view.x = this.level.start.x - this.canvas.width / this.view.w * 0.18;
     this.view.y = this.level.start.y - this.canvas.height / this.view.w * 0.64;
+    this.renderZoomReadout();
+  }
+
+  private zoomAtCanvasCenter(factor: number): void {
+    this.zoomAtScreenPoint({ x: this.canvas.width / 2, y: this.canvas.height / 2 }, factor);
+  }
+
+  private zoomAtScreenPoint(point: Vec2, factor: number): void {
+    const before = this.screenToWorld(point);
+    this.view.w = clamp(this.view.w * factor, 0.16, 2.2);
+    const after = this.screenToWorld(point);
+    this.view.x += before.x - after.x;
+    this.view.y += before.y - after.y;
+    this.renderCanvas();
+  }
+
+  private renderZoomReadout(): void {
+    const readout = this.host.querySelector<HTMLElement>("[data-zoom-readout]");
+    if (readout) readout.textContent = `${Math.round(this.view.w * 100)}%`;
   }
 
   private afterMutation(status: string): void {

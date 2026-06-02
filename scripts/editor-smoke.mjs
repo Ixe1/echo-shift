@@ -42,6 +42,45 @@ const openTab = async (page, tab) => {
   await page.locator(`[data-editor-tab='${tab}']`).click();
 };
 
+const setObjectField = async (page, field, value) => {
+  const locator = page.locator(`[data-object-field='${field}']`);
+  await locator.fill(String(value));
+  await dispatchChange(locator);
+};
+
+const objectNumber = async (page, field) => Number(await page.locator(`[data-object-field='${field}']`).inputValue());
+
+const editorView = async (page) => {
+  const raw = await page.locator("[data-editor-canvas]").getAttribute("data-editor-view");
+  assert(raw, "Editor canvas did not expose view data");
+  return JSON.parse(raw);
+};
+
+const worldToScreen = async (page, point) => {
+  const canvas = page.locator("[data-editor-canvas]");
+  const box = await canvas.boundingBox();
+  assert(box, "Editor canvas has no bounding box");
+  const view = await editorView(page);
+  return {
+    x: box.x + (point.x - view.x) * view.w,
+    y: box.y + (point.y - view.y) * view.w
+  };
+};
+
+const clickWorld = async (page, point) => {
+  const screen = await worldToScreen(page, point);
+  await page.mouse.click(screen.x, screen.y);
+};
+
+const dragWorld = async (page, start, end) => {
+  const startScreen = await worldToScreen(page, start);
+  const endScreen = await worldToScreen(page, end);
+  await page.mouse.move(startScreen.x, startScreen.y);
+  await page.mouse.down();
+  await page.mouse.move(endScreen.x, endScreen.y);
+  await page.mouse.up();
+};
+
 const server = await createServer({
   logLevel: "silent",
   server: {
@@ -72,6 +111,8 @@ try {
   await page.locator("[data-level-select]").selectOption("0");
   const levelOptions = await page.locator("[data-level-select] option").count();
   const initialValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const leftSidebarOverflowY = await page.locator(".editor-sidebar.left").evaluate((element) => getComputedStyle(element).overflowY);
+  const toolbarOverflowY = await page.locator(".toolbar-panel").evaluate((element) => getComputedStyle(element).overflowY);
 
   const levelIdField = page.locator("[data-level-field='id']");
   await levelIdField.fill("first-afterimage");
@@ -148,30 +189,84 @@ try {
   const restoredBoundsValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   await page.locator("[data-level-select]").selectOption("0");
 
-  await page.locator("[data-tool='hazards']").click();
   const canvas = page.locator("[data-editor-canvas]");
   const box = await canvas.boundingBox();
   assert(box, "Editor canvas has no bounding box");
-  await page.mouse.move(box.x + 460, box.y + 430);
-  await page.mouse.down();
-  await page.mouse.move(box.x + 540, box.y + 448);
-  await page.mouse.up();
+  const zoomBeforeWheel = await page.locator("[data-zoom-readout]").textContent();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, -260);
+  await page.waitForFunction((before) => document.querySelector("[data-zoom-readout]")?.textContent !== before, zoomBeforeWheel);
+  const zoomAfterWheel = await page.locator("[data-zoom-readout]").textContent();
+  await page.locator("[data-zoom-out]").click();
+  const zoomAfterButton = await page.locator("[data-zoom-readout]").textContent();
+  await page.locator("[data-fit-level]").click();
+
+  await page.locator("[data-tool='solids']").click();
+  await page.locator("[data-add-object]").click();
+  await page.locator("[data-object-field='id']").fill("smoke-floor");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await setObjectField(page, "x", 500);
+  await setObjectField(page, "y", 420);
+  const floorDefaultHeight = Number(await page.locator("[data-object-field='h']").inputValue());
+  await setObjectField(page, "h", 6);
+  await openTab(page, "objects");
+  await page.locator("[data-object-list] [data-kind='start']").click();
+  await page.locator("[data-tool='select']").click();
+  await clickWorld(page, { x: 520, y: 423 });
+  const reselectedThinSolidId = await page.locator("[data-object-field='id']").inputValue();
+
+  await page.locator("[data-tool='hazards']").click();
+  await page.locator("[data-add-object]").click();
   await page.locator("[data-object-field='id']").fill("smoke-hazard");
   await dispatchChange(page.locator("[data-object-field='id']"));
+  await setObjectField(page, "x", 720);
+  await setObjectField(page, "y", 430);
+  await setObjectField(page, "w", 60);
+  await setObjectField(page, "h", 8);
   const hazardWidthBefore = Number(await page.locator("[data-object-field='w']").inputValue());
   await page.locator("[data-tool='select']").click();
-  await page.mouse.move(box.x + 540, box.y + 448);
-  await page.mouse.down();
-  await page.mouse.move(box.x + 620, box.y + 468);
-  await page.mouse.up();
+  await dragWorld(page, { x: 780, y: 434 }, { x: 860, y: 434 });
   const hazardWidthAfter = Number(await page.locator("[data-object-field='w']").inputValue());
+
+  await openTab(page, "objects");
+  await page.locator("[data-object-list] [data-kind='exit']").click();
+  const exitWidthBefore = await objectNumber(page, "w");
+  await page.locator("[data-tool='select']").click();
+  await dragWorld(page, { x: 2334, y: 469 }, { x: 2380, y: 469 });
+  const exitWidthAfter = await objectNumber(page, "w");
+  await setObjectField(page, "x", 2286);
+  await setObjectField(page, "y", 438);
+
+  await page.locator("[data-tool='plates']").click();
+  await page.locator("[data-add-object]").click();
+  await page.locator("[data-object-field='id']").fill("smoke-plate");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await setObjectField(page, "x", 940);
+  await setObjectField(page, "y", 492);
+  await setObjectField(page, "w", 70);
+  await setObjectField(page, "h", 8);
+  const plateWidthBefore = await objectNumber(page, "w");
+  await page.locator("[data-tool='select']").click();
+  await dragWorld(page, { x: 1010, y: 496 }, { x: 1080, y: 496 });
+  const plateWidthAfter = await objectNumber(page, "w");
+  await page.locator("[data-delete-object]").click();
+
+  await openTab(page, "objects");
+  await page.locator("[data-object-list] [data-id='drone-a']").click();
+  const droneWidthBefore = await objectNumber(page, "w");
+  await page.locator("[data-tool='select']").click();
+  await dragWorld(page, { x: 1460, y: 484 }, { x: 1530, y: 484 });
+  const droneWidthAfter = await objectNumber(page, "w");
+  await setObjectField(page, "x", 1430);
+  await setObjectField(page, "y", 472);
 
   const exportJson = await page.locator("[data-export-json]").inputValue();
   assert(exportJson.includes("smoke-hazard"), "Export JSON did not include the edited hazard");
   const afterEditValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const afterEditValidationText = await page.locator("[data-validation]").textContent();
 
   await page.locator("[data-tool='doors']").click();
-  await page.mouse.click(box.x + 620, box.y + 360);
+  await clickWorld(page, { x: 1040, y: 180 });
   const doorYValue = await page.locator("[data-object-field='y']").inputValue();
   const doorPlacementValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   await page.locator("[data-delete-object]").click();
@@ -187,6 +282,10 @@ try {
   await page.locator("[data-object-field='speed']").fill("120");
   await dispatchChange(page.locator("[data-object-field='speed']"));
   const dronePeriod = Number(await page.locator("[data-object-field='period']").inputValue());
+  const droneCenterX = (await objectNumber(page, "x")) + (await objectNumber(page, "w")) / 2;
+  await page.locator("[data-tool='select']").click();
+  await dragWorld(page, { x: droneCenterX, y: 360 }, { x: droneCenterX, y: 340 });
+  const dronePathStartAfterDrag = Number(await page.locator("[data-object-field='pathStart']").inputValue());
   const droneExportJson = await page.locator("[data-export-json]").inputValue();
 
   await page.locator("[data-save-draft]").click();
@@ -236,6 +335,10 @@ try {
   assert(menuEditorUrl.includes("editor=1"), `Expected menu editor button to navigate to ?editor=1, got ${menuEditorUrl}`);
   assert(levelOptions === 10, `Expected 10 editable levels, got ${levelOptions}`);
   assert(initialValidation === "clean", `Expected clean initial validation, got ${initialValidation}`);
+  assert(leftSidebarOverflowY === "auto", `Expected left sidebar to scroll independently, got overflow-y ${leftSidebarOverflowY}`);
+  assert(toolbarOverflowY === "auto", `Expected toolbar panel to scroll independently, got overflow-y ${toolbarOverflowY}`);
+  assert(zoomBeforeWheel !== zoomAfterWheel, `Expected wheel input to zoom canvas, got ${zoomBeforeWheel} -> ${zoomAfterWheel}`);
+  assert(zoomAfterWheel !== zoomAfterButton, `Expected zoom-out button to change zoom, got ${zoomAfterWheel} -> ${zoomAfterButton}`);
   assert(duplicateLevelValidation === "issues", "Expected duplicate level id to fail validation");
   assert(
     duplicateLevelText?.includes("Duplicate level id first-afterimage"),
@@ -273,12 +376,21 @@ try {
     `Expected shifted-bounds door warning text, got ${shiftedDoorText}`
   );
   assert(restoredBoundsValidation === "clean", `Expected clean validation after restoring bounds and door, got ${restoredBoundsValidation}`);
-  assert(afterEditValidation === "clean", `Expected clean validation after edit, got ${afterEditValidation}`);
+  assert(
+    afterEditValidation === "clean",
+    `Expected clean validation after edit, got ${afterEditValidation}: ${afterEditValidationText}`
+  );
+  assert(floorDefaultHeight >= 40, `Expected new solid/floor defaults to be selectable, got height ${floorDefaultHeight}`);
+  assert(reselectedThinSolidId === "smoke-floor", `Expected thin solid canvas hit tolerance to reselect smoke-floor, got ${reselectedThinSolidId}`);
   assert(hazardWidthAfter > hazardWidthBefore, `Expected resize drag to widen hazard: ${hazardWidthBefore} -> ${hazardWidthAfter}`);
+  assert(exitWidthAfter === exitWidthBefore, `Expected exit portal width to stay locked during handle drag: ${exitWidthBefore} -> ${exitWidthAfter}`);
+  assert(plateWidthAfter === plateWidthBefore, `Expected pressure plate width to stay locked during handle drag: ${plateWidthBefore} -> ${plateWidthAfter}`);
+  assert(droneWidthAfter === droneWidthBefore, `Expected drone body width to stay locked during handle drag: ${droneWidthBefore} -> ${droneWidthAfter}`);
   assert(doorYValue !== "200", `Expected single-click door placement to use clicked world y instead of hardcoded 200, got ${doorYValue}`);
   assert(doorPlacementValidation === "clean", `Expected clean validation after door placement, got ${doorPlacementValidation}`);
   assert(afterDoorDeleteValidation === "clean", `Expected clean validation after deleting smoke door, got ${afterDoorDeleteValidation}`);
   assert(dronePeriod === 100, `Expected speed 120 over 50px drone distance to produce period 100, got ${dronePeriod}`);
+  assert(dronePathStartAfterDrag === 340, `Expected draggable drone path endpoint to set start to 340, got ${dronePathStartAfterDrag}`);
   assert(droneExportJson.includes('"axis": "y"'), "Expected drone export JSON to include vertical axis");
   assert(importedName?.includes("Smoke Edited"), `Import did not update the level name: ${importedName}`);
   assert(importedValidation === "clean", `Expected clean validation after import, got ${importedValidation}`);
