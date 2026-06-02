@@ -254,6 +254,17 @@ try {
   const keyboardDeleteExport = await page.locator("[data-export-json]").inputValue();
   const keyboardDeleteValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
+  await dragToolToWorld(page, "plates", { x: 300, y: 500 });
+  const surfacePlateY = await objectNumber(page, "y");
+  const surfacePlateBottom = surfacePlateY + (await objectNumber(page, "h"));
+  await page.locator("[data-delete-object]").click();
+
+  await dragToolToWorld(page, "lasers", { x: 1280, y: 500 });
+  const surfaceLaserY = await objectNumber(page, "y");
+  const surfaceLaserBottom = surfaceLaserY + (await objectNumber(page, "h"));
+  await page.locator("[data-delete-object]").click();
+  const surfaceSnapValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+
   await page.locator("[data-tool='solids']").click();
   await page.locator("[data-add-object]").click();
   await page.locator("[data-object-field='id']").fill("smoke-floor");
@@ -416,6 +427,9 @@ try {
   assert(activeToolAfterDrop === "select", `Expected drag/drop creation to return toolbar to select mode, got ${activeToolAfterDrop}`);
   assert(!keyboardDeleteExport.includes("smoke-laser-drop"), "Expected keyboard Delete to remove selected smoke-laser-drop");
   assert(keyboardDeleteValidation === "clean", `Expected clean validation after keyboard delete, got ${keyboardDeleteValidation}`);
+  assert(surfacePlateBottom === 500, `Expected dropped plate bottom to snap flush to floor y=500, got ${surfacePlateY}+h=${surfacePlateBottom}`);
+  assert(surfaceLaserBottom === 500, `Expected dropped laser bottom to snap flush to floor y=500, got ${surfaceLaserY}+h=${surfaceLaserBottom}`);
+  assert(surfaceSnapValidation === "clean", `Expected clean validation after surface snap checks, got ${surfaceSnapValidation}`);
   assert(duplicateLevelValidation === "issues", "Expected duplicate level id to fail validation");
   assert(
     duplicateLevelText?.includes("Duplicate level id first-afterimage"),

@@ -83,6 +83,7 @@ const STORAGE_KEY = "echo-shift-level-editor-draft-v1";
 const GRID = 20;
 const MIN_RECT_SIZE = 4;
 const HIT_TOLERANCE_PX = 8;
+const SURFACE_SNAP_DISTANCE = 24;
 const PLAYER_RECT = { w: 24, h: 34 };
 const CLOSED_GATE_MAX_TOP = 220;
 
@@ -149,6 +150,8 @@ const rectContainsWithTolerance = (rect: Rect, point: Vec2, tolerance: number): 
   point.y <= rect.y + rect.h + tolerance;
 
 const pointDistance = (a: Vec2, b: Vec2): number => Math.hypot(a.x - b.x, a.y - b.y);
+
+const rectsOverlapX = (a: Rect, b: Rect): boolean => a.x < b.x + b.w && a.x + a.w > b.x;
 
 const rectInside = (inner: Rect, outer: Rect): boolean =>
   inner.x >= outer.x &&
@@ -922,6 +925,7 @@ class LevelEditor {
     if (Math.abs(world.x - this.drag.origin.x) < GRID && Math.abs(world.y - this.drag.origin.y) < GRID) {
       Object.assign(target, this.drag.startRect);
     }
+    this.snapToNearbySurface(this.drag.kind, target);
     this.renderObjectList();
     this.renderInspector();
     this.renderValidation();
@@ -952,6 +956,7 @@ class LevelEditor {
     if (!rect) return;
     rect.x = startRect.x + dx;
     rect.y = startRect.y + dy;
+    if (selection.kind !== "exit") this.snapToNearbySurface(selection.kind, rect);
   }
 
   private resizeSelection(selection: Selection, startRect: Rect, handle: ResizeHandle, dx: number, dy: number): void {
@@ -974,6 +979,7 @@ class LevelEditor {
     rect.y = top;
     rect.w = right - left;
     rect.h = bottom - top;
+    this.snapToNearbySurface(selection.kind, rect);
   }
 
   private hitResizeHandle(point: Vec2): { selection: Selection; handle: ResizeHandle; rect: Rect } | null {
@@ -1053,11 +1059,37 @@ class LevelEditor {
       return null;
     }
     const object = this.createObject(tool, world);
+    this.snapToNearbySurface(tool, object);
     ensureCollection(this.level, tool).push(object);
     this.selection = { kind: tool, id: object.id };
     this.activePanel = "inspect";
     this.afterMutation(`${collectionLabels[tool]} object added`);
     return object;
+  }
+
+  private snapToNearbySurface(kind: RectCollection, rect: Rect): void {
+    if (!this.isSurfaceMounted(kind)) return;
+    const surface = this.nearestSurfaceTop(rect);
+    if (surface === null) return;
+    rect.y = surface - rect.h;
+  }
+
+  private isSurfaceMounted(kind: RectCollection): boolean {
+    return kind === "plates" || kind === "hazards" || kind === "lasers";
+  }
+
+  private nearestSurfaceTop(rect: Rect): number | null {
+    const candidates = [...this.level.solids, ...readCollection(this.level, "platforms")]
+      .filter((surface) => surface.w >= 40 && rectsOverlapX(rect, surface))
+      .map((surface) => surface.y)
+      .filter((surfaceY) => {
+        const topDistance = Math.abs(rect.y - surfaceY);
+        const bottomDistance = Math.abs(rect.y + rect.h - surfaceY);
+        return Math.min(topDistance, bottomDistance) <= SURFACE_SNAP_DISTANCE;
+      })
+      .sort((a, b) => Math.abs(rect.y + rect.h - a) - Math.abs(rect.y + rect.h - b));
+
+    return candidates[0] ?? null;
   }
 
   private duplicateSelection(): void {
