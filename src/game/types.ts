@@ -94,12 +94,15 @@ export type SoundtrackKey =
 
 export type LevelSoundtrackKey = Exclude<SoundtrackKey, "menu">;
 
+export type LevelBackgroundKey = "time-lab-prototype";
+
 export type Level = {
   id: string;
   index: number;
   name: string;
   subtitle: string;
   soundtrackKey?: LevelSoundtrackKey;
+  backgroundKey?: LevelBackgroundKey;
   start: Vec2;
   exit: Rect;
   bounds: Rect;

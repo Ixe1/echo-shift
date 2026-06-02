@@ -1,4 +1,5 @@
 import type { Level } from "../game/types";
+import { isLevelBackgroundKey } from "../game/backgrounds";
 import { isLevelSoundtrackKey } from "../game/soundtracks";
 
 export const EDITOR_DRAFT_STORAGE_KEY = "echo-shift-level-editor-draft-v1";
@@ -28,6 +29,7 @@ const stringValue = (value: unknown): value is string => typeof value === "strin
 
 const optionalString = (value: unknown): boolean => value === undefined || stringValue(value);
 const optionalLevelSoundtrackKey = (value: unknown): boolean => value === undefined || isLevelSoundtrackKey(value);
+const optionalLevelBackgroundKey = (value: unknown): boolean => value === undefined || isLevelBackgroundKey(value);
 
 const optionalBoolean = (value: unknown): boolean => value === undefined || typeof value === "boolean";
 
@@ -68,6 +70,7 @@ const levelLike = (value: unknown): value is Level => {
     stringValue(value.name) &&
     stringValue(value.subtitle) &&
     optionalLevelSoundtrackKey(value.soundtrackKey) &&
+    optionalLevelBackgroundKey(value.backgroundKey) &&
     isRecord(value.start) &&
     finiteValue(value.start.x) &&
     finiteValue(value.start.y) &&

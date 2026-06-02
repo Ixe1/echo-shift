@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { isDraftPlaytestActive, levels } from "../data/levels";
+import { levelBackgrounds } from "../game/backgrounds";
 
 const playtestLevelIndex = (): number => {
   const raw = new URLSearchParams(window.location.search).get("level");
@@ -23,6 +24,9 @@ export class BootScene extends Phaser.Scene {
       frameWidth: 96,
       frameHeight: 96
     });
+    for (const background of Object.values(levelBackgrounds)) {
+      this.load.image(background.key, background.src);
+    }
   }
 
   create(): void {

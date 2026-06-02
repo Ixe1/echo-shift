@@ -1,5 +1,6 @@
 import { levels as sourceLevels } from "../data/levels";
 import { EDITOR_DRAFT_STORAGE_KEY } from "../data/editorDraft";
+import { backgroundForLevel, isLevelBackgroundKey, levelBackgroundKeys, levelBackgrounds } from "../game/backgrounds";
 import { defaultSoundtrackKeyForLevel, isLevelSoundtrackKey, levelSoundtrackKeys, soundtracks } from "../game/soundtracks";
 import type {
   Core,
@@ -89,7 +90,7 @@ type EditorDraft = {
 };
 
 const GRID = 20;
-const MIN_RECT_SIZE = 4;
+const MIN_RECT_SIZE = GRID;
 const HIT_TOLERANCE_PX = 8;
 const SURFACE_SNAP_DISTANCE = 24;
 const PLAYER_RECT = { w: 24, h: 34 };
@@ -145,10 +146,25 @@ const clamp = (value: number, min: number, max: number): number => Math.max(min,
 
 const snap = (value: number): number => Math.round(value / GRID) * GRID;
 
+const snapSize = (value: number, minimum = GRID): number => Math.max(minimum, snap(value));
+
 const snapPoint = (point: Vec2): Vec2 => ({
   x: snap(point.x),
   y: snap(point.y)
 });
+
+const snapRectToGrid = (rect: Rect, minimum = GRID): Rect => {
+  const left = snap(rect.x);
+  const top = snap(rect.y);
+  const right = Math.max(left + minimum, snap(rect.x + rect.w));
+  const bottom = Math.max(top + minimum, snap(rect.y + rect.h));
+  return {
+    x: left,
+    y: top,
+    w: right - left,
+    h: bottom - top
+  };
+};
 
 const positiveNumber = (value: unknown, fallback: number): number => {
   const numeric = Number(value);
@@ -162,6 +178,8 @@ const nonNegativeInteger = (value: unknown, fallback: number): number => Math.ma
 const positiveInteger = (value: unknown, fallback: number): number => Math.max(1, Math.round(positiveNumber(value, fallback)));
 
 const levelIndex = (value: unknown, maxIndex: number, fallback = 0): number => clamp(nonNegativeInteger(value, fallback), 0, Math.max(0, maxIndex));
+
+const framesToSeconds = (frames: number): string => `${(frames / 60).toFixed(1)}s`;
 
 const csvToList = (value: string): string[] =>
   value
@@ -219,24 +237,24 @@ const styleForKind = (kind: SelectableKind, item?: RectObject): { fill: string; 
 const defaultSizeFor = (kind: RectCollection, solidPreset: SolidPreset | null = null): { w: number; h: number } => {
   switch (kind) {
     case "solids":
-      if (solidPreset === "floor") return { w: 320, h: 40 };
-      if (solidPreset === "wall") return { w: 40, h: 180 };
+      if (solidPreset === "floor") return { w: 320, h: 20 };
+      if (solidPreset === "wall") return { w: 20, h: 180 };
       if (solidPreset === "block") return { w: 80, h: 80 };
-      return { w: 180, h: 40 };
+      return { w: 180, h: 20 };
     case "platforms":
-      return { w: 120, h: 18 };
+      return { w: 120, h: 20 };
     case "hazards":
-      return { w: 60, h: 8 };
+      return { w: 60, h: 20 };
     case "plates":
-      return { w: 70, h: 8 };
+      return { w: 80, h: 20 };
     case "doors":
-      return { w: 28, h: 300 };
+      return { w: 20, h: 300 };
     case "lasers":
-      return { w: 140, h: 12 };
+      return { w: 140, h: 20 };
     case "cores":
-      return { w: 24, h: 24 };
+      return { w: 20, h: 20 };
     case "drones":
-      return { w: 30, h: 24 };
+      return { w: 40, h: 20 };
   }
 };
 
@@ -270,8 +288,10 @@ const setMovingPath = (
   nextStart: number,
   nextEnd: number
 ): void => {
-  const start = Math.min(nextStart, nextEnd);
-  const end = Math.max(nextStart, nextEnd);
+  const snappedStart = snap(nextStart);
+  const snappedEnd = snap(nextEnd);
+  const start = Math.min(snappedStart, snappedEnd);
+  const end = Math.max(snappedStart, snappedEnd);
   const center = (start + end) / 2;
   item.distance = Math.max(0, (end - start) / 2);
   if (item.axis === "x") item.x = center;
@@ -342,6 +362,7 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number): Level | 
   const medalRecord = isRecord(value.medalFrames) ? value.medalFrames : {};
   const usedObjectIds = explicitImportedObjectIds(value);
   const importedSoundtrackKey = isLevelSoundtrackKey(value.soundtrackKey) ? value.soundtrackKey : undefined;
+  const importedBackgroundKey = isLevelBackgroundKey(value.backgroundKey) ? value.backgroundKey : undefined;
 
   const level: Level = {
     id: String(value.id || `level-${fallbackIndex + 1}`),
@@ -349,6 +370,7 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number): Level | 
     name: String(value.name || `Level ${fallbackIndex + 1}`),
     subtitle: String(value.subtitle || ""),
     ...(importedSoundtrackKey ? { soundtrackKey: importedSoundtrackKey } : {}),
+    ...(importedBackgroundKey ? { backgroundKey: importedBackgroundKey } : {}),
     start: {
       x: positiveNumber(startRecord.x, 60),
       y: positiveNumber(startRecord.y, 450)
@@ -761,6 +783,9 @@ class LevelEditor {
     } else if (field === "soundtrackKey") {
       if (isLevelSoundtrackKey(value)) level.soundtrackKey = value;
       else delete level.soundtrackKey;
+    } else if (field === "backgroundKey") {
+      if (isLevelBackgroundKey(value)) level.backgroundKey = value;
+      else delete level.backgroundKey;
     } else if (field === "bounds.x" || field === "bounds.y" || field === "bounds.w" || field === "bounds.h") {
       const key = field.split(".")[1] as keyof Rect;
       level.bounds[key] = Number(value);
@@ -786,7 +811,12 @@ class LevelEditor {
     const target = this.selectedRectObject();
     if (!target) return;
     if (field === "x" || field === "y" || field === "w" || field === "h") {
-      target[field] = field === "w" || field === "h" ? Math.max(1, Number(value)) : Number(value);
+      if (this.selection.kind === "exit") {
+        target[field] = field === "w" || field === "h" ? Math.max(1, Number(value)) : Number(value);
+      } else {
+        target[field] = field === "w" || field === "h" ? snapSize(Number(value)) : snap(Number(value));
+        this.snapToNearbySurface(this.selection.kind, target);
+      }
     } else if (field === "id") {
       const nextId = normalizedObjectIdValue(value);
       if (!nextId) {
@@ -826,7 +856,7 @@ class LevelEditor {
     if (field === "pathStart" || field === "pathEnd") {
       const moving = target as MovingPlatform | PatrolDrone;
       const path = movingPath(moving);
-      setMovingPath(moving, field === "pathStart" ? Number(value) : path.start, field === "pathEnd" ? Number(value) : path.end);
+      setMovingPath(moving, field === "pathStart" ? snap(Number(value)) : path.start, field === "pathEnd" ? snap(Number(value)) : path.end);
       return;
     }
     if (field === "speed") {
@@ -1139,10 +1169,15 @@ class LevelEditor {
     if (handle.includes("n")) top = Math.min(startRect.y + dy, bottom - MIN_RECT_SIZE);
     if (handle.includes("s")) bottom = Math.max(startRect.y + MIN_RECT_SIZE, startRect.y + startRect.h + dy);
 
-    rect.x = left;
-    rect.y = top;
-    rect.w = right - left;
-    rect.h = bottom - top;
+    Object.assign(
+      rect,
+      snapRectToGrid({
+        x: left,
+        y: top,
+        w: right - left,
+        h: bottom - top
+      })
+    );
     this.snapToNearbySurface(selection.kind, rect);
   }
 
@@ -1429,6 +1464,7 @@ class LevelEditor {
           ${this.numberField("H", "bounds.h", level.bounds.h, "level")}
         </div>
         ${this.soundtrackField(level)}
+        ${this.backgroundField(level)}
         ${this.textAreaField("Hint", "hint", level.hint)}
       </div>
       <div class="inspector-section" data-medal-settings>
@@ -1439,6 +1475,7 @@ class LevelEditor {
           ${this.numberField("Gold Frames", "medalFrames.gold", level.medalFrames.gold, "level", 1)}
           ${this.numberField("Silver Frames", "medalFrames.silver", level.medalFrames.silver, "level", 1)}
         </div>
+        <p class="editor-field-note" data-medal-seconds>60 frames = 1s · Gold ${framesToSeconds(level.medalFrames.gold)} · Silver ${framesToSeconds(level.medalFrames.silver)}</p>
       </div>
       <div class="inspector-section">
         <h3>Selection</h3>
@@ -1544,6 +1581,18 @@ class LevelEditor {
     return this.selectField("Level MP3", "soundtrackKey", level.soundtrackKey || "", options, "level");
   }
 
+  private backgroundField(level: Level): string {
+    const auto = backgroundForLevel(level, this.currentIndex);
+    const options: SelectOption[] = [
+      { value: "", label: `Auto: ${auto.title}` },
+      ...levelBackgroundKeys.map((key) => ({
+        value: key,
+        label: `${levelBackgrounds[key].title} (${levelBackgrounds[key].sourceSize.w}x${levelBackgrounds[key].sourceSize.h})`
+      }))
+    ];
+    return this.selectField("Background", "backgroundKey", level.backgroundKey || "", options, "level");
+  }
+
   private numberField(label: string, field: string, value: number, scope: "level" | "object", step = GRID): string {
     const attr = scope === "level" ? "data-level-field" : "data-object-field";
     return `<label class="editor-field"><span>${label}</span><input ${attr}="${field}" data-field-type="number" type="number" step="${step}" value="${Number(value.toFixed(2))}" /></label>`;
@@ -1624,6 +1673,9 @@ class LevelEditor {
     }
     if (level.soundtrackKey && !isLevelSoundtrackKey(level.soundtrackKey)) {
       messages.push({ severity: "error", text: `${level.name} references an unknown level soundtrack ${level.soundtrackKey}.` });
+    }
+    if (level.backgroundKey && !isLevelBackgroundKey(level.backgroundKey)) {
+      messages.push({ severity: "error", text: `${level.name} references an unknown level background ${level.backgroundKey}.` });
     }
     if (level.bounds.w <= 0 || level.bounds.h <= 0) {
       messages.push({ severity: "error", text: `${level.name} bounds must have positive size.` });

@@ -207,6 +207,8 @@ try {
   const draftPlaytestUrl = draftPlaytestPage.url();
   const draftPlaytestHudLevel = await draftPlaytestPage.locator("[data-level]").textContent();
   const draftPlaytestMusicKey = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftMusicKey);
+  const draftPlaytestBackgroundKey = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundKey);
+  const draftPlaytestBackgroundPieces = Number(await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundPieces));
   await draftPlaytestPage.screenshot({ path: `${outDir}/editor-playtest-draft.png`, fullPage: true });
   await draftPlaytestPage.locator("[data-menu]").click();
   const draftEditorButton = draftPlaytestPage.locator("[data-modal] [data-editor]");
@@ -326,6 +328,18 @@ try {
   await corruptDraftPlaytestPage.locator("[data-play]").waitFor({ state: "visible" });
   const menuSoundtrackDraftBootedMenu = await corruptDraftPlaytestPage.locator("[data-play]").isVisible();
   const menuSoundtrackDraftHudCount = await corruptDraftPlaytestPage.locator("[data-level]").count();
+  await corruptDraftPlaytestPage.evaluate(() => {
+    const raw = window.localStorage.getItem("echo-shift-level-editor-draft-v1");
+    if (!raw) throw new Error("Missing draft");
+    const parsed = JSON.parse(raw);
+    delete parsed.levels[0].soundtrackKey;
+    parsed.levels[0].backgroundKey = "missing-background";
+    window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(parsed));
+  });
+  await corruptDraftPlaytestPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await corruptDraftPlaytestPage.locator("[data-play]").waitFor({ state: "visible" });
+  const unknownBackgroundDraftBootedMenu = await corruptDraftPlaytestPage.locator("[data-play]").isVisible();
+  const unknownBackgroundDraftHudCount = await corruptDraftPlaytestPage.locator("[data-level]").count();
   await corruptDraftPlaytest.close();
 
   const mismatchedDraftSelect = await browser.newContext({ viewport: { width: 960, height: 540 } });
@@ -443,10 +457,16 @@ try {
   const inspectorOverflowY = await page.locator("[data-inspector]").evaluate((element) => getComputedStyle(element).overflowY);
   const paletteGroupLabels = await page.locator(".editor-tool-group-title").allTextContents();
   const medalSettingsText = await page.locator("[data-medal-settings]").textContent();
+  const medalSecondsText = await page.locator("[data-medal-seconds]").textContent();
   const soundtrackSelect = page.locator("[data-level-field='soundtrackKey']");
   const soundtrackOptions = await soundtrackSelect.locator("option").allTextContents();
   await soundtrackSelect.selectOption("level-6");
-  const soundtrackExportKey = JSON.parse(await page.locator("[data-export-json]").inputValue())[0].soundtrackKey;
+  const backgroundSelect = page.locator("[data-level-field='backgroundKey']");
+  const backgroundOptions = await backgroundSelect.locator("option").allTextContents();
+  await backgroundSelect.selectOption("time-lab-prototype");
+  const metadataExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
+  const soundtrackExportKey = metadataExport.soundtrackKey;
+  const backgroundExportKey = metadataExport.backgroundKey;
 
   const levelIdField = page.locator("[data-level-field='id']");
   await levelIdField.fill("first-afterimage");
@@ -660,7 +680,7 @@ try {
   const blankObjectIdStatus = await page.locator("[data-editor-status]").textContent();
   const hazardWidthBefore = Number(await page.locator("[data-object-field='w']").inputValue());
   await page.locator("[data-tool='select']").click();
-  await dragWorld(page, { x: 780, y: 434 }, { x: 860, y: 434 });
+  await dragWorld(page, { x: 780, y: 450 }, { x: 860, y: 450 });
   const hazardWidthAfter = Number(await page.locator("[data-object-field='w']").inputValue());
 
   await openTab(page, "objects");
@@ -766,6 +786,7 @@ try {
     name: "Fallback ID Smoke",
     subtitle: "",
     soundtrackKey: "level-4",
+    backgroundKey: "time-lab-prototype",
     start: { x: 60, y: 450 },
     exit: { x: 850, y: 438, w: 48, h: 62 },
     bounds: { x: 0, y: 0, w: 960, h: 540 },
@@ -838,6 +859,8 @@ try {
     `Expected draft playtest game HUD to use edited level name, got ${draftPlaytestHudLevel}`
   );
   assert(draftPlaytestMusicKey === "level-6", `Expected draft playtest GameScene to request explicit level-6 soundtrack, got ${draftPlaytestMusicKey}`);
+  assert(draftPlaytestBackgroundKey === "time-lab-prototype", `Expected draft playtest to render prototype background, got ${draftPlaytestBackgroundKey}`);
+  assert(draftPlaytestBackgroundPieces >= 1, `Expected draft playtest to create repeated background pieces, got ${draftPlaytestBackgroundPieces}`);
   assert(draftReturnUrl.includes("editor=1"), `Expected draft Editor button to return to editor=1, got ${draftReturnUrl}`);
   assert(!draftReturnUrl.includes("playtestDraft=1"), `Expected draft Editor button to clean playtest flag, got ${draftReturnUrl}`);
   assert(!draftReturnUrl.includes("level=1"), `Expected draft Editor button to clean level flag, got ${draftReturnUrl}`);
@@ -851,6 +874,8 @@ try {
   assert(unknownSoundtrackDraftHudCount === 0, `Expected unknown soundtrack draft fallback not to boot game HUD, got ${unknownSoundtrackDraftHudCount}`);
   assert(menuSoundtrackDraftBootedMenu, "Expected menu draft soundtrack key to fall back to normal menu");
   assert(menuSoundtrackDraftHudCount === 0, `Expected menu soundtrack draft fallback not to boot game HUD, got ${menuSoundtrackDraftHudCount}`);
+  assert(unknownBackgroundDraftBootedMenu, "Expected unknown draft background key to fall back to normal menu");
+  assert(unknownBackgroundDraftHudCount === 0, `Expected unknown background draft fallback not to boot game HUD, got ${unknownBackgroundDraftHudCount}`);
   assert(
     mismatchedDraftSelectedLevel?.includes("Draft Array Second"),
     `Expected draft level select to launch array-position level, got ${mismatchedDraftSelectedLevel}`
@@ -901,9 +926,15 @@ try {
   assert(soundtrackOptions.some((option) => option.includes("Auto: Echo Shift - Level 1")), `Expected auto soundtrack option, got ${soundtrackOptions.join(", ")}`);
   assert(soundtrackOptions.some((option) => option.includes("Echo Shift - Level 6")), `Expected selectable level MP3 options, got ${soundtrackOptions.join(", ")}`);
   assert(soundtrackExportKey === "level-6", `Expected selected soundtrack key to export as level-6, got ${soundtrackExportKey}`);
+  assert(backgroundOptions.some((option) => option.includes("Auto: Prototype Time Lab")), `Expected auto background option, got ${backgroundOptions.join(", ")}`);
+  assert(backgroundOptions.some((option) => option.includes("1672x941")), `Expected background dimensions in options, got ${backgroundOptions.join(", ")}`);
+  assert(backgroundExportKey === "time-lab-prototype", `Expected selected background key to export as time-lab-prototype, got ${backgroundExportKey}`);
   assert(medalSettingsText?.includes("Perfect Echoes"), `Expected medal settings to label Perfect Echoes, got ${medalSettingsText}`);
   assert(medalSettingsText?.includes("Gold Frames"), `Expected medal settings to label Gold Frames, got ${medalSettingsText}`);
   assert(medalSettingsText?.includes("Silver Frames"), `Expected medal settings to label Silver Frames, got ${medalSettingsText}`);
+  assert(medalSecondsText?.includes("60 frames = 1s"), `Expected medal settings to explain frame timing, got ${medalSecondsText}`);
+  assert(medalSecondsText?.includes("Gold 34.0s"), `Expected medal settings to show Gold seconds, got ${medalSecondsText}`);
+  assert(medalSecondsText?.includes("Silver 45.0s"), `Expected medal settings to show Silver seconds, got ${medalSecondsText}`);
   assert(zoomBeforeWheel !== zoomAfterWheel, `Expected wheel input to zoom canvas, got ${zoomBeforeWheel} -> ${zoomAfterWheel}`);
   assert(zoomAfterWheel !== zoomAfterButton, `Expected zoom-out button to change zoom, got ${zoomAfterWheel} -> ${zoomAfterButton}`);
   assert(viewAfterPan.x !== viewBeforePan.x, `Expected empty-canvas drag to pan view x: ${viewBeforePan.x} -> ${viewAfterPan.x}`);
@@ -912,8 +943,8 @@ try {
   assert(!keyboardDeleteExport.includes("smoke-laser-drop"), "Expected keyboard Delete to remove selected smoke-laser-drop");
   assert(keyboardDeleteValidation === "clean", `Expected clean validation after keyboard delete, got ${keyboardDeleteValidation}`);
   assert(floorPresetId.startsWith("floorpiece-"), `Expected floor preset id to use non-reserved floorpiece stem, got ${floorPresetId}`);
-  assert(floorPresetWidth === 320 && floorPresetHeight === 40, `Expected floor preset 320x40, got ${floorPresetWidth}x${floorPresetHeight}`);
-  assert(clickDragFloorWidth === 320 && clickDragFloorHeight === 40, `Expected click-drag floor preset 320x40, got ${clickDragFloorWidth}x${clickDragFloorHeight}`);
+  assert(floorPresetWidth === 320 && floorPresetHeight === 20, `Expected floor preset 320x20, got ${floorPresetWidth}x${floorPresetHeight}`);
+  assert(clickDragFloorWidth === 320 && clickDragFloorHeight === 20, `Expected click-drag floor preset 320x20, got ${clickDragFloorWidth}x${clickDragFloorHeight}`);
   assert(userFloorId.startsWith("floorpiece-"), `Expected user floor id to avoid structural floor-* exemption, got ${userFloorId}`);
   assert(
     userFloorOutOfBoundsValidation === "issues" && userFloorOutOfBoundsText?.includes(`${userFloorId} is outside level bounds`),
@@ -921,7 +952,7 @@ try {
   );
   assert(userFloorCleanupValidation === "clean", `Expected clean validation after deleting out-of-bounds user floor, got ${userFloorCleanupValidation}`);
   assert(wallPresetId.startsWith("wall-"), `Expected wall preset id to use wall stem, got ${wallPresetId}`);
-  assert(wallPresetWidth === 40 && wallPresetHeight === 180, `Expected wall preset 40x180, got ${wallPresetWidth}x${wallPresetHeight}`);
+  assert(wallPresetWidth === 20 && wallPresetHeight === 180, `Expected wall preset 20x180, got ${wallPresetWidth}x${wallPresetHeight}`);
   assert(blockPresetId.startsWith("block-"), `Expected block preset id to use block stem, got ${blockPresetId}`);
   assert(blockPresetWidth === 80 && blockPresetHeight === 80, `Expected block preset 80x80, got ${blockPresetWidth}x${blockPresetHeight}`);
   assert(surfacePlateBottom === 500, `Expected dropped plate bottom to snap flush to floor y=500, got ${surfacePlateY}+h=${surfacePlateBottom}`);
@@ -999,7 +1030,7 @@ try {
     afterEditValidation === "clean",
     `Expected clean validation after edit, got ${afterEditValidation}: ${afterEditValidationText}`
   );
-  assert(floorDefaultHeight >= 40, `Expected new solid/floor defaults to be selectable, got height ${floorDefaultHeight}`);
+  assert(floorDefaultHeight === 20, `Expected new solid defaults to be one grid snap thick, got height ${floorDefaultHeight}`);
   assert(reselectedThinSolidId === "smoke-floor", `Expected thin solid canvas hit tolerance to reselect smoke-floor, got ${reselectedThinSolidId}`);
   assert(hazardWidthAfter > hazardWidthBefore, `Expected resize drag to widen hazard: ${hazardWidthBefore} -> ${hazardWidthAfter}`);
   assert(exitDuplicateDisabled, "Expected exit duplicate action to be disabled");
@@ -1021,8 +1052,8 @@ try {
   assert(droneExport.y === 400, `Expected exported drone origin y to match snapped gameplay midpoint 400, got ${droneExport.y}`);
   assert(droneExport.distance === 60, `Expected exported drone distance 60 after snapped endpoint edit, got ${droneExport.distance}`);
   assert(platformPathStartAfterDrag === 320, `Expected draggable platform endpoint to set start to 320, got ${platformPathStartAfterDrag}`);
-  assert(platformExport.y === 421, `Expected exported platform origin y to match gameplay midpoint 421, got ${platformExport.y}`);
-  assert(platformExport.distance === 101, `Expected exported platform distance 101 after endpoint edit, got ${platformExport.distance}`);
+  assert(platformExport.y === 420, `Expected exported platform origin y to align to grid midpoint 420, got ${platformExport.y}`);
+  assert(platformExport.distance === 100, `Expected exported platform distance 100 after endpoint edit, got ${platformExport.distance}`);
   assert(platformEndpointValidation === "clean", `Expected clean validation after platform endpoint drag, got ${platformEndpointValidation}`);
   assert(fallbackImportHazardIds.length === 2, `Expected two fallback-imported hazards, got ${fallbackImportHazardIds.join(", ")}`);
   assert(
@@ -1052,6 +1083,7 @@ try {
     `Expected imported silver medal frames to round to 2400, got ${fallbackImportExport.medalFrames.silver}`
   );
   assert(fallbackImportExport.soundtrackKey === "level-4", `Expected imported soundtrack key level-4, got ${fallbackImportExport.soundtrackKey}`);
+  assert(fallbackImportExport.backgroundKey === "time-lab-prototype", `Expected imported background key time-lab-prototype, got ${fallbackImportExport.backgroundKey}`);
   assert(importedName?.includes("Smoke Edited"), `Import did not update the level name: ${importedName}`);
   assert(importedValidation === "clean", `Expected clean validation after import, got ${importedValidation}`);
   assert(mobileValidation === "clean", `Expected clean mobile validation, got ${mobileValidation}`);

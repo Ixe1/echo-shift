@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { updateEditorDraftCurrentIndex } from "../data/editorDraft";
 import { getLevel, isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
+import { backgroundForLevel } from "../game/backgrounds";
 import { rectCenter } from "../game/geometry";
 import { droneRectAt, laserIsActive } from "../game/objects";
 import { platformRectAt } from "../game/player";
@@ -42,6 +43,7 @@ export class GameScene extends Phaser.Scene {
   private actorSprites = new Map<string, Phaser.GameObjects.Image>();
   private coreSprites = new Map<string, Phaser.GameObjects.Image>();
   private exitSprite?: Phaser.GameObjects.Image;
+  private backgroundImages: Phaser.GameObjects.Image[] = [];
   private cameraTarget?: Phaser.GameObjects.Zone;
   private playerCastUntil = 0;
 
@@ -62,6 +64,7 @@ export class GameScene extends Phaser.Scene {
     this.actorSprites.clear();
     this.coreSprites.clear();
     this.exitSprite = undefined;
+    this.backgroundImages = [];
     this.cameraTarget = undefined;
   }
 
@@ -70,6 +73,7 @@ export class GameScene extends Phaser.Scene {
     audio.playMusic(soundtrackForLevel(this.level, this.levelIndex).key);
     this.cameras.main.setBounds(this.level.bounds.x, this.level.bounds.y, this.level.bounds.w, this.level.bounds.h);
     this.cameras.main.setBackgroundColor("#05070d");
+    this.createBackgroundImages();
     this.cameraTarget = this.add.zone(this.level.start.x, this.level.start.y, 1, 1);
     this.cameras.main.startFollow(this.cameraTarget, true, 0.12, 0.08);
     this.cameras.main.setDeadzone(250, 130);
@@ -287,15 +291,18 @@ export class GameScene extends Phaser.Scene {
     const bounds = this.level.bounds;
     const floorTop = bounds.y + bounds.h - 40;
     const pulse = 0.5 + Math.sin(this.time.now / 900) * 0.5;
-    this.world.fillStyle(0x05070d, 1);
+    const hasImageBackground = this.backgroundImages.length > 0;
+    this.world.fillStyle(0x05070d, hasImageBackground ? 0.26 : 1);
     this.world.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
-    this.world.fillStyle(0x081322, 0.92);
-    this.world.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
+    if (!hasImageBackground) {
+      this.world.fillStyle(0x081322, 0.92);
+      this.world.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
 
-    for (let x = bounds.x + 42; x < bounds.x + bounds.w; x += 660) {
-      this.world.fillStyle(0x0f1830, 0.64);
-      this.world.fillRect(x, bounds.y + 90, 188, 300);
-      this.world.fillRect(x + 410, bounds.y + 70, 174, 330);
+      for (let x = bounds.x + 42; x < bounds.x + bounds.w; x += 660) {
+        this.world.fillStyle(0x0f1830, 0.64);
+        this.world.fillRect(x, bounds.y + 90, 188, 300);
+        this.world.fillRect(x + 410, bounds.y + 70, 174, 330);
+      }
     }
 
     this.world.lineStyle(1, 0x43f7ff, 0.16 + pulse * 0.06);
@@ -328,6 +335,30 @@ export class GameScene extends Phaser.Scene {
     this.world.fillStyle(0xbd5cff, 0.12);
     for (let x = bounds.x + 76; x < bounds.x + bounds.w; x += 560) {
       this.world.fillRect(x, floorTop + 8, 150, 3);
+    }
+  }
+
+  private createBackgroundImages(): void {
+    const background = backgroundForLevel(this.level, this.levelIndex);
+    const bounds = this.level.bounds;
+    const scale = Math.max(bounds.h / background.sourceSize.h, 0.01);
+    const scaledWidth = background.sourceSize.w * scale;
+    const startX = bounds.x;
+    const endX = bounds.x + bounds.w;
+
+    for (let x = startX; x < endX; x += scaledWidth) {
+      const image = this.add
+        .image(x, bounds.y, background.key)
+        .setOrigin(0, 0)
+        .setScale(scale)
+        .setDepth(-20)
+        .setAlpha(0.78);
+      this.backgroundImages.push(image);
+    }
+
+    if (import.meta.env.DEV) {
+      document.documentElement.dataset.echoShiftBackgroundKey = background.key;
+      document.documentElement.dataset.echoShiftBackgroundPieces = String(this.backgroundImages.length);
     }
   }
 

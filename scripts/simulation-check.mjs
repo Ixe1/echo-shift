@@ -159,6 +159,7 @@ try {
   const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
   const { isBetterLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
   const { soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
+  const { backgroundForLevel, levelBackgrounds } = await server.ssrLoadModule("/src/game/backgrounds.ts");
 
   assert(levels.length === 10, `Expected 10 handcrafted levels, found ${levels.length}`);
   assert(levels.some((level) => (level.plates || []).length > 0), "Expected at least one pressure-plate level");
@@ -172,6 +173,8 @@ try {
     "Expected every level to use expanded side-scrolling bounds and a distant exit"
   );
   assert(Boolean(soundtracks.menu), "Expected a main menu soundtrack");
+  assert(Boolean(levelBackgrounds["time-lab-prototype"]), "Expected prototype level background");
+  assert(backgroundForLevel(levels[0], 0).key === "time-lab-prototype", "Expected source levels to use prototype background fallback");
   assert(soundtrackForLevel({ ...levels[0], soundtrackKey: "level-6" }).key === "level-6", "Expected explicit level soundtrack key to override index fallback");
   assert(soundtrackForLevel({ ...levels[5], soundtrackKey: undefined }, 5).key === "level-6", "Expected missing soundtrack key to fall back to level slot");
   assert(soundtrackForLevel({ ...levels[5], soundtrackKey: "missing-track" }, 5).key === "level-6", "Expected unknown soundtrack key to fall back to level slot");
