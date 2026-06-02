@@ -145,9 +145,11 @@ try {
   await page.locator("[data-editor-canvas]").waitFor({ state: "visible" });
   await page.locator("[data-level-select]").selectOption("0");
   const levelOptions = await page.locator("[data-level-select] option").count();
+  const initialExportLevelCount = JSON.parse(await page.locator("[data-export-json]").inputValue()).length;
   const initialValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   const leftSidebarOverflowY = await page.locator(".editor-sidebar.left").evaluate((element) => getComputedStyle(element).overflowY);
   const toolbarOverflowY = await page.locator(".toolbar-panel").evaluate((element) => getComputedStyle(element).overflowY);
+  const inspectorOverflowY = await page.locator("[data-inspector]").evaluate((element) => getComputedStyle(element).overflowY);
 
   const levelIdField = page.locator("[data-level-field='id']");
   await levelIdField.fill("first-afterimage");
@@ -234,6 +236,10 @@ try {
   const zoomAfterWheel = await page.locator("[data-zoom-readout]").textContent();
   await page.locator("[data-zoom-out]").click();
   const zoomAfterButton = await page.locator("[data-zoom-readout]").textContent();
+  await page.locator("[data-fit-level]").click();
+  const viewBeforePan = await editorView(page);
+  await dragWorld(page, { x: 1000, y: 220 }, { x: 900, y: 220 });
+  const viewAfterPan = await editorView(page);
   await page.locator("[data-fit-level]").click();
 
   await dragToolToWorld(page, "lasers", { x: 1120, y: 420 });
@@ -335,6 +341,16 @@ try {
   const dronePathStartAfterDrag = Number(await page.locator("[data-object-field='pathStart']").inputValue());
   const droneExportJson = await page.locator("[data-export-json]").inputValue();
 
+  await page.locator("[data-level-select]").selectOption("4");
+  await openTab(page, "objects");
+  await page.locator("[data-object-list] [data-id='lift-a']").click();
+  const platformCenterX = (await objectNumber(page, "x")) + (await objectNumber(page, "w")) / 2;
+  await page.locator("[data-tool='select']").click();
+  await dragWorld(page, { x: platformCenterX, y: 347 }, { x: platformCenterX, y: 320 });
+  const platformPathStartAfterDrag = Number(await page.locator("[data-object-field='pathStart']").inputValue());
+  const platformEndpointValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  await page.locator("[data-level-select]").selectOption("0");
+
   await page.locator("[data-save-draft]").click();
   const storedDraft = await page.evaluate(() => window.localStorage.getItem("echo-shift-level-editor-draft-v1"));
   assert(storedDraft?.includes("smoke-hazard"), "Draft did not persist edited hazard");
@@ -380,12 +396,18 @@ try {
 
   assert(!inactiveEditorVisible, "Editor should not activate for ?editor=0");
   assert(menuEditorUrl.includes("editor=1"), `Expected menu editor button to navigate to ?editor=1, got ${menuEditorUrl}`);
-  assert(levelOptions === 10, `Expected 10 editable levels, got ${levelOptions}`);
+  assert(levelOptions > 0, `Expected at least one editable level, got ${levelOptions}`);
+  assert(
+    levelOptions === initialExportLevelCount,
+    `Expected level selector count to match export JSON level count: ${levelOptions} !== ${initialExportLevelCount}`
+  );
   assert(initialValidation === "clean", `Expected clean initial validation, got ${initialValidation}`);
   assert(leftSidebarOverflowY === "auto", `Expected left sidebar to scroll independently, got overflow-y ${leftSidebarOverflowY}`);
   assert(toolbarOverflowY === "auto", `Expected toolbar panel to scroll independently, got overflow-y ${toolbarOverflowY}`);
+  assert(inspectorOverflowY === "auto", `Expected right inspector to scroll independently, got overflow-y ${inspectorOverflowY}`);
   assert(zoomBeforeWheel !== zoomAfterWheel, `Expected wheel input to zoom canvas, got ${zoomBeforeWheel} -> ${zoomAfterWheel}`);
   assert(zoomAfterWheel !== zoomAfterButton, `Expected zoom-out button to change zoom, got ${zoomAfterWheel} -> ${zoomAfterButton}`);
+  assert(viewAfterPan.x !== viewBeforePan.x, `Expected empty-canvas drag to pan view x: ${viewBeforePan.x} -> ${viewAfterPan.x}`);
   assert(dragDropLaserExport.includes("smoke-laser-drop"), "Expected palette drag/drop to create smoke-laser-drop");
   assert(activeToolAfterDrop === "select", `Expected drag/drop creation to return toolbar to select mode, got ${activeToolAfterDrop}`);
   assert(!keyboardDeleteExport.includes("smoke-laser-drop"), "Expected keyboard Delete to remove selected smoke-laser-drop");
@@ -443,6 +465,8 @@ try {
   assert(dronePeriod === 100, `Expected speed 120 over 50px drone distance to produce period 100, got ${dronePeriod}`);
   assert(dronePathStartAfterDrag === 340, `Expected draggable drone path endpoint to set start to 340, got ${dronePathStartAfterDrag}`);
   assert(droneExportJson.includes('"axis": "y"'), "Expected drone export JSON to include vertical axis");
+  assert(platformPathStartAfterDrag === 320, `Expected draggable platform endpoint to set start to 320, got ${platformPathStartAfterDrag}`);
+  assert(platformEndpointValidation === "clean", `Expected clean validation after platform endpoint drag, got ${platformEndpointValidation}`);
   assert(importedName?.includes("Smoke Edited"), `Import did not update the level name: ${importedName}`);
   assert(importedValidation === "clean", `Expected clean validation after import, got ${importedValidation}`);
   assert(mobileValidation === "clean", `Expected clean mobile validation, got ${mobileValidation}`);
