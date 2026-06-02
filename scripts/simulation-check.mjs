@@ -39,6 +39,21 @@ const runFrames = (simulation, frames, input) => {
   }
 };
 
+const rectsOverlap = (a, b) =>
+  a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+const oscillatingRectAt = (item, tick) => {
+  const phase = item.phase || 0;
+  const wave = Math.sin(((tick / item.period) * Math.PI * 2) + phase);
+  const offset = wave * item.distance;
+  return {
+    x: item.x + (item.axis === "x" ? offset : 0),
+    y: item.y + (item.axis === "y" ? offset : 0),
+    w: item.w,
+    h: item.h
+  };
+};
+
 const routeObstacleRects = (simulation) => {
   const actor = simulation.player;
   const footY = actor.y + actor.h;
@@ -56,6 +71,9 @@ const routeObstacleRects = (simulation) => {
   const activeHazards = (simulation.level.hazards || []).filter(
     (hazard) => hazard.y < footY && hazard.y + hazard.h > actor.y + 2
   );
+  const activeDrones = (simulation.level.drones || [])
+    .map((drone) => oscillatingRectAt(drone, simulation.tick))
+    .filter((drone) => drone.y < footY && drone.y + drone.h > actor.y + 2);
   const lowSolids = simulation.level.solids.filter(
     (solid) =>
       !["floor", "left-wall", "right-wall"].includes(solid.id) &&
@@ -63,17 +81,34 @@ const routeObstacleRects = (simulation) => {
       solid.y < footY &&
       solid.y + solid.h > actor.y + 10
   );
-  return [...activeHazards, ...activeLasers, ...lowSolids];
+  return [...activeHazards, ...activeLasers, ...activeDrones, ...lowSolids];
+};
+
+const supportRects = (simulation) => [
+  ...simulation.level.solids,
+  ...(simulation.level.platforms || []).map((platform) => oscillatingRectAt(platform, simulation.tick))
+];
+
+const hasSupportAhead = (simulation) => {
+  const actor = simulation.player;
+  const probe = {
+    x: actor.x + actor.w,
+    y: actor.y + actor.h + 3,
+    w: 12,
+    h: 10
+  };
+  return supportRects(simulation).some((support) => rectsOverlap(probe, support));
 };
 
 const shouldSmartJump = (simulation) => {
   const actor = simulation.player;
   if (!actor.onGround) return false;
   const aheadMin = actor.x + actor.w;
-  const aheadMax = actor.x + actor.w + 34;
-  return routeObstacleRects(simulation).some(
+  const aheadMax = actor.x + actor.w + 18;
+  const obstacleAhead = routeObstacleRects(simulation).some(
     (rect) => rect.x <= aheadMax && rect.x + rect.w >= aheadMin
   );
+  return obstacleAhead || !hasSupportAhead(simulation);
 };
 
 const runSmartRight = (simulation, maxFrames, options = {}) => {
@@ -162,7 +197,7 @@ try {
     {
       id: "laser-shadow",
       route: [["smartRightUntilX", 390, 260], ["idle", 45], ["rewind"], ["smartRight", 2200]],
-      blockedLasers: ["beam-a"]
+      activePlates: ["beam-safe"]
     },
     {
       id: "dual-lock",
@@ -261,6 +296,14 @@ try {
     `Expected closed gate tops at or above y=${CLOSED_GATE_MAX_TOP}; low gates: ${lowClosedGates.join(", ")}`
   );
 
+  const sparseCourseLevels = levels
+    .filter((level) => level.solids.filter((solid) => solid.id === "floor" || solid.id.startsWith("floor-")).length < 3)
+    .map((level) => level.id);
+  assert(
+    sparseCourseLevels.length === 0,
+    `Expected every expanded level to have multiple floor segments/gaps; sparse levels: ${sparseCourseLevels.join(", ")}`
+  );
+
   const bypassedFloorGates = [];
   for (const level of levels) {
     for (const door of (level.doors || []).filter((item) => item.y + item.h >= 490)) {
@@ -288,6 +331,17 @@ try {
     `Expected closed floor-height gates to stop jump bypasses; bypassed: ${bypassedFloorGates.join(", ")}`
   );
 
+  const rightOnlyBypasses = [];
+  for (const level of levels) {
+    const simulation = new RoomSimulation(level);
+    runFrames(simulation, level.medalFrames.silver, right);
+    if (simulation.won) rightOnlyBypasses.push(level.id);
+  }
+  assert(
+    rightOnlyBypasses.length === 0,
+    `Expected no level to be clearable by holding right only; bypassed levels: ${rightOnlyBypasses.join(", ")}`
+  );
+
   const routeSummaries = [];
   for (const routeSpec of handcraftedRoutes) {
     const level = levels.find((item) => item.id === routeSpec.id);
@@ -313,6 +367,9 @@ try {
 
     for (const laserId of routeSpec.blockedLasers || []) {
       assert(simulation.objectState.blockedLasers.has(laserId), `${level.name} route did not block ${laserId}`);
+    }
+    for (const plateId of routeSpec.activePlates || []) {
+      assert(simulation.objectState.activePlates.has(plateId), `${level.name} route did not hold ${plateId}`);
     }
 
     routeSummaries.push({
@@ -497,6 +554,8 @@ try {
           "side-scrolling-bounds",
           "closed-gate-top-contract",
           "closed-floor-gate-bypass",
+          "multi-segment-level-density",
+          "right-only-bypass-regression",
           "all-level-quantum-routes"
         ],
         routeSummaries
