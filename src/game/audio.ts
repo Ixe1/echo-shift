@@ -1,4 +1,5 @@
-import { soundtracks, type SoundtrackKey } from "./soundtracks";
+import type { SoundtrackKey } from "./types";
+import { soundtracks } from "./soundtracks";
 
 type ToneName =
   | "jump"
@@ -78,6 +79,7 @@ export class SynthAudio {
 
   playMusic(key: SoundtrackKey, options: { restart?: boolean } = {}): void {
     if (this.context) void this.context.resume();
+    this.markMusicKey(key);
     if (this.music && this.musicKey === key && !options.restart) {
       this.applyMusicVolume(this.music);
       void this.music.play();
@@ -110,6 +112,11 @@ export class SynthAudio {
     this.music?.pause();
     this.music = null;
     this.musicKey = null;
+    if (import.meta.env.DEV) delete document.documentElement.dataset.echoShiftMusicKey;
+  }
+
+  private markMusicKey(key: SoundtrackKey): void {
+    if (import.meta.env.DEV) document.documentElement.dataset.echoShiftMusicKey = key;
   }
 
   private applyMusicVolume(element: HTMLAudioElement): void {

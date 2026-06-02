@@ -172,6 +172,11 @@ try {
     "Expected every level to use expanded side-scrolling bounds and a distant exit"
   );
   assert(Boolean(soundtracks.menu), "Expected a main menu soundtrack");
+  assert(soundtrackForLevel({ ...levels[0], soundtrackKey: "level-6" }).key === "level-6", "Expected explicit level soundtrack key to override index fallback");
+  assert(soundtrackForLevel({ ...levels[5], soundtrackKey: undefined }, 5).key === "level-6", "Expected missing soundtrack key to fall back to level slot");
+  assert(soundtrackForLevel({ ...levels[5], soundtrackKey: "missing-track" }, 5).key === "level-6", "Expected unknown soundtrack key to fall back to level slot");
+  assert(soundtrackForLevel({ ...levels[5], soundtrackKey: "menu" }, 5).key === "level-6", "Expected menu soundtrack key to be ignored for levels");
+  assert(soundtrackForLevel({ ...levels[0], index: 9, soundtrackKey: undefined }, 1).key === "level-2", "Expected auto soundtrack fallback to use runtime level slot, not authored index");
 
   const handcraftedRoutes = [
     {

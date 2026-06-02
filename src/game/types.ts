@@ -79,11 +79,27 @@ export type Hazard = Rect & {
   id: string;
 };
 
+export type SoundtrackKey =
+  | "menu"
+  | "level-1"
+  | "level-2"
+  | "level-3"
+  | "level-4"
+  | "level-5"
+  | "level-6"
+  | "level-7"
+  | "level-8"
+  | "level-9"
+  | "level-10";
+
+export type LevelSoundtrackKey = Exclude<SoundtrackKey, "menu">;
+
 export type Level = {
   id: string;
   index: number;
   name: string;
   subtitle: string;
+  soundtrackKey?: LevelSoundtrackKey;
   start: Vec2;
   exit: Rect;
   bounds: Rect;

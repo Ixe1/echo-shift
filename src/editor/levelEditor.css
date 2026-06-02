@@ -112,8 +112,31 @@
 .editor-tool-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 7px;
+  gap: 10px;
   margin-bottom: 10px;
+}
+
+.editor-tool-group {
+  display: grid;
+  gap: 5px;
+}
+
+.editor-tool-group-title {
+  color: rgba(236, 251, 255, 0.64);
+  font-size: 0.72rem;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.editor-tool-group-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.editor-tool-group-grid .editor-tool:not(.compact) {
+  grid-column: 1 / -1;
 }
 
 .toolbar-panel .editor-viewport-actions {
@@ -182,6 +205,12 @@
   padding: 0 10px;
   font-weight: 900;
   text-transform: uppercase;
+}
+
+.editor-tool.compact {
+  min-width: 0;
+  padding: 0 7px;
+  font-size: 0.78rem;
 }
 
 .editor-button.primary {
@@ -413,6 +442,13 @@
   width: 18px;
   height: 18px;
   accent-color: #ffe35a;
+}
+
+.editor-field-note {
+  margin: 0;
+  color: rgba(236, 251, 255, 0.68);
+  font-size: 0.84rem;
+  line-height: 1.32;
 }
 
 .empty-inspector,

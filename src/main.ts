@@ -1,5 +1,7 @@
 import Phaser from "phaser";
 import "./styles.css";
+import { readEditorDraftSnapshot } from "./data/editorDraft";
+import { setRuntimeLevels } from "./data/levels";
 import { BootScene } from "./scenes/BootScene";
 import { GameScene } from "./scenes/GameScene";
 import { LevelSelectScene } from "./scenes/LevelSelectScene";
@@ -24,12 +26,18 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [BootScene, MenuScene, LevelSelectScene, GameScene]
 };
 
-if (new URLSearchParams(window.location.search).get("editor") === "1") {
+const params = new URLSearchParams(window.location.search);
+
+if (params.get("editor") === "1") {
   const app = document.getElementById("app");
   if (!app) throw new Error("Missing #app");
   void import("./editor/levelEditor").then(({ mountLevelEditor }) => {
     mountLevelEditor(app);
   });
 } else {
+  if (params.get("playtestDraft") === "1") {
+    const draft = readEditorDraftSnapshot();
+    if (draft) setRuntimeLevels(draft.levels, { draftPlaytest: true });
+  }
   new Phaser.Game(config);
 }

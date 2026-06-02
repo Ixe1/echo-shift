@@ -1,4 +1,6 @@
 import Phaser from "phaser";
+import { readEditorDraftCurrentIndex } from "../data/editorDraft";
+import { isDraftPlaytestActive } from "../data/levels";
 import { audio } from "../game/audio";
 import { clearUi, icon, uiRoot } from "../ui/dom";
 
@@ -11,6 +13,7 @@ export class MenuScene extends Phaser.Scene {
     audio.playMusic("menu");
     clearUi();
     const root = uiRoot();
+    const draftPlaytest = isDraftPlaytestActive();
     const editorButton = import.meta.env.DEV
       ? `<button class="ui-button" data-editor>${icon("levels")} Level Editor</button>`
       : "";
@@ -22,10 +25,14 @@ export class MenuScene extends Phaser.Scene {
             <p class="tagline">Rewind failed runs into reliable echoes, then cooperate with your past selves through ten compact time-lab rooms.</p>
           </section>
           <section class="panel menu-panel">
-            <h1>Echo Shift</h1>
-            <p>Community Dev Challenge build. Codex-assisted design, code, and QA.</p>
+            <h1>${draftPlaytest ? "Draft Playtest" : "Echo Shift"}</h1>
+            <p>${
+              draftPlaytest
+                ? "Testing the browser-saved editor draft. Clears and medals are not written to normal progress."
+                : "Community Dev Challenge build. Codex-assisted design, code, and QA."
+            }</p>
             <div class="button-grid">
-              <button class="ui-button primary" data-play>${icon("play")} Play</button>
+              <button class="ui-button primary" data-play>${icon("play")} ${draftPlaytest ? "Play Draft" : "Play"}</button>
               <button class="ui-button" data-levels>${icon("levels")} Level Select</button>
               ${editorButton}
               <button class="ui-button" data-credits>${icon("credits")} Credits</button>
@@ -37,7 +44,7 @@ export class MenuScene extends Phaser.Scene {
 
     root.querySelector("[data-play]")?.addEventListener("click", () => {
       audio.play("select");
-      this.scene.start("GameScene", { levelIndex: 0 });
+      this.scene.start("GameScene", { levelIndex: draftPlaytest ? this.currentDraftLevelIndex() : 0 });
     });
     root.querySelector("[data-levels]")?.addEventListener("click", () => {
       audio.play("select");
@@ -47,9 +54,17 @@ export class MenuScene extends Phaser.Scene {
       audio.play("select");
       const url = new URL(window.location.href);
       url.searchParams.set("editor", "1");
+      url.searchParams.delete("playtestDraft");
+      url.searchParams.delete("level");
       window.location.href = `${url.pathname}${url.search}${url.hash}`;
     });
     root.querySelector("[data-credits]")?.addEventListener("click", () => this.showCredits());
+  }
+
+  private currentDraftLevelIndex(): number {
+    const parsed = Number(new URLSearchParams(window.location.search).get("level"));
+    if (Number.isFinite(parsed)) return Math.max(0, Math.round(parsed));
+    return readEditorDraftCurrentIndex();
   }
 
   private showCredits(): void {

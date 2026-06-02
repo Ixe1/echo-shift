@@ -1,5 +1,6 @@
 import Phaser from "phaser";
-import { getLevel, levels } from "../data/levels";
+import { updateEditorDraftCurrentIndex } from "../data/editorDraft";
+import { getLevel, isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
 import { rectCenter } from "../game/geometry";
 import { droneRectAt, laserIsActive } from "../game/objects";
@@ -65,7 +66,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    audio.playMusic(soundtrackForLevel(this.level).key);
+    this.syncDraftPlaytestUrl();
+    audio.playMusic(soundtrackForLevel(this.level, this.levelIndex).key);
     this.cameras.main.setBounds(this.level.bounds.x, this.level.bounds.y, this.level.bounds.w, this.level.bounds.h);
     this.cameras.main.setBackgroundColor("#05070d");
     this.cameraTarget = this.add.zone(this.level.start.x, this.level.start.y, 1, 1);
@@ -78,16 +80,18 @@ export class GameScene extends Phaser.Scene {
       onRewind: () => this.rewind(),
       onRetry: () => this.retryAttempt(),
       onPause: () => this.togglePause(),
-      onTitle: () => this.scene.start("MenuScene"),
+      onTitle: () => this.openTitle(),
       onNext: () => this.nextLevel(),
       onReplay: () => this.restartLevel(),
-      onLevelSelect: () => this.scene.start("LevelSelectScene"),
+      onLevelSelect: () => this.openLevelSelect(),
+      onEditor: () => this.openEditor(),
       onResume: () => this.togglePause(false),
       onVirtualInput: (control, active) => {
         this.virtualInput[control] = active;
-      }
+      },
+      draftPlaytest: isDraftPlaytestActive()
     });
-    this.hud.toast(`${this.level.index + 1}: ${this.level.name}`);
+    this.hud.toast(`${isDraftPlaytestActive() ? "Draft playtest · " : ""}${this.level.index + 1}: ${this.level.name}`);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.hud.destroy());
     this.renderWorld();
   }
@@ -215,14 +219,47 @@ export class GameScene extends Phaser.Scene {
       echoes: this.simulation.echoRecordings.length,
       medal: this.simulation.scoreMedal()
     };
-    recordLevelScore(score, this.level.index);
+    if (!isDraftPlaytestActive()) recordLevelScore(score, this.level.index);
     this.cameras.main.flash(280, 255, 227, 90, false);
-    this.hud.showComplete(score, this.level.index === levels.length - 1);
+    this.hud.showComplete(score, this.levelIndex === levels.length - 1);
   }
 
   private nextLevel(): void {
     const next = Math.min(this.levelIndex + 1, levels.length - 1);
     this.scene.start("GameScene", { levelIndex: next });
+  }
+
+  private rememberDraftLevel(): void {
+    if (isDraftPlaytestActive()) updateEditorDraftCurrentIndex(this.levelIndex);
+  }
+
+  private openTitle(): void {
+    this.rememberDraftLevel();
+    this.scene.start("MenuScene");
+  }
+
+  private openLevelSelect(): void {
+    this.rememberDraftLevel();
+    this.scene.start("LevelSelectScene");
+  }
+
+  private openEditor(): void {
+    this.rememberDraftLevel();
+    const url = new URL(window.location.href);
+    url.searchParams.set("editor", "1");
+    url.searchParams.delete("playtestDraft");
+    url.searchParams.delete("level");
+    window.location.href = `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  private syncDraftPlaytestUrl(): void {
+    if (!isDraftPlaytestActive()) return;
+    const url = new URL(window.location.href);
+    const nextLevel = String(this.levelIndex);
+    if (url.searchParams.get("level") === nextLevel) return;
+    url.searchParams.set("playtestDraft", "1");
+    url.searchParams.set("level", nextLevel);
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   }
 
   private renderWorld(): void {

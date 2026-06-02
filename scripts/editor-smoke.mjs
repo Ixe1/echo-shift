@@ -189,6 +189,248 @@ try {
   const fractionalDraftValidation = await stalePage.locator("[data-validation]").getAttribute("data-editor-validation");
   await staleDraft.close();
 
+  const draftPlaytest = await browser.newContext({ viewport: { width: 960, height: 540 } });
+  const draftPlaytestPage = await draftPlaytest.newPage();
+  collectConsole(draftPlaytestPage);
+  await draftPlaytestPage.goto(`${url}?editor=1`, { waitUntil: "domcontentloaded" });
+  await draftPlaytestPage.evaluate(() => window.localStorage.clear());
+  await draftPlaytestPage.reload({ waitUntil: "domcontentloaded" });
+  await draftPlaytestPage.locator("[data-level-editor]").waitFor({ state: "visible" });
+  await draftPlaytestPage.locator("[data-level-select]").selectOption("1");
+  const draftPlaytestName = draftPlaytestPage.locator("[data-level-field='name']");
+  await draftPlaytestName.fill("Draft Playtest Smoke");
+  await dispatchChange(draftPlaytestName);
+  await draftPlaytestPage.locator("[data-level-field='soundtrackKey']").selectOption("level-6");
+  await draftPlaytestPage.locator("[data-playtest-draft]").click();
+  await draftPlaytestPage.waitForURL(/playtestDraft=1/);
+  await draftPlaytestPage.locator("[data-level]").waitFor({ state: "visible" });
+  const draftPlaytestUrl = draftPlaytestPage.url();
+  const draftPlaytestHudLevel = await draftPlaytestPage.locator("[data-level]").textContent();
+  const draftPlaytestMusicKey = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftMusicKey);
+  await draftPlaytestPage.screenshot({ path: `${outDir}/editor-playtest-draft.png`, fullPage: true });
+  await draftPlaytestPage.locator("[data-menu]").click();
+  const draftEditorButton = draftPlaytestPage.locator("[data-modal] [data-editor]");
+  await draftEditorButton.waitFor({ state: "visible" });
+  await draftEditorButton.click();
+  await draftPlaytestPage.waitForURL(/editor=1/);
+  await draftPlaytestPage.locator("[data-level-editor]").waitFor({ state: "visible" });
+  const draftReturnUrl = draftPlaytestPage.url();
+  await draftPlaytest.close();
+
+  const corruptDraftPlaytest = await browser.newContext({ viewport: { width: 960, height: 540 } });
+  const corruptDraftPlaytestPage = await corruptDraftPlaytest.newPage();
+  collectConsole(corruptDraftPlaytestPage);
+  await corruptDraftPlaytestPage.goto(url, { waitUntil: "domcontentloaded" });
+  await corruptDraftPlaytestPage.evaluate(() => {
+    window.localStorage.setItem(
+      "echo-shift-level-editor-draft-v1",
+      JSON.stringify({
+        currentIndex: 0,
+        levels: [{ id: "broken-draft", name: "Broken Draft" }]
+      })
+    );
+  });
+  await corruptDraftPlaytestPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await corruptDraftPlaytestPage.locator("[data-play]").waitFor({ state: "visible" });
+  const corruptDraftBootedMenu = await corruptDraftPlaytestPage.locator("[data-play]").isVisible();
+  const corruptDraftHudCount = await corruptDraftPlaytestPage.locator("[data-level]").count();
+  await corruptDraftPlaytestPage.evaluate(() => {
+    window.localStorage.setItem(
+      "echo-shift-level-editor-draft-v1",
+      JSON.stringify({
+        currentIndex: 1,
+        levels: [
+          {
+            id: "valid-draft-room",
+            index: 0,
+            name: "Valid Draft Room",
+            subtitle: "",
+            start: { x: 60, y: 450 },
+            exit: { x: 850, y: 438, w: 48, h: 62 },
+            bounds: { x: 0, y: 0, w: 960, h: 540 },
+            solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
+            perfectEchoes: 0,
+            medalFrames: { gold: 1800, silver: 2400 },
+            hint: ""
+          },
+          { id: "broken-partial-room", name: "Broken Partial Room" }
+        ]
+      })
+    );
+  });
+  await corruptDraftPlaytestPage.goto(`${url}?playtestDraft=1&level=1`, { waitUntil: "domcontentloaded" });
+  await corruptDraftPlaytestPage.locator("[data-play]").waitFor({ state: "visible" });
+  const mixedCorruptDraftBootedMenu = await corruptDraftPlaytestPage.locator("[data-play]").isVisible();
+  const mixedCorruptDraftHudCount = await corruptDraftPlaytestPage.locator("[data-level]").count();
+  await corruptDraftPlaytestPage.evaluate(() => {
+    window.localStorage.setItem(
+      "echo-shift-level-editor-draft-v1",
+      JSON.stringify({
+        currentIndex: 0,
+        levels: [
+          {
+            id: "semantic-draft-room",
+            index: 0.5,
+            name: "Semantic Draft Room",
+            subtitle: "",
+            start: { x: 60, y: 450 },
+            exit: { x: 850, y: 438, w: 48, h: 62 },
+            bounds: { x: 0, y: 0, w: 960, h: 540 },
+            solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
+            perfectEchoes: 0,
+            medalFrames: { gold: 1800.4, silver: 1200 },
+            hint: ""
+          }
+        ]
+      })
+    );
+  });
+  await corruptDraftPlaytestPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await corruptDraftPlaytestPage.locator("[data-play]").waitFor({ state: "visible" });
+  const semanticCorruptDraftBootedMenu = await corruptDraftPlaytestPage.locator("[data-play]").isVisible();
+  const semanticCorruptDraftHudCount = await corruptDraftPlaytestPage.locator("[data-level]").count();
+  await corruptDraftPlaytestPage.evaluate(() => {
+    const levelBase = {
+      id: "bad-soundtrack-draft",
+      index: 0,
+      name: "Bad Soundtrack Draft",
+      subtitle: "",
+      start: { x: 60, y: 450 },
+      exit: { x: 850, y: 438, w: 48, h: 62 },
+      bounds: { x: 0, y: 0, w: 960, h: 540 },
+      solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
+      perfectEchoes: 0,
+      medalFrames: { gold: 1800, silver: 2400 },
+      hint: ""
+    };
+    window.localStorage.setItem(
+      "echo-shift-level-editor-draft-v1",
+      JSON.stringify({
+        currentIndex: 0,
+        levels: [{ ...levelBase, soundtrackKey: "missing-track" }]
+      })
+    );
+  });
+  await corruptDraftPlaytestPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await corruptDraftPlaytestPage.locator("[data-play]").waitFor({ state: "visible" });
+  const unknownSoundtrackDraftBootedMenu = await corruptDraftPlaytestPage.locator("[data-play]").isVisible();
+  const unknownSoundtrackDraftHudCount = await corruptDraftPlaytestPage.locator("[data-level]").count();
+  await corruptDraftPlaytestPage.evaluate(() => {
+    const raw = window.localStorage.getItem("echo-shift-level-editor-draft-v1");
+    if (!raw) throw new Error("Missing draft");
+    const parsed = JSON.parse(raw);
+    parsed.levels[0].soundtrackKey = "menu";
+    window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(parsed));
+  });
+  await corruptDraftPlaytestPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await corruptDraftPlaytestPage.locator("[data-play]").waitFor({ state: "visible" });
+  const menuSoundtrackDraftBootedMenu = await corruptDraftPlaytestPage.locator("[data-play]").isVisible();
+  const menuSoundtrackDraftHudCount = await corruptDraftPlaytestPage.locator("[data-level]").count();
+  await corruptDraftPlaytest.close();
+
+  const mismatchedDraftSelect = await browser.newContext({ viewport: { width: 960, height: 540 } });
+  const mismatchedDraftSelectPage = await mismatchedDraftSelect.newPage();
+  collectConsole(mismatchedDraftSelectPage);
+  await mismatchedDraftSelectPage.goto(url, { waitUntil: "domcontentloaded" });
+  await mismatchedDraftSelectPage.evaluate(() => {
+    const levelBase = {
+      subtitle: "",
+      start: { x: 60, y: 450 },
+      exit: { x: 850, y: 438, w: 48, h: 62 },
+      bounds: { x: 0, y: 0, w: 960, h: 540 },
+      solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
+      perfectEchoes: 0,
+      medalFrames: { gold: 1800, silver: 2400 },
+      hint: ""
+    };
+    window.localStorage.setItem(
+      "echo-shift-level-editor-draft-v1",
+      JSON.stringify({
+        currentIndex: 0,
+        levels: [
+          { ...levelBase, id: "draft-high-index", index: 9, name: "Draft High Index" },
+          { ...levelBase, id: "draft-array-second", index: 0, name: "Draft Array Second" }
+        ]
+      })
+    );
+  });
+  await mismatchedDraftSelectPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await mismatchedDraftSelectPage.locator(".hud [data-level]").waitFor({ state: "visible" });
+  await mismatchedDraftSelectPage.locator("[data-menu]").click();
+  await mismatchedDraftSelectPage.locator("[data-modal] [data-levels]").click();
+  await mismatchedDraftSelectPage.locator(".level-button[data-level='1']").click();
+  await mismatchedDraftSelectPage.locator(".hud [data-level]").waitFor({ state: "visible" });
+  const mismatchedDraftSelectedLevel = await mismatchedDraftSelectPage.locator(".hud [data-level]").textContent();
+  const mismatchedDraftSelectedMusicKey = await mismatchedDraftSelectPage.evaluate(() => document.documentElement.dataset.echoShiftMusicKey);
+  const mismatchedDraftSelectedUrl = mismatchedDraftSelectPage.url();
+  await mismatchedDraftSelectPage.reload({ waitUntil: "domcontentloaded" });
+  await mismatchedDraftSelectPage.locator(".hud [data-level]").waitFor({ state: "visible" });
+  const mismatchedDraftReloadedLevel = await mismatchedDraftSelectPage.locator(".hud [data-level]").textContent();
+  await mismatchedDraftSelectPage.locator("[data-menu]").click();
+  await mismatchedDraftSelectPage.locator("[data-modal] [data-exit-menu]").click();
+  await mismatchedDraftSelectPage.locator("[data-play]").waitFor({ state: "visible" });
+  await mismatchedDraftSelectPage.locator("[data-play]").click();
+  await mismatchedDraftSelectPage.locator(".hud [data-level]").waitFor({ state: "visible" });
+  const mismatchedDraftTitlePlayLevel = await mismatchedDraftSelectPage.locator(".hud [data-level]").textContent();
+  await mismatchedDraftSelectPage.locator("[data-menu]").click();
+  await mismatchedDraftSelectPage.locator("[data-modal] [data-exit-menu]").click();
+  await mismatchedDraftSelectPage.locator("[data-play]").waitFor({ state: "visible" });
+  await mismatchedDraftSelectPage.locator("[data-editor]").click();
+  await mismatchedDraftSelectPage.waitForURL(/editor=1/);
+  await mismatchedDraftSelectPage.locator("[data-level-editor]").waitFor({ state: "visible" });
+  const mismatchedDraftTitleEditorIndex = await mismatchedDraftSelectPage.locator("[data-level-select]").inputValue();
+  const mismatchedDraftTitleEditorLevel = await mismatchedDraftSelectPage.locator("[data-level-select] option:checked").textContent();
+  await mismatchedDraftSelectPage.locator("[data-playtest-draft]").click();
+  await mismatchedDraftSelectPage.waitForURL(/playtestDraft=1/);
+  await mismatchedDraftSelectPage.locator(".hud [data-level]").waitFor({ state: "visible" });
+  await mismatchedDraftSelectPage.locator("[data-menu]").click();
+  await mismatchedDraftSelectPage.locator("[data-modal] [data-editor]").click();
+  await mismatchedDraftSelectPage.waitForURL(/editor=1/);
+  await mismatchedDraftSelectPage.locator("[data-level-editor]").waitFor({ state: "visible" });
+  const mismatchedDraftReturnIndex = await mismatchedDraftSelectPage.locator("[data-level-select]").inputValue();
+  const mismatchedDraftReturnLevel = await mismatchedDraftSelectPage.locator("[data-level-select] option:checked").textContent();
+  const mismatchedDraftReturnAutoOption = await mismatchedDraftSelectPage.locator("[data-level-field='soundtrackKey'] option[value='']").textContent();
+  await mismatchedDraftSelect.close();
+
+  const mismatchedDraftCompletion = await browser.newContext({ viewport: { width: 960, height: 540 } });
+  const mismatchedDraftCompletionPage = await mismatchedDraftCompletion.newPage();
+  collectConsole(mismatchedDraftCompletionPage);
+  await mismatchedDraftCompletionPage.goto(url, { waitUntil: "domcontentloaded" });
+  await mismatchedDraftCompletionPage.evaluate(() => {
+    const levelBase = {
+      subtitle: "",
+      start: { x: 850, y: 438 },
+      exit: { x: 850, y: 438, w: 48, h: 62 },
+      bounds: { x: 0, y: 0, w: 960, h: 540 },
+      solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
+      perfectEchoes: 0,
+      medalFrames: { gold: 1800, silver: 2400 },
+      hint: ""
+    };
+    window.localStorage.setItem(
+      "echo-shift-level-editor-draft-v1",
+      JSON.stringify({
+        currentIndex: 0,
+        levels: [
+          { ...levelBase, id: "draft-complete-high-index", index: 9, name: "Draft Complete High Index" },
+          { ...levelBase, id: "draft-complete-array-last", index: 0, name: "Draft Complete Array Last" }
+        ]
+      })
+    );
+  });
+  await mismatchedDraftCompletionPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await mismatchedDraftCompletionPage.locator("[data-modal].show h1").waitFor({ state: "visible" });
+  const mismatchedDraftFirstCompleteTitle = await mismatchedDraftCompletionPage.locator("[data-modal].show h1").textContent();
+  const mismatchedDraftFirstNextVisible = await mismatchedDraftCompletionPage.locator("[data-modal] [data-next]").isVisible();
+  await mismatchedDraftCompletionPage.locator("[data-modal] [data-next]").click();
+  await mismatchedDraftCompletionPage.waitForFunction(() =>
+    document.querySelector(".hud [data-level]")?.textContent?.includes("Draft Complete Array Last")
+  );
+  await mismatchedDraftCompletionPage.locator("[data-modal].show h1").waitFor({ state: "visible" });
+  const mismatchedDraftLastCompleteTitle = await mismatchedDraftCompletionPage.locator("[data-modal].show h1").textContent();
+  const mismatchedDraftLastNextCount = await mismatchedDraftCompletionPage.locator("[data-modal] [data-next]").count();
+  await mismatchedDraftCompletion.close();
+
   await page.goto(`${url}?editor=1`, { waitUntil: "domcontentloaded" });
   await page.locator("[data-level-editor]").waitFor({ state: "visible" });
   await page.locator("[data-editor-canvas]").waitFor({ state: "visible" });
@@ -199,6 +441,12 @@ try {
   const leftSidebarOverflowY = await page.locator(".editor-sidebar.left").evaluate((element) => getComputedStyle(element).overflowY);
   const toolbarOverflowY = await page.locator(".toolbar-panel").evaluate((element) => getComputedStyle(element).overflowY);
   const inspectorOverflowY = await page.locator("[data-inspector]").evaluate((element) => getComputedStyle(element).overflowY);
+  const paletteGroupLabels = await page.locator(".editor-tool-group-title").allTextContents();
+  const medalSettingsText = await page.locator("[data-medal-settings]").textContent();
+  const soundtrackSelect = page.locator("[data-level-field='soundtrackKey']");
+  const soundtrackOptions = await soundtrackSelect.locator("option").allTextContents();
+  await soundtrackSelect.selectOption("level-6");
+  const soundtrackExportKey = JSON.parse(await page.locator("[data-export-json]").inputValue())[0].soundtrackKey;
 
   const levelIdField = page.locator("[data-level-field='id']");
   await levelIdField.fill("first-afterimage");
@@ -302,6 +550,34 @@ try {
   await page.keyboard.press("Delete");
   const keyboardDeleteExport = await page.locator("[data-export-json]").inputValue();
   const keyboardDeleteValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+
+  await dragToolToWorld(page, "floor", { x: 1180, y: 420 });
+  const floorPresetId = await page.locator("[data-object-field='id']").inputValue();
+  const floorPresetWidth = await objectNumber(page, "w");
+  const floorPresetHeight = await objectNumber(page, "h");
+  await page.locator("[data-delete-object]").click();
+  await page.locator("[data-tool='floor']").click();
+  await dragWorld(page, { x: 1180, y: 420 }, { x: 1200, y: 440 });
+  const clickDragFloorWidth = await objectNumber(page, "w");
+  const clickDragFloorHeight = await objectNumber(page, "h");
+  await page.locator("[data-delete-object]").click();
+  await dragToolToWorld(page, "floor", { x: 1180, y: 420 });
+  const userFloorId = await page.locator("[data-object-field='id']").inputValue();
+  await setObjectField(page, "x", -80);
+  const userFloorOutOfBoundsValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const userFloorOutOfBoundsText = await page.locator("[data-validation]").textContent();
+  await page.locator("[data-delete-object]").click();
+  const userFloorCleanupValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  await dragToolToWorld(page, "wall", { x: 1220, y: 300 });
+  const wallPresetId = await page.locator("[data-object-field='id']").inputValue();
+  const wallPresetWidth = await objectNumber(page, "w");
+  const wallPresetHeight = await objectNumber(page, "h");
+  await page.locator("[data-delete-object]").click();
+  await dragToolToWorld(page, "block", { x: 1260, y: 380 });
+  const blockPresetId = await page.locator("[data-object-field='id']").inputValue();
+  const blockPresetWidth = await objectNumber(page, "w");
+  const blockPresetHeight = await objectNumber(page, "h");
+  await page.locator("[data-delete-object]").click();
 
   await dragToolToWorld(page, "plates", { x: 300, y: 500 });
   const surfacePlateY = await objectNumber(page, "y");
@@ -489,6 +765,7 @@ try {
     index: 0,
     name: "Fallback ID Smoke",
     subtitle: "",
+    soundtrackKey: "level-4",
     start: { x: 60, y: 450 },
     exit: { x: 850, y: 438, w: 48, h: 62 },
     bounds: { x: 0, y: 0, w: 960, h: 540 },
@@ -554,6 +831,60 @@ try {
     `Expected fractional draft currentIndex to normalize to second level, got ${fractionalDraftLevelName}`
   );
   assert(fractionalDraftValidation === "clean", `Expected clean validation after fractional draft boot, got ${fractionalDraftValidation}`);
+  assert(draftPlaytestUrl.includes("playtestDraft=1"), `Expected Playtest button to navigate to playtestDraft=1, got ${draftPlaytestUrl}`);
+  assert(draftPlaytestUrl.includes("level=1"), `Expected Playtest button to preserve selected level=1, got ${draftPlaytestUrl}`);
+  assert(
+    draftPlaytestHudLevel?.includes("Draft Playtest Smoke"),
+    `Expected draft playtest game HUD to use edited level name, got ${draftPlaytestHudLevel}`
+  );
+  assert(draftPlaytestMusicKey === "level-6", `Expected draft playtest GameScene to request explicit level-6 soundtrack, got ${draftPlaytestMusicKey}`);
+  assert(draftReturnUrl.includes("editor=1"), `Expected draft Editor button to return to editor=1, got ${draftReturnUrl}`);
+  assert(!draftReturnUrl.includes("playtestDraft=1"), `Expected draft Editor button to clean playtest flag, got ${draftReturnUrl}`);
+  assert(!draftReturnUrl.includes("level=1"), `Expected draft Editor button to clean level flag, got ${draftReturnUrl}`);
+  assert(corruptDraftBootedMenu, "Expected corrupt draft playtest data to fall back to normal menu instead of crashing");
+  assert(corruptDraftHudCount === 0, `Expected corrupt draft playtest fallback not to boot game HUD, got ${corruptDraftHudCount}`);
+  assert(mixedCorruptDraftBootedMenu, "Expected mixed corrupt draft playtest data to fall back to normal menu instead of truncating draft levels");
+  assert(mixedCorruptDraftHudCount === 0, `Expected mixed corrupt draft fallback not to boot game HUD, got ${mixedCorruptDraftHudCount}`);
+  assert(semanticCorruptDraftBootedMenu, "Expected semantically invalid draft playtest data to fall back to normal menu");
+  assert(semanticCorruptDraftHudCount === 0, `Expected semantically invalid draft fallback not to boot game HUD, got ${semanticCorruptDraftHudCount}`);
+  assert(unknownSoundtrackDraftBootedMenu, "Expected unknown draft soundtrack key to fall back to normal menu");
+  assert(unknownSoundtrackDraftHudCount === 0, `Expected unknown soundtrack draft fallback not to boot game HUD, got ${unknownSoundtrackDraftHudCount}`);
+  assert(menuSoundtrackDraftBootedMenu, "Expected menu draft soundtrack key to fall back to normal menu");
+  assert(menuSoundtrackDraftHudCount === 0, `Expected menu soundtrack draft fallback not to boot game HUD, got ${menuSoundtrackDraftHudCount}`);
+  assert(
+    mismatchedDraftSelectedLevel?.includes("Draft Array Second"),
+    `Expected draft level select to launch array-position level, got ${mismatchedDraftSelectedLevel}`
+  );
+  assert(mismatchedDraftSelectedUrl.includes("level=1"), `Expected draft playtest URL to sync to level=1 after switching rooms, got ${mismatchedDraftSelectedUrl}`);
+  assert(
+    mismatchedDraftSelectedMusicKey === "level-2",
+    `Expected draft auto soundtrack to use array slot 1 as level-2, got ${mismatchedDraftSelectedMusicKey}`
+  );
+  assert(
+    mismatchedDraftReloadedLevel?.includes("Draft Array Second"),
+    `Expected draft playtest refresh to preserve switched room, got ${mismatchedDraftReloadedLevel}`
+  );
+  assert(
+    mismatchedDraftTitleEditorIndex === "1" && mismatchedDraftTitleEditorLevel?.includes("Draft Array Second"),
+    `Expected Title -> Level Editor to preserve current draft room, got ${mismatchedDraftTitleEditorIndex} ${mismatchedDraftTitleEditorLevel}`
+  );
+  assert(
+    mismatchedDraftTitlePlayLevel?.includes("Draft Array Second"),
+    `Expected Title -> Play Draft to resume current draft room, got ${mismatchedDraftTitlePlayLevel}`
+  );
+  assert(mismatchedDraftReturnIndex === "1", `Expected draft editor return to preserve current array index 1, got ${mismatchedDraftReturnIndex}`);
+  assert(
+    mismatchedDraftReturnLevel?.includes("Draft Array Second"),
+    `Expected draft editor return to reopen switched draft level, got ${mismatchedDraftReturnLevel}`
+  );
+  assert(
+    mismatchedDraftReturnAutoOption?.includes("Auto: Echo Shift - Level 2"),
+    `Expected editor auto soundtrack label to use array slot 1, got ${mismatchedDraftReturnAutoOption}`
+  );
+  assert(mismatchedDraftFirstCompleteTitle === "Room Clear", `Expected non-final array slot to show Room Clear, got ${mismatchedDraftFirstCompleteTitle}`);
+  assert(mismatchedDraftFirstNextVisible, "Expected non-final array slot to offer Next Room despite authored index 9");
+  assert(mismatchedDraftLastCompleteTitle === "Timeline Complete", `Expected final array slot to show Timeline Complete, got ${mismatchedDraftLastCompleteTitle}`);
+  assert(mismatchedDraftLastNextCount === 0, `Expected final array slot not to offer Next Room, got ${mismatchedDraftLastNextCount}`);
   assert(levelOptions > 0, `Expected at least one editable level, got ${levelOptions}`);
   assert(
     levelOptions === initialExportLevelCount,
@@ -563,6 +894,16 @@ try {
   assert(leftSidebarOverflowY === "auto", `Expected left sidebar to scroll independently, got overflow-y ${leftSidebarOverflowY}`);
   assert(toolbarOverflowY === "auto", `Expected toolbar panel to scroll independently, got overflow-y ${toolbarOverflowY}`);
   assert(inspectorOverflowY === "auto", `Expected right inspector to scroll independently, got overflow-y ${inspectorOverflowY}`);
+  assert(
+    ["Cursor", "Structure", "Hazards", "Logic", "Actors", "Markers"].every((label) => paletteGroupLabels.includes(label)),
+    `Expected grouped palette labels, got ${paletteGroupLabels.join(", ")}`
+  );
+  assert(soundtrackOptions.some((option) => option.includes("Auto: Echo Shift - Level 1")), `Expected auto soundtrack option, got ${soundtrackOptions.join(", ")}`);
+  assert(soundtrackOptions.some((option) => option.includes("Echo Shift - Level 6")), `Expected selectable level MP3 options, got ${soundtrackOptions.join(", ")}`);
+  assert(soundtrackExportKey === "level-6", `Expected selected soundtrack key to export as level-6, got ${soundtrackExportKey}`);
+  assert(medalSettingsText?.includes("Perfect Echoes"), `Expected medal settings to label Perfect Echoes, got ${medalSettingsText}`);
+  assert(medalSettingsText?.includes("Gold Frames"), `Expected medal settings to label Gold Frames, got ${medalSettingsText}`);
+  assert(medalSettingsText?.includes("Silver Frames"), `Expected medal settings to label Silver Frames, got ${medalSettingsText}`);
   assert(zoomBeforeWheel !== zoomAfterWheel, `Expected wheel input to zoom canvas, got ${zoomBeforeWheel} -> ${zoomAfterWheel}`);
   assert(zoomAfterWheel !== zoomAfterButton, `Expected zoom-out button to change zoom, got ${zoomAfterWheel} -> ${zoomAfterButton}`);
   assert(viewAfterPan.x !== viewBeforePan.x, `Expected empty-canvas drag to pan view x: ${viewBeforePan.x} -> ${viewAfterPan.x}`);
@@ -570,6 +911,19 @@ try {
   assert(activeToolAfterDrop === "select", `Expected drag/drop creation to return toolbar to select mode, got ${activeToolAfterDrop}`);
   assert(!keyboardDeleteExport.includes("smoke-laser-drop"), "Expected keyboard Delete to remove selected smoke-laser-drop");
   assert(keyboardDeleteValidation === "clean", `Expected clean validation after keyboard delete, got ${keyboardDeleteValidation}`);
+  assert(floorPresetId.startsWith("floorpiece-"), `Expected floor preset id to use non-reserved floorpiece stem, got ${floorPresetId}`);
+  assert(floorPresetWidth === 320 && floorPresetHeight === 40, `Expected floor preset 320x40, got ${floorPresetWidth}x${floorPresetHeight}`);
+  assert(clickDragFloorWidth === 320 && clickDragFloorHeight === 40, `Expected click-drag floor preset 320x40, got ${clickDragFloorWidth}x${clickDragFloorHeight}`);
+  assert(userFloorId.startsWith("floorpiece-"), `Expected user floor id to avoid structural floor-* exemption, got ${userFloorId}`);
+  assert(
+    userFloorOutOfBoundsValidation === "issues" && userFloorOutOfBoundsText?.includes(`${userFloorId} is outside level bounds`),
+    `Expected user-created floor outside bounds to warn, got ${userFloorOutOfBoundsValidation}: ${userFloorOutOfBoundsText}`
+  );
+  assert(userFloorCleanupValidation === "clean", `Expected clean validation after deleting out-of-bounds user floor, got ${userFloorCleanupValidation}`);
+  assert(wallPresetId.startsWith("wall-"), `Expected wall preset id to use wall stem, got ${wallPresetId}`);
+  assert(wallPresetWidth === 40 && wallPresetHeight === 180, `Expected wall preset 40x180, got ${wallPresetWidth}x${wallPresetHeight}`);
+  assert(blockPresetId.startsWith("block-"), `Expected block preset id to use block stem, got ${blockPresetId}`);
+  assert(blockPresetWidth === 80 && blockPresetHeight === 80, `Expected block preset 80x80, got ${blockPresetWidth}x${blockPresetHeight}`);
   assert(surfacePlateBottom === 500, `Expected dropped plate bottom to snap flush to floor y=500, got ${surfacePlateY}+h=${surfacePlateBottom}`);
   assert(duplicatedPlateBottom === 500, `Expected duplicated plate bottom to stay flush to floor y=500, got ${duplicatedPlateY}+h=${duplicatedPlateBottom}`);
   assert(surfaceLaserBottom === 500, `Expected dropped laser bottom to snap flush to floor y=500, got ${surfaceLaserY}+h=${surfaceLaserBottom}`);
@@ -697,6 +1051,7 @@ try {
     fallbackImportExport.medalFrames.silver === 2400,
     `Expected imported silver medal frames to round to 2400, got ${fallbackImportExport.medalFrames.silver}`
   );
+  assert(fallbackImportExport.soundtrackKey === "level-4", `Expected imported soundtrack key level-4, got ${fallbackImportExport.soundtrackKey}`);
   assert(importedName?.includes("Smoke Edited"), `Import did not update the level name: ${importedName}`);
   assert(importedValidation === "clean", `Expected clean validation after import, got ${importedValidation}`);
   assert(mobileValidation === "clean", `Expected clean mobile validation, got ${mobileValidation}`);
@@ -715,7 +1070,8 @@ try {
         mobileValidation,
         artifacts: {
           desktop: `${outDir}/editor-desktop.png`,
-          mobile: `${outDir}/editor-mobile.png`
+          mobile: `${outDir}/editor-mobile.png`,
+          playtestDraft: `${outDir}/editor-playtest-draft.png`
         }
       },
       null,

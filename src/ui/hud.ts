@@ -10,8 +10,10 @@ type HudCallbacks = {
   onNext: () => void;
   onReplay: () => void;
   onLevelSelect: () => void;
+  onEditor?: () => void;
   onResume: () => void;
   onVirtualInput: (control: "left" | "right" | "jump", active: boolean) => void;
+  draftPlaytest?: boolean;
 };
 
 type HudState = {
@@ -112,6 +114,7 @@ export class Hud {
           <button class="ui-button primary" data-resume>Resume</button>
           <button class="ui-button" data-replay-level>${icon("restart")} Restart Level</button>
           <button class="ui-button" data-levels>${icon("levels")} Level Select</button>
+          ${this.callbacks.draftPlaytest ? `<button class="ui-button" data-editor>${icon("levels")} Editor</button>` : ""}
           <button class="ui-button" data-exit-menu>${icon("back")} Title</button>
         </div>
       </section>
@@ -120,6 +123,7 @@ export class Hud {
     this.modalButton("[data-resume]", this.callbacks.onResume);
     this.modalButton("[data-replay-level]", this.callbacks.onReplay);
     this.modalButton("[data-levels]", this.callbacks.onLevelSelect);
+    this.modalButton("[data-editor]", () => this.callbacks.onEditor?.());
     this.modalButton("[data-exit-menu]", this.callbacks.onTitle);
   }
 
@@ -147,6 +151,7 @@ export class Hud {
               : `<button class="ui-button primary" data-next>${icon("next")} Next Room</button>`
           }
           <button class="ui-button" data-replay-level>${icon("restart")} Replay Room</button>
+          ${this.callbacks.draftPlaytest ? `<button class="ui-button" data-editor>${icon("levels")} Editor</button>` : ""}
           <button class="ui-button" data-exit-menu>${icon("back")} Title</button>
         </div>
       </section>
@@ -155,6 +160,7 @@ export class Hud {
     this.modalButton("[data-next]", this.callbacks.onNext);
     this.modalButton("[data-levels]", this.callbacks.onLevelSelect);
     this.modalButton("[data-replay-level]", this.callbacks.onReplay);
+    this.modalButton("[data-editor]", () => this.callbacks.onEditor?.());
     this.modalButton("[data-exit-menu]", this.callbacks.onTitle);
   }
 

@@ -1,4 +1,6 @@
 import { levels as sourceLevels } from "../data/levels";
+import { EDITOR_DRAFT_STORAGE_KEY } from "../data/editorDraft";
+import { defaultSoundtrackKeyForLevel, isLevelSoundtrackKey, levelSoundtrackKeys, soundtracks } from "../game/soundtracks";
 import type {
   Core,
   Door,
@@ -20,11 +22,17 @@ type RectObject = Solid | MovingPlatform | Hazard | PressurePlate | Door | Laser
 type SelectableKind = RectCollection | "start" | "exit";
 type Tool = SelectableKind | "select";
 type PlaceableTool = Exclude<Tool, "select">;
+type SolidPreset = "floor" | "wall" | "block";
+type PalettePlacement = {
+  tool: PlaceableTool;
+  preset: SolidPreset | null;
+};
 type EditorPanel = "inspect" | "objects" | "validation" | "export";
 type ValidationSeverity = "error" | "warning";
 type ResizeHandle = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 type MovingKind = "platforms" | "drones";
 type PathEndpoint = "start" | "end";
+type SelectOption = string | { value: string; label: string };
 
 type Selection =
   | { kind: "start" }
@@ -65,6 +73,7 @@ type DragState =
       mode: "create";
       kind: RectCollection;
       id: string;
+      preset: SolidPreset | null;
       origin: Vec2;
       startRect: Rect;
     };
@@ -79,7 +88,6 @@ type EditorDraft = {
   currentIndex: number;
 };
 
-const STORAGE_KEY = "echo-shift-level-editor-draft-v1";
 const GRID = 20;
 const MIN_RECT_SIZE = 4;
 const HIT_TOLERANCE_PX = 8;
@@ -110,6 +118,18 @@ const toolLabels: Record<Tool, string> = {
   lasers: "Laser",
   cores: "Core",
   drones: "Drone"
+};
+
+const solidPresetLabels: Record<SolidPreset, string> = {
+  floor: "Floor",
+  wall: "Wall",
+  block: "Block"
+};
+
+const solidPresetIdStems: Record<SolidPreset, string> = {
+  floor: "floorpiece",
+  wall: "wall",
+  block: "block"
 };
 
 const cloneLevels = (items: Level[]): Level[] => JSON.parse(JSON.stringify(items)) as Level[];
@@ -196,9 +216,12 @@ const styleForKind = (kind: SelectableKind, item?: RectObject): { fill: string; 
   return { fill: "rgba(255, 79, 139, 0.5)", stroke: "#ff4f8b", text: "#fff" };
 };
 
-const defaultSizeFor = (kind: RectCollection): { w: number; h: number } => {
+const defaultSizeFor = (kind: RectCollection, solidPreset: SolidPreset | null = null): { w: number; h: number } => {
   switch (kind) {
     case "solids":
+      if (solidPreset === "floor") return { w: 320, h: 40 };
+      if (solidPreset === "wall") return { w: 40, h: 180 };
+      if (solidPreset === "block") return { w: 80, h: 80 };
       return { w: 180, h: 40 };
     case "platforms":
       return { w: 120, h: 18 };
@@ -318,12 +341,14 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number): Level | 
   const startRecord = isRecord(value.start) ? value.start : {};
   const medalRecord = isRecord(value.medalFrames) ? value.medalFrames : {};
   const usedObjectIds = explicitImportedObjectIds(value);
+  const importedSoundtrackKey = isLevelSoundtrackKey(value.soundtrackKey) ? value.soundtrackKey : undefined;
 
   const level: Level = {
     id: String(value.id || `level-${fallbackIndex + 1}`),
     index: nonNegativeInteger(value.index, fallbackIndex),
     name: String(value.name || `Level ${fallbackIndex + 1}`),
     subtitle: String(value.subtitle || ""),
+    ...(importedSoundtrackKey ? { soundtrackKey: importedSoundtrackKey } : {}),
     start: {
       x: positiveNumber(startRecord.x, 60),
       y: positiveNumber(startRecord.y, 450)
@@ -424,6 +449,7 @@ class LevelEditor {
   private levels: Level[];
   private currentIndex = 0;
   private tool: Tool = "select";
+  private placementPreset: SolidPreset | null = null;
   private selection: Selection | null = null;
   private activePanel: EditorPanel = "inspect";
   private canvas!: HTMLCanvasElement;
@@ -434,6 +460,7 @@ class LevelEditor {
   private readonly view: Rect = { x: -60, y: -60, w: 1, h: 1 };
   private readonly handleDocumentKeyDown = (event: KeyboardEvent): void => this.handleKeyDown(event);
   private paletteDragTool: PlaceableTool | null = null;
+  private paletteDragPreset: SolidPreset | null = null;
   private drag: DragState | null = null;
   private resizeObserver?: ResizeObserver;
   private hasFitInitialLevel = false;
@@ -476,15 +503,65 @@ class LevelEditor {
   }
 
   private shellHtml(): string {
-    const tools = (["select", "start", "exit", ...rectCollections] as Tool[])
-      .map(
-        (tool) => {
-          const placeable = tool !== "select";
-          const dragAttributes = placeable ? ` draggable="true" data-palette-kind="${tool}"` : "";
-          const title = placeable ? `Drag ${toolLabels[tool]} into the level` : toolLabels[tool];
-          return `<button class="editor-tool" type="button" data-tool="${tool}" title="${escapeHtml(title)}"${dragAttributes}>${escapeHtml(toolLabels[tool])}</button>`;
-        }
-      )
+    const paletteGroups: Array<{
+      label: string;
+      tools: Array<{ id: string; tool: Tool; label: string; preset?: SolidPreset; compact?: boolean }>;
+    }> = [
+      { label: "Cursor", tools: [{ id: "select", tool: "select", label: "Select" }] },
+      {
+        label: "Structure",
+        tools: [
+          { id: "floor", tool: "solids", label: "Floor", preset: "floor", compact: true },
+          { id: "wall", tool: "solids", label: "Wall", preset: "wall", compact: true },
+          { id: "block", tool: "solids", label: "Block", preset: "block", compact: true },
+          { id: "solids", tool: "solids", label: "Solid", compact: true },
+          { id: "platforms", tool: "platforms", label: "Platform" }
+        ]
+      },
+      {
+        label: "Hazards",
+        tools: [
+          { id: "hazards", tool: "hazards", label: "Hazard", compact: true },
+          { id: "lasers", tool: "lasers", label: "Laser", compact: true }
+        ]
+      },
+      {
+        label: "Logic",
+        tools: [
+          { id: "plates", tool: "plates", label: "Plate", compact: true },
+          { id: "doors", tool: "doors", label: "Door", compact: true },
+          { id: "cores", tool: "cores", label: "Core", compact: true }
+        ]
+      },
+      { label: "Actors", tools: [{ id: "drones", tool: "drones", label: "Drone" }] },
+      {
+        label: "Markers",
+        tools: [
+          { id: "start", tool: "start", label: "Start", compact: true },
+          { id: "exit", tool: "exit", label: "Exit", compact: true }
+        ]
+      }
+    ];
+    const tools = paletteGroups
+      .map((group) => {
+        const buttons = group.tools
+          .map((entry) => {
+            const placeable = entry.tool !== "select";
+            const presetAttribute = entry.preset ? ` data-solid-preset="${entry.preset}"` : "";
+            const dragAttributes = placeable ? ` draggable="true" data-palette-kind="${entry.tool}"${presetAttribute}` : "";
+            const title = placeable ? `Drag ${entry.label} into the level` : entry.label;
+            return `<button class="editor-tool ${entry.compact ? "compact" : ""}" type="button" data-tool="${entry.id}" title="${escapeHtml(
+              title
+            )}"${dragAttributes}>${escapeHtml(entry.label)}</button>`;
+          })
+          .join("");
+        return `
+          <div class="editor-tool-group">
+            <div class="editor-tool-group-title">${escapeHtml(group.label)}</div>
+            <div class="editor-tool-group-grid">${buttons}</div>
+          </div>
+        `;
+      })
       .join("");
 
     return `
@@ -500,8 +577,9 @@ class LevelEditor {
           </label>
           <div class="editor-actions">
             <button type="button" class="editor-button" data-save-draft>Save Draft</button>
+            <button type="button" class="editor-button primary" data-playtest-draft>Playtest</button>
             <button type="button" class="editor-button" data-reset-source>Reset Source</button>
-            <button type="button" class="editor-button primary" data-back-game>Game</button>
+            <button type="button" class="editor-button" data-back-game>Game</button>
           </div>
         </header>
         <section class="editor-workspace">
@@ -580,9 +658,11 @@ class LevelEditor {
     this.require<HTMLElement>("[data-tool-grid]").addEventListener("click", (event) => {
       const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-tool]");
       if (!button) return;
-      this.tool = button.dataset.tool as Tool;
+      const paletteKind = button.dataset.paletteKind as PlaceableTool | undefined;
+      this.tool = paletteKind || "select";
+      this.placementPreset = paletteKind === "solids" ? this.solidPresetFromValue(button.dataset.solidPreset) : null;
       this.renderToolbar();
-      this.setStatus(`${toolLabels[this.tool]} tool`);
+      this.setStatus(`${this.paletteLabel(this.tool, this.placementPreset)} tool`);
     });
     this.require<HTMLElement>("[data-tool-grid]").addEventListener("dragstart", (event) => this.handleToolDragStart(event));
     this.require<HTMLElement>("[data-tool-grid]").addEventListener("dragend", (event) => this.handleToolDragEnd(event));
@@ -600,6 +680,7 @@ class LevelEditor {
       const kind = button.dataset.kind as SelectableKind;
       this.selection = kind === "start" || kind === "exit" ? { kind } : { kind, id: button.dataset.id || "" };
       this.tool = "select";
+      this.placementPreset = null;
       this.activePanel = "inspect";
       this.renderAll();
     });
@@ -624,10 +705,13 @@ class LevelEditor {
     this.require<HTMLButtonElement>("[data-zoom-out]").addEventListener("click", () => this.zoomAtCanvasCenter(0.86));
     this.require<HTMLButtonElement>("[data-zoom-in]").addEventListener("click", () => this.zoomAtCanvasCenter(1.16));
     this.require<HTMLButtonElement>("[data-save-draft]").addEventListener("click", () => this.persistDraft("Draft saved"));
+    this.require<HTMLButtonElement>("[data-playtest-draft]").addEventListener("click", () => this.playtestDraft());
     this.require<HTMLButtonElement>("[data-reset-source]").addEventListener("click", () => {
       this.levels = cloneLevels(sourceLevels);
       this.currentIndex = 0;
       this.selection = null;
+      this.tool = "select";
+      this.placementPreset = null;
       this.clearDraft();
       this.fitLevel();
       this.renderAll();
@@ -636,6 +720,8 @@ class LevelEditor {
     this.require<HTMLButtonElement>("[data-back-game]").addEventListener("click", () => {
       const url = new URL(window.location.href);
       url.searchParams.delete("editor");
+      url.searchParams.delete("playtestDraft");
+      url.searchParams.delete("level");
       window.location.href = `${url.pathname}${url.search}${url.hash}`;
     });
     this.require<HTMLButtonElement>("[data-copy-export]").addEventListener("click", () => void this.copyExport());
@@ -672,6 +758,9 @@ class LevelEditor {
     const level = this.level;
     if (field === "id" || field === "name" || field === "subtitle" || field === "hint") {
       (level as unknown as Record<string, string>)[field] = String(value);
+    } else if (field === "soundtrackKey") {
+      if (isLevelSoundtrackKey(value)) level.soundtrackKey = value;
+      else delete level.soundtrackKey;
     } else if (field === "bounds.x" || field === "bounds.y" || field === "bounds.w" || field === "bounds.h") {
       const key = field.split(".")[1] as keyof Rect;
       level.bounds[key] = Number(value);
@@ -776,48 +865,67 @@ class LevelEditor {
     return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
   }
 
+  private solidPresetFromValue(value: unknown): SolidPreset | null {
+    return value === "floor" || value === "wall" || value === "block" ? value : null;
+  }
+
+  private paletteLabel(tool: Tool, preset: SolidPreset | null = null): string {
+    if (tool === "solids" && preset) return solidPresetLabels[preset];
+    return toolLabels[tool];
+  }
+
   private handleToolDragStart(event: DragEvent): void {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-palette-kind]");
     if (!button || !event.dataTransfer) return;
     const tool = button.dataset.paletteKind as PlaceableTool;
+    const preset = tool === "solids" ? this.solidPresetFromValue(button.dataset.solidPreset) : null;
     this.paletteDragTool = tool;
+    this.paletteDragPreset = preset;
     event.dataTransfer.effectAllowed = "copy";
     event.dataTransfer.setData("application/x-echo-shift-tool", tool);
+    if (preset) event.dataTransfer.setData("application/x-echo-shift-solid-preset", preset);
     event.dataTransfer.setData("text/plain", tool);
     button.classList.add("dragging");
-    this.setStatus(`Drop ${toolLabels[tool]} into the level`);
+    this.setStatus(`Drop ${this.paletteLabel(tool, preset)} into the level`);
   }
 
   private handleToolDragEnd(event: DragEvent): void {
     (event.target as HTMLElement).closest<HTMLButtonElement>("[data-palette-kind]")?.classList.remove("dragging");
     this.paletteDragTool = null;
+    this.paletteDragPreset = null;
     this.setCanvasDragOver(false);
   }
 
   private handleCanvasDragOver(event: DragEvent): void {
-    const tool = this.toolFromDataTransfer(event.dataTransfer);
-    if (!tool) return;
+    const placement = this.placementFromDataTransfer(event.dataTransfer);
+    if (!placement) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
     this.setCanvasDragOver(true);
   }
 
   private handleCanvasDrop(event: DragEvent): void {
-    const tool = this.toolFromDataTransfer(event.dataTransfer);
-    if (!tool) return;
+    const placement = this.placementFromDataTransfer(event.dataTransfer);
+    if (!placement) return;
     event.preventDefault();
     this.setCanvasDragOver(false);
     this.paletteDragTool = null;
+    this.paletteDragPreset = null;
     const rect = this.canvas.getBoundingClientRect();
     const world = snapPoint(this.screenToWorld({ x: event.clientX - rect.left, y: event.clientY - rect.top }));
-    this.placeToolAt(tool, world);
+    this.placeToolAt(placement.tool, world, placement.preset);
     this.tool = "select";
+    this.placementPreset = null;
     this.renderToolbar();
   }
 
-  private toolFromDataTransfer(dataTransfer: DataTransfer | null): PlaceableTool | null {
+  private placementFromDataTransfer(dataTransfer: DataTransfer | null): PalettePlacement | null {
     const raw = dataTransfer?.getData("application/x-echo-shift-tool") || dataTransfer?.getData("text/plain") || this.paletteDragTool;
-    if (raw === "start" || raw === "exit" || rectCollections.includes(raw as RectCollection)) return raw as PlaceableTool;
+    if (raw === "start" || raw === "exit" || rectCollections.includes(raw as RectCollection)) {
+      const tool = raw as PlaceableTool;
+      const preset = tool === "solids" ? this.solidPresetFromValue(dataTransfer?.getData("application/x-echo-shift-solid-preset") || this.paletteDragPreset) : null;
+      return { tool, preset };
+    }
     return null;
   }
 
@@ -904,12 +1012,13 @@ class LevelEditor {
     }
 
     const kind = this.tool as RectCollection;
-    const object = this.placeToolAt(kind, world);
+    const object = this.placeToolAt(kind, world, kind === "solids" ? this.placementPreset : null);
     if (!object) return;
     this.drag = {
       mode: "create",
       kind,
       id: object.id,
+      preset: kind === "solids" ? this.placementPreset : null,
       origin: world,
       startRect: { x: object.x, y: object.y, w: object.w, h: object.h }
     };
@@ -968,7 +1077,7 @@ class LevelEditor {
 
     const target = this.findObject(this.drag.kind, this.drag.id);
     if (!target) return;
-    const size = defaultSizeFor(this.drag.kind);
+    const size = defaultSizeFor(this.drag.kind, this.drag.kind === "solids" ? this.drag.preset : null);
     const minX = Math.min(this.drag.origin.x, world.x);
     const minY = Math.min(this.drag.origin.y, world.y);
     const maxX = Math.max(this.drag.origin.x, world.x);
@@ -1095,10 +1204,10 @@ class LevelEditor {
       x: this.view.x + this.canvas.width / this.view.w / 2,
       y: this.view.y + this.canvas.height / this.view.w / 2
     });
-    this.placeToolAt(kind, world);
+    this.placeToolAt(kind, world, kind === "solids" ? this.placementPreset : null);
   }
 
-  private placeToolAt(tool: PlaceableTool, world: Vec2): RectObject | null {
+  private placeToolAt(tool: PlaceableTool, world: Vec2, solidPreset: SolidPreset | null = null): RectObject | null {
     if (tool === "start") {
       this.level.start = world;
       this.selection = { kind: "start" };
@@ -1113,12 +1222,12 @@ class LevelEditor {
       this.afterMutation("Exit placed");
       return null;
     }
-    const object = this.createObject(tool, world);
+    const object = this.createObject(tool, world, solidPreset);
     this.snapToNearbySurface(tool, object);
     ensureCollection(this.level, tool).push(object);
     this.selection = { kind: tool, id: object.id };
     this.activePanel = "inspect";
-    this.afterMutation(`${collectionLabels[tool]} object added`);
+    this.afterMutation(`${this.paletteLabel(tool, solidPreset)} added`);
     return object;
   }
 
@@ -1196,11 +1305,14 @@ class LevelEditor {
     this.afterMutation("Object deleted");
   }
 
-  private createObject(kind: RectCollection, point: Vec2): RectObject {
-    const size = defaultSizeFor(kind);
-    const id = this.nextObjectId(kind);
+  private createObject(kind: RectCollection, point: Vec2, solidPreset: SolidPreset | null = null): RectObject {
+    const size = defaultSizeFor(kind, solidPreset);
+    const id = this.nextObjectId(kind, solidPreset ? solidPresetIdStems[solidPreset] : undefined);
     const base = { id, x: point.x, y: point.y, w: size.w, h: size.h };
-    if (kind === "solids") return { ...base, tone: "steel" };
+    if (kind === "solids") {
+      const tone: Solid["tone"] = solidPreset === "wall" ? "dark" : solidPreset === "block" ? "glass" : "steel";
+      return { ...base, tone };
+    }
     if (kind === "platforms") return { ...base, axis: "x", distance: 100, period: 180, phase: 0 } as MovingPlatform;
     if (kind === "hazards") return base as Hazard;
     if (kind === "plates") return base as PressurePlate;
@@ -1210,8 +1322,8 @@ class LevelEditor {
     return { ...base, axis: "x", distance: 120, period: 200, phase: 0 } as PatrolDrone;
   }
 
-  private nextObjectId(kind: RectCollection): string {
-    const stem = objectIdStem(kind);
+  private nextObjectId(kind: RectCollection, stemOverride?: string): string {
+    const stem = stemOverride || objectIdStem(kind);
     let index = readCollection(this.level, kind).length + 1;
     let id = `${stem}-${index}`;
     while (this.objectIdExists(id)) {
@@ -1258,7 +1370,13 @@ class LevelEditor {
 
   private renderToolbar(): void {
     this.host.querySelectorAll<HTMLButtonElement>("[data-tool]").forEach((button) => {
-      button.classList.toggle("active", button.dataset.tool === this.tool);
+      const paletteKind = button.dataset.paletteKind as Tool | undefined;
+      const preset = this.solidPresetFromValue(button.dataset.solidPreset);
+      const active =
+        this.tool === "select"
+          ? button.dataset.tool === "select"
+          : paletteKind === this.tool && (this.tool !== "solids" || preset === this.placementPreset);
+      button.classList.toggle("active", active);
     });
     const duplicateButton = this.require<HTMLButtonElement>("[data-duplicate-object]");
     duplicateButton.disabled = !this.canDuplicateSelection();
@@ -1310,12 +1428,17 @@ class LevelEditor {
           ${this.numberField("W", "bounds.w", level.bounds.w, "level")}
           ${this.numberField("H", "bounds.h", level.bounds.h, "level")}
         </div>
-        <div class="inspector-grid three">
-          ${this.numberField("Echoes", "perfectEchoes", level.perfectEchoes, "level")}
-          ${this.numberField("Gold", "medalFrames.gold", level.medalFrames.gold, "level")}
-          ${this.numberField("Silver", "medalFrames.silver", level.medalFrames.silver, "level")}
-        </div>
+        ${this.soundtrackField(level)}
         ${this.textAreaField("Hint", "hint", level.hint)}
+      </div>
+      <div class="inspector-section" data-medal-settings>
+        <h3>Medals</h3>
+        <p class="editor-field-note">Quantum uses the echo budget plus Gold Frames. Gold and Silver use frame thresholds.</p>
+        <div class="inspector-grid three">
+          ${this.numberField("Perfect Echoes", "perfectEchoes", level.perfectEchoes, "level", 1)}
+          ${this.numberField("Gold Frames", "medalFrames.gold", level.medalFrames.gold, "level", 1)}
+          ${this.numberField("Silver Frames", "medalFrames.silver", level.medalFrames.silver, "level", 1)}
+        </div>
       </div>
       <div class="inspector-section">
         <h3>Selection</h3>
@@ -1409,6 +1532,18 @@ class LevelEditor {
     return `<label class="editor-field"><span>${label}</span><textarea data-level-field="${field}">${escapeHtml(value)}</textarea></label>`;
   }
 
+  private soundtrackField(level: Level): string {
+    const auto = soundtracks[defaultSoundtrackKeyForLevel(level, this.currentIndex)];
+    const options: SelectOption[] = [
+      { value: "", label: `Auto: ${auto.title}` },
+      ...levelSoundtrackKeys.map((key) => ({
+        value: key,
+        label: `${soundtracks[key].title} (${Math.round(soundtracks[key].durationSeconds)}s)`
+      }))
+    ];
+    return this.selectField("Level MP3", "soundtrackKey", level.soundtrackKey || "", options, "level");
+  }
+
   private numberField(label: string, field: string, value: number, scope: "level" | "object", step = GRID): string {
     const attr = scope === "level" ? "data-level-field" : "data-object-field";
     return `<label class="editor-field"><span>${label}</span><input ${attr}="${field}" data-field-type="number" type="number" step="${step}" value="${Number(value.toFixed(2))}" /></label>`;
@@ -1418,9 +1553,14 @@ class LevelEditor {
     return `<label class="editor-check"><input data-object-field="${field}" type="checkbox" ${checked ? "checked" : ""} /><span>${label}</span></label>`;
   }
 
-  private selectField(label: string, field: string, value: string, options: string[]): string {
-    return `<label class="editor-field"><span>${label}</span><select data-object-field="${field}">${options
-      .map((option) => `<option value="${option}" ${option === value ? "selected" : ""}>${option || "default"}</option>`)
+  private selectField(label: string, field: string, value: string, options: SelectOption[], scope: "level" | "object" = "object"): string {
+    const attr = scope === "level" ? "data-level-field" : "data-object-field";
+    return `<label class="editor-field"><span>${label}</span><select ${attr}="${field}">${options
+      .map((option) => {
+        const optionValue = typeof option === "string" ? option : option.value;
+        const optionLabel = typeof option === "string" ? option || "default" : option.label;
+        return `<option value="${escapeHtml(optionValue)}" ${optionValue === value ? "selected" : ""}>${escapeHtml(optionLabel)}</option>`;
+      })
       .join("")}</select></label>`;
   }
 
@@ -1481,6 +1621,9 @@ class LevelEditor {
     }
     if (!Number.isInteger(level.perfectEchoes) || level.perfectEchoes < 0) {
       messages.push({ severity: "error", text: `${level.name} perfect echoes must be a non-negative integer.` });
+    }
+    if (level.soundtrackKey && !isLevelSoundtrackKey(level.soundtrackKey)) {
+      messages.push({ severity: "error", text: `${level.name} references an unknown level soundtrack ${level.soundtrackKey}.` });
     }
     if (level.bounds.w <= 0 || level.bounds.h <= 0) {
       messages.push({ severity: "error", text: `${level.name} bounds must have positive size.` });
@@ -1898,22 +2041,33 @@ class LevelEditor {
     this.persistDraft(status);
   }
 
-  private persistDraft(status: string): void {
+  private persistDraft(status: string): boolean {
     const draft: EditorDraft = {
       levels: this.levels,
       currentIndex: this.currentIndex
     };
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
+      window.localStorage.setItem(EDITOR_DRAFT_STORAGE_KEY, JSON.stringify(draft));
       this.setStatus(status);
+      return true;
     } catch {
       this.setStatus(`${status}; draft storage unavailable`);
+      return false;
     }
+  }
+
+  private playtestDraft(): void {
+    if (!this.persistDraft("Draft saved for playtest")) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("editor");
+    url.searchParams.set("playtestDraft", "1");
+    url.searchParams.set("level", String(this.currentIndex));
+    window.location.href = `${url.pathname}${url.search}${url.hash}`;
   }
 
   private loadDraft(): EditorDraft | null {
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
+      const raw = window.localStorage.getItem(EDITOR_DRAFT_STORAGE_KEY);
       if (!raw) return null;
       const parsed = JSON.parse(raw) as unknown;
       if (!isRecord(parsed) || !Array.isArray(parsed.levels)) return null;
@@ -1932,7 +2086,7 @@ class LevelEditor {
 
   private clearDraft(): void {
     try {
-      window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(EDITOR_DRAFT_STORAGE_KEY);
     } catch {
       this.setStatus("Draft storage unavailable");
     }

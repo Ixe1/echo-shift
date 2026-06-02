@@ -47,7 +47,7 @@ const frame = (width: number, floorY = 500, gaps: Array<[number, number]> = []):
   ];
 };
 
-export const levels: Level[] = [
+const sourceLevels: Level[] = [
   {
     id: "portal-primer",
     index: 0,
@@ -311,4 +311,26 @@ export const levels: Level[] = [
   }
 ];
 
-export const getLevel = (index: number): Level => levels[Math.max(0, Math.min(levels.length - 1, index))];
+const cloneLevels = (items: Level[]): Level[] => JSON.parse(JSON.stringify(items)) as Level[];
+const runtimeLevelIndex = (index: number): number => {
+  if (levels.length === 0) return 0;
+  return Math.max(0, Math.min(levels.length - 1, Math.round(index)));
+};
+
+export const levels: Level[] = cloneLevels(sourceLevels);
+
+let draftPlaytestActive = false;
+
+export const setRuntimeLevels = (items: Level[], options: { draftPlaytest?: boolean } = {}): void => {
+  levels.splice(0, levels.length, ...cloneLevels(items));
+  draftPlaytestActive = options.draftPlaytest === true;
+};
+
+export const resetRuntimeLevels = (): void => {
+  levels.splice(0, levels.length, ...cloneLevels(sourceLevels));
+  draftPlaytestActive = false;
+};
+
+export const isDraftPlaytestActive = (): boolean => draftPlaytestActive;
+
+export const getLevel = (index: number): Level => levels[runtimeLevelIndex(index)];

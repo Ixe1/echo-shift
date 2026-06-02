@@ -1,4 +1,12 @@
 import Phaser from "phaser";
+import { isDraftPlaytestActive, levels } from "../data/levels";
+
+const playtestLevelIndex = (): number => {
+  const raw = new URLSearchParams(window.location.search).get("level");
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return 0;
+  return Math.max(0, Math.min(levels.length - 1, Math.round(parsed)));
+};
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -27,6 +35,10 @@ export class BootScene extends Phaser.Scene {
     particle.fillCircle(4, 4, 4);
     particle.generateTexture("particle-gold", 8, 8);
     particle.destroy();
+    if (isDraftPlaytestActive()) {
+      this.scene.start("GameScene", { levelIndex: playtestLevelIndex() });
+      return;
+    }
     this.scene.start("MenuScene");
   }
 }

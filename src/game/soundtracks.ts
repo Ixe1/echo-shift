@@ -1,17 +1,18 @@
-import type { Level } from "./types";
+import type { Level, LevelSoundtrackKey, SoundtrackKey } from "./types";
 
-export type SoundtrackKey =
-  | "menu"
-  | "level-1"
-  | "level-2"
-  | "level-3"
-  | "level-4"
-  | "level-5"
-  | "level-6"
-  | "level-7"
-  | "level-8"
-  | "level-9"
-  | "level-10";
+export const soundtrackKeys = [
+  "menu",
+  "level-1",
+  "level-2",
+  "level-3",
+  "level-4",
+  "level-5",
+  "level-6",
+  "level-7",
+  "level-8",
+  "level-9",
+  "level-10"
+] as const satisfies readonly SoundtrackKey[];
 
 export type Soundtrack = {
   key: SoundtrackKey;
@@ -91,5 +92,20 @@ export const soundtracks: Record<SoundtrackKey, Soundtrack> = {
   }
 };
 
-export const soundtrackForLevel = (level: Level): Soundtrack =>
-  soundtracks[`level-${level.index + 1}` as SoundtrackKey];
+export const levelSoundtrackKeys = soundtrackKeys.filter((key): key is LevelSoundtrackKey => key !== "menu");
+
+export const isSoundtrackKey = (value: unknown): value is SoundtrackKey =>
+  typeof value === "string" && Object.prototype.hasOwnProperty.call(soundtracks, value);
+
+export const isLevelSoundtrackKey = (value: unknown): value is LevelSoundtrackKey =>
+  isSoundtrackKey(value) && value !== "menu";
+
+export const defaultSoundtrackKeyForLevel = (level: Pick<Level, "index">, levelSlot = level.index): LevelSoundtrackKey => {
+  const key = `level-${levelSlot + 1}` as SoundtrackKey;
+  return isLevelSoundtrackKey(key) ? key : "level-1";
+};
+
+export const soundtrackForLevel = (level: Level, levelSlot = level.index): Soundtrack => {
+  if (isLevelSoundtrackKey(level.soundtrackKey)) return soundtracks[level.soundtrackKey];
+  return soundtracks[defaultSoundtrackKeyForLevel(level, levelSlot)];
+};
