@@ -129,9 +129,6 @@ const rectInside = (inner: Rect, outer: Rect): boolean =>
   inner.x + inner.w <= outer.x + outer.w &&
   inner.y + inner.h <= outer.y + outer.h;
 
-const pointInside = (point: Vec2, rect: Rect): boolean =>
-  point.x >= rect.x && point.x <= rect.x + rect.w && point.y >= rect.y && point.y <= rect.y + rect.h;
-
 const normalizeRect = (rect: Rect): Rect => ({
   x: Math.round(rect.x),
   y: Math.round(rect.y),
@@ -783,7 +780,7 @@ class LevelEditor {
     if (kind === "platforms") return { ...base, axis: "x", distance: 100, period: 180, phase: 0 } as MovingPlatform;
     if (kind === "hazards") return base as Hazard;
     if (kind === "plates") return base as PressurePlate;
-    if (kind === "doors") return { ...base, y: 200, opensWith: [] } as Door;
+    if (kind === "doors") return { ...base, opensWith: [] } as Door;
     if (kind === "lasers") return { ...base, startsOn: true } as Laser;
     if (kind === "cores") return { ...base, label: id.split("-").at(-1)?.toUpperCase() } as Core;
     return { ...base, axis: "x", distance: 120, period: 200, phase: 0 } as PatrolDrone;
@@ -1038,8 +1035,8 @@ class LevelEditor {
     if (level.bounds.w <= 0 || level.bounds.h <= 0) {
       messages.push({ severity: "error", text: `${level.name} bounds must have positive size.` });
     }
-    if (!pointInside(level.start, level.bounds)) {
-      messages.push({ severity: "error", text: `${level.name} start is outside bounds.` });
+    if (!rectInside(this.startRectForLevel(level), level.bounds)) {
+      messages.push({ severity: "error", text: `${level.name} start footprint is outside bounds.` });
     }
     if (!rectInside(level.exit, level.bounds)) {
       messages.push({ severity: "error", text: `${level.name} exit is outside bounds.` });
@@ -1080,7 +1077,8 @@ class LevelEditor {
       if (door.requiresCore && !coreIds.has(door.requiresCore)) {
         messages.push({ severity: "error", text: `${level.name}:${door.id} references missing core ${door.requiresCore}.` });
       }
-      if (door.y + door.h >= level.bounds.h - 50 && door.y > CLOSED_GATE_MAX_TOP) {
+      const floorThreshold = level.bounds.y + level.bounds.h - 50;
+      if (door.y + door.h >= floorThreshold && door.y > level.bounds.y + CLOSED_GATE_MAX_TOP) {
         messages.push({ severity: "warning", text: `${level.name}:${door.id} may be short enough to jump over.` });
       }
     }
@@ -1308,7 +1306,11 @@ class LevelEditor {
   }
 
   private startRect(): Rect {
-    return { x: this.level.start.x, y: this.level.start.y, w: PLAYER_RECT.w, h: PLAYER_RECT.h };
+    return this.startRectForLevel(this.level);
+  }
+
+  private startRectForLevel(level: Level): Rect {
+    return { x: level.start.x, y: level.start.y, w: PLAYER_RECT.w, h: PLAYER_RECT.h };
   }
 
   private selectedRectObject(): RectObject | null {

@@ -103,6 +103,31 @@ try {
   await levelNameField.fill("Portal Primer");
   await dispatchChange(levelNameField);
 
+  await page.locator("[data-object-list] [data-kind='start']").click();
+  await page.locator("[data-object-field='x']").fill("2390");
+  await dispatchChange(page.locator("[data-object-field='x']"));
+  const invalidStartValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const invalidStartText = await page.locator("[data-validation]").textContent();
+  await page.locator("[data-object-field='x']").fill("58");
+  await dispatchChange(page.locator("[data-object-field='x']"));
+  const restoredStartValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+
+  await page.locator("[data-level-select]").selectOption("1");
+  const shiftedLevelInitialValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  await page.locator("[data-level-field='bounds.y']").fill("100");
+  await dispatchChange(page.locator("[data-level-field='bounds.y']"));
+  await page.locator("[data-object-list] [data-kind='doors']").click();
+  await page.locator("[data-object-field='y']").fill("350");
+  await dispatchChange(page.locator("[data-object-field='y']"));
+  const shiftedDoorValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const shiftedDoorText = await page.locator("[data-validation]").textContent();
+  await page.locator("[data-object-field='y']").fill("200");
+  await dispatchChange(page.locator("[data-object-field='y']"));
+  await page.locator("[data-level-field='bounds.y']").fill("0");
+  await dispatchChange(page.locator("[data-level-field='bounds.y']"));
+  const restoredBoundsValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  await page.locator("[data-level-select]").selectOption("0");
+
   await page.locator("[data-tool='hazards']").click();
   const canvas = page.locator("[data-editor-canvas]");
   const box = await canvas.boundingBox();
@@ -117,6 +142,14 @@ try {
   const exportJson = await page.locator("[data-export-json]").inputValue();
   assert(exportJson.includes("smoke-hazard"), "Export JSON did not include the edited hazard");
   const afterEditValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+
+  await page.locator("[data-tool='doors']").click();
+  await page.mouse.click(box.x + 620, box.y + 360);
+  const doorYValue = await page.locator("[data-object-field='y']").inputValue();
+  const doorPlacementValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  await page.locator("[data-delete-object]").click();
+  const afterDoorDeleteValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+
   await page.locator("[data-save-draft]").click();
   const storedDraft = await page.evaluate(() => window.localStorage.getItem("echo-shift-level-editor-draft-v1"));
   assert(storedDraft?.includes("smoke-hazard"), "Draft did not persist edited hazard");
@@ -180,7 +213,26 @@ try {
     storageFailureStatus?.includes("draft storage unavailable"),
     `Expected guarded storage failure status, got ${storageFailureStatus}`
   );
+  assert(invalidStartValidation === "issues", "Expected invalid start footprint to fail validation");
+  assert(
+    invalidStartText?.includes("start footprint is outside bounds"),
+    `Expected invalid start footprint validation text, got ${invalidStartText}`
+  );
+  assert(restoredStartValidation === "clean", `Expected clean validation after restoring start, got ${restoredStartValidation}`);
+  assert(
+    shiftedLevelInitialValidation === "clean",
+    `Expected clean validation before shifted-bounds door check, got ${shiftedLevelInitialValidation}`
+  );
+  assert(shiftedDoorValidation === "issues", "Expected shifted-bounds short door to warn");
+  assert(
+    shiftedDoorText?.includes("may be short enough to jump over"),
+    `Expected shifted-bounds door warning text, got ${shiftedDoorText}`
+  );
+  assert(restoredBoundsValidation === "clean", `Expected clean validation after restoring bounds and door, got ${restoredBoundsValidation}`);
   assert(afterEditValidation === "clean", `Expected clean validation after edit, got ${afterEditValidation}`);
+  assert(doorYValue !== "200", `Expected single-click door placement to use clicked world y instead of hardcoded 200, got ${doorYValue}`);
+  assert(doorPlacementValidation === "clean", `Expected clean validation after door placement, got ${doorPlacementValidation}`);
+  assert(afterDoorDeleteValidation === "clean", `Expected clean validation after deleting smoke door, got ${afterDoorDeleteValidation}`);
   assert(importedName?.includes("Smoke Edited"), `Import did not update the level name: ${importedName}`);
   assert(importedValidation === "clean", `Expected clean validation after import, got ${importedValidation}`);
   assert(mobileValidation === "clean", `Expected clean mobile validation, got ${mobileValidation}`);
