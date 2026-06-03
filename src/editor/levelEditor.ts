@@ -554,9 +554,13 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
       distance: nonNegativeNumber(record.distance, 100),
       period: positiveInteger(record.period, 180),
       phase: positiveNumber(record.phase, 0),
+      ...(kind === "drones" || kind === "movingLasers"
+        ? {
+            disabledBy: Array.isArray(record.disabledBy) ? record.disabledBy.map(String) : undefined
+          }
+        : {}),
       ...(kind === "movingLasers"
         ? {
-            disabledBy: Array.isArray(record.disabledBy) ? record.disabledBy.map(String) : undefined,
             startsOn: record.startsOn === false ? false : record.startsOn === true ? true : undefined
           }
         : {})
@@ -1552,6 +1556,11 @@ class LevelEditor {
         if (next.length > 0) laser.disabledBy = next;
         else delete laser.disabledBy;
       }
+      for (const drone of readCollection(this.level, "drones") as PatrolDrone[]) {
+        const next = (drone.disabledBy || []).filter((triggerId) => triggerId !== id);
+        if (next.length > 0) drone.disabledBy = next;
+        else delete drone.disabledBy;
+      }
     }
     if (kind === "cores") {
       for (const door of readCollection(this.level, "doors") as Door[]) {
@@ -1570,6 +1579,11 @@ class LevelEditor {
         const next = replaceReferenceList(laser.disabledBy, previousId, nextId);
         if (next.length > 0) laser.disabledBy = next;
         else delete laser.disabledBy;
+      }
+      for (const drone of readCollection(this.level, "drones") as PatrolDrone[]) {
+        const next = replaceReferenceList(drone.disabledBy, previousId, nextId);
+        if (next.length > 0) drone.disabledBy = next;
+        else delete drone.disabledBy;
       }
     }
     if (kind === "cores") {
@@ -1796,6 +1810,11 @@ class LevelEditor {
           ${this.numberField("Phase", "phase", Number(record.phase || 0), "object", 0.1)}
         </div>
       `;
+      if (kind === "drones") {
+        return `${movingFields}
+          ${this.textField("Disabled By", "disabledBy", listToCsv(record.disabledBy as string[] | undefined), "object")}
+        `;
+      }
       if (kind !== "movingLasers") return movingFields;
       return `${movingFields}
         ${this.textField("Disabled By", "disabledBy", listToCsv(record.disabledBy as string[] | undefined), "object")}
@@ -2066,6 +2085,13 @@ class LevelEditor {
       for (const triggerId of laser.disabledBy || []) {
         if (!triggerIds.has(triggerId)) {
           messages.push({ severity: "error", text: `${level.name}:${laser.id} references missing trigger ${triggerId}.` });
+        }
+      }
+    }
+    for (const drone of readCollection(level, "drones") as PatrolDrone[]) {
+      for (const triggerId of drone.disabledBy || []) {
+        if (!triggerIds.has(triggerId)) {
+          messages.push({ severity: "error", text: `${level.name}:${drone.id} references missing trigger ${triggerId}.` });
         }
       }
     }

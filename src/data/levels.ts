@@ -202,7 +202,7 @@ const sourceLevels: Level[] = [
     id: "laser-shadow",
     index: 5,
     name: "Laser Shadow",
-    subtitle: "A ghost can interrupt light",
+    subtitle: "Switch light off on cue",
     start: { x: 58, y: 450 },
     exit: r(3660, 438, 48, 62),
     bounds: bounds(3800),
@@ -222,7 +222,7 @@ const sourceLevels: Level[] = [
     drones: [d("drone-k", 1160, 472, 30, 24, "x", 115, 200, 0.5), d("drone-l", 2720, 472, 30, 24, "x", 120, 220, 1.1)],
     perfectEchoes: 1,
     medalFrames: { gold: 3720, silver: 4860 },
-    hint: "Record an echo on the beam switch, then cross while that echo interrupts the light."
+    hint: "Record an echo on the beam switch, then cross while the plate disables the laser."
   },
   {
     id: "dual-lock",

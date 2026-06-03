@@ -1,5 +1,6 @@
 import { rectsOverlap } from "./geometry";
 import {
+  actorTouchesHazard,
   closedDoorRects,
   createObjectState,
   playerTouchesHazard,
@@ -97,6 +98,7 @@ export class RoomSimulation {
 
     for (let index = 0; index < this.echoes.length; index += 1) {
       const echo = this.echoes[index];
+      if (!echo.alive) continue;
       const recording = this.echoRecordings[index];
       const echoInput = recording.frames[this.tick] || blankInputFrame();
       const previousY = echo.y;
@@ -113,8 +115,15 @@ export class RoomSimulation {
       events.launched = this.applyLaunchPads(this.player, previousY);
     }
 
-    const objectUpdate = updateObjects(this.level, [this.player, ...this.echoes], this.objectState, this.tick);
+    const previousObjectState = this.objectState;
+    let objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick);
     this.objectState = objectUpdate.state;
+
+    while (this.vaporizeHazardousEchoes()) {
+      objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick);
+      this.objectState = objectUpdate.state;
+    }
+
     events.switched = objectUpdate.switched;
     events.core = objectUpdate.core;
 
@@ -142,7 +151,7 @@ export class RoomSimulation {
   snapshot(): SimulationSnapshot {
     return {
       player: { ...this.player },
-      echoes: this.echoes.map((echo) => ({ ...echo })),
+      echoes: this.aliveEchoes().map((echo) => ({ ...echo })),
       activePlates: new Set(this.objectState.activePlates),
       openDoors: new Set(this.objectState.openDoors),
       collectedCores: new Set(this.objectState.collectedCores),
@@ -187,5 +196,20 @@ export class RoomSimulation {
     actor.coyote = 0;
     actor.standingOn = null;
     return true;
+  }
+
+  private aliveEchoes(): ActorBody[] {
+    return this.echoes.filter((echo) => echo.alive);
+  }
+
+  private vaporizeHazardousEchoes(): boolean {
+    let vaporized = false;
+    for (const echo of this.echoes) {
+      if (echo.alive && actorTouchesHazard(this.level, echo, this.objectState, this.tick)) {
+        echo.alive = false;
+        vaporized = true;
+      }
+    }
+    return vaporized;
   }
 }

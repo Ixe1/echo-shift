@@ -20,6 +20,9 @@ const artifacts = {
   desktopCoreRoom: `${outDir}/core-room-desktop.png`,
   desktopHeldOpenComplete: `${outDir}/held-open-complete-desktop.png`,
   desktopLiftPhaseComplete: `${outDir}/lift-phase-complete-desktop.png`,
+  draftDisabledDrone: `${outDir}/draft-disabled-drone.png`,
+  draftEchoTintBefore: `${outDir}/draft-echo-tint-before.png`,
+  draftEchoTintAfter: `${outDir}/draft-echo-tint-after.png`,
   mobileMenu: `${outDir}/menu-mobile.png`,
   mobileGame: `${outDir}/game-mobile.png`,
   mobileTouch: `${outDir}/touch-mobile.png`,
@@ -41,9 +44,14 @@ if (browserPath) {
 
 const relevantMessages = [];
 
+const isIgnoredConsoleWarning = (text) =>
+  text.includes("The AudioContext was not allowed to start") &&
+  text.includes("https://developer.chrome.com/blog/autoplay/#web_audio");
+
 const collectConsole = (page, bucket) => {
   page.on("console", (msg) => {
     if (["error", "warning"].includes(msg.type())) {
+      if (msg.type() === "warning" && isIgnoredConsoleWarning(msg.text())) return;
       bucket.push({ type: msg.type(), text: msg.text() });
     }
   });
@@ -87,6 +95,34 @@ const liftPhaseClearRoute = [
   ...pulsedRightRoute(760, [102, 313, 350, 386, 482])
 ];
 
+const draftBaseSolids = (width = 520) => [
+  { id: "floor", x: 0, y: 120, w: width, h: 40 },
+  { id: "left-wall", x: -20, y: 0, w: 20, h: 180 },
+  { id: "right-wall", x: width, y: 0, w: 20, h: 180 }
+];
+
+const draftLevel = (overrides) => ({
+  id: "qa-draft",
+  index: 0,
+  name: "QA Draft",
+  subtitle: "Render checks",
+  motionModel: "anchored",
+  start: { x: 24, y: 86 },
+  exit: { x: 470, y: 82, w: 28, h: 38 },
+  bounds: { x: 0, y: 0, w: 520, h: 180 },
+  solids: draftBaseSolids(),
+  perfectEchoes: 2,
+  medalFrames: { gold: 600, silver: 900 },
+  hint: "QA",
+  ...overrides
+});
+
+const draftSnapshot = (level) => ({
+  motionModel: "anchored",
+  currentIndex: 0,
+  levels: [level]
+});
+
 const inputKeys = {
   idle: [],
   right: ["KeyD"],
@@ -117,6 +153,24 @@ const runKeyboardRoute = async (page, route) => {
   for (const key of active) {
     await page.keyboard.up(key);
   }
+};
+
+const pressRewind = async (page) => {
+  await page.keyboard.down("KeyR");
+  await page.waitForTimeout(100);
+  await page.keyboard.up("KeyR");
+  await page.waitForTimeout(350);
+};
+
+const loadDraftPlaytest = async (page, level) => {
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.evaluate((snapshot) => {
+    window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
+  }, draftSnapshot(level));
+  await page.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "networkidle" });
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  await page.waitForTimeout(450);
 };
 
 const runKeyboardRouteAtHudFrames = async (page, route, options = {}) =>
@@ -403,6 +457,30 @@ const coreSpritePixels = async (page) =>
     return count;
   });
 
+const inactiveDroneRenderPixels = async (page) =>
+  page.evaluate(() => {
+    const canvas = document.querySelector("canvas");
+    if (!(canvas instanceof HTMLCanvasElement)) return { cyan: 0, red: 0 };
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return { cyan: 0, red: 0 };
+    const data = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let cyan = 0;
+    let red = 0;
+    for (let y = 70; y < 150; y += 1) {
+      for (let x = 100; x < 240; x += 1) {
+        const index = (y * canvas.width + x) * 4;
+        const redChannel = data[index];
+        const green = data[index + 1];
+        const blue = data[index + 2];
+        const alpha = data[index + 3];
+        if (alpha <= 60) continue;
+        if (redChannel < 120 && green > 120 && blue > 140) cyan += 1;
+        if (redChannel > 180 && green < 120 && blue < 150) red += 1;
+      }
+    }
+    return { cyan, red };
+  });
+
 const centerOf = (box) => ({
   x: box.x + box.width / 2,
   y: box.y + box.height / 2
@@ -525,6 +603,37 @@ try {
   });
   const liftPhaseCompletionTitle = liftPhaseRouteResult.modal || "Traversal preview";
   await page.screenshot({ path: artifacts.desktopLiftPhaseComplete });
+
+  const disabledDroneLevel = draftLevel({
+    name: "Disabled Drone Render",
+    plates: [{ id: "disable-plate", x: 18, y: 112, w: 54, h: 8 }],
+    lasers: [{ id: "disabled-beam", x: 90, y: 86, w: 28, h: 34, startsOn: true, disabledBy: ["disable-plate"] }],
+    drones: [{ id: "disabled-drone", x: 138, y: 86, w: 28, h: 34, axis: "x", distance: 0, period: 120, disabledBy: ["disable-plate"] }]
+  });
+  await loadDraftPlaytest(page, disabledDroneLevel);
+  const disabledDroneStates = await page.evaluate(() => document.documentElement.dataset.echoShiftDroneStates || "");
+  const disabledDronePixels = await inactiveDroneRenderPixels(page);
+  await page.screenshot({ path: artifacts.draftDisabledDrone });
+
+  const echoTintLevel = draftLevel({
+    name: "Echo Tint Stability",
+    hazards: [{ id: "echo-vaporizer", x: 260, y: 86, w: 36, h: 34 }]
+  });
+  await loadDraftPlaytest(page, echoTintLevel);
+  await runKeyboardRoute(page, [["right", 90], ["idle", 20]]);
+  await pressRewind(page);
+  await runKeyboardRoute(page, [["right", 30], ["idle", 80]]);
+  await pressRewind(page);
+  await page.waitForTimeout(250);
+  const echoTintBefore = await page.evaluate(() => document.documentElement.dataset.echoShiftVisibleEchoTints || "");
+  await page.screenshot({ path: artifacts.draftEchoTintBefore });
+  await page.waitForFunction(
+    () => !(document.documentElement.dataset.echoShiftVisibleEchoTints || "").includes("echo-1:"),
+    null,
+    { timeout: 5000 }
+  );
+  const echoTintAfter = await page.evaluate(() => document.documentElement.dataset.echoShiftVisibleEchoTints || "");
+  await page.screenshot({ path: artifacts.draftEchoTintAfter });
   await desktop.close();
 
   const mobileMessages = [];
@@ -646,6 +755,22 @@ try {
     liftPhaseRouteResult.status !== "Signal lost" && liftPhaseRouteResult.endFrame >= liftPhaseRouteResult.startFrame + 700,
     `Expected Lift Phase traversal preview to remain alive deep into the level: ${JSON.stringify(liftPhaseRouteResult)}`
   );
+  assert(
+    disabledDroneStates.includes("disabled-drone:inactive"),
+    `Expected draft disabled drone to render inactive, got ${disabledDroneStates}`
+  );
+  assert(
+    disabledDronePixels.cyan > 20 && disabledDronePixels.red < 20,
+    `Expected inactive drone render to be cyan instead of red: ${JSON.stringify(disabledDronePixels)}`
+  );
+  assert(
+    echoTintBefore.includes("echo-1:bd5cff") && echoTintBefore.includes("echo-2:50ffc2"),
+    `Expected both echo tints before vaporization, got ${echoTintBefore}`
+  );
+  assert(
+    !echoTintAfter.includes("echo-1:") && echoTintAfter.includes("echo-2:50ffc2"),
+    `Expected surviving echo to keep cyan tint after earlier echo vaporized, got ${echoTintAfter}`
+  );
   assert(levelButtons === 10, `Expected 10 level buttons, got ${levelButtons}`);
   assert(touchControlsVisible, "Mobile touch controls were not visible in-game");
   assert(beforeTouchX !== null && afterTouchX !== null, "Could not locate player pixels for touch movement check");
@@ -688,6 +813,10 @@ try {
         heldOpenCompletionTitle,
         liftPhaseRouteResult,
         liftPhaseCompletionTitle,
+        disabledDroneStates,
+        disabledDronePixels,
+        echoTintBefore,
+        echoTintAfter,
         levelButtons,
         touchControlsVisible,
         mobileTouchDelta: Number((afterTouchX - beforeTouchX).toFixed(2)),

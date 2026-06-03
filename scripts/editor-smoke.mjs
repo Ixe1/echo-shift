@@ -689,6 +689,18 @@ try {
   await page.locator("[data-object-field='disabledBy']").fill("smoke-timer");
   await dispatchChange(page.locator("[data-object-field='disabledBy']"));
 
+  await dragToolToWorld(page, "drones", { x: 1180, y: 340 });
+  await page.locator("[data-object-field='id']").fill("smoke-disabled-drone");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await page.locator("[data-object-field='disabledBy']").fill("smoke-timer");
+  await dispatchChange(page.locator("[data-object-field='disabledBy']"));
+  await page.locator("[data-object-field='disabledBy']").fill("missing-drone-trigger");
+  await dispatchChange(page.locator("[data-object-field='disabledBy']"));
+  const missingDroneTriggerValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const missingDroneTriggerText = await page.locator("[data-validation]").textContent();
+  await page.locator("[data-object-field='disabledBy']").fill("smoke-timer");
+  await dispatchChange(page.locator("[data-object-field='disabledBy']"));
+
   await dragToolToWorld(page, "movingLasers", { x: 1500, y: 360 });
   await page.locator("[data-object-field='id']").fill("smoke-resize-sweeper");
   await dispatchChange(page.locator("[data-object-field='id']"));
@@ -741,6 +753,7 @@ try {
   const toolkitTimer = toolkitLevel.timedSwitches.find((item) => item.id === "smoke-timer");
   const toolkitSensor = toolkitLevel.echoSensors.find((item) => item.id === "smoke-sensor");
   const toolkitSweeper = toolkitLevel.movingLasers.find((item) => item.id === "smoke-sweeper");
+  const toolkitDrone = toolkitLevel.drones.find((item) => item.id === "smoke-disabled-drone");
   const toolkitCrate = toolkitLevel.crates.find((item) => item.id === "smoke-crate");
 
   await dragToolToWorld(page, "platforms", { x: 1320, y: 420 });
@@ -768,7 +781,13 @@ try {
   const renamedReferenceLevel = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
   const renamedTimerExists = renamedReferenceLevel.timedSwitches.some((item) => item.id === "smoke-timer-renamed");
   const renamedSweeper = renamedReferenceLevel.movingLasers.find((item) => item.id === "smoke-sweeper");
+  const renamedDrone = renamedReferenceLevel.drones.find((item) => item.id === "smoke-disabled-drone");
   const renameReferenceValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  await page.locator("[data-delete-object]").click();
+  const deletedReferenceLevel = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
+  const deletedReferenceSweeper = deletedReferenceLevel.movingLasers.find((item) => item.id === "smoke-sweeper");
+  const deletedReferenceDrone = deletedReferenceLevel.drones.find((item) => item.id === "smoke-disabled-drone");
+  const deletedReferenceValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
   await openTab(page, "objects");
   const stepOneRow = page.locator("[data-object-list] [data-kind='solids'][data-id='step-1']");
@@ -1173,6 +1192,14 @@ try {
     `Expected moving laser path/link settings to export, got ${JSON.stringify(toolkitSweeper)}`
   );
   assert(
+    toolkitDrone?.disabledBy?.includes("smoke-timer"),
+    `Expected drone disabledBy setting to export, got ${JSON.stringify(toolkitDrone)}`
+  );
+  assert(
+    missingDroneTriggerValidation === "issues" && missingDroneTriggerText?.includes("smoke-disabled-drone references missing trigger missing-drone-trigger"),
+    `Expected missing drone trigger validation, got ${missingDroneTriggerValidation}: ${missingDroneTriggerText}`
+  );
+  assert(
     movingLaserPathWidthAfterDrag === movingLaserPathWidthBeforeDrag && movingLaserPathHeightAfterDrag === movingLaserPathHeightBeforeDrag,
     `Expected moving-laser endpoint drag to preserve size ${movingLaserPathWidthBeforeDrag}x${movingLaserPathHeightBeforeDrag}, got ${movingLaserPathWidthAfterDrag}x${movingLaserPathHeightAfterDrag}`
   );
@@ -1195,7 +1222,16 @@ try {
     renamedSweeper?.disabledBy?.includes("smoke-timer-renamed") && !renamedSweeper?.disabledBy?.includes("smoke-timer"),
     `Expected moving laser disabledBy reference to follow timed switch rename, got ${JSON.stringify(renamedSweeper)}`
   );
+  assert(
+    renamedDrone?.disabledBy?.includes("smoke-timer-renamed") && !renamedDrone?.disabledBy?.includes("smoke-timer"),
+    `Expected drone disabledBy reference to follow timed switch rename, got ${JSON.stringify(renamedDrone)}`
+  );
   assert(renameReferenceValidation === "clean", `Expected clean validation after trigger rename, got ${renameReferenceValidation}`);
+  assert(
+    !deletedReferenceSweeper?.disabledBy?.length && !deletedReferenceDrone?.disabledBy?.length,
+    `Expected deleted trigger references to be cleaned from moving laser and drone, got ${JSON.stringify(deletedReferenceSweeper)} / ${JSON.stringify(deletedReferenceDrone)}`
+  );
+  assert(deletedReferenceValidation === "clean", `Expected clean validation after trigger deletion cleanup, got ${deletedReferenceValidation}`);
   assert(movingSurfaceCrateY === 400, `Expected crate to stay at y=400 instead of snapping onto moving platform y=420, got y=${movingSurfaceCrateY}`);
   assert(
     movingSurfaceMountValidation === "issues" && movingSurfaceMountText?.includes("cannot ride moving platform smoke-moving-surface"),

@@ -49,6 +49,7 @@ export type PatrolDrone = Rect & {
   distance: number;
   period: number;
   phase?: number;
+  disabledBy?: string[];
 };
 
 export type OneWayPlatform = Rect & {

@@ -64,7 +64,7 @@ export const updateObjects = (
   }
 
   const openDoors = collectOpenDoors(level.doors || [], activePlates, collectedCores);
-  const blockedLasers = collectBlockedLasers([...(level.lasers || []), ...(level.movingLasers || [])], actors, crateRects, activePlates, tick);
+  const blockedLasers = collectBlockedLasers([...(level.lasers || []), ...(level.movingLasers || [])], crateRects, activePlates, tick);
   const switched =
     setChanged(previous.activePlates, activePlates) ||
     setChanged(previous.openDoors, openDoors) ||
@@ -90,30 +90,32 @@ export const closedDoorRects = (level: Level, openDoors: Set<string>): Rect[] =>
     .filter((door) => !openDoors.has(door.id))
     .map((door) => ({ x: door.x, y: door.y, w: door.w, h: door.h }));
 
-export const playerTouchesHazard = (
+export const actorTouchesHazard = (
   level: Level,
-  player: ActorBody,
+  actor: ActorBody,
   objectState: ObjectState,
   tick = 0
 ): boolean => {
-  if ((level.hazards || []).some((hazard) => rectsOverlap(player, hazard))) return true;
-  if ((level.drones || []).some((drone) => rectsOverlap(player, droneRectAt(drone, tick)))) return true;
+  if ((level.hazards || []).some((hazard) => rectsOverlap(actor, hazard))) return true;
+  if ((level.drones || []).some((drone) => droneIsActive(drone, objectState.activePlates) && rectsOverlap(actor, droneRectAt(drone, tick)))) return true;
 
   for (const laser of level.lasers || []) {
     if (!laserIsActive(laser, objectState.activePlates)) continue;
-    if (!rectsOverlap(player, laser)) continue;
+    if (!rectsOverlap(actor, laser)) continue;
     if (!objectState.blockedLasers.has(laser.id)) return true;
   }
 
   for (const laser of level.movingLasers || []) {
     const rect = movingLaserRectAt(laser, tick);
     if (!laserIsActive(laser, objectState.activePlates)) continue;
-    if (!rectsOverlap(player, rect)) continue;
+    if (!rectsOverlap(actor, rect)) continue;
     if (!objectState.blockedLasers.has(laser.id)) return true;
   }
 
   return false;
 };
+
+export const playerTouchesHazard = actorTouchesHazard;
 
 export const droneRectAt = (drone: PatrolDrone, tick: number): Rect => {
   const offset = oscillatingOffsetAt(drone.distance, drone.period, drone.phase || 0, tick);
@@ -124,6 +126,9 @@ export const droneRectAt = (drone: PatrolDrone, tick: number): Rect => {
     h: drone.h
   };
 };
+
+export const droneIsActive = (drone: PatrolDrone, activePlates: Set<string>): boolean =>
+  !(drone.disabledBy || []).some((id) => activePlates.has(id));
 
 export const laserIsActive = (laser: Laser, activePlates: Set<string>): boolean => {
   const startsOn = laser.startsOn !== false;
@@ -211,15 +216,14 @@ const collectOpenDoors = (
   return open;
 };
 
-const collectBlockedLasers = (lasers: Laser[], actors: ActorBody[], crates: Rect[], activePlates: Set<string>, tick: number): Set<string> => {
+const collectBlockedLasers = (lasers: Laser[], crates: Rect[], activePlates: Set<string>, tick: number): Set<string> => {
   const blocked = new Set<string>();
-  const echoes = actors.filter((actor) => actor.kind === "echo" && actor.alive);
   for (const laser of lasers) {
     const startsOn = laser.startsOn !== false;
     const disabled = (laser.disabledBy || []).some((id) => activePlates.has(id));
     if (!startsOn || disabled) continue;
     const rect = "axis" in laser ? movingLaserRectAt(laser as MovingLaser, tick) : laser;
-    if (echoes.some((echo) => rectsOverlap(echo, rect)) || crates.some((crate) => rectsOverlap(crate, rect))) {
+    if (crates.some((crate) => rectsOverlap(crate, rect))) {
       blocked.add(laser.id);
     }
   }

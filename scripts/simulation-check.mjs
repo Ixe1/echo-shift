@@ -81,6 +81,7 @@ const routeObstacleRects = (simulation) => {
     (hazard) => hazard.y < footY && hazard.y + hazard.h > actor.y + 2
   );
   const activeDrones = (simulation.level.drones || [])
+    .filter((drone) => !(drone.disabledBy || []).some((id) => simulation.objectState.activePlates.has(id)))
     .map((drone) => oscillatingRectAt(drone, simulation.tick))
     .filter((drone) => drone.y < footY && drone.y + drone.h > actor.y + 2);
   const lowSolids = simulation.level.solids.filter(
@@ -511,8 +512,76 @@ try {
   laserSim.echoRecordings.push({ id: "echo-blocker", frames: [], createdAtFrame: 0 });
   laserSim.echoes = [makeActor("echo-blocker", "echo", { x: 96, y: 86 })];
   laserSim.step(idle);
-  assert(laserSim.objectState.blockedLasers.has("beam-a"), "Echo did not block the laser beam");
-  assert(!laserSim.dead, "Player died while the laser was blocked by an echo");
+  assert(!laserSim.objectState.blockedLasers.has("beam-a"), "Echo should not block the laser beam");
+  assert(!laserSim.echoes[0].alive, "Echo touching an active laser should vaporize");
+  assert(laserSim.snapshot().echoes.length === 0, "Vaporized echo should be absent from snapshots");
+  assert(!laserSim.dead, "Laser vaporizing an echo should not kill the player");
+
+  const vaporizedEchoInteractionSim = new RoomSimulation({
+    ...laserLevel,
+    plates: [{ id: "doomed-plate", x: 96, y: 112, w: 36, h: 8, once: true }],
+    timedSwitches: [{ id: "doomed-timer", x: 96, y: 112, w: 36, h: 8, duration: 20 }],
+    echoSensors: [{ id: "doomed-sensor", x: 96, y: 86, w: 28, h: 34 }],
+    cores: [{ id: "doomed-core", x: 100, y: 90, w: 18, h: 18 }]
+  });
+  vaporizedEchoInteractionSim.echoRecordings.push({ id: "echo-doomed", frames: [], createdAtFrame: 0 });
+  vaporizedEchoInteractionSim.echoes = [makeActor("echo-doomed", "echo", { x: 96, y: 86 })];
+  const vaporizedEchoInteractionEvent = vaporizedEchoInteractionSim.step(idle);
+  assert(!vaporizedEchoInteractionSim.echoes[0].alive, "Echo should vaporize before committing trigger/core state");
+  assert(!vaporizedEchoInteractionSim.objectState.activePlates.has("doomed-plate"), "Vaporized echo should not leave plate active");
+  assert(!vaporizedEchoInteractionSim.objectState.latchedPlates.has("doomed-plate"), "Vaporized echo should not latch one-shot plates");
+  assert(!vaporizedEchoInteractionSim.objectState.activePlates.has("doomed-timer"), "Vaporized echo should not start timed switches");
+  assert(!vaporizedEchoInteractionSim.objectState.timedSwitchTimers.has("doomed-timer"), "Vaporized echo should not leave timed switch timers");
+  assert(!vaporizedEchoInteractionSim.objectState.activePlates.has("doomed-sensor"), "Vaporized echo should not activate echo sensors");
+  assert(!vaporizedEchoInteractionSim.objectState.collectedCores.has("doomed-core"), "Vaporized echo should not collect cores");
+  assert(!vaporizedEchoInteractionEvent.core, "Vaporized echo should not emit core pickup events");
+
+  const cascadeVaporizeSim = new RoomSimulation({
+    ...baseLevel,
+    hazards: [{ id: "cascade-hazard", x: 96, y: 86, w: 28, h: 34 }],
+    plates: [{ id: "cascade-plate", x: 96, y: 112, w: 36, h: 8 }],
+    lasers: [{ id: "cascade-beam", x: 140, y: 88, w: 28, h: 28, startsOn: true, disabledBy: ["cascade-plate"] }]
+  });
+  cascadeVaporizeSim.echoRecordings.push({ id: "echo-1", frames: [], createdAtFrame: 0 });
+  cascadeVaporizeSim.echoRecordings.push({ id: "echo-2", frames: [], createdAtFrame: 0 });
+  cascadeVaporizeSim.echoes = [
+    makeActor("echo-1", "echo", { x: 96, y: 86 }),
+    makeActor("echo-2", "echo", { x: 140, y: 86 })
+  ];
+  cascadeVaporizeSim.step(idle);
+  assert(!cascadeVaporizeSim.echoes[0].alive, "First cascade echo should vaporize on the hazard");
+  assert(!cascadeVaporizeSim.echoes[1].alive, "Second cascade echo should vaporize after trigger state recomputes");
+  assert(!cascadeVaporizeSim.objectState.activePlates.has("cascade-plate"), "Vaporized cascade echo should not keep laser disable plate active");
+
+  const crateBlockedLaserSim = new RoomSimulation({
+    ...laserLevel,
+    crates: [{ id: "beam-crate", x: 96, y: 86, w: 28, h: 34 }]
+  });
+  crateBlockedLaserSim.step(idle);
+  assert(crateBlockedLaserSim.objectState.blockedLasers.has("beam-a"), "Crate should still block the laser beam");
+
+  const plateDisabledLaserLevel = {
+    ...baseLevel,
+    plates: [{ id: "beam-plate", x: 18, y: 112, w: 50, h: 8 }],
+    lasers: [{ id: "plate-beam", x: 20, y: 86, w: 28, h: 34, startsOn: true, disabledBy: ["beam-plate"] }]
+  };
+  const plateDisabledLaserSim = new RoomSimulation(plateDisabledLaserLevel);
+  plateDisabledLaserSim.step(idle);
+  assert(plateDisabledLaserSim.objectState.activePlates.has("beam-plate"), "Plate did not activate for laser disable");
+  assert(!plateDisabledLaserSim.dead, "Plate-disabled overlapping laser killed the player");
+
+  const timedDisabledLaserLevel = {
+    ...baseLevel,
+    timedSwitches: [{ id: "timer-beam", x: 18, y: 112, w: 50, h: 8, duration: 20 }],
+    lasers: [{ id: "timer-laser", x: 100, y: 86, w: 28, h: 34, startsOn: true, disabledBy: ["timer-beam"] }]
+  };
+  const timedDisabledLaserSim = new RoomSimulation(timedDisabledLaserLevel);
+  timedDisabledLaserSim.step(idle);
+  timedDisabledLaserSim.player.x = 100;
+  runFrames(timedDisabledLaserSim, 12, idle);
+  assert(!timedDisabledLaserSim.dead, "Timed-switch-disabled laser expired too early");
+  runFrames(timedDisabledLaserSim, 28, idle);
+  assert(timedDisabledLaserSim.dead, "Timed-switch-disabled laser did not reactivate after timer expiry");
 
   const inactiveLaserLevel = {
     ...baseLevel,
@@ -701,6 +770,39 @@ try {
   droneSim.step(idle);
   assert(droneSim.dead, "Expected overlapping patrol drone to kill the player");
 
+  const plateDisabledDroneLevel = {
+    ...baseLevel,
+    plates: [{ id: "drone-plate", x: 18, y: 112, w: 50, h: 8 }],
+    drones: [{ id: "plate-drone", x: 20, y: 86, w: 28, h: 34, axis: "x", distance: 0, period: 120, disabledBy: ["drone-plate"] }]
+  };
+  const plateDisabledDroneSim = new RoomSimulation(plateDisabledDroneLevel);
+  plateDisabledDroneSim.step(idle);
+  assert(plateDisabledDroneSim.objectState.activePlates.has("drone-plate"), "Plate did not activate for drone disable");
+  assert(!plateDisabledDroneSim.dead, "Plate-disabled overlapping drone killed the player");
+
+  const timedDisabledDroneLevel = {
+    ...baseLevel,
+    timedSwitches: [{ id: "timer-drone", x: 18, y: 112, w: 50, h: 8, duration: 20 }],
+    drones: [{ id: "timed-drone", x: 100, y: 86, w: 28, h: 34, axis: "x", distance: 0, period: 120, disabledBy: ["timer-drone"] }]
+  };
+  const timedDisabledDroneSim = new RoomSimulation(timedDisabledDroneLevel);
+  timedDisabledDroneSim.step(idle);
+  timedDisabledDroneSim.player.x = 100;
+  runFrames(timedDisabledDroneSim, 12, idle);
+  assert(!timedDisabledDroneSim.dead, "Timed-switch-disabled drone expired too early");
+  runFrames(timedDisabledDroneSim, 28, idle);
+  assert(timedDisabledDroneSim.dead, "Timed-switch-disabled drone did not reactivate after timer expiry");
+
+  const echoDroneSim = new RoomSimulation({
+    ...baseLevel,
+    drones: [{ id: "echo-drone", x: 96, y: 86, w: 28, h: 34, axis: "x", distance: 0, period: 120 }]
+  });
+  echoDroneSim.echoRecordings.push({ id: "echo-drone-target", frames: [], createdAtFrame: 0 });
+  echoDroneSim.echoes = [makeActor("echo-drone-target", "echo", { x: 96, y: 86 })];
+  echoDroneSim.step(idle);
+  assert(!echoDroneSim.echoes[0].alive, "Echo touching an active drone should vaporize");
+  assert(!echoDroneSim.dead, "Drone vaporizing an echo should not kill the player");
+
   const fallLevel = {
     ...baseLevel,
     start: { x: 20, y: 20 },
@@ -765,10 +867,10 @@ try {
           "echo-plate-door",
           "core-door",
           "echo-core-origin",
-          "laser-blocking",
+          "laser-disable-vaporization",
           "entity-toolkit",
           "death-freeze",
-          "drone-hazard",
+          "drone-disable-vaporization",
           "fall-death-freeze",
           "deterministic-replay",
           "soundtrack-manifest",

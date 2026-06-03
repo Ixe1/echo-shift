@@ -4,7 +4,7 @@ import { getLevel, isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
 import { backgroundForLevel } from "../game/backgrounds";
 import { rectCenter } from "../game/geometry";
-import { droneRectAt, laserIsActive, movingLaserRectAt } from "../game/objects";
+import { droneIsActive, droneRectAt, laserIsActive, movingLaserRectAt } from "../game/objects";
 import { platformRectAt } from "../game/player";
 import { recordLevelScore } from "../game/progress";
 import { soundtrackForLevel } from "../game/soundtracks";
@@ -286,12 +286,13 @@ export class GameScene extends Phaser.Scene {
     this.drawLasers(snapshot.activePlates, snapshot.blockedLasers);
     this.drawMovingLasers(snapshot.tick, snapshot.activePlates, snapshot.blockedLasers);
     this.drawHazards();
-    this.drawDrones(snapshot.tick);
+    this.drawDrones(snapshot.tick, snapshot.activePlates);
     this.drawExit(this.level.exit, snapshot.won);
     this.drawEchoes(snapshot.echoes);
     this.drawActor(snapshot.player, snapshot.dead ? 0xff4f8b : 0x43f7ff, 1);
     this.drawForegroundText(snapshot.tick);
     this.syncSpriteLayer(snapshot);
+    this.exposeRenderDiagnostics(snapshot);
   }
 
   private drawBackground(): void {
@@ -576,23 +577,24 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private drawDrones(tick: number): void {
+  private drawDrones(tick: number, activePlates: Set<string>): void {
     for (const drone of this.level.drones || []) {
       const rect = droneRectAt(drone, tick);
       const center = rectCenter(rect);
-      this.world.lineStyle(1, 0xff4f8b, 0.2);
+      const active = droneIsActive(drone, activePlates);
+      this.world.lineStyle(1, active ? 0xff4f8b : 0x43f7ff, active ? 0.2 : 0.16);
       if (drone.axis === "x") {
         this.world.lineBetween(drone.x, drone.y + drone.h / 2, drone.x + drone.distance, drone.y + drone.h / 2);
       } else {
         this.world.lineBetween(drone.x + drone.w / 2, drone.y, drone.x + drone.w / 2, drone.y + drone.distance);
       }
-      this.world.fillStyle(0xff4f8b, 0.16);
+      this.world.fillStyle(active ? 0xff4f8b : 0x43f7ff, active ? 0.16 : 0.08);
       this.world.fillCircle(center.x, center.y, 24);
-      this.world.fillStyle(0x160915, 0.94);
+      this.world.fillStyle(active ? 0x160915 : 0x061722, active ? 0.94 : 0.62);
       this.world.fillRoundedRect(rect.x, rect.y, rect.w, rect.h, 5);
-      this.world.lineStyle(2, 0xff4f8b, 0.86);
+      this.world.lineStyle(2, active ? 0xff4f8b : 0x43f7ff, active ? 0.86 : 0.42);
       this.world.strokeRoundedRect(rect.x, rect.y, rect.w, rect.h, 5);
-      this.world.fillStyle(0xffe35a, 0.88);
+      this.world.fillStyle(active ? 0xffe35a : 0x43f7ff, active ? 0.88 : 0.28);
       this.world.fillCircle(center.x - 5, center.y - 2, 2.5);
       this.world.fillCircle(center.x + 5, center.y - 2, 2.5);
       this.world.lineStyle(1, 0xffffff, 0.18);
@@ -627,15 +629,33 @@ export class GameScene extends Phaser.Scene {
   private drawEchoes(echoes: ActorBody[]): void {
     for (let index = 0; index < echoes.length; index += 1) {
       const echo = echoes[index];
+      const tint = this.echoTint(echo);
       this.updateTrail(echo);
       const trail = this.echoTrails.get(echo.id) || [];
       for (let i = 0; i < trail.length; i += 1) {
         const point = trail[i];
-        this.world.fillStyle(index % 2 === 0 ? 0xbd5cff : 0x50ffc2, (i + 1) / trail.length * 0.12);
+        this.world.fillStyle(tint, (i + 1) / trail.length * 0.12);
         this.world.fillRect(point.x, point.y, echo.w, echo.h);
       }
-      this.drawActor(echo, index % 2 === 0 ? 0xbd5cff : 0x50ffc2, 0.42);
+      this.drawActor(echo, tint, 0.42);
     }
+  }
+
+  private echoTint(echo: ActorBody): number {
+    const match = echo.id.match(/(\d+)$/);
+    const parsed = match ? Number(match[1]) : 1;
+    const index = Number.isFinite(parsed) ? Math.max(0, parsed - 1) : 0;
+    return index % 2 === 0 ? 0xbd5cff : 0x50ffc2;
+  }
+
+  private exposeRenderDiagnostics(snapshot: SimulationSnapshot): void {
+    if (!import.meta.env.DEV) return;
+    document.documentElement.dataset.echoShiftVisibleEchoTints = snapshot.echoes
+      .map((echo) => `${echo.id}:${this.echoTint(echo).toString(16)}`)
+      .join(",");
+    document.documentElement.dataset.echoShiftDroneStates = (this.level.drones || [])
+      .map((drone) => `${drone.id}:${droneIsActive(drone, snapshot.activePlates) ? "active" : "inactive"}`)
+      .join(",");
   }
 
   private drawActor(actor: ActorBody, color: number, alpha: number): void {
@@ -682,7 +702,7 @@ export class GameScene extends Phaser.Scene {
 
     for (let index = 0; index < snapshot.echoes.length; index += 1) {
       const echo = snapshot.echoes[index];
-      const tint = index % 2 === 0 ? 0xbd5cff : 0x50ffc2;
+      const tint = this.echoTint(echo);
       this.syncActorSprite(echo, false, tint, 0.58, snapshot.tick);
       activeIds.add(echo.id);
     }

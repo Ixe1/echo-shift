@@ -70,6 +70,7 @@ const doorLike = (value: unknown): boolean =>
   objectRectLike(value) && optionalStringArray(value.opensWith) && optionalString(value.requiresCore) && optionalBoolean(value.inverted);
 const laserLike = (value: unknown): boolean =>
   objectRectLike(value) && optionalStringArray(value.disabledBy) && optionalBoolean(value.startsOn);
+const droneLike = (value: unknown): boolean => movingObjectLike(value) && optionalStringArray((value as Record<string, unknown>).disabledBy);
 const movingLaserLike = (value: unknown): boolean => movingObjectLike(value) && optionalStringArray((value as Record<string, unknown>).disabledBy) && optionalBoolean((value as Record<string, unknown>).startsOn);
 const crateLike = (value: unknown): boolean => objectRectLike(value);
 
@@ -97,7 +98,7 @@ const levelLike = (value: unknown): value is Level => {
     optionalObjectArray(value.conveyors, conveyorLike) &&
     optionalObjectArray(value.platforms, movingObjectLike) &&
     optionalObjectArray(value.launchPads, launchPadLike) &&
-    optionalObjectArray(value.drones, movingObjectLike) &&
+    optionalObjectArray(value.drones, droneLike) &&
     optionalObjectArray(value.plates, plateLike) &&
     optionalObjectArray(value.timedSwitches, timedSwitchLike) &&
     optionalObjectArray(value.echoSensors, echoSensorLike) &&
