@@ -134,7 +134,7 @@ export class GameScene extends Phaser.Scene {
       draftPlaytest: isDraftPlaytestActive()
     });
     this.hud.toast(`${isDraftPlaytestActive() ? "Draft playtest · " : ""}${this.level.index + 1}: ${this.level.name}`);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.hud.destroy());
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.shutdownScene());
     this.renderWorld();
   }
 
@@ -318,6 +318,23 @@ export class GameScene extends Phaser.Scene {
     url.searchParams.set("playtestDraft", "1");
     url.searchParams.set("level", nextLevel);
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  private shutdownScene(): void {
+    this.hud?.destroy();
+    this.echoTrails.clear();
+    this.actorSprites.clear();
+    this.coreSprites.clear();
+    this.objectAssets.clear();
+    this.activeObjectAssetIds.clear();
+    this.solidAssetFrames = [];
+    this.tileAssetPhases = [];
+    this.tileAssetOrigins = [];
+    this.laserAssetTransforms = [];
+    this.laserAssetPositions = [];
+    this.exitSprite = undefined;
+    this.backgroundImages = [];
+    this.cameraTarget = undefined;
   }
 
   private renderWorld(): void {

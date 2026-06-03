@@ -9,8 +9,8 @@ import {
 } from "./objects";
 import { makeActor, moveActor, platformFramesAt } from "./player";
 import {
-  blankInputFrame,
-  cloneInputFrame,
+  inputFrameAt,
+  recordInputFrame,
   trimRecording,
   type EchoRecording
 } from "./recording";
@@ -24,7 +24,7 @@ export class RoomSimulation {
   readonly echoRecordings: EchoRecording[] = [];
   player: ActorBody;
   echoes: ActorBody[] = [];
-  currentRecording: InputFrame[] = [];
+  currentRecording: number[] = [];
   objectState: ObjectState = createObjectState();
   tick = 0;
   totalFrames = 0;
@@ -58,7 +58,7 @@ export class RoomSimulation {
 
     this.echoRecordings.push({
       id: `echo-${this.echoRecordings.length + 1}`,
-      frames: frames.map(cloneInputFrame),
+      frames,
       createdAtFrame: this.totalFrames
     });
     this.resetAttempt(false);
@@ -110,14 +110,14 @@ export class RoomSimulation {
       const echo = this.echoes[index];
       if (!echo.alive) continue;
       const recording = this.echoRecordings[index];
-      const echoInput = recording.frames[this.tick] || blankInputFrame();
+      const echoInput = inputFrameAt(recording.frames, this.tick);
       const previousY = echo.y;
       moveActor(echo, echoInput, solids, doors, platforms, this.level.bounds, dynamicFor(echo));
       this.applyLaunchPads(echo, previousY);
     }
 
     if (!this.dead) {
-      this.currentRecording.push(cloneInputFrame(input));
+      recordInputFrame(this.currentRecording, input);
       const previousY = this.player.y;
       const moved = moveActor(this.player, input, solids, doors, platforms, this.level.bounds, dynamicFor(this.player));
       events.jumped = moved.jumped;

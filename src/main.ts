@@ -6,6 +6,7 @@ import { BootScene } from "./scenes/BootScene";
 import { GameScene } from "./scenes/GameScene";
 import { LevelSelectScene } from "./scenes/LevelSelectScene";
 import { MenuScene } from "./scenes/MenuScene";
+import { audio } from "./game/audio";
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.CANVAS,
@@ -27,6 +28,7 @@ const config: Phaser.Types.Core.GameConfig = {
 };
 
 const params = new URLSearchParams(window.location.search);
+let game: Phaser.Game | null = null;
 
 if (params.get("editor") === "1") {
   const app = document.getElementById("app");
@@ -39,5 +41,13 @@ if (params.get("editor") === "1") {
     const draft = readEditorDraftSnapshot();
     if (draft) setRuntimeLevels(draft.levels, { draftPlaytest: true });
   }
-  new Phaser.Game(config);
+  game = new Phaser.Game(config);
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    game?.destroy(true);
+    game = null;
+    audio.dispose();
+  });
 }

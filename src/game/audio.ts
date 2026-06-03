@@ -26,10 +26,11 @@ export class SynthAudio {
   private musicMuted = false;
   private unlockListenersInstalled = false;
   private readonly musicVolume = 0.28;
+  private readonly maxCachedMusicElements = 3;
 
   unlock(): void {
     this.resume();
-    this.preloadSoundtracks();
+    if (this.musicKey) this.prepareMusicElement(this.musicElementFor(this.musicKey));
   }
 
   resume(): void {
@@ -80,6 +81,7 @@ export class SynthAudio {
     osc.connect(filter);
     filter.connect(gain);
     gain.connect(this.master);
+    this.disconnectWhenEnded(osc, osc, filter, gain);
     osc.start(now);
     osc.stop(now + settings.duration + 0.02);
 
@@ -94,6 +96,7 @@ export class SynthAudio {
       shimmerGain.gain.exponentialRampToValueAtTime(0.0001, now + settings.duration * 1.35);
       shimmer.connect(shimmerGain);
       shimmerGain.connect(this.master);
+      this.disconnectWhenEnded(shimmer, shimmer, shimmerGain);
       shimmer.start(now + 0.01);
       shimmer.stop(now + settings.duration * 1.35 + 0.02);
     }
@@ -105,7 +108,7 @@ export class SynthAudio {
 
   preloadSoundtracks(): void {
     for (const key of Object.keys(soundtracks) as SoundtrackKey[]) {
-      this.musicElementFor(key);
+      this.prepareMusicElement(this.musicElementFor(key));
     }
   }
 
@@ -126,6 +129,7 @@ export class SynthAudio {
 
     const next = this.musicElementFor(key);
     const previous = this.music && this.music !== next ? this.music : null;
+    this.prepareMusicElement(next);
     if (options.restart) {
       next.pause();
       next.currentTime = 0;
@@ -148,10 +152,36 @@ export class SynthAudio {
   stopMusic(): void {
     this.fadeToken += 1;
     this.musicPlayAttempt += 1;
-    this.music?.pause();
+    const currentKey = this.musicKey;
+    if (this.music) this.unloadMusicElement(this.music);
+    if (currentKey) this.musicCache.delete(currentKey);
     this.music = null;
     this.musicKey = null;
+    this.releaseUnusedMusic();
     if (import.meta.env.DEV && typeof document !== "undefined") delete document.documentElement.dataset.echoShiftMusicKey;
+    this.markAudioState("stopped");
+  }
+
+  dispose(): void {
+    this.fadeToken += 1;
+    this.musicPlayAttempt += 1;
+    this.music = null;
+    this.musicKey = null;
+    for (const element of this.musicCache.values()) {
+      this.unloadMusicElement(element);
+    }
+    this.musicCache.clear();
+    if (this.unlockListenersInstalled && typeof window !== "undefined") {
+      const options = { capture: true };
+      for (const eventName of unlockEvents) {
+        window.removeEventListener(eventName, this.handleUnlockGesture, options);
+      }
+    }
+    this.unlockListenersInstalled = false;
+    this.master?.disconnect();
+    void this.context?.close().catch(() => undefined);
+    this.master = null;
+    this.context = null;
     this.markAudioState("stopped");
   }
 
@@ -209,10 +239,15 @@ export class SynthAudio {
 
     const element = new Audio(soundtracks[key].src);
     element.loop = true;
-    element.preload = "auto";
-    element.load();
+    element.preload = "metadata";
     this.musicCache.set(key, element);
     return element;
+  }
+
+  private prepareMusicElement(element: HTMLAudioElement): void {
+    element.preload = "auto";
+    const haveNothing = typeof HTMLMediaElement === "undefined" ? 0 : HTMLMediaElement.HAVE_NOTHING;
+    if ((element.readyState || 0) === haveNothing) element.load();
   }
 
   private markMusicKey(key: SoundtrackKey): void {
@@ -253,9 +288,39 @@ export class SynthAudio {
         previous.pause();
         previous.currentTime = 0;
       }
+      this.releaseUnusedMusic();
     };
 
     requestAnimationFrame(step);
+  }
+
+  private disconnectWhenEnded(source: AudioScheduledSourceNode, ...nodes: AudioNode[]): void {
+    source.onended = () => {
+      for (const node of nodes) {
+        try {
+          node.disconnect();
+        } catch {
+          // A node can already be disconnected if a browser ends/cancels it during teardown.
+        }
+      }
+    };
+  }
+
+  private releaseUnusedMusic(): void {
+    if (this.musicCache.size <= this.maxCachedMusicElements) return;
+    const keep = this.musicKey;
+    for (const [key, element] of this.musicCache) {
+      if (this.musicCache.size <= this.maxCachedMusicElements) return;
+      if (key === keep) continue;
+      this.unloadMusicElement(element);
+      this.musicCache.delete(key);
+    }
+  }
+
+  private unloadMusicElement(element: HTMLAudioElement): void {
+    element.pause();
+    element.removeAttribute("src");
+    element.load();
   }
 
   private settings(name: ToneName) {

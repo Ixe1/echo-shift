@@ -186,6 +186,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   const startedTones = [];
   const pendingResumes = [];
   const pendingBlockedRejects = [];
+  let disconnectedNodes = 0;
   let deferBlockedRejects = false;
   let mediaUnlocked = false;
 
@@ -211,7 +212,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     }
 
     createGain() {
-      return { gain: fakeParam(), connect() {} };
+      return { gain: fakeParam(), connect() {}, disconnect() { disconnectedNodes += 1; } };
     }
 
     createOscillator() {
@@ -219,6 +220,9 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
         type: "sine",
         frequency: fakeParam(),
         connect() {},
+        disconnect() {
+          disconnectedNodes += 1;
+        },
         start() {
           startedTones.push(oscillator);
         },
@@ -228,7 +232,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     }
 
     createBiquadFilter() {
-      return { type: "lowpass", frequency: fakeParam(), connect() {} };
+      return { type: "lowpass", frequency: fakeParam(), connect() {}, disconnect() { disconnectedNodes += 1; } };
     }
   }
   class FakeAudioElement {
@@ -332,11 +336,14 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     audio.play("jump");
     await settlePromises();
     assert(startedTones.length >= 1, "Expected SFX tone to start after audio context unlock");
+    startedTones[0].onended?.();
+    assert(disconnectedNodes >= 3, `Expected SFX nodes to disconnect after ending, got ${disconnectedNodes}`);
 
+    const elementsBeforeUnlock = mediaElements.length;
     audio.unlock();
     assert(
-      mediaElements.length >= Object.keys(soundtracks).length,
-      `Expected unlock to preload soundtrack elements, got ${mediaElements.length}`
+      mediaElements.length === elementsBeforeUnlock,
+      `Expected unlock to avoid preloading every soundtrack, got ${mediaElements.length} elements before level music`
     );
 
     audio.playMusic("level-1");
