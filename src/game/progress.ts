@@ -15,25 +15,62 @@ const fallback: ProgressData = {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const finiteNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+
+const nonNegativeInteger = (value: unknown, fallback = 0): number => {
+  if (!finiteNumber(value)) return fallback;
+  return Math.max(0, Math.round(value));
+};
+
 const levelScoreLike = (value: unknown): value is LevelScore =>
   isRecord(value) &&
   typeof value.levelId === "string" &&
-  typeof value.score === "number" &&
-  Number.isFinite(value.score) &&
-  typeof value.frames === "number" &&
-  Number.isFinite(value.frames) &&
-  typeof value.echoes === "number" &&
-  Number.isFinite(value.echoes) &&
-  typeof value.deaths === "number" &&
-  Number.isFinite(value.deaths) &&
-  typeof value.cores === "number" &&
-  Number.isFinite(value.cores) &&
-  typeof value.timeBonus === "number" &&
-  Number.isFinite(value.timeBonus);
+  finiteNumber(value.score) &&
+  finiteNumber(value.frames) &&
+  finiteNumber(value.echoes) &&
+  finiteNumber(value.deaths) &&
+  finiteNumber(value.cores) &&
+  finiteNumber(value.timeBonus);
+
+const legacyLevelScoreLike = (value: unknown): value is { levelId: string; frames: number; echoes: number; medal: string } =>
+  isRecord(value) &&
+  typeof value.levelId === "string" &&
+  finiteNumber(value.frames) &&
+  finiteNumber(value.echoes) &&
+  typeof value.medal === "string";
+
+const normalizeLevelScore = (key: string, value: unknown): LevelScore | null => {
+  if (levelScoreLike(value)) {
+    return {
+      levelId: value.levelId,
+      score: nonNegativeInteger(value.score),
+      frames: nonNegativeInteger(value.frames),
+      echoes: nonNegativeInteger(value.echoes),
+      deaths: nonNegativeInteger(value.deaths),
+      cores: nonNegativeInteger(value.cores),
+      timeBonus: nonNegativeInteger(value.timeBonus)
+    };
+  }
+  if (!legacyLevelScoreLike(value)) return null;
+  return {
+    levelId: value.levelId || key,
+    score: 0,
+    frames: nonNegativeInteger(value.frames),
+    echoes: nonNegativeInteger(value.echoes),
+    deaths: 0,
+    cores: 0,
+    timeBonus: 0
+  };
+};
 
 const normalizedScores = (value: unknown): Record<string, LevelScore> => {
   if (!isRecord(value)) return {};
-  return Object.fromEntries(Object.entries(value).filter(([, score]) => levelScoreLike(score))) as Record<string, LevelScore>;
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, score]) => {
+      const normalized = normalizeLevelScore(key, score);
+      return normalized ? [[key, normalized]] : [];
+    })
+  );
 };
 
 const readProgress = (): ProgressData => {

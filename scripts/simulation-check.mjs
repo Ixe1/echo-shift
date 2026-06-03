@@ -362,7 +362,7 @@ try {
   const { makeActor } = await server.ssrLoadModule("/src/game/player.ts");
   const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
   const { EDITOR_DRAFT_STORAGE_KEY, readEditorDraftSnapshot } = await server.ssrLoadModule("/src/data/editorDraft.ts");
-  const { isBetterLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
+  const { getBestScores, isBetterLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
   const { soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
   const { backgroundForLevel, levelBackgrounds } = await server.ssrLoadModule("/src/game/backgrounds.ts");
   const { SynthAudio } = await server.ssrLoadModule("/src/game/audio.ts");
@@ -665,6 +665,31 @@ try {
   assert(isBetterLevelScore(sameScoreFewerDeaths, bestScore), "Same score with fewer deaths should replace previous score");
   assert(isBetterLevelScore(sameScoreFewerEchoes, bestScore), "Same score/deaths with fewer echoes should replace previous score");
   assert(isBetterLevelScore(sameScoreFaster, bestScore), "Same score/deaths/echoes with faster time should replace previous score");
+
+  const previousProgressWindow = globalThis.window;
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      localStorage: {
+        getItem: (key) =>
+          key === "echo-shift-progress-v1"
+            ? JSON.stringify({
+                unlocked: 4,
+                scores: {
+                  "legacy-room": { levelId: "legacy-room", frames: 1234, echoes: 2, medal: "Quantum" }
+                }
+              })
+            : null
+      }
+    }
+  });
+  const legacyScores = getBestScores();
+  if (previousProgressWindow === undefined) delete globalThis.window;
+  else Object.defineProperty(globalThis, "window", { configurable: true, value: previousProgressWindow });
+  assert(legacyScores["legacy-room"], "Expected legacy medal-era score to remain visible after progress normalization");
+  assert(legacyScores["legacy-room"].score === 0, `Expected legacy score to migrate as score 0, got ${legacyScores["legacy-room"].score}`);
+  assert(legacyScores["legacy-room"].frames === 1234, `Expected legacy frames to be preserved, got ${legacyScores["legacy-room"].frames}`);
+  assert(legacyScores["legacy-room"].echoes === 2, `Expected legacy echoes to be preserved, got ${legacyScores["legacy-room"].echoes}`);
 
   const echoPlateLevel = {
     ...baseLevel,
@@ -1094,6 +1119,7 @@ try {
           "held-open-expanded-route",
           "lift-phase-expanded-route",
           "score-ranking",
+          "legacy-progress-migration",
           "echo-plate-door",
           "core-door",
           "echo-core-origin",

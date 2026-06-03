@@ -60,6 +60,7 @@ export class GameScene extends Phaser.Scene {
   private accumulator = 0;
   private pausedByHud = false;
   private completeHandled = false;
+  private retryRequired = false;
   private virtualInput: InputFrame = { left: false, right: false, jump: false };
   private echoTrails = new Map<string, Array<{ x: number; y: number }>>();
   private actorSprites = new Map<string, Phaser.GameObjects.Image>();
@@ -87,6 +88,7 @@ export class GameScene extends Phaser.Scene {
     this.accumulator = 0;
     this.pausedByHud = false;
     this.completeHandled = false;
+    this.retryRequired = false;
     this.virtualInput = { left: false, right: false, jump: false };
     this.playerCastUntil = 0;
     this.echoTrails.clear();
@@ -188,6 +190,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleHotkeys(): void {
+    if (this.retryRequired) {
+      if (Phaser.Input.Keyboard.JustDown(this.keys.t)) this.restartLevel();
+      return;
+    }
     if (Phaser.Input.Keyboard.JustDown(this.keys.r)) this.rewind();
     if (Phaser.Input.Keyboard.JustDown(this.keys.t)) this.retryAttempt();
     if (Phaser.Input.Keyboard.JustDown(this.keys.esc)) this.togglePause();
@@ -207,6 +213,7 @@ export class GameScene extends Phaser.Scene {
       this.cameras.main.shake(180, 0.006);
       if (events.livesExhausted) {
         this.pausedByHud = true;
+        this.retryRequired = true;
         this.hud.showRetryRequired(this.level.name);
       } else {
         this.hud.toast(`Signal lost. ${this.simulation.livesRemaining()} lives left.`);
@@ -216,7 +223,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private rewind(): void {
-    if (this.completeHandled || this.pausedByHud) return;
+    if (this.completeHandled || this.pausedByHud || this.retryRequired) return;
     const added = this.simulation.rewindToEcho();
     audio.play("rewind");
     this.playerCastUntil = this.time.now + 360;
@@ -227,7 +234,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private retryAttempt(): void {
-    if (this.completeHandled || this.pausedByHud) return;
+    if (this.completeHandled || this.pausedByHud || this.retryRequired) return;
     this.simulation.resetLevel();
     this.playerCastUntil = 0;
     this.echoTrails.clear();
@@ -238,6 +245,7 @@ export class GameScene extends Phaser.Scene {
   private restartLevel(): void {
     this.completeHandled = false;
     this.pausedByHud = false;
+    this.retryRequired = false;
     this.virtualInput = { left: false, right: false, jump: false };
     this.simulation.resetLevel();
     this.playerCastUntil = 0;
@@ -247,7 +255,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private togglePause(force?: boolean): void {
-    if (this.completeHandled) return;
+    if (this.completeHandled || this.retryRequired) return;
     this.pausedByHud = force ?? !this.pausedByHud;
     if (this.pausedByHud) this.hud.showPause(this.level.name);
     else this.hud.hideModal();

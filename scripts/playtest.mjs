@@ -26,6 +26,7 @@ const artifacts = {
   draftMovingLaserOrigin: `${outDir}/draft-moving-laser-origin.png`,
   draftEchoTintBefore: `${outDir}/draft-echo-tint-before.png`,
   draftEchoTintAfter: `${outDir}/draft-echo-tint-after.png`,
+  draftRetryRequired: `${outDir}/draft-retry-required.png`,
   mobileGate: `${outDir}/start-gate-mobile.png`,
   mobileMenu: `${outDir}/menu-mobile.png`,
   mobileGame: `${outDir}/game-mobile.png`,
@@ -192,7 +193,7 @@ const pressRewind = async (page, settleMs = 350) => {
   await page.waitForTimeout(settleMs);
 };
 
-const loadDraftPlaytest = async (page, level) => {
+const loadDraftPlaytest = async (page, level, options = {}) => {
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.evaluate((snapshot) => {
     window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
@@ -200,7 +201,9 @@ const loadDraftPlaytest = async (page, level) => {
   await page.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "networkidle" });
   await startAudioGate(page);
   await page.locator("canvas").waitFor({ state: "visible" });
-  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  if (options.clickCanvas !== false) {
+    await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  }
   await page.waitForTimeout(450);
 };
 
@@ -714,6 +717,28 @@ try {
   );
   const echoTintAfter = await page.evaluate(() => document.documentElement.dataset.echoShiftVisibleEchoTints || "");
   await page.screenshot({ path: artifacts.draftEchoTintAfter });
+
+  const retryRequiredLevel = draftLevel({
+    name: "Retry Required Lock",
+    score: {
+      lives: 1,
+      coreScore: 100,
+      deathPenalty: 500,
+      timeBonusTargetSeconds: 10,
+      timeBonusPerSecond: 100
+    },
+    hazards: [{ id: "instant-loss", x: 24, y: 86, w: 28, h: 34 }]
+  });
+  await loadDraftPlaytest(page, retryRequiredLevel, { clickCanvas: false });
+  await page.locator("[data-modal].show h1").waitFor({ state: "visible", timeout: 3000 });
+  const retryRequiredTitleBeforeEsc = await page.locator("[data-modal].show h1").textContent();
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(180);
+  const retryRequiredTitleAfterEsc = await page.locator("[data-modal].show h1").textContent();
+  await pressRewind(page, 100);
+  const retryRequiredTitleAfterRewind = await page.locator("[data-modal].show h1").textContent();
+  const retryRequiredLivesText = await page.locator("[data-lives]").textContent();
+  await page.screenshot({ path: artifacts.draftRetryRequired });
   await desktop.close();
 
   const mobileMessages = [];
@@ -904,6 +929,13 @@ try {
     !echoTintAfter.includes("echo-1:") && echoTintAfter.includes("echo-2:50ffc2"),
     `Expected surviving echo to keep cyan tint after earlier echo vaporized, got ${echoTintAfter}`
   );
+  assert(retryRequiredTitleBeforeEsc === "Retry Required", `Expected retry-required modal, got ${retryRequiredTitleBeforeEsc}`);
+  assert(retryRequiredTitleAfterEsc === "Retry Required", `Expected Escape not to dismiss retry-required modal, got ${retryRequiredTitleAfterEsc}`);
+  assert(
+    retryRequiredTitleAfterRewind === "Retry Required",
+    `Expected Rewind not to bypass exhausted lives, got ${retryRequiredTitleAfterRewind}`
+  );
+  assert(retryRequiredLivesText === "0", `Expected exhausted lives HUD to stay at 0, got ${retryRequiredLivesText}`);
   assert(levelButtons === 10, `Expected 10 level buttons, got ${levelButtons}`);
   assert(touchControlsVisible, "Mobile touch controls were not visible in-game");
   assert(beforeTouchX !== null && afterTouchX !== null, "Could not locate player pixels for touch movement check");
