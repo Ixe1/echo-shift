@@ -52,11 +52,11 @@ type KeyMap = {
 export class GameScene extends Phaser.Scene {
   private levelIndex = 0;
   private level!: Level;
-  private simulation!: RoomSimulation;
-  private keys!: KeyMap;
-  private hud!: Hud;
-  private world!: Phaser.GameObjects.Graphics;
-  private fx!: Phaser.GameObjects.Graphics;
+  private _simulation: RoomSimulation | null = null;
+  private _keys: KeyMap | null = null;
+  private _hud: Hud | null = null;
+  private _world: Phaser.GameObjects.Graphics | null = null;
+  private _fx: Phaser.GameObjects.Graphics | null = null;
   private accumulator = 0;
   private pausedByHud = false;
   private completeHandled = false;
@@ -80,6 +80,51 @@ export class GameScene extends Phaser.Scene {
 
   constructor() {
     super("GameScene");
+  }
+
+  private get simulation(): RoomSimulation {
+    if (!this._simulation) throw new Error("GameScene simulation unavailable");
+    return this._simulation;
+  }
+
+  private set simulation(simulation: RoomSimulation) {
+    this._simulation = simulation;
+  }
+
+  private get keys(): KeyMap {
+    if (!this._keys) throw new Error("GameScene keys unavailable");
+    return this._keys;
+  }
+
+  private set keys(keys: KeyMap) {
+    this._keys = keys;
+  }
+
+  private get hud(): Hud {
+    if (!this._hud) throw new Error("GameScene HUD unavailable");
+    return this._hud;
+  }
+
+  private set hud(hud: Hud) {
+    this._hud = hud;
+  }
+
+  private get world(): Phaser.GameObjects.Graphics {
+    if (!this._world) throw new Error("GameScene world graphics unavailable");
+    return this._world;
+  }
+
+  private set world(world: Phaser.GameObjects.Graphics) {
+    this._world = world;
+  }
+
+  private get fx(): Phaser.GameObjects.Graphics {
+    if (!this._fx) throw new Error("GameScene FX graphics unavailable");
+    return this._fx;
+  }
+
+  private set fx(fx: Phaser.GameObjects.Graphics) {
+    this._fx = fx;
   }
 
   init(data: { levelIndex?: number }): void {
@@ -332,7 +377,12 @@ export class GameScene extends Phaser.Scene {
     this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.shutdownScene);
     this.events.off(Phaser.Scenes.Events.DESTROY, this.shutdownScene);
     this.sceneCleanupRegistered = false;
-    this.hud?.destroy();
+    this._hud?.destroy();
+    this._hud = null;
+    this._simulation = null;
+    this._keys = null;
+    this._world = null;
+    this._fx = null;
     this.echoTrails.clear();
     this.actorSprites.clear();
     this.coreSprites.clear();
