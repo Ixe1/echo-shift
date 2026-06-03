@@ -180,6 +180,8 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   const mediaElements = [];
   const startedTones = [];
   const pendingResumes = [];
+  const pendingBlockedRejects = [];
+  let deferBlockedRejects = false;
   let mediaUnlocked = false;
 
   const fakeParam = () => ({
@@ -240,7 +242,12 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
 
     play() {
       this.playCalls += 1;
-      if (!mediaUnlocked) return Promise.reject(new Error("blocked by autoplay policy"));
+      if (!mediaUnlocked) {
+        if (deferBlockedRejects) {
+          return new Promise((_, reject) => pendingBlockedRejects.push(reject));
+        }
+        return Promise.reject(new Error("blocked by autoplay policy"));
+      }
       this.playing = true;
       return Promise.resolve();
     }
@@ -273,6 +280,9 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   const resolveResumes = () => {
     for (const resolve of pendingResumes.splice(0)) resolve();
   };
+  const rejectBlockedPlays = () => {
+    for (const reject of pendingBlockedRejects.splice(0)) reject(new Error("blocked by autoplay policy"));
+  };
 
   Object.defineProperty(globalThis, "window", { configurable: true, value: fakeWindow });
   Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { dataset: {} } } });
@@ -297,6 +307,22 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       document.documentElement.dataset.echoShiftAudioState === "playing",
       "Expected later AudioContext resume resolution not to downgrade playing music state"
     );
+
+    deferBlockedRejects = true;
+    mediaUnlocked = false;
+    audio.playMusic("menu");
+    await settlePromises();
+    mediaUnlocked = true;
+    audio.playMusic("menu");
+    await settlePromises();
+    assert(document.documentElement.dataset.echoShiftAudioState === "playing", "Expected later retry to keep menu music playing");
+    rejectBlockedPlays();
+    await settlePromises();
+    assert(
+      document.documentElement.dataset.echoShiftAudioState === "playing",
+      "Expected stale blocked media promise not to downgrade playing music state"
+    );
+    deferBlockedRejects = false;
 
     audio.play("jump");
     await settlePromises();

@@ -21,6 +21,7 @@ export class SynthAudio {
   private music: HTMLAudioElement | null = null;
   private musicKey: SoundtrackKey | null = null;
   private musicCache = new Map<SoundtrackKey, HTMLAudioElement>();
+  private musicPlayAttempt = 0;
   private fadeToken = 0;
   private musicMuted = false;
   private unlockListenersInstalled = false;
@@ -146,6 +147,7 @@ export class SynthAudio {
 
   stopMusic(): void {
     this.fadeToken += 1;
+    this.musicPlayAttempt += 1;
     this.music?.pause();
     this.music = null;
     this.musicKey = null;
@@ -187,13 +189,14 @@ export class SynthAudio {
   }
 
   private playMusicElement(element: HTMLAudioElement): void {
+    const attempt = ++this.musicPlayAttempt;
     void element
       .play()
       .then(() => {
-        if (this.music === element) this.markAudioState("playing");
+        if (this.music === element && attempt === this.musicPlayAttempt) this.markAudioState("playing");
       })
       .catch(() => {
-        if (this.music === element) {
+        if (this.music === element && attempt === this.musicPlayAttempt) {
           this.applyMusicVolume(element);
           this.markAudioState("blocked");
         }

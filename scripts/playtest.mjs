@@ -552,7 +552,7 @@ try {
   const preGateTimerCount = await page.locator("[data-time]").count();
   const preGateLevelCount = await page.locator("[data-level]").count();
   const preGateMusicKey = await page.evaluate(() => document.documentElement.dataset.echoShiftMusicKey || "");
-  await startAudioGate(page);
+  await page.keyboard.press("Enter");
   await page.locator("[data-play]").waitFor({ state: "visible" });
   await page.waitForFunction(() => document.documentElement.dataset.echoShiftAudioState === "playing");
   const menuAudioState = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioState || "");

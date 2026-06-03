@@ -234,9 +234,11 @@ try {
   await draftPlaytestPage.waitForURL(/playtestDraft=1/);
   await startAudioGate(draftPlaytestPage);
   await draftPlaytestPage.locator("[data-level]").waitFor({ state: "visible" });
+  await draftPlaytestPage.waitForFunction(() => document.documentElement.dataset.echoShiftAudioState === "playing");
   const draftPlaytestUrl = draftPlaytestPage.url();
   const draftPlaytestHudLevel = await draftPlaytestPage.locator("[data-level]").textContent();
   const draftPlaytestMusicKey = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftMusicKey);
+  const draftPlaytestAudioState = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftAudioState);
   const draftPlaytestBackgroundKey = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundKey);
   const draftPlaytestBackgroundPieces = Number(await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundPieces));
   await draftPlaytestPage.screenshot({ path: `${outDir}/editor-playtest-draft.png`, fullPage: true });
@@ -1096,6 +1098,7 @@ try {
     `Expected draft playtest game HUD to use edited level name, got ${draftPlaytestHudLevel}`
   );
   assert(draftPlaytestMusicKey === "level-6", `Expected draft playtest GameScene to request explicit level-6 soundtrack, got ${draftPlaytestMusicKey}`);
+  assert(draftPlaytestAudioState === "playing", `Expected draft playtest audio to start after gate, got ${draftPlaytestAudioState}`);
   assert(draftPlaytestBackgroundKey === "time-lab-prototype", `Expected draft playtest to render prototype background, got ${draftPlaytestBackgroundKey}`);
   assert(draftPlaytestBackgroundPieces >= 1, `Expected draft playtest to create repeated background pieces, got ${draftPlaytestBackgroundPieces}`);
   assert(draftReturnUrl.includes("editor=1"), `Expected draft Editor button to return to editor=1, got ${draftReturnUrl}`);
