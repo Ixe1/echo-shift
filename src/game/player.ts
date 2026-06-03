@@ -159,16 +159,34 @@ export const moveActor = (
       platformId: platform.platform.id
     }))
   ];
+  const platformCrateBlockers: Rect[] = platforms.map((platform) => ({ ...platform.current }));
   const crateRects = crateCollisionRects(dynamic.crates);
 
   actor.x += actor.vx;
-  resolveAxis(actor, [...collisionRects, ...crateRects], "x", bounds, dynamic.crates, actor.y, dynamic.actorBlockers);
+  resolveAxis(
+    actor,
+    [...collisionRects, ...crateRects],
+    "x",
+    bounds,
+    dynamic.crates,
+    actor.y,
+    dynamic.actorBlockers,
+    platformCrateBlockers
+  );
 
   const previousY = actor.y;
   actor.y += actor.vy;
   resolveAxis(actor, [...collisionRects, ...oneWayRects, ...crateCollisionRects(dynamic.crates)], "y", bounds, dynamic.crates, previousY, dynamic.actorBlockers);
 
-  applyConveyor(actor, dynamic.conveyors || [], [...collisionRects, ...crateCollisionRects(dynamic.crates)], bounds, dynamic.crates, dynamic.actorBlockers);
+  applyConveyor(
+    actor,
+    dynamic.conveyors || [],
+    [...collisionRects, ...crateCollisionRects(dynamic.crates)],
+    bounds,
+    dynamic.crates,
+    dynamic.actorBlockers,
+    platformCrateBlockers
+  );
 
   actor.x = clamp(actor.x, bounds.x, bounds.x + bounds.w - actor.w);
   if (actor.y > bounds.y + bounds.h + 120) {
@@ -186,7 +204,8 @@ const resolveAxis = (
   bounds: Rect,
   crates?: Map<string, Rect>,
   previousY = actor.y,
-  actorBlockers: Rect[] = []
+  actorBlockers: Rect[] = [],
+  crateBlockers: Rect[] = []
 ): void => {
   for (const solid of solids) {
     if (solid.oneWay && axis === "x") continue;
@@ -194,7 +213,7 @@ const resolveAxis = (
     if (!rectsOverlap(actor, solid)) continue;
     if (axis === "x") {
       if (solid.crateId && crates && actor.vx !== 0) {
-        pushCrate(solid.crateId, actor.vx, crates, solids, bounds, actorBlockers);
+        pushCrate(solid.crateId, actor.vx, crates, solids, bounds, actorBlockers, crateBlockers);
         const crate = crates.get(solid.crateId);
         if (crate) {
           solid.x = crate.x;
@@ -230,13 +249,15 @@ const pushCrate = (
   crates: Map<string, Rect>,
   collisionRects: CollisionRect[],
   bounds: Rect,
-  actorBlockers: Rect[] = []
+  actorBlockers: Rect[] = [],
+  crateBlockers: Rect[] = []
 ): void => {
   const crate = crates.get(id);
   if (!crate) return;
   const next = { ...crate, x: crate.x + amount };
   if (next.x < bounds.x || next.x + next.w > bounds.x + bounds.w) return;
   const blockers = collisionRects.filter((rect) => rect.crateId !== id && !rect.oneWay);
+  blockers.push(...crateBlockers);
   blockers.push(...actorBlockers);
   if (blockers.some((blocker) => rectsOverlap(next, blocker))) return;
   crate.x = next.x;
@@ -248,7 +269,8 @@ const applyConveyor = (
   collisionRects: CollisionRect[],
   bounds: Rect,
   crates?: Map<string, Rect>,
-  actorBlockers: Rect[] = []
+  actorBlockers: Rect[] = [],
+  crateBlockers: Rect[] = []
 ): void => {
   if (!actor.onGround) return;
   const foot = actorFoot(actor);
@@ -259,6 +281,6 @@ const applyConveyor = (
   const previousVx = actor.vx;
   actor.x += beltDelta;
   actor.vx = beltDelta;
-  resolveAxis(actor, [...collisionRects, ...crateCollisionRects(crates)], "x", bounds, crates, actor.y, actorBlockers);
+  resolveAxis(actor, [...collisionRects, ...crateCollisionRects(crates)], "x", bounds, crates, actor.y, actorBlockers, crateBlockers);
   actor.vx = previousVx;
 };

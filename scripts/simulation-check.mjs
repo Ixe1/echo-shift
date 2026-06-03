@@ -941,6 +941,30 @@ try {
     `Player should run through moving-platform side, got x=${movingPlatformSideSim.player.x}`
   );
 
+  const travelingLiftPlatform = { id: "traveling-lift", x: 112, y: 104, w: 88, h: 16, axis: "y", distance: 26, period: 90 };
+  const travelingLiftLevel = {
+    ...baseLevel,
+    start: { x: 132, y: 42 },
+    solids: [
+      { id: "catch-floor", x: 0, y: 164, w: 320, h: 36 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 220 },
+      { id: "right-wall", x: 320, y: 0, w: 20, h: 220 }
+    ],
+    platforms: [travelingLiftPlatform]
+  };
+  const travelingLiftSim = new RoomSimulation(travelingLiftLevel);
+  runFrames(travelingLiftSim, 52, idle);
+  assert(travelingLiftSim.player.onGround, "Player did not land on non-zero-distance moving platform");
+  assert(
+    travelingLiftSim.player.standingOn === "traveling-lift",
+    `Expected player to stand on traveling-lift, got ${travelingLiftSim.player.standingOn}`
+  );
+  runFrames(travelingLiftSim, 16, idle);
+  assert(
+    travelingLiftSim.player.standingOn === "traveling-lift",
+    "Player did not remain carried by non-zero-distance moving platform"
+  );
+
   const conveyorLevel = {
     ...baseLevel,
     start: { x: 64, y: 86 },
@@ -1067,6 +1091,21 @@ try {
   assert(!rectsOverlap(contendedCrate, crateContentionSim.player), "Echo pushed crate into idle player");
   crateContentionSim.step(idle);
   assert(!rectsOverlap(contendedCrate, crateContentionSim.player), "Crate/player overlap persisted after contention frame");
+
+  const cratePlatformBlockLevel = {
+    ...baseLevel,
+    start: { x: 58, y: 86 },
+    platforms: [{ id: "crate-stop-lift", x: 150, y: 86, w: 70, h: 18, axis: "x", distance: 0, period: 90 }],
+    crates: [{ id: "crate-vs-platform", x: 100, y: 86, w: 30, h: 34 }]
+  };
+  const cratePlatformBlockSim = new RoomSimulation(cratePlatformBlockLevel);
+  runFrames(cratePlatformBlockSim, 90, right);
+  const platformBlockedCrate = cratePlatformBlockSim.objectState.crates.get("crate-vs-platform");
+  assert(platformBlockedCrate, "Platform-blocked crate missing from object state");
+  assert(
+    platformBlockedCrate.x + platformBlockedCrate.w <= 150.01,
+    `Crate should not be pushed through moving-platform side, got x=${platformBlockedCrate.x}`
+  );
 
   const deathLevel = {
     ...baseLevel,
