@@ -698,7 +698,18 @@ try {
   const toolkitCrate = toolkitLevel.crates.find((item) => item.id === "smoke-crate");
 
   await openTab(page, "objects");
-  await page.locator("[data-object-list] [data-kind='solids'][data-id='step-1']").click();
+  await page.locator("[data-object-list] [data-kind='timedSwitches'][data-id='smoke-timer']").click();
+  await page.locator("[data-object-field='id']").fill("smoke-timer-renamed");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  const renamedReferenceLevel = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
+  const renamedTimerExists = renamedReferenceLevel.timedSwitches.some((item) => item.id === "smoke-timer-renamed");
+  const renamedSweeper = renamedReferenceLevel.movingLasers.find((item) => item.id === "smoke-sweeper");
+  const renameReferenceValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+
+  await openTab(page, "objects");
+  const stepOneRow = page.locator("[data-object-list] [data-kind='solids'][data-id='step-1']");
+  await stepOneRow.scrollIntoViewIfNeeded();
+  await stepOneRow.click();
   const offGridStepXBefore = await objectNumber(page, "x");
   const offGridStepYBefore = await objectNumber(page, "y");
   const offGridStepWidthBefore = await objectNumber(page, "w");
@@ -1069,6 +1080,12 @@ try {
     `Expected moving laser path/link settings to export, got ${JSON.stringify(toolkitSweeper)}`
   );
   assert(toolkitCrate && toolkitCrateBottom === 500, `Expected crate to export and snap flush to floor, got ${JSON.stringify(toolkitCrate)} bottom ${toolkitCrateBottom}`);
+  assert(renamedTimerExists, "Expected timed switch rename to export");
+  assert(
+    renamedSweeper?.disabledBy?.includes("smoke-timer-renamed") && !renamedSweeper?.disabledBy?.includes("smoke-timer"),
+    `Expected moving laser disabledBy reference to follow timed switch rename, got ${JSON.stringify(renamedSweeper)}`
+  );
+  assert(renameReferenceValidation === "clean", `Expected clean validation after trigger rename, got ${renameReferenceValidation}`);
   assert(narrowPlateBottom === 420, `Expected dropped plate bottom to snap flush to narrow support y=420, got ${narrowPlateY}+h=${narrowPlateBottom}`);
   assert(underSupportLaserY === 440, `Expected laser placed below support to stay at y=440 instead of snapping upward, got ${underSupportLaserY}`);
   assert(surfaceSnapValidation === "clean", `Expected clean validation after surface snap checks, got ${surfaceSnapValidation}`);

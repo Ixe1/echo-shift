@@ -520,6 +520,28 @@ try {
   runFrames(conveyorSim, 45, idle);
   assert(conveyorSim.player.x > 90, `Conveyor did not push idle player right, got x=${conveyorSim.player.x}`);
 
+  const conveyorBlockedLevel = {
+    ...baseLevel,
+    start: { x: 64, y: 86 },
+    solids: [
+      { id: "floor-left", x: 0, y: 120, w: 60, h: 40 },
+      { id: "floor-right", x: 180, y: 120, w: 140, h: 40 },
+      { id: "crate-stop", x: 132, y: 70, w: 18, h: 50 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 220 },
+      { id: "right-wall", x: 320, y: 0, w: 20, h: 220 }
+    ],
+    conveyors: [{ id: "belt-blocked", x: 60, y: 120, w: 120, h: 20, direction: 1, speed: 3 }],
+    crates: [{ id: "crate-blocked", x: 100, y: 86, w: 30, h: 34 }]
+  };
+  const conveyorBlockedSim = new RoomSimulation(conveyorBlockedLevel);
+  runFrames(conveyorBlockedSim, 35, idle);
+  const blockedCrate = conveyorBlockedSim.objectState.crates.get("crate-blocked");
+  assert(blockedCrate, "Blocked conveyor crate missing from object state");
+  assert(
+    conveyorBlockedSim.player.x + conveyorBlockedSim.player.w <= blockedCrate.x + 0.01,
+    `Conveyor pushed player through blocked crate: player ${conveyorBlockedSim.player.x}, crate ${blockedCrate.x}`
+  );
+
   const launchLevel = {
     ...baseLevel,
     start: { x: 26, y: 86 },
@@ -529,6 +551,20 @@ try {
   const launchEvent = launchSim.step(idle);
   assert(launchEvent.launched, "Launch pad did not report a launch event");
   assert(launchSim.player.vy < -12 && launchSim.player.vx > 0, `Launch pad did not apply impulse: vx=${launchSim.player.vx}, vy=${launchSim.player.vy}`);
+
+  const sideLaunchLevel = {
+    ...baseLevel,
+    start: { x: 45, y: 98 },
+    solids: [
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 220 },
+      { id: "right-wall", x: 320, y: 0, w: 20, h: 220 }
+    ],
+    launchPads: [{ id: "launch-side", x: 20, y: 80, w: 50, h: 20, powerY: 13.5 }]
+  };
+  const sideLaunchSim = new RoomSimulation(sideLaunchLevel);
+  const sideLaunchEvent = sideLaunchSim.step(idle);
+  assert(!sideLaunchEvent.launched, "Launch pad fired from side/underside overlap");
+  assert(sideLaunchSim.player.vy > 0, `Side-overlap launch pad should not reverse fall velocity, got ${sideLaunchSim.player.vy}`);
 
   const timedSwitchLevel = {
     ...baseLevel,

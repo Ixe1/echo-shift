@@ -95,16 +95,18 @@ export class RoomSimulation {
       const echo = this.echoes[index];
       const recording = this.echoRecordings[index];
       const echoInput = recording.frames[this.tick] || blankInputFrame();
+      const previousY = echo.y;
       moveActor(echo, echoInput, solids, doors, platforms, this.level.bounds, dynamic);
-      this.applyLaunchPads(echo);
+      this.applyLaunchPads(echo, previousY);
     }
 
     if (!this.dead) {
       this.currentRecording.push(cloneInputFrame(input));
+      const previousY = this.player.y;
       const moved = moveActor(this.player, input, solids, doors, platforms, this.level.bounds, dynamic);
       events.jumped = moved.jumped;
       events.landed = moved.landed;
-      events.launched = this.applyLaunchPads(this.player);
+      events.launched = this.applyLaunchPads(this.player, previousY);
     }
 
     const objectUpdate = updateObjects(this.level, [this.player, ...this.echoes], this.objectState, this.tick);
@@ -168,9 +170,12 @@ export class RoomSimulation {
     return `Level ${this.level.index + 1}, ${seconds}s, ${this.echoRecordings.length} echoes, plates ${plates}, cores ${cores}`;
   }
 
-  private applyLaunchPads(actor: ActorBody): boolean {
+  private applyLaunchPads(actor: ActorBody, previousY: number): boolean {
     if (!actor.alive || actor.vy < 0) return false;
-    const launchPad = (this.level.launchPads || []).find((pad) => rectsOverlap(actor, pad));
+    const launchPad = (this.level.launchPads || []).find((pad) => {
+      const previousFootY = previousY + actor.h;
+      return rectsOverlap(actor, pad) && previousFootY <= pad.y + pad.h + 2 && actor.y + actor.h >= pad.y;
+    });
     if (!launchPad) return false;
     actor.vx += launchPad.powerX || 0;
     actor.vy = -Math.max(1, launchPad.powerY);

@@ -244,6 +244,11 @@ const applyConveyor = (
   const foot = actorFoot(actor);
   const conveyor = conveyors.find((item) => Math.abs(foot.y + foot.h - item.y) <= 7 && rectsOverlap(foot, item));
   if (!conveyor) return;
-  actor.x += conveyor.direction * conveyor.speed;
+  const beltDelta = conveyor.direction * conveyor.speed;
+  if (beltDelta === 0) return;
+  const previousVx = actor.vx;
+  actor.x += beltDelta;
+  actor.vx = beltDelta;
   resolveAxis(actor, [...collisionRects, ...crateCollisionRects(crates)], "x", bounds, crates);
+  actor.vx = previousVx;
 };

@@ -268,6 +268,10 @@ const csvToList = (value: string): string[] =>
 
 const listToCsv = (value: string[] | undefined): string => (value || []).join(", ");
 
+const replaceReferenceList = (value: string[] | undefined, previousId: string, nextId: string): string[] => [
+  ...new Set((value || []).map((item) => (item === previousId ? nextId : item)))
+];
+
 const rectContainsWithTolerance = (rect: Rect, point: Vec2, tolerance: number): boolean =>
   point.x >= rect.x - tolerance &&
   point.x <= rect.x + rect.w + tolerance &&
@@ -984,8 +988,10 @@ class LevelEditor {
         this.afterMutation(`Object id ${nextId} already exists`);
         return;
       }
+      const previousId = target.id;
       target.id = nextId;
       if ("id" in this.selection) this.selection.id = target.id;
+      if (this.selection.kind !== "exit") this.replaceObjectReferences(this.selection.kind, previousId, nextId);
     } else {
       this.updateSpecificObjectField(target, field, value);
     }
@@ -1527,6 +1533,25 @@ class LevelEditor {
     if (kind === "cores") {
       for (const door of readCollection(this.level, "doors") as Door[]) {
         if (door.requiresCore === id) delete door.requiresCore;
+      }
+    }
+  }
+
+  private replaceObjectReferences(kind: RectCollection, previousId: string, nextId: string): void {
+    if (previousId === nextId) return;
+    if (kind === "plates" || kind === "timedSwitches" || kind === "echoSensors") {
+      for (const door of readCollection(this.level, "doors") as Door[]) {
+        door.opensWith = replaceReferenceList(door.opensWith, previousId, nextId);
+      }
+      for (const laser of [...readCollection(this.level, "lasers"), ...readCollection(this.level, "movingLasers")] as Array<Laser | MovingLaser>) {
+        const next = replaceReferenceList(laser.disabledBy, previousId, nextId);
+        if (next.length > 0) laser.disabledBy = next;
+        else delete laser.disabledBy;
+      }
+    }
+    if (kind === "cores") {
+      for (const door of readCollection(this.level, "doors") as Door[]) {
+        if (door.requiresCore === previousId) door.requiresCore = nextId;
       }
     }
   }
