@@ -167,6 +167,7 @@ const server = await createServer({
 
 try {
   const { RoomSimulation } = await server.ssrLoadModule("/src/game/state.ts");
+  const { makeActor } = await server.ssrLoadModule("/src/game/player.ts");
   const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
   const { isBetterLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
   const { soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
@@ -466,20 +467,29 @@ try {
 
   const laserLevel = {
     ...baseLevel,
-    plates: [{ id: "beam-safe", x: 18, y: 112, w: 38, h: 8, once: true }],
-    lasers: [{ id: "beam-a", x: 82, y: 88, w: 70, h: 28, startsOn: true, disabledBy: ["beam-safe"] }]
+    lasers: [{ id: "beam-a", x: 82, y: 88, w: 70, h: 28, startsOn: true }]
   };
   const laserSim = new RoomSimulation(laserLevel);
+  laserSim.echoRecordings.push({ id: "echo-blocker", frames: [], createdAtFrame: 0 });
+  laserSim.echoes = [makeActor("echo-blocker", "echo", { x: 96, y: 86 })];
   laserSim.step(idle);
-  runFrames(laserSim, 26, right);
-  assert(laserSim.rewindToEcho(), "Expected laser setup attempt to become an echo");
-  let blocked = false;
-  for (let i = 0; i < 48; i += 1) {
-    laserSim.step(i < 32 ? right : idle);
-    blocked ||= laserSim.objectState.blockedLasers.has("beam-a");
-  }
-  assert(blocked, "Echo did not block the laser beam");
+  assert(laserSim.objectState.blockedLasers.has("beam-a"), "Echo did not block the laser beam");
   assert(!laserSim.dead, "Player died while the laser was blocked by an echo");
+
+  const inactiveLaserLevel = {
+    ...baseLevel,
+    start: { x: 20, y: 86 },
+    lasers: [{ id: "inactive-beam", x: 82, y: 88, w: 70, h: 28, startsOn: false }]
+  };
+  const inactiveLaserSim = new RoomSimulation(inactiveLaserLevel);
+  runFrames(inactiveLaserSim, 26, right);
+  assert(inactiveLaserSim.rewindToEcho(), "Expected inactive laser setup attempt to become an echo");
+  let inactiveLaserSwitched = false;
+  for (let i = 0; i < 48; i += 1) {
+    inactiveLaserSwitched ||= inactiveLaserSim.step(i < 32 ? right : idle).switched;
+  }
+  assert(!inactiveLaserSwitched, "Inactive laser overlap should not emit switch feedback");
+  assert(!inactiveLaserSim.objectState.blockedLasers.has("inactive-beam"), "Inactive laser should not be tracked as blocked");
 
   const oneWayLandingLevel = {
     ...baseLevel,
