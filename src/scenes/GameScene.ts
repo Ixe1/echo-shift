@@ -7,6 +7,7 @@ import { rectCenter } from "../game/geometry";
 import { droneIsActive, droneRectAt, laserIsActive, movingLaserRectAt } from "../game/objects";
 import { platformRectAt } from "../game/player";
 import { recordLevelScore } from "../game/progress";
+import { legacySolidSprite } from "../game/solidSprites";
 import { soundtrackForLevel } from "../game/soundtracks";
 import { RoomSimulation } from "../game/state";
 import type { ActorBody, InputFrame, Level, LevelScore, Rect, SimulationSnapshot, Solid } from "../game/types";
@@ -937,10 +938,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private solidFrame(solid: Solid): number {
-    if (solid.sprite === "floor") return OBJECT_FRAME.floor;
-    if (solid.sprite === "wall") return OBJECT_FRAME.wall;
-    if (solid.sprite === "block") return OBJECT_FRAME.block;
-    if (solid.sprite === "warning") return OBJECT_FRAME.warning;
+    const sprite = solid.sprite || legacySolidSprite(solid);
+    if (sprite === "floor") return OBJECT_FRAME.floor;
+    if (sprite === "wall") return OBJECT_FRAME.wall;
+    if (sprite === "block") return OBJECT_FRAME.block;
+    if (sprite === "warning") return OBJECT_FRAME.warning;
     if (solid.tone === "warning") return OBJECT_FRAME.warning;
 
     const width = Math.max(1, solid.w);

@@ -598,6 +598,8 @@ try {
   const floorPresetId = await page.locator("[data-object-field='id']").inputValue();
   const floorPresetWidth = await objectNumber(page, "w");
   const floorPresetHeight = await objectNumber(page, "h");
+  const floorPresetExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
+  const floorPresetSprite = floorPresetExport.solids.find((solid) => solid.id === floorPresetId)?.sprite;
   await page.locator("[data-delete-object]").click();
   await page.locator("[data-tool='floor']").click();
   await dragWorld(page, { x: 1180, y: 420 }, { x: 1200, y: 440 });
@@ -615,11 +617,15 @@ try {
   const wallPresetId = await page.locator("[data-object-field='id']").inputValue();
   const wallPresetWidth = await objectNumber(page, "w");
   const wallPresetHeight = await objectNumber(page, "h");
+  const wallPresetExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
+  const wallPresetSprite = wallPresetExport.solids.find((solid) => solid.id === wallPresetId)?.sprite;
   await page.locator("[data-delete-object]").click();
   await dragToolToWorld(page, "block", { x: 1260, y: 380 });
   const blockPresetId = await page.locator("[data-object-field='id']").inputValue();
   const blockPresetWidth = await objectNumber(page, "w");
   const blockPresetHeight = await objectNumber(page, "h");
+  const blockPresetExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
+  const blockPresetSprite = blockPresetExport.solids.find((solid) => solid.id === blockPresetId)?.sprite;
   await page.locator("[data-delete-object]").click();
 
   await dragToolToWorld(page, "plates", { x: 300, y: 500 });
@@ -1153,6 +1159,7 @@ try {
   assert(keyboardDeleteValidation === "clean", `Expected clean validation after keyboard delete, got ${keyboardDeleteValidation}`);
   assert(floorPresetId.startsWith("floorpiece-"), `Expected floor preset id to use non-reserved floorpiece stem, got ${floorPresetId}`);
   assert(floorPresetWidth === 320 && floorPresetHeight === 20, `Expected floor preset 320x20, got ${floorPresetWidth}x${floorPresetHeight}`);
+  assert(floorPresetSprite === "floor", `Expected floor preset to export sprite floor, got ${floorPresetSprite}`);
   assert(clickDragFloorWidth === 320 && clickDragFloorHeight === 20, `Expected click-drag floor preset 320x20, got ${clickDragFloorWidth}x${clickDragFloorHeight}`);
   assert(userFloorId.startsWith("floorpiece-"), `Expected user floor id to avoid structural floor-* exemption, got ${userFloorId}`);
   assert(
@@ -1162,8 +1169,10 @@ try {
   assert(userFloorCleanupValidation === "clean", `Expected clean validation after deleting out-of-bounds user floor, got ${userFloorCleanupValidation}`);
   assert(wallPresetId.startsWith("wall-"), `Expected wall preset id to use wall stem, got ${wallPresetId}`);
   assert(wallPresetWidth === 20 && wallPresetHeight === 180, `Expected wall preset 20x180, got ${wallPresetWidth}x${wallPresetHeight}`);
+  assert(wallPresetSprite === "wall", `Expected wall preset to export sprite wall, got ${wallPresetSprite}`);
   assert(blockPresetId.startsWith("block-"), `Expected block preset id to use block stem, got ${blockPresetId}`);
   assert(blockPresetWidth === 80 && blockPresetHeight === 80, `Expected block preset 80x80, got ${blockPresetWidth}x${blockPresetHeight}`);
+  assert(blockPresetSprite === "block", `Expected block preset to export sprite block, got ${blockPresetSprite}`);
   assert(surfacePlateBottom === 500, `Expected dropped plate bottom to snap flush to floor y=500, got ${surfacePlateY}+h=${surfacePlateBottom}`);
   assert(duplicatedPlateBottom === 500, `Expected duplicated plate bottom to stay flush to floor y=500, got ${duplicatedPlateY}+h=${duplicatedPlateBottom}`);
   assert(surfaceLaserBottom === 500, `Expected dropped laser bottom to snap flush to floor y=500, got ${surfaceLaserY}+h=${surfaceLaserBottom}`);

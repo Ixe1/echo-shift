@@ -1,5 +1,6 @@
 import type { Level } from "../game/types";
 import { isLevelBackgroundKey } from "../game/backgrounds";
+import { normalizeSolid, solidSpriteValues } from "../game/solidSprites";
 import { isLevelSoundtrackKey } from "../game/soundtracks";
 import { ANCHORED_MOTION_MODEL, normalizeLevelMotionModel, usesAnchoredMotionModel } from "./motionModel";
 
@@ -52,7 +53,7 @@ const movingObjectLike = (value: unknown): boolean =>
   (value.phase === undefined || finiteValue(value.phase));
 
 const solidSpriteValue = (value: unknown): boolean =>
-  value === undefined || value === "floor" || value === "wall" || value === "block" || value === "warning";
+  value === undefined || solidSpriteValues.includes(value as (typeof solidSpriteValues)[number]);
 
 const solidLike = (value: unknown): boolean => objectRectLike(value) && optionalString(value.tone) && solidSpriteValue(value.sprite);
 const oneWayLike = (value: unknown): boolean => objectRectLike(value);
@@ -128,7 +129,13 @@ export const readEditorDraftSnapshot = (): EditorDraftSnapshot | null => {
     if (!isRecord(parsed) || !Array.isArray(parsed.levels)) return null;
     if (parsed.levels.length === 0 || !parsed.levels.every(levelLike)) return null;
     const draftAnchored = usesAnchoredMotionModel(parsed);
-    const levels = parsed.levels.map((level) => normalizeLevelMotionModel(level, draftAnchored || usesAnchoredMotionModel(level)));
+    const levels = parsed.levels.map((level) => {
+      const normalized = normalizeLevelMotionModel(level, draftAnchored || usesAnchoredMotionModel(level));
+      return {
+        ...normalized,
+        solids: normalized.solids.map(normalizeSolid)
+      };
+    });
     return {
       motionModel: ANCHORED_MOTION_MODEL,
       levels,

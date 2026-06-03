@@ -21,6 +21,7 @@ const artifacts = {
   desktopHeldOpenComplete: `${outDir}/held-open-complete-desktop.png`,
   desktopLiftPhaseComplete: `${outDir}/lift-phase-complete-desktop.png`,
   draftDisabledDrone: `${outDir}/draft-disabled-drone.png`,
+  draftLegacySolidSprites: `${outDir}/draft-legacy-solid-sprites.png`,
   draftEchoTintBefore: `${outDir}/draft-echo-tint-before.png`,
   draftEchoTintAfter: `${outDir}/draft-echo-tint-after.png`,
   mobileMenu: `${outDir}/menu-mobile.png`,
@@ -625,6 +626,19 @@ try {
   const disabledDronePixels = await inactiveDroneRenderPixels(page);
   await page.screenshot({ path: artifacts.draftDisabledDrone });
 
+  const legacySolidSpriteLevel = draftLevel({
+    name: "Legacy Solid Sprite Stems",
+    solids: [
+      ...draftBaseSolids(),
+      { id: "floorpiece-1", x: 120, y: 54, w: 42, h: 40, tone: "steel" },
+      { id: "wall-1", x: 210, y: 36, w: 64, h: 64, tone: "steel" },
+      { id: "block-1", x: 330, y: 58, w: 64, h: 64, tone: "steel" }
+    ]
+  });
+  await loadDraftPlaytest(page, legacySolidSpriteLevel);
+  const legacySolidSpriteFrames = await page.evaluate(() => document.documentElement.dataset.echoShiftSolidAssetFrames || "");
+  await page.screenshot({ path: artifacts.draftLegacySolidSprites });
+
   const echoTintLevel = draftLevel({
     name: "Echo Tint Stability",
     hazards: [{ id: "echo-vaporizer", x: 260, y: 86, w: 36, h: 34 }]
@@ -779,6 +793,12 @@ try {
     `Expected inactive drone render to be cyan instead of red: ${JSON.stringify(disabledDronePixels)}`
   );
   assert(
+    legacySolidSpriteFrames.includes("floorpiece-1:0") &&
+      legacySolidSpriteFrames.includes("wall-1:1") &&
+      legacySolidSpriteFrames.includes("block-1:2"),
+    `Expected legacy editor solid stems to map to floor/wall/block sprites, got ${legacySolidSpriteFrames}`
+  );
+  assert(
     echoTintBefore.includes("echo-1:bd5cff") && echoTintBefore.includes("echo-2:50ffc2"),
     `Expected both echo tints before vaporization, got ${echoTintBefore}`
   );
@@ -832,6 +852,7 @@ try {
         liftPhaseCompletionTitle,
         disabledDroneStates,
         disabledDronePixels,
+        legacySolidSpriteFrames,
         echoTintBefore,
         echoTintAfter,
         levelButtons,

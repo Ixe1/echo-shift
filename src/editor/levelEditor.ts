@@ -2,6 +2,7 @@ import { levels as sourceLevels } from "../data/levels";
 import { EDITOR_DRAFT_STORAGE_KEY } from "../data/editorDraft";
 import { ANCHORED_MOTION_MODEL, markAnchoredMotionModel, normalizeLevelMotionModel, usesAnchoredMotionModel } from "../data/motionModel";
 import { backgroundForLevel, isLevelBackgroundKey, levelBackgroundKeys, levelBackgrounds } from "../game/backgrounds";
+import { normalizeSolid, normalizeSolidSprite, solidSpriteValues } from "../game/solidSprites";
 import { defaultSoundtrackKeyForLevel, isLevelSoundtrackKey, levelSoundtrackKeys, soundtracks } from "../game/soundtracks";
 import type {
   Conveyor,
@@ -20,7 +21,6 @@ import type {
   PushableCrate,
   Rect,
   Solid,
-  SolidSprite,
   TimedSwitch,
   Vec2
 } from "../game/types";
@@ -205,11 +205,6 @@ const solidPresetIdStems: Record<SolidPreset, string> = {
   wall: "wall",
   block: "block"
 };
-
-const solidSpriteValues = ["floor", "wall", "block", "warning"] as const satisfies readonly SolidSprite[];
-
-const normalizedSolidSpriteValue = (value: unknown): SolidSprite | undefined =>
-  solidSpriteValues.includes(value as SolidSprite) ? (value as SolidSprite) : undefined;
 
 const cloneLevels = (items: Level[]): Level[] => JSON.parse(JSON.stringify(items)) as Level[];
 
@@ -548,7 +543,7 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
   const explicitId = normalizedObjectIdValue(record.id);
   const id = explicitId || nextImportedObjectId(kind, usedIds);
 
-  if (kind === "solids") return { ...base, id, tone: record.tone as Solid["tone"], sprite: normalizedSolidSpriteValue(record.sprite) };
+  if (kind === "solids") return normalizeSolid({ ...base, id, tone: record.tone as Solid["tone"], sprite: normalizeSolidSprite(record.sprite) });
   if (kind === "conveyors") {
     return {
       ...base,
@@ -1034,7 +1029,7 @@ class LevelEditor {
       return;
     }
     if (field === "sprite") {
-      const sprite = normalizedSolidSpriteValue(String(value).trim());
+      const sprite = normalizeSolidSprite(String(value).trim());
       if (sprite) record.sprite = sprite;
       else delete record.sprite;
       return;
@@ -1800,7 +1795,7 @@ class LevelEditor {
     if (kind === "solids") {
       return `
         <div class="inspector-grid two">
-          ${this.selectField("Sprite", "sprite", String(record.sprite || ""), ["", "floor", "wall", "block", "warning"])}
+          ${this.selectField("Sprite", "sprite", String(record.sprite || ""), ["", ...solidSpriteValues])}
           ${this.selectField("Tone", "tone", String(record.tone || ""), ["", "steel", "glass", "warning", "dark"])}
         </div>
       `;
