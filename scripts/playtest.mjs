@@ -600,6 +600,22 @@ try {
   await page.locator("[data-exit-menu]").click();
   await page.locator("[data-play]").waitFor({ state: "visible" });
   const returnedToTitle = await page.locator("[data-play]").isVisible();
+  await page.evaluate(() => {
+    window.localStorage.setItem(
+      "echo-shift-progress-v1",
+      JSON.stringify({
+        unlocked: 2,
+        scores: {
+          "portal-primer": { levelId: "portal-primer", frames: 1234, echoes: 2, medal: "Quantum" }
+        }
+      })
+    );
+  });
+  await page.locator("[data-levels]").click();
+  await page.locator("[data-level='0']").waitFor({ state: "visible" });
+  const legacyLevelBest = await page.locator("[data-level='0'] .level-best").textContent();
+  await page.locator("[data-back]").click();
+  await page.locator("[data-play]").waitFor({ state: "visible" });
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await startAudioGate(page);
   await page.locator("[data-play]").waitFor({ state: "visible" });
@@ -864,6 +880,10 @@ try {
   assert(retryCastPixels < 24, `Expected retry to clear rewind-cast sprite pixels, got ${retryCastPixels}`);
   assert(pauseVisible, "Pause modal did not become visible");
   assert(returnedToTitle, "Title button did not return to the menu");
+  assert(
+    legacyLevelBest?.includes("Previous clear") && legacyLevelBest.includes("2E"),
+    `Expected migrated progress to render as a previous clear, got ${legacyLevelBest}`
+  );
   assert(completionTitle === "Room Clear", `Expected first room completion modal, got ${completionTitle}`);
   assert(storedProgress?.unlocked >= 2, `Expected completion to unlock level 2: ${JSON.stringify(storedProgress)}`);
   assert(

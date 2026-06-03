@@ -22,7 +22,11 @@ export class LevelSelectScene extends Phaser.Scene {
       .map((level, levelPosition) => {
         const locked = levelPosition + 1 > unlocked;
         const score = scores[level.id];
-        const best = score ? `${formatScore(score.score)} · ${formatFrames(score.frames)} · ${score.deaths}D` : "No clear";
+        const best = score
+          ? score.legacy
+            ? `Previous clear · ${formatFrames(score.frames)} · ${score.echoes}E`
+            : `${formatScore(score.score)} · ${formatFrames(score.frames)} · ${score.deaths}D`
+          : "No clear";
         return `
           <button class="level-button ${locked ? "locked" : ""}" data-level="${levelPosition}" ${locked ? "disabled" : ""}>
             <span class="level-number">${level.index + 1}</span>
