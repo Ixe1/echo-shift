@@ -5,6 +5,8 @@ import { audio } from "../game/audio";
 import { clearUi, icon, uiRoot } from "../ui/dom";
 
 export class MenuScene extends Phaser.Scene {
+  private uiCleanupRegistered = false;
+
   constructor() {
     super("MenuScene");
   }
@@ -12,6 +14,7 @@ export class MenuScene extends Phaser.Scene {
   create(): void {
     audio.playMusic("menu");
     clearUi();
+    this.registerUiCleanup();
     const root = uiRoot();
     const draftPlaytest = isDraftPlaytestActive();
     const editorButton = import.meta.env.DEV
@@ -84,4 +87,18 @@ export class MenuScene extends Phaser.Scene {
     `;
     root.querySelector("[data-back]")?.addEventListener("click", () => this.create());
   }
+
+  private registerUiCleanup(): void {
+    if (this.uiCleanupRegistered) return;
+    this.uiCleanupRegistered = true;
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanupUi);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.cleanupUi);
+  }
+
+  private cleanupUi = (): void => {
+    this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.cleanupUi);
+    this.events.off(Phaser.Scenes.Events.DESTROY, this.cleanupUi);
+    this.uiCleanupRegistered = false;
+    clearUi();
+  };
 }

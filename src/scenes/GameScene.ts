@@ -76,6 +76,7 @@ export class GameScene extends Phaser.Scene {
   private backgroundImages: Phaser.GameObjects.Image[] = [];
   private cameraTarget?: Phaser.GameObjects.Zone;
   private playerCastUntil = 0;
+  private sceneCleanupRegistered = false;
 
   constructor() {
     super("GameScene");
@@ -134,7 +135,7 @@ export class GameScene extends Phaser.Scene {
       draftPlaytest: isDraftPlaytestActive()
     });
     this.hud.toast(`${isDraftPlaytestActive() ? "Draft playtest · " : ""}${this.level.index + 1}: ${this.level.name}`);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.shutdownScene());
+    this.registerSceneCleanup();
     this.renderWorld();
   }
 
@@ -320,7 +321,17 @@ export class GameScene extends Phaser.Scene {
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   }
 
-  private shutdownScene(): void {
+  private registerSceneCleanup(): void {
+    if (this.sceneCleanupRegistered) return;
+    this.sceneCleanupRegistered = true;
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdownScene);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.shutdownScene);
+  }
+
+  private shutdownScene = (): void => {
+    this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.shutdownScene);
+    this.events.off(Phaser.Scenes.Events.DESTROY, this.shutdownScene);
+    this.sceneCleanupRegistered = false;
     this.hud?.destroy();
     this.echoTrails.clear();
     this.actorSprites.clear();
@@ -335,7 +346,7 @@ export class GameScene extends Phaser.Scene {
     this.exitSprite = undefined;
     this.backgroundImages = [];
     this.cameraTarget = undefined;
-  }
+  };
 
   private renderWorld(): void {
     const snapshot = this.simulation.snapshot();

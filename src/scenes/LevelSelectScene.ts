@@ -7,6 +7,8 @@ import { formatScore } from "../game/scoring";
 import { clearUi, icon, uiRoot } from "../ui/dom";
 
 export class LevelSelectScene extends Phaser.Scene {
+  private uiCleanupRegistered = false;
+
   constructor() {
     super("LevelSelectScene");
   }
@@ -14,6 +16,7 @@ export class LevelSelectScene extends Phaser.Scene {
   create(): void {
     audio.playMusic("menu");
     clearUi();
+    this.registerUiCleanup();
     const root = uiRoot();
     const draftPlaytest = isDraftPlaytestActive();
     const unlocked = levels.length;
@@ -67,4 +70,18 @@ export class LevelSelectScene extends Phaser.Scene {
       });
     });
   }
+
+  private registerUiCleanup(): void {
+    if (this.uiCleanupRegistered) return;
+    this.uiCleanupRegistered = true;
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanupUi);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.cleanupUi);
+  }
+
+  private cleanupUi = (): void => {
+    this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.cleanupUi);
+    this.events.off(Phaser.Scenes.Events.DESTROY, this.cleanupUi);
+    this.uiCleanupRegistered = false;
+    clearUi();
+  };
 }
