@@ -10,7 +10,7 @@ import { recordLevelScore } from "../game/progress";
 import { legacySolidSprite } from "../game/solidSprites";
 import { soundtrackForLevel } from "../game/soundtracks";
 import { RoomSimulation } from "../game/state";
-import type { ActorBody, InputFrame, Level, LevelScore, Rect, SimulationSnapshot, Solid } from "../game/types";
+import type { ActorBody, InputFrame, Level, LevelScore, MovingPlatform, Rect, SimulationSnapshot, Solid } from "../game/types";
 import { Hud } from "../ui/hud";
 
 const STEP_MS = 1000 / 60;
@@ -448,7 +448,7 @@ export class GameScene extends Phaser.Scene {
   private drawPlatforms(tick: number): void {
     for (const platform of this.level.platforms || []) {
       const rect = platformRectAt(platform, tick);
-      this.syncTileAsset(`platform:${platform.id}`, OBJECT_FRAME.platform, rect, 3, 0.96, 0.44, 0, platform);
+      this.syncPlatformAsset(platform, rect);
       this.world.lineStyle(1, 0xffe35a, 0.18);
       if (platform.axis === "y") {
         this.world.lineBetween(platform.x + platform.w / 2, platform.y, platform.x + platform.w / 2, platform.y + platform.distance);
@@ -929,6 +929,29 @@ export class GameScene extends Phaser.Scene {
       .setFrame(frame)
       .setDisplaySize(width, height);
     this.activeObjectAssetIds.add(id);
+  }
+
+  private syncPlatformAsset(platform: MovingPlatform, rect: Rect): void {
+    if (!this.textures.exists(OBJECT_ATLAS_KEY) || rect.w <= 0 || rect.h <= 0) return;
+    const id = `platform:${platform.id}`;
+    const width = Math.max(rect.w * 1.12, rect.w + 28);
+    const height = Math.max(50, rect.h * 3.2);
+    const contentTopRatio = 64 / 256;
+    const asset = this.assetFor(id, "image", OBJECT_FRAME.platform) as Phaser.GameObjects.Image;
+    asset
+      .setVisible(true)
+      .setDepth(3)
+      .setAlpha(0.98)
+      .setOrigin(0.5, 0)
+      .setPosition(rect.x + rect.w / 2, rect.y - height * contentTopRatio)
+      .setRotation(0)
+      .setFrame(OBJECT_FRAME.platform)
+      .setDisplaySize(width, height);
+    this.activeObjectAssetIds.add(id);
+
+    const tileScale = 0.44;
+    this.tileAssetPhases.push(`${id}:${Math.round(platform.x / tileScale)},${Math.round(platform.y / tileScale)}`);
+    this.tileAssetOrigins.push(`${id}:${Math.round(platform.x)}:${Math.round(platform.y)}`);
   }
 
   private syncLaserAsset(id: string, frame: number, rect: Rect, depth: number, alpha: number): void {
