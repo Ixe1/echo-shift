@@ -1,6 +1,6 @@
 import type { Solid, SolidSprite } from "./types";
 
-export const solidSpriteValues = ["floor", "wall", "block", "warning"] as const satisfies readonly SolidSprite[];
+export const solidSpriteValues = ["auto", "floor", "wall", "block", "warning"] as const satisfies readonly SolidSprite[];
 
 export const normalizeSolidSprite = (value: unknown): SolidSprite | undefined =>
   solidSpriteValues.includes(value as SolidSprite) ? (value as SolidSprite) : undefined;
@@ -14,5 +14,5 @@ export const legacySolidSprite = (solid: Pick<Solid, "id">): SolidSprite | undef
 
 export const normalizeSolid = (solid: Solid): Solid => ({
   ...solid,
-  sprite: solid.sprite || legacySolidSprite(solid)
+  sprite: solid.sprite === undefined ? legacySolidSprite(solid) : solid.sprite
 });

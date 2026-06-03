@@ -1029,9 +1029,7 @@ class LevelEditor {
       return;
     }
     if (field === "sprite") {
-      const sprite = normalizeSolidSprite(String(value).trim());
-      if (sprite) record.sprite = sprite;
-      else delete record.sprite;
+      record.sprite = normalizeSolidSprite(String(value).trim()) || "auto";
       return;
     }
     if (field === "axis") {
@@ -1795,7 +1793,11 @@ class LevelEditor {
     if (kind === "solids") {
       return `
         <div class="inspector-grid two">
-          ${this.selectField("Sprite", "sprite", String(record.sprite || ""), ["", ...solidSpriteValues])}
+          ${this.selectField("Sprite", "sprite", String(record.sprite || ""), [
+            { value: "", label: "legacy/auto" },
+            { value: "auto", label: "auto" },
+            ...solidSpriteValues.filter((value) => value !== "auto")
+          ])}
           ${this.selectField("Tone", "tone", String(record.tone || ""), ["", "steel", "glass", "warning", "dark"])}
         </div>
       `;

@@ -627,6 +627,12 @@ try {
   const blockPresetExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
   const blockPresetSprite = blockPresetExport.solids.find((solid) => solid.id === blockPresetId)?.sprite;
   await page.locator("[data-delete-object]").click();
+  await dragToolToWorld(page, "floor", { x: 1290, y: 420 });
+  const clearedSpritePresetId = await page.locator("[data-object-field='id']").inputValue();
+  await page.locator("[data-object-field='sprite']").selectOption("");
+  const clearedSpriteExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
+  const clearedSpriteValue = clearedSpriteExport.solids.find((solid) => solid.id === clearedSpritePresetId)?.sprite;
+  await page.locator("[data-delete-object]").click();
 
   await dragToolToWorld(page, "plates", { x: 300, y: 500 });
   const surfacePlateY = await objectNumber(page, "y");
@@ -1173,6 +1179,7 @@ try {
   assert(blockPresetId.startsWith("block-"), `Expected block preset id to use block stem, got ${blockPresetId}`);
   assert(blockPresetWidth === 80 && blockPresetHeight === 80, `Expected block preset 80x80, got ${blockPresetWidth}x${blockPresetHeight}`);
   assert(blockPresetSprite === "block", `Expected block preset to export sprite block, got ${blockPresetSprite}`);
+  assert(clearedSpriteValue === "auto", `Expected cleared solid sprite to export auto sentinel, got ${clearedSpriteValue}`);
   assert(surfacePlateBottom === 500, `Expected dropped plate bottom to snap flush to floor y=500, got ${surfacePlateY}+h=${surfacePlateBottom}`);
   assert(duplicatedPlateBottom === 500, `Expected duplicated plate bottom to stay flush to floor y=500, got ${duplicatedPlateY}+h=${duplicatedPlateBottom}`);
   assert(surfaceLaserBottom === 500, `Expected dropped laser bottom to snap flush to floor y=500, got ${surfaceLaserY}+h=${surfaceLaserBottom}`);
