@@ -161,6 +161,155 @@ const runRoute = (simulation, route) => {
   }
 };
 
+const settlePromises = async () => {
+  await Promise.resolve();
+  await Promise.resolve();
+};
+
+const restoreGlobal = (key, value) => {
+  if (value === undefined) delete globalThis[key];
+  else Object.defineProperty(globalThis, key, { configurable: true, value });
+};
+
+const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
+  const previousWindow = globalThis.window;
+  const previousDocument = globalThis.document;
+  const previousAudio = globalThis.Audio;
+  const previousRequestAnimationFrame = globalThis.requestAnimationFrame;
+  const listeners = new Map();
+  const mediaElements = [];
+  const startedTones = [];
+  let mediaUnlocked = false;
+
+  const fakeParam = () => ({
+    value: 0,
+    setValueAtTime(value) {
+      this.value = value;
+    },
+    exponentialRampToValueAtTime(value) {
+      this.value = value;
+    }
+  });
+  class FakeAudioContext {
+    constructor() {
+      this.currentTime = 0;
+      this.destination = {};
+      this.state = "suspended";
+    }
+
+    resume() {
+      this.state = "running";
+      return Promise.resolve();
+    }
+
+    createGain() {
+      return { gain: fakeParam(), connect() {} };
+    }
+
+    createOscillator() {
+      const oscillator = {
+        type: "sine",
+        frequency: fakeParam(),
+        connect() {},
+        start() {
+          startedTones.push(oscillator);
+        },
+        stop() {}
+      };
+      return oscillator;
+    }
+
+    createBiquadFilter() {
+      return { type: "lowpass", frequency: fakeParam(), connect() {} };
+    }
+  }
+  class FakeAudioElement {
+    constructor(src) {
+      this.src = src;
+      this.currentTime = 0;
+      this.loop = false;
+      this.preload = "";
+      this.volume = 1;
+      this.playCalls = 0;
+      this.playing = false;
+      mediaElements.push(this);
+    }
+
+    load() {}
+
+    play() {
+      this.playCalls += 1;
+      if (!mediaUnlocked) return Promise.reject(new Error("blocked by autoplay policy"));
+      this.playing = true;
+      return Promise.resolve();
+    }
+
+    pause() {
+      this.playing = false;
+    }
+  }
+  const fakeWindow = {
+    AudioContext: FakeAudioContext,
+    addEventListener(type, handler) {
+      const handlers = listeners.get(type) || [];
+      handlers.push(handler);
+      listeners.set(type, handlers);
+    },
+    removeEventListener(type, handler) {
+      const handlers = listeners.get(type) || [];
+      listeners.set(
+        type,
+        handlers.filter((candidate) => candidate !== handler)
+      );
+    }
+  };
+  const dispatchUnlock = (type) => {
+    mediaUnlocked = true;
+    for (const handler of listeners.get(type) || []) {
+      handler({ type, key: "Enter" });
+    }
+  };
+
+  Object.defineProperty(globalThis, "window", { configurable: true, value: fakeWindow });
+  Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { dataset: {} } } });
+  Object.defineProperty(globalThis, "Audio", { configurable: true, value: FakeAudioElement });
+  Object.defineProperty(globalThis, "requestAnimationFrame", { configurable: true, value: () => 0 });
+
+  try {
+    const audio = new SynthAudio();
+    audio.playMusic("menu");
+    await settlePromises();
+    const menu = mediaElements.find((element) => element.src.includes("Main Menu"));
+    assert(menu?.playCalls === 1, `Expected initial blocked menu play attempt, got ${menu?.playCalls}`);
+    assert(document.documentElement.dataset.echoShiftAudioState === "blocked", "Expected blocked music state before input unlock");
+
+    dispatchUnlock("keydown");
+    await settlePromises();
+    assert(menu.playCalls >= 2 && menu.playing, "Expected keydown unlock to retry and start menu music");
+    assert(document.documentElement.dataset.echoShiftAudioState === "playing", "Expected playing music state after input unlock");
+
+    audio.play("jump");
+    await settlePromises();
+    assert(startedTones.length >= 1, "Expected SFX tone to start after audio context unlock");
+
+    audio.unlock();
+    assert(
+      mediaElements.length >= Object.keys(soundtracks).length,
+      `Expected unlock to preload soundtrack elements, got ${mediaElements.length}`
+    );
+
+    audio.playMusic("level-1");
+    await settlePromises();
+    const levelOne = mediaElements.find((element) => element.src.includes("Level 1"));
+    assert(levelOne?.playing, "Expected level music to play after the session audio gate");
+  } finally {
+    restoreGlobal("window", previousWindow);
+    restoreGlobal("document", previousDocument);
+    restoreGlobal("Audio", previousAudio);
+    restoreGlobal("requestAnimationFrame", previousRequestAnimationFrame);
+  }
+};
+
 const server = await createServer({
   appType: "custom",
   server: { middlewareMode: true },
@@ -175,6 +324,7 @@ try {
   const { isBetterLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
   const { soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
   const { backgroundForLevel, levelBackgrounds } = await server.ssrLoadModule("/src/game/backgrounds.ts");
+  const { SynthAudio } = await server.ssrLoadModule("/src/game/audio.ts");
 
   assert(levels.length === 10, `Expected 10 handcrafted levels, found ${levels.length}`);
   assert(levels.some((level) => (level.plates || []).length > 0), "Expected at least one pressure-plate level");
@@ -198,6 +348,8 @@ try {
   assert(soundtrackForLevel({ ...levels[5], soundtrackKey: "missing-track" }, 5).key === "level-6", "Expected unknown soundtrack key to fall back to level slot");
   assert(soundtrackForLevel({ ...levels[5], soundtrackKey: "menu" }, 5).key === "level-6", "Expected menu soundtrack key to be ignored for levels");
   assert(soundtrackForLevel({ ...levels[0], index: 9, soundtrackKey: undefined }, 1).key === "level-2", "Expected auto soundtrack fallback to use runtime level slot, not authored index");
+
+  await verifyAudioUnlockRetry(SynthAudio, soundtracks);
 
   const previousWindow = globalThis.window;
   Object.defineProperty(globalThis, "window", {
@@ -872,8 +1024,9 @@ try {
           "death-freeze",
           "drone-disable-vaporization",
           "fall-death-freeze",
-          "deterministic-replay",
-          "soundtrack-manifest",
+    "deterministic-replay",
+    "audio-unlock-retry",
+    "soundtrack-manifest",
           "draft-motion-migration",
           "side-scrolling-bounds",
           "closed-gate-top-contract",

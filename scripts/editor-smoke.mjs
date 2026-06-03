@@ -50,6 +50,11 @@ const collectConsole = (page) => {
   page.on("pageerror", (error) => messages.push({ type: "pageerror", text: error.message }));
 };
 
+const startAudioGate = async (page) => {
+  await page.locator("[data-start-game]").waitFor({ state: "visible" });
+  await page.locator("[data-start-game]").click();
+};
+
 const dispatchChange = async (locator) => {
   await locator.evaluate((element) => {
     element.dispatchEvent(new Event("change", { bubbles: true }));
@@ -153,6 +158,7 @@ try {
   const page = await desktop.newPage();
   collectConsole(page);
   await page.goto(`${url}?editor=0`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(page);
   await page.locator("[data-play]").waitFor({ state: "visible" });
   const inactiveEditorVisible = await page.locator("[data-level-editor]").isVisible();
   await page.locator("[data-editor]").click();
@@ -226,6 +232,7 @@ try {
   await draftPlaytestPage.locator("[data-level-field='soundtrackKey']").selectOption("level-6");
   await draftPlaytestPage.locator("[data-playtest-draft]").click();
   await draftPlaytestPage.waitForURL(/playtestDraft=1/);
+  await startAudioGate(draftPlaytestPage);
   await draftPlaytestPage.locator("[data-level]").waitFor({ state: "visible" });
   const draftPlaytestUrl = draftPlaytestPage.url();
   const draftPlaytestHudLevel = await draftPlaytestPage.locator("[data-level]").textContent();
@@ -256,6 +263,7 @@ try {
     );
   });
   await corruptDraftPlaytestPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(corruptDraftPlaytestPage);
   await corruptDraftPlaytestPage.locator("[data-play]").waitFor({ state: "visible" });
   const corruptDraftBootedMenu = await corruptDraftPlaytestPage.locator("[data-play]").isVisible();
   const corruptDraftHudCount = await corruptDraftPlaytestPage.locator("[data-level]").count();
@@ -284,6 +292,7 @@ try {
     );
   });
   await corruptDraftPlaytestPage.goto(`${url}?playtestDraft=1&level=1`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(corruptDraftPlaytestPage);
   await corruptDraftPlaytestPage.locator("[data-play]").waitFor({ state: "visible" });
   const mixedCorruptDraftBootedMenu = await corruptDraftPlaytestPage.locator("[data-play]").isVisible();
   const mixedCorruptDraftHudCount = await corruptDraftPlaytestPage.locator("[data-level]").count();
@@ -311,6 +320,7 @@ try {
     );
   });
   await corruptDraftPlaytestPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(corruptDraftPlaytestPage);
   await corruptDraftPlaytestPage.locator("[data-play]").waitFor({ state: "visible" });
   const semanticCorruptDraftBootedMenu = await corruptDraftPlaytestPage.locator("[data-play]").isVisible();
   const semanticCorruptDraftHudCount = await corruptDraftPlaytestPage.locator("[data-level]").count();
@@ -337,6 +347,7 @@ try {
     );
   });
   await corruptDraftPlaytestPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(corruptDraftPlaytestPage);
   await corruptDraftPlaytestPage.locator("[data-play]").waitFor({ state: "visible" });
   const unknownSoundtrackDraftBootedMenu = await corruptDraftPlaytestPage.locator("[data-play]").isVisible();
   const unknownSoundtrackDraftHudCount = await corruptDraftPlaytestPage.locator("[data-level]").count();
@@ -348,6 +359,7 @@ try {
     window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(parsed));
   });
   await corruptDraftPlaytestPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(corruptDraftPlaytestPage);
   await corruptDraftPlaytestPage.locator("[data-play]").waitFor({ state: "visible" });
   const menuSoundtrackDraftBootedMenu = await corruptDraftPlaytestPage.locator("[data-play]").isVisible();
   const menuSoundtrackDraftHudCount = await corruptDraftPlaytestPage.locator("[data-level]").count();
@@ -360,6 +372,7 @@ try {
     window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(parsed));
   });
   await corruptDraftPlaytestPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(corruptDraftPlaytestPage);
   await corruptDraftPlaytestPage.locator("[data-play]").waitFor({ state: "visible" });
   const unknownBackgroundDraftBootedMenu = await corruptDraftPlaytestPage.locator("[data-play]").isVisible();
   const unknownBackgroundDraftHudCount = await corruptDraftPlaytestPage.locator("[data-level]").count();
@@ -392,6 +405,7 @@ try {
     );
   });
   await mismatchedDraftSelectPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(mismatchedDraftSelectPage);
   await mismatchedDraftSelectPage.locator(".hud [data-level]").waitFor({ state: "visible" });
   await mismatchedDraftSelectPage.locator("[data-menu]").click();
   await mismatchedDraftSelectPage.locator("[data-modal] [data-levels]").click();
@@ -401,6 +415,7 @@ try {
   const mismatchedDraftSelectedMusicKey = await mismatchedDraftSelectPage.evaluate(() => document.documentElement.dataset.echoShiftMusicKey);
   const mismatchedDraftSelectedUrl = mismatchedDraftSelectPage.url();
   await mismatchedDraftSelectPage.reload({ waitUntil: "domcontentloaded" });
+  await startAudioGate(mismatchedDraftSelectPage);
   await mismatchedDraftSelectPage.locator(".hud [data-level]").waitFor({ state: "visible" });
   const mismatchedDraftReloadedLevel = await mismatchedDraftSelectPage.locator(".hud [data-level]").textContent();
   await mismatchedDraftSelectPage.locator("[data-menu]").click();
@@ -419,6 +434,7 @@ try {
   const mismatchedDraftTitleEditorLevel = await mismatchedDraftSelectPage.locator("[data-level-select] option:checked").textContent();
   await mismatchedDraftSelectPage.locator("[data-playtest-draft]").click();
   await mismatchedDraftSelectPage.waitForURL(/playtestDraft=1/);
+  await startAudioGate(mismatchedDraftSelectPage);
   await mismatchedDraftSelectPage.locator(".hud [data-level]").waitFor({ state: "visible" });
   await mismatchedDraftSelectPage.locator("[data-menu]").click();
   await mismatchedDraftSelectPage.locator("[data-modal] [data-editor]").click();
@@ -456,6 +472,7 @@ try {
     );
   });
   await mismatchedDraftCompletionPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(mismatchedDraftCompletionPage);
   await mismatchedDraftCompletionPage.locator("[data-modal].show h1").waitFor({ state: "visible" });
   const mismatchedDraftFirstCompleteTitle = await mismatchedDraftCompletionPage.locator("[data-modal].show h1").textContent();
   const mismatchedDraftFirstNextVisible = await mismatchedDraftCompletionPage.locator("[data-modal] [data-next]").isVisible();

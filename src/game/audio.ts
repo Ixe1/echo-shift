@@ -11,30 +11,55 @@ type ToneName =
   | "portal"
   | "select";
 
+type AudioContextConstructor = new () => AudioContext;
+
+const unlockEvents = ["pointerdown", "keydown", "touchstart"] as const;
+
 export class SynthAudio {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
   private music: HTMLAudioElement | null = null;
   private musicKey: SoundtrackKey | null = null;
+  private musicCache = new Map<SoundtrackKey, HTMLAudioElement>();
   private fadeToken = 0;
   private musicMuted = false;
+  private unlockListenersInstalled = false;
   private readonly musicVolume = 0.28;
 
+  unlock(): void {
+    this.resume();
+    this.preloadSoundtracks();
+  }
+
   resume(): void {
-    if (!this.context) {
-      const context = new AudioContext();
-      this.context = context;
-      this.master = context.createGain();
-      this.master.gain.value = 0.18;
-      this.master.connect(context.destination);
+    this.installUnlockListeners();
+    const context = this.ensureContext();
+    if (context) {
+      void context
+        .resume()
+        .then(() => this.markAudioState(context.state))
+        .catch(() => this.markAudioState("blocked"));
     }
-    void this.context.resume();
-    void this.music?.play().catch(() => undefined);
+    this.retryMusic();
   }
 
   play(name: ToneName): void {
     this.resume();
     if (!this.context || !this.master) return;
+    if (this.context.state !== "running") {
+      void this.context
+        .resume()
+        .then(() => {
+          if (this.context?.state === "running") this.playTone(name);
+        })
+        .catch(() => this.markAudioState("blocked"));
+      return;
+    }
+    this.playTone(name);
+  }
+
+  private playTone(name: ToneName): void {
+    if (!this.context || !this.master || this.context.state !== "running") return;
     const context = this.context;
     const now = context.currentTime;
     const gain = context.createGain();
@@ -77,27 +102,39 @@ export class SynthAudio {
     this.playMusic("menu");
   }
 
+  preloadSoundtracks(): void {
+    for (const key of Object.keys(soundtracks) as SoundtrackKey[]) {
+      this.musicElementFor(key);
+    }
+  }
+
   playMusic(key: SoundtrackKey, options: { restart?: boolean } = {}): void {
-    if (this.context) void this.context.resume();
+    this.installUnlockListeners();
+    if (this.context) {
+      void this.context
+        .resume()
+        .then(() => this.markAudioState(this.context?.state || "running"))
+        .catch(() => this.markAudioState("blocked"));
+    }
     this.markMusicKey(key);
     if (this.music && this.musicKey === key && !options.restart) {
       this.applyMusicVolume(this.music);
-      void this.music.play();
+      this.retryMusic();
       return;
     }
 
-    const previous = this.music;
-    const next = new Audio(soundtracks[key].src);
-    next.loop = true;
-    next.preload = "auto";
+    const next = this.musicElementFor(key);
+    const previous = this.music && this.music !== next ? this.music : null;
+    if (options.restart) {
+      next.pause();
+      next.currentTime = 0;
+    }
     next.volume = this.musicMuted ? 0 : 0;
     this.music = next;
     this.musicKey = key;
 
     const token = ++this.fadeToken;
-    void next.play().catch(() => {
-      if (this.music === next) this.applyMusicVolume(next);
-    });
+    this.playMusicElement(next);
 
     this.fadeMusic(previous, next, token);
   }
@@ -112,11 +149,77 @@ export class SynthAudio {
     this.music?.pause();
     this.music = null;
     this.musicKey = null;
-    if (import.meta.env.DEV) delete document.documentElement.dataset.echoShiftMusicKey;
+    if (import.meta.env.DEV && typeof document !== "undefined") delete document.documentElement.dataset.echoShiftMusicKey;
+    this.markAudioState("stopped");
+  }
+
+  private handleUnlockGesture = (): void => {
+    this.resume();
+  };
+
+  private installUnlockListeners(): void {
+    if (this.unlockListenersInstalled || typeof window === "undefined") return;
+    this.unlockListenersInstalled = true;
+    const options = { capture: true, passive: true };
+    for (const eventName of unlockEvents) {
+      window.addEventListener(eventName, this.handleUnlockGesture, options);
+    }
+  }
+
+  private ensureContext(): AudioContext | null {
+    if (this.context) return this.context;
+    if (typeof window === "undefined") return null;
+    const AudioContextClass =
+      window.AudioContext || (window as Window & { webkitAudioContext?: AudioContextConstructor }).webkitAudioContext;
+    if (!AudioContextClass) return null;
+
+    const context = new AudioContextClass();
+    this.context = context;
+    this.master = context.createGain();
+    this.master.gain.value = 0.18;
+    this.master.connect(context.destination);
+    this.markAudioState(context.state);
+    return context;
+  }
+
+  private retryMusic(): void {
+    if (this.music) this.playMusicElement(this.music);
+  }
+
+  private playMusicElement(element: HTMLAudioElement): void {
+    void element
+      .play()
+      .then(() => {
+        if (this.music === element) this.markAudioState("playing");
+      })
+      .catch(() => {
+        if (this.music === element) {
+          this.applyMusicVolume(element);
+          this.markAudioState("blocked");
+        }
+      });
+  }
+
+  private musicElementFor(key: SoundtrackKey): HTMLAudioElement {
+    const cached = this.musicCache.get(key);
+    if (cached) return cached;
+
+    const element = new Audio(soundtracks[key].src);
+    element.loop = true;
+    element.preload = "auto";
+    element.load();
+    this.musicCache.set(key, element);
+    return element;
   }
 
   private markMusicKey(key: SoundtrackKey): void {
-    if (import.meta.env.DEV) document.documentElement.dataset.echoShiftMusicKey = key;
+    if (import.meta.env.DEV && typeof document !== "undefined") document.documentElement.dataset.echoShiftMusicKey = key;
+  }
+
+  private markAudioState(state: string): void {
+    if (import.meta.env.DEV && typeof document !== "undefined") {
+      document.documentElement.dataset.echoShiftAudioState = state;
+    }
   }
 
   private applyMusicVolume(element: HTMLAudioElement): void {
@@ -130,7 +233,7 @@ export class SynthAudio {
 
     const step = (now: number) => {
       if (token !== this.fadeToken) return;
-      const progress = Math.min(1, (now - started) / duration);
+      const progress = Math.min(1, Math.max(0, (now - started) / duration));
       const eased = 1 - Math.pow(1 - progress, 3);
       next.volume = this.musicMuted ? 0 : this.musicVolume * eased;
       if (previous) previous.volume = this.musicMuted ? 0 : previousStart * (1 - eased);

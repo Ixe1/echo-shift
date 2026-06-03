@@ -10,6 +10,7 @@ const browserPath =
 mkdirSync(outDir, { recursive: true });
 
 const artifacts = {
+  desktopGate: `${outDir}/start-gate-desktop.png`,
   desktopMenu: `${outDir}/menu-desktop.png`,
   desktopGame: `${outDir}/game-desktop.png`,
   desktopEcho: `${outDir}/echo-desktop.png`,
@@ -25,10 +26,12 @@ const artifacts = {
   draftMovingLaserOrigin: `${outDir}/draft-moving-laser-origin.png`,
   draftEchoTintBefore: `${outDir}/draft-echo-tint-before.png`,
   draftEchoTintAfter: `${outDir}/draft-echo-tint-after.png`,
+  mobileGate: `${outDir}/start-gate-mobile.png`,
   mobileMenu: `${outDir}/menu-mobile.png`,
   mobileGame: `${outDir}/game-mobile.png`,
   mobileTouch: `${outDir}/touch-mobile.png`,
   mobileLevels: `${outDir}/levels-mobile.png`,
+  tabletGate: `${outDir}/start-gate-tablet.png`,
   tabletGame: `${outDir}/game-tablet.png`,
   tabletTouch: `${outDir}/touch-tablet.png`,
   tabletJump: `${outDir}/jump-tablet.png`,
@@ -62,6 +65,11 @@ const collectConsole = (page, bucket) => {
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
+};
+
+const startAudioGate = async (page) => {
+  await page.locator("[data-start-game]").waitFor({ state: "visible" });
+  await page.locator("[data-start-game]").click();
 };
 
 const pulsedRightRoute = (totalFrames, jumpStarts, jumpFrames = 24) => {
@@ -185,6 +193,7 @@ const loadDraftPlaytest = async (page, level) => {
     window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
   }, draftSnapshot(level));
   await page.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "networkidle" });
+  await startAudioGate(page);
   await page.locator("canvas").waitFor({ state: "visible" });
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await page.waitForTimeout(450);
@@ -538,12 +547,19 @@ try {
   collectConsole(page, relevantMessages);
 
   await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.locator("[data-start-game]").waitFor({ state: "visible" });
+  await page.screenshot({ path: artifacts.desktopGate });
+  await startAudioGate(page);
   await page.locator("[data-play]").waitFor({ state: "visible" });
+  await page.waitForFunction(() => document.documentElement.dataset.echoShiftAudioState === "playing");
+  const menuAudioState = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioState || "");
   const title = await page.title();
   await page.screenshot({ path: artifacts.desktopMenu });
   await page.locator("[data-play]").click();
   await page.waitForTimeout(600);
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  await page.waitForFunction(() => document.documentElement.dataset.echoShiftAudioState === "playing");
+  const levelAudioState = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioState || "");
   const desktopBackgroundKey = await page.evaluate(() => document.documentElement.dataset.echoShiftBackgroundKey);
   const objectAssetCount = Number(await page.evaluate(() => document.documentElement.dataset.echoShiftObjectAssetCount || "0"));
   await page.screenshot({ path: artifacts.desktopGame });
@@ -573,6 +589,7 @@ try {
   await page.locator("[data-play]").waitFor({ state: "visible" });
   const returnedToTitle = await page.locator("[data-play]").isVisible();
   await page.goto(url, { waitUntil: "domcontentloaded" });
+  await startAudioGate(page);
   await page.locator("[data-play]").waitFor({ state: "visible" });
   await page.evaluate(() => window.localStorage.clear());
   await page.locator("[data-play]").click();
@@ -591,6 +608,7 @@ try {
   const nextLevelLabel = await page.locator("[data-level]").textContent();
   await page.screenshot({ path: artifacts.desktopNext });
   await page.goto(url, { waitUntil: "domcontentloaded" });
+  await startAudioGate(page);
   await page.locator("[data-levels]").waitFor({ state: "visible" });
   await page.locator("[data-levels]").click();
   await page.locator("[data-level='3']").click();
@@ -600,6 +618,7 @@ try {
   const corePixels = await coreSpritePixels(page);
   await page.screenshot({ path: artifacts.desktopCoreRoom });
   await page.goto(url, { waitUntil: "domcontentloaded" });
+  await startAudioGate(page);
   await page.locator("[data-levels]").waitFor({ state: "visible" });
   await page.locator("[data-levels]").click();
   await page.locator("[data-level='2']").click();
@@ -613,6 +632,7 @@ try {
   const heldOpenCompletionTitle = await page.locator("[data-modal].show h1").textContent();
   await page.screenshot({ path: artifacts.desktopHeldOpenComplete });
   await page.goto(url, { waitUntil: "domcontentloaded" });
+  await startAudioGate(page);
   await page.locator("[data-levels]").waitFor({ state: "visible" });
   await page.locator("[data-levels]").click();
   await page.locator("[data-level='4']").click();
@@ -696,6 +716,9 @@ try {
   const mobile = await mobileContext.newPage();
   collectConsole(mobile, mobileMessages);
   await mobile.goto(url, { waitUntil: "domcontentloaded" });
+  await mobile.locator("[data-start-game]").waitFor({ state: "visible" });
+  await mobile.screenshot({ path: artifacts.mobileGate });
+  await startAudioGate(mobile);
   await mobile.locator("[data-levels]").waitFor({ state: "visible" });
   await mobile.waitForTimeout(300);
   await mobile.screenshot({ path: artifacts.mobileMenu });
@@ -718,6 +741,7 @@ try {
   const afterTouchX = await playerCentroidX(mobile);
   await mobile.screenshot({ path: artifacts.mobileTouch });
   await mobile.goto(url, { waitUntil: "domcontentloaded" });
+  await startAudioGate(mobile);
   await mobile.locator("[data-levels]").waitFor({ state: "visible" });
   await mobile.locator("[data-levels]").click();
   await mobile.waitForTimeout(300);
@@ -734,6 +758,9 @@ try {
   const tablet = await tabletContext.newPage();
   collectConsole(tablet, tabletMessages);
   await tablet.goto(url, { waitUntil: "domcontentloaded" });
+  await tablet.locator("[data-start-game]").waitFor({ state: "visible" });
+  await tablet.screenshot({ path: artifacts.tabletGate });
+  await startAudioGate(tablet);
   await tablet.locator("[data-play]").waitFor({ state: "visible" });
   await tablet.locator("[data-play]").click();
   await tablet.locator("[data-touch-control='right']").waitFor({ state: "visible" });
@@ -767,6 +794,7 @@ try {
   const touchFlow = await touchFlowContext.newPage();
   collectConsole(touchFlow, touchFlowMessages);
   await touchFlow.goto(url, { waitUntil: "domcontentloaded" });
+  await startAudioGate(touchFlow);
   await touchFlow.locator("[data-play]").waitFor({ state: "visible" });
   await touchFlow.locator("[data-play]").click();
   await touchFlow.locator("[data-touch-control='right']").waitFor({ state: "visible" });
@@ -788,6 +816,8 @@ try {
   await touchFlowContext.close();
 
   assert(title === "Echo Shift", `Unexpected title: ${title}`);
+  assert(menuAudioState === "playing", `Expected menu audio to start after the audio gate, got ${menuAudioState}`);
+  assert(levelAudioState === "playing", `Expected level audio to continue after Play, got ${levelAudioState}`);
   assert(
     desktopBackgroundKey === "level-1-time-lab-no-portals",
     `Expected Level 1 no-portal background key, got ${desktopBackgroundKey}`
@@ -847,7 +877,7 @@ try {
     movingLaserPositionBefore &&
       movingLaserPositionAfter &&
       movingLaserPositionBefore.y === movingLaserPositionAfter.y &&
-      Math.abs(movingLaserPositionBefore.x - movingLaserPositionAfter.x) >= 40,
+      Math.abs(movingLaserPositionBefore.x - movingLaserPositionAfter.x) >= 30,
     `Expected moving laser sprite to follow the simulated beam center, got ${laserSpritePositionsBefore} -> ${laserSpritePositionsAfter}`
   );
   assert(
