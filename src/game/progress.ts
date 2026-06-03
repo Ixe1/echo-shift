@@ -30,7 +30,8 @@ const levelScoreLike = (value: unknown): value is LevelScore =>
   finiteNumber(value.echoes) &&
   finiteNumber(value.deaths) &&
   finiteNumber(value.cores) &&
-  finiteNumber(value.timeBonus);
+  finiteNumber(value.timeBonus) &&
+  (value.legacy === undefined || typeof value.legacy === "boolean");
 
 const legacyLevelScoreLike = (value: unknown): value is { levelId: string; frames: number; echoes: number; medal: string } =>
   isRecord(value) &&
@@ -48,7 +49,8 @@ const normalizeLevelScore = (key: string, value: unknown): LevelScore | null => 
       echoes: nonNegativeInteger(value.echoes),
       deaths: nonNegativeInteger(value.deaths),
       cores: nonNegativeInteger(value.cores),
-      timeBonus: nonNegativeInteger(value.timeBonus)
+      timeBonus: nonNegativeInteger(value.timeBonus),
+      ...(value.legacy === true ? { legacy: true } : {})
     };
   }
   if (!legacyLevelScoreLike(value)) return null;
@@ -59,7 +61,8 @@ const normalizeLevelScore = (key: string, value: unknown): LevelScore | null => 
     echoes: nonNegativeInteger(value.echoes),
     deaths: 0,
     cores: 0,
-    timeBonus: 0
+    timeBonus: 0,
+    legacy: true
   };
 };
 
@@ -101,6 +104,8 @@ export const getBestScores = (): Record<string, LevelScore> => readProgress().sc
 
 export const isBetterLevelScore = (score: LevelScore, previous: LevelScore | undefined): boolean => {
   if (!previous) return true;
+  if (previous.legacy && !score.legacy) return true;
+  if (score.legacy && !previous.legacy) return false;
   if (score.score !== previous.score) return score.score > previous.score;
   if (score.deaths !== previous.deaths) return score.deaths < previous.deaths;
   if (score.echoes !== previous.echoes) return score.echoes < previous.echoes;

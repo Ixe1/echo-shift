@@ -185,6 +185,7 @@ export type LevelScore = {
   deaths: number;
   cores: number;
   timeBonus: number;
+  legacy?: boolean;
 };
 
 export type CorePickupEvent = Vec2 & {
@@ -197,6 +198,7 @@ export type StepEvents = {
   landed: boolean;
   switched: boolean;
   core: CorePickupEvent | null;
+  cores: CorePickupEvent[];
   died: boolean;
   livesExhausted: boolean;
   won: boolean;

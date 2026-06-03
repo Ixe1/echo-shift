@@ -203,10 +203,12 @@ export class GameScene extends Phaser.Scene {
     if (events.jumped || events.launched) audio.play("jump");
     if (events.landed) audio.play("land");
     if (events.switched) audio.play("switch");
-    if (events.core) {
+    if (events.cores.length > 0) {
       audio.play("core");
-      this.spawnBurst(events.core, 0xffe35a);
-      this.spawnEffectFrame(events.core, 2, 0.42);
+      for (const core of events.cores) {
+        this.spawnBurst(core, 0xffe35a);
+        this.spawnEffectFrame(core, 2, 0.42);
+      }
     }
     if (events.died) {
       audio.play("death");

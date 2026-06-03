@@ -2,6 +2,7 @@ import { rectsOverlap } from "./geometry";
 import { oscillatingOffsetAt } from "./motion";
 import type {
   ActorBody,
+  CorePickupEvent,
   EchoSensor,
   Core,
   Door,
@@ -39,7 +40,7 @@ export const updateObjects = (
   actors: ActorBody[],
   previous: ObjectState,
   tick = 0
-): { state: ObjectState; switched: boolean; core: { id: string; x: number; y: number } | null } => {
+): { state: ObjectState; switched: boolean; core: CorePickupEvent | null; cores: CorePickupEvent[] } => {
   const crateRects = [...previous.crates.values()];
   const timedSwitchTimers = updateTimedSwitchTimers(level, actors, crateRects, previous.timedSwitchTimers);
   const activePlates = collectActivePlates(level.plates || [], actors, crateRects, previous.latchedPlates);
@@ -51,16 +52,16 @@ export const updateObjects = (
   }
 
   const collectedCores = new Set(previous.collectedCores);
-  let core: { id: string; x: number; y: number } | null = null;
+  const cores: CorePickupEvent[] = [];
   for (const item of level.cores || []) {
     const collector = actors.find((actor) => actor.alive && rectsOverlap(actor, item));
     if (!collectedCores.has(item.id) && collector) {
       collectedCores.add(item.id);
-      core = {
+      cores.push({
         id: item.id,
         x: collector.x + collector.w / 2,
         y: collector.y + collector.h / 2
-      };
+      });
     }
   }
 
@@ -82,7 +83,8 @@ export const updateObjects = (
       crates: previous.crates
     },
     switched,
-    core
+    core: cores[0] || null,
+    cores
   };
 };
 

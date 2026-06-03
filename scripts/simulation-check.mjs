@@ -362,7 +362,7 @@ try {
   const { makeActor } = await server.ssrLoadModule("/src/game/player.ts");
   const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
   const { EDITOR_DRAFT_STORAGE_KEY, readEditorDraftSnapshot } = await server.ssrLoadModule("/src/data/editorDraft.ts");
-  const { getBestScores, isBetterLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
+  const { getBestScores, isBetterLevelScore, recordLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
   const { soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
   const { backgroundForLevel, levelBackgrounds } = await server.ssrLoadModule("/src/game/backgrounds.ts");
   const { SynthAudio } = await server.ssrLoadModule("/src/game/audio.ts");
@@ -667,29 +667,39 @@ try {
   assert(isBetterLevelScore(sameScoreFaster, bestScore), "Same score/deaths/echoes with faster time should replace previous score");
 
   const previousProgressWindow = globalThis.window;
+  let storedLegacyProgress = JSON.stringify({
+    unlocked: 4,
+    scores: {
+      "legacy-room": { levelId: "legacy-room", frames: 1234, echoes: 0, medal: "Quantum" }
+    }
+  });
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: {
       localStorage: {
         getItem: (key) =>
-          key === "echo-shift-progress-v1"
-            ? JSON.stringify({
-                unlocked: 4,
-                scores: {
-                  "legacy-room": { levelId: "legacy-room", frames: 1234, echoes: 2, medal: "Quantum" }
-                }
-              })
-            : null
+          key === "echo-shift-progress-v1" ? storedLegacyProgress : null,
+        setItem: (key, value) => {
+          if (key === "echo-shift-progress-v1") storedLegacyProgress = value;
+        }
       }
     }
   });
   const legacyScores = getBestScores();
-  if (previousProgressWindow === undefined) delete globalThis.window;
-  else Object.defineProperty(globalThis, "window", { configurable: true, value: previousProgressWindow });
   assert(legacyScores["legacy-room"], "Expected legacy medal-era score to remain visible after progress normalization");
   assert(legacyScores["legacy-room"].score === 0, `Expected legacy score to migrate as score 0, got ${legacyScores["legacy-room"].score}`);
+  assert(legacyScores["legacy-room"].legacy === true, "Expected legacy score to carry replacement marker");
   assert(legacyScores["legacy-room"].frames === 1234, `Expected legacy frames to be preserved, got ${legacyScores["legacy-room"].frames}`);
-  assert(legacyScores["legacy-room"].echoes === 2, `Expected legacy echoes to be preserved, got ${legacyScores["legacy-room"].echoes}`);
+  assert(legacyScores["legacy-room"].echoes === 0, `Expected legacy echoes to be preserved, got ${legacyScores["legacy-room"].echoes}`);
+  recordLevelScore({ levelId: "legacy-room", score: 0, frames: 2400, echoes: 3, deaths: 1, cores: 0, timeBonus: 0 }, 0);
+  const replacedLegacyScore = JSON.parse(storedLegacyProgress).scores["legacy-room"];
+  if (previousProgressWindow === undefined) delete globalThis.window;
+  else Object.defineProperty(globalThis, "window", { configurable: true, value: previousProgressWindow });
+  assert(!replacedLegacyScore.legacy, `Expected real score to replace migrated legacy score, got ${JSON.stringify(replacedLegacyScore)}`);
+  assert(
+    replacedLegacyScore.deaths === 1 && replacedLegacyScore.echoes === 3,
+    `Expected replacement score to be stored, got ${JSON.stringify(replacedLegacyScore)}`
+  );
 
   const echoPlateLevel = {
     ...baseLevel,
@@ -716,6 +726,19 @@ try {
   assert(coreEvent.core && coreEvent.core.x > 20 && coreEvent.core.x < 50, "Core pickup event did not report player location");
   assert(coreEvent.core?.id === "core-a", `Core pickup event did not report the collected core id: ${JSON.stringify(coreEvent.core)}`);
   assert(coreSim.score === 100, `Core pickup did not add score, got ${coreSim.score}`);
+
+  const multiCoreLevel = {
+    ...baseLevel,
+    cores: [
+      { id: "core-one", x: 18, y: 86, w: 18, h: 18 },
+      { id: "core-two", x: 32, y: 86, w: 18, h: 18 }
+    ]
+  };
+  const multiCoreSim = new RoomSimulation(multiCoreLevel);
+  const multiCoreEvent = multiCoreSim.step(idle);
+  assert(multiCoreSim.objectState.collectedCores.size === 2, "Expected overlapping cores to both collect in one frame");
+  assert(multiCoreEvent.cores.length === 2, `Expected two core events in one frame, got ${JSON.stringify(multiCoreEvent.cores)}`);
+  assert(multiCoreSim.score === 200, `Expected simultaneous cores to score 200, got ${multiCoreSim.score}`);
 
   const coreFarmingSim = new RoomSimulation(coreLevel);
   coreFarmingSim.step(idle);
@@ -1120,8 +1143,10 @@ try {
           "lift-phase-expanded-route",
           "score-ranking",
           "legacy-progress-migration",
+          "legacy-progress-replacement",
           "echo-plate-door",
           "core-door",
+          "multi-core-score",
           "echo-core-origin",
           "laser-disable-vaporization",
           "entity-toolkit",

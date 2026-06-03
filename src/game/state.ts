@@ -85,6 +85,7 @@ export class RoomSimulation {
       landed: false,
       switched: false,
       core: null,
+      cores: [],
       died: false,
       livesExhausted: false,
       won: false
@@ -135,7 +136,8 @@ export class RoomSimulation {
 
     events.switched = objectUpdate.switched;
     events.core = objectUpdate.core;
-    if (objectUpdate.core) this.addCoreScore(objectUpdate.core.id);
+    events.cores = objectUpdate.cores;
+    for (const core of objectUpdate.cores) this.addCoreScore(core.id);
 
     if (!this.dead && playerTouchesHazard(this.level, this.player, this.objectState, this.tick)) {
       this.markPlayerDead(events);
