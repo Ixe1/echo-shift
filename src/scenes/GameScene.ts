@@ -69,6 +69,7 @@ export class GameScene extends Phaser.Scene {
   private solidAssetFrames: string[] = [];
   private tileAssetPhases: string[] = [];
   private tileAssetOrigins: string[] = [];
+  private laserAssetTransforms: string[] = [];
   private exitSprite?: Phaser.GameObjects.Image;
   private backgroundImages: Phaser.GameObjects.Image[] = [];
   private cameraTarget?: Phaser.GameObjects.Zone;
@@ -95,6 +96,7 @@ export class GameScene extends Phaser.Scene {
     this.solidAssetFrames = [];
     this.tileAssetPhases = [];
     this.tileAssetOrigins = [];
+    this.laserAssetTransforms = [];
     this.exitSprite = undefined;
     this.backgroundImages = [];
     this.cameraTarget = undefined;
@@ -610,7 +612,7 @@ export class GameScene extends Phaser.Scene {
     for (const laser of this.level.lasers || []) {
       const active = laserIsActive(laser, activePlates);
       const visual = this.expandedBeamRect(laser);
-      this.syncTileAsset(`laser:${laser.id}`, active ? OBJECT_FRAME.laserActive : OBJECT_FRAME.laserInactive, visual, 6, active ? 0.96 : 0.42, 0.38, this.simulation.tick * -2);
+      this.syncLaserAsset(`laser:${laser.id}`, active ? OBJECT_FRAME.laserActive : OBJECT_FRAME.laserInactive, visual, 6, active ? 0.96 : 0.42);
       if (!active) {
         this.world.lineStyle(2, 0x43f7ff, 0.16);
         this.world.strokeRect(laser.x, laser.y, laser.w, laser.h);
@@ -634,15 +636,12 @@ export class GameScene extends Phaser.Scene {
     for (const laser of this.level.movingLasers || []) {
       const rect = movingLaserRectAt(laser, tick);
       const active = laserIsActive(laser, activePlates);
-      this.syncTileAsset(
+      this.syncLaserAsset(
         `moving-laser:${laser.id}`,
         active ? OBJECT_FRAME.laserActive : OBJECT_FRAME.laserInactive,
         this.expandedBeamRect(rect),
         6,
-        active ? 0.94 : 0.42,
-        0.38,
-        tick * -2,
-        this.expandedBeamRect(laser)
+        active ? 0.94 : 0.42
       );
       this.world.lineStyle(1, 0xff4f8b, 0.22);
       if (laser.axis === "x") {
@@ -770,8 +769,9 @@ export class GameScene extends Phaser.Scene {
       .join(",");
     document.documentElement.dataset.echoShiftObjectAssetCount = String(this.activeObjectAssetIds.size);
     document.documentElement.dataset.echoShiftSolidAssetFrames = this.solidAssetFrames.join(",");
-    document.documentElement.dataset.echoShiftTileAssetPhases = this.tileAssetPhases.join(",");
+    document.documentElement.dataset.echoShiftTileAssetPhases = this.tileAssetPhases.join("|");
     document.documentElement.dataset.echoShiftTileAssetOrigins = this.tileAssetOrigins.join("|");
+    document.documentElement.dataset.echoShiftLaserAssetTransforms = this.laserAssetTransforms.join("|");
   }
 
   private drawActor(actor: ActorBody, color: number, alpha: number): void {
@@ -920,6 +920,7 @@ export class GameScene extends Phaser.Scene {
     this.solidAssetFrames = [];
     this.tileAssetPhases = [];
     this.tileAssetOrigins = [];
+    this.laserAssetTransforms = [];
   }
 
   private finishObjectAssetSync(): void {
@@ -994,14 +995,36 @@ export class GameScene extends Phaser.Scene {
       .setAlpha(alpha)
       .setOrigin(0.5, 0.5)
       .setPosition(x, y)
+      .setRotation(0)
       .setFrame(frame)
       .setDisplaySize(width, height);
     this.activeObjectAssetIds.add(id);
   }
 
+  private syncLaserAsset(id: string, frame: number, rect: Rect, depth: number, alpha: number): void {
+    if (!this.textures.exists(OBJECT_ATLAS_KEY) || rect.w <= 0 || rect.h <= 0) return;
+    const horizontal = rect.w >= rect.h;
+    const asset = this.assetFor(id, "image", frame) as Phaser.GameObjects.Image;
+    asset
+      .setVisible(true)
+      .setDepth(depth)
+      .setAlpha(alpha)
+      .setOrigin(0.5, 0.5)
+      .setPosition(rect.x + rect.w / 2, rect.y + rect.h / 2)
+      .setRotation(horizontal ? 0 : Math.PI / 2)
+      .setFrame(frame)
+      .setDisplaySize(horizontal ? rect.w : rect.h, horizontal ? rect.h : rect.w);
+    this.activeObjectAssetIds.add(id);
+    this.laserAssetTransforms.push(`${id}:${horizontal ? "h" : "v"}:${Math.round(rect.w)}x${Math.round(rect.h)}`);
+  }
+
   private assetFor(id: string, kind: "tile" | "image", frame: number): ObjectAsset {
     const existing = this.objectAssets.get(id);
-    if (existing) return existing;
+    if (existing) {
+      if ((kind === "tile" && existing.type === "TileSprite") || (kind === "image" && existing.type === "Image")) return existing;
+      existing.destroy();
+      this.objectAssets.delete(id);
+    }
     const asset =
       kind === "tile"
         ? this.add.tileSprite(0, 0, 1, 1, OBJECT_ATLAS_KEY, frame)

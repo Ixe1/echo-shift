@@ -644,15 +644,16 @@ try {
   await page.screenshot({ path: artifacts.draftLegacySolidSprites });
 
   const movingLaserOriginLevel = draftLevel({
-    name: "Moving Laser Origin",
+    name: "Laser Sprite Mapping",
+    lasers: [{ id: "static-beam", x: 90, y: 86, w: 120, h: 20, startsOn: true }],
     movingLasers: [
       { id: "phase-laser", x: 260, y: 32, w: 20, h: 80, startsOn: true, axis: "x", distance: 120, period: 120, phase: 0 }
     ]
   });
   await loadDraftPlaytest(page, movingLaserOriginLevel);
-  const movingLaserOriginsBefore = await page.evaluate(() => document.documentElement.dataset.echoShiftTileAssetOrigins || "");
+  const laserSpriteTransformsBefore = await page.evaluate(() => document.documentElement.dataset.echoShiftLaserAssetTransforms || "");
   await page.waitForTimeout(1200);
-  const movingLaserOriginsAfter = await page.evaluate(() => document.documentElement.dataset.echoShiftTileAssetOrigins || "");
+  const laserSpriteTransformsAfter = await page.evaluate(() => document.documentElement.dataset.echoShiftLaserAssetTransforms || "");
   await page.screenshot({ path: artifacts.draftMovingLaserOrigin });
 
   const echoTintLevel = draftLevel({
@@ -805,8 +806,10 @@ try {
   );
   assert(
     liftPhaseTilePhasesBefore.includes("platform:lift-a:") &&
+      liftPhaseTilePhasesBefore.includes("platform:lift-a2:") &&
       liftPhaseTilePhasesAfter.includes("platform:lift-a:") &&
-      liftPhaseTilePhasesBefore.split(",").slice(0, 2).join(",") === liftPhaseTilePhasesAfter.split(",").slice(0, 2).join(","),
+      liftPhaseTilePhasesAfter.includes("platform:lift-a2:") &&
+      liftPhaseTilePhasesBefore === liftPhaseTilePhasesAfter,
     `Expected moving platform tile phase to remain object-anchored, got ${liftPhaseTilePhasesBefore} -> ${liftPhaseTilePhasesAfter}`
   );
   assert(
@@ -825,9 +828,10 @@ try {
     `Expected legacy editor solid stems to map to floor/wall/block sprites, got ${legacySolidSpriteFrames}`
   );
   assert(
-    movingLaserOriginsBefore.includes("moving-laser:phase-laser:260:32") &&
-      movingLaserOriginsAfter.includes("moving-laser:phase-laser:260:32"),
-    `Expected moving laser tile origin to stay anchored to its base rect, got ${movingLaserOriginsBefore} -> ${movingLaserOriginsAfter}`
+    laserSpriteTransformsBefore.includes("laser:static-beam:h:120x20") &&
+      laserSpriteTransformsBefore.includes("moving-laser:phase-laser:v:20x80") &&
+      laserSpriteTransformsAfter.includes("moving-laser:phase-laser:v:20x80"),
+    `Expected static and moving lasers to use whole-beam sprite mapping, got ${laserSpriteTransformsBefore} -> ${laserSpriteTransformsAfter}`
   );
   assert(
     echoTintBefore.includes("echo-1:bd5cff") && echoTintBefore.includes("echo-2:50ffc2"),
@@ -886,8 +890,8 @@ try {
         disabledDroneStates,
         disabledDronePixels,
         legacySolidSpriteFrames,
-        movingLaserOriginsBefore,
-        movingLaserOriginsAfter,
+        laserSpriteTransformsBefore,
+        laserSpriteTransformsAfter,
         echoTintBefore,
         echoTintAfter,
         levelButtons,
