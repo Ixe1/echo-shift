@@ -627,6 +627,21 @@ try {
   assert(crateSim.objectState.activePlates.has("crate-plate"), "Crate did not hold pressure plate after being pushed");
   assert(crateSim.objectState.openDoors.has("crate-door"), "Crate-held plate did not open linked door");
 
+  const crateContentionLevel = {
+    ...baseLevel,
+    start: { x: 132, y: 86 },
+    crates: [{ id: "crate-contended", x: 100, y: 86, w: 30, h: 34 }]
+  };
+  const crateContentionSim = new RoomSimulation(crateContentionLevel);
+  crateContentionSim.echoRecordings.push({ id: "echo-pusher", frames: [right], createdAtFrame: 0 });
+  crateContentionSim.echoes = [makeActor("echo-pusher", "echo", { x: 78, y: 86 })];
+  crateContentionSim.step(idle);
+  const contendedCrate = crateContentionSim.objectState.crates.get("crate-contended");
+  assert(contendedCrate, "Contended crate missing from object state");
+  assert(!rectsOverlap(contendedCrate, crateContentionSim.player), "Echo pushed crate into idle player");
+  crateContentionSim.step(idle);
+  assert(!rectsOverlap(contendedCrate, crateContentionSim.player), "Crate/player overlap persisted after contention frame");
+
   const deathLevel = {
     ...baseLevel,
     hazards: [{ id: "death-zone", x: 20, y: 86, w: 28, h: 34 }]

@@ -85,25 +85,29 @@ export class RoomSimulation {
     const platforms = platformFramesAt(this.level.platforms, this.tick);
     const doors = closedDoorRects(this.level, this.objectState.openDoors);
     const solids = this.level.solids;
-    const dynamic = {
+    const baseDynamic = {
       oneWays: this.level.oneWays,
       conveyors: this.level.conveyors,
       crates: this.objectState.crates
     };
+    const dynamicFor = (actor: ActorBody) => ({
+      ...baseDynamic,
+      actorBlockers: [this.player, ...this.echoes].filter((other) => other !== actor && other.alive)
+    });
 
     for (let index = 0; index < this.echoes.length; index += 1) {
       const echo = this.echoes[index];
       const recording = this.echoRecordings[index];
       const echoInput = recording.frames[this.tick] || blankInputFrame();
       const previousY = echo.y;
-      moveActor(echo, echoInput, solids, doors, platforms, this.level.bounds, dynamic);
+      moveActor(echo, echoInput, solids, doors, platforms, this.level.bounds, dynamicFor(echo));
       this.applyLaunchPads(echo, previousY);
     }
 
     if (!this.dead) {
       this.currentRecording.push(cloneInputFrame(input));
       const previousY = this.player.y;
-      const moved = moveActor(this.player, input, solids, doors, platforms, this.level.bounds, dynamic);
+      const moved = moveActor(this.player, input, solids, doors, platforms, this.level.bounds, dynamicFor(this.player));
       events.jumped = moved.jumped;
       events.landed = moved.landed;
       events.launched = this.applyLaunchPads(this.player, previousY);
