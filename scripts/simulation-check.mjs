@@ -458,7 +458,7 @@ try {
     },
     {
       id: "lift-phase",
-      route: [["smartRight", 1900]]
+      route: [["smartRightUntilX", 2700, 900], ["idle", 40], ["smartRight", 1000]]
     },
     {
       id: "laser-shadow",
@@ -653,7 +653,7 @@ try {
   const lift = liftPhase.platforms?.find((platform) => platform.id === "lift-a");
   assert(lift, "Expected Lift Phase to include lift-a");
   const liftPhaseExpanded = new RoomSimulation(liftPhase);
-  runSmartRight(liftPhaseExpanded, 1900, { untilWin: true });
+  runRoute(liftPhaseExpanded, [["smartRightUntilX", 2700, 900], ["idle", 40], ["smartRight", 1000]]);
   assert(liftPhaseExpanded.won, "Lift Phase expanded route should reach the side-scrolling portal");
 
   const bestScore = { levelId: "score-test", score: 1500, frames: 600, echoes: 3, deaths: 1, cores: 1, timeBonus: 1400 };
@@ -882,6 +882,64 @@ try {
   oneWayPassSim.player.coyote = 7;
   runFrames(oneWayPassSim, 18, jump);
   assert(oneWayPassSim.player.y < 112, `Player should jump up through one-way from below, got y=${oneWayPassSim.player.y}`);
+
+  const movingPlatformLandingLevel = {
+    ...baseLevel,
+    start: { x: 132, y: 42 },
+    solids: [
+      { id: "catch-floor", x: 0, y: 164, w: 320, h: 36 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 220 },
+      { id: "right-wall", x: 320, y: 0, w: 20, h: 220 }
+    ],
+    platforms: [{ id: "one-way-lift", x: 112, y: 116, w: 88, h: 16, axis: "x", distance: 0, period: 90 }]
+  };
+  const movingPlatformLandingSim = new RoomSimulation(movingPlatformLandingLevel);
+  runFrames(movingPlatformLandingSim, 45, idle);
+  assert(movingPlatformLandingSim.player.onGround, "Player did not land on moving platform from above");
+  assert(
+    movingPlatformLandingSim.player.standingOn === "one-way-lift",
+    `Expected player to stand on one-way-lift, got ${movingPlatformLandingSim.player.standingOn}`
+  );
+  assert(
+    Math.abs(movingPlatformLandingSim.player.y + movingPlatformLandingSim.player.h - 116) < 0.01,
+    `Player landed at wrong moving-platform height: ${movingPlatformLandingSim.player.y + movingPlatformLandingSim.player.h}`
+  );
+
+  const movingPlatformUndersideLevel = {
+    ...baseLevel,
+    start: { x: 132, y: 110 },
+    solids: [
+      { id: "floor", x: 0, y: 144, w: 320, h: 36 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 220 },
+      { id: "right-wall", x: 320, y: 0, w: 20, h: 220 }
+    ],
+    platforms: [{ id: "underside-lift", x: 112, y: 86, w: 88, h: 18, axis: "x", distance: 0, period: 90 }]
+  };
+  const movingPlatformUndersideSim = new RoomSimulation(movingPlatformUndersideLevel);
+  runFrames(movingPlatformUndersideSim, 2, idle);
+  runFrames(movingPlatformUndersideSim, 10, jump);
+  assert(
+    movingPlatformUndersideSim.player.y < 86,
+    `Player should jump up through moving platform from below, got y=${movingPlatformUndersideSim.player.y}`
+  );
+
+  const movingPlatformSideLevel = {
+    ...baseLevel,
+    start: { x: 70, y: 110 },
+    solids: [
+      { id: "floor", x: 0, y: 144, w: 320, h: 36 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 220 },
+      { id: "right-wall", x: 320, y: 0, w: 20, h: 220 }
+    ],
+    platforms: [{ id: "side-pass-lift", x: 120, y: 110, w: 80, h: 18, axis: "x", distance: 0, period: 90 }]
+  };
+  const movingPlatformSideSim = new RoomSimulation(movingPlatformSideLevel);
+  runFrames(movingPlatformSideSim, 2, idle);
+  runFrames(movingPlatformSideSim, 42, right);
+  assert(
+    movingPlatformSideSim.player.x > 145,
+    `Player should run through moving-platform side, got x=${movingPlatformSideSim.player.x}`
+  );
 
   const conveyorLevel = {
     ...baseLevel,

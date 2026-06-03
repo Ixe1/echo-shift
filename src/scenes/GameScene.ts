@@ -449,8 +449,7 @@ export class GameScene extends Phaser.Scene {
     for (const platform of this.level.platforms || []) {
       const rect = platformRectAt(platform, tick);
       this.syncTileAsset(`platform:${platform.id}`, OBJECT_FRAME.platform, rect, 3, 0.96, 0.44, 0, platform);
-      this.drawNeonRect(rect, 0x1f2e46, 0xffe35a, 0.72);
-      this.world.lineStyle(1, 0xffe35a, 0.28);
+      this.world.lineStyle(1, 0xffe35a, 0.18);
       if (platform.axis === "y") {
         this.world.lineBetween(platform.x + platform.w / 2, platform.y, platform.x + platform.w / 2, platform.y + platform.distance);
       } else {
@@ -501,12 +500,6 @@ export class GameScene extends Phaser.Scene {
         5,
         0.97
       );
-      this.drawNeonRect(crate, 0x2c2438, 0xffe35a, 0.76);
-      this.world.lineStyle(1, 0xffe35a, 0.36);
-      this.world.lineBetween(crate.x + 6, crate.y + 6, crate.x + crate.w - 6, crate.y + crate.h - 6);
-      this.world.lineBetween(crate.x + crate.w - 6, crate.y + 6, crate.x + 6, crate.y + crate.h - 6);
-      this.world.fillStyle(0xffe35a, 0.72);
-      this.world.fillRect(crate.x + 5, crate.y + crate.h - 5, Math.min(crate.w - 10, id.length * 3), 2);
     }
   }
 
@@ -514,20 +507,6 @@ export class GameScene extends Phaser.Scene {
     for (const door of this.level.doors || []) {
       const open = openDoors.has(door.id);
       this.syncTileAsset(`door:${door.id}`, open ? OBJECT_FRAME.doorOpen : OBJECT_FRAME.doorClosed, door, 4, open ? 0.54 : 0.98, 0.5);
-      this.world.fillStyle(open ? 0x43f7ff : 0x29122d, open ? 0.09 : 0.92);
-      this.world.fillRect(door.x, door.y, door.w, door.h);
-      this.world.lineStyle(2, open ? 0x43f7ff : 0xff4f8b, open ? 0.38 : 0.9);
-      this.world.strokeRect(door.x, door.y, door.w, door.h);
-      for (let y = door.y + 10; y < door.y + door.h; y += 14) {
-        this.world.lineStyle(1, open ? 0x43f7ff : 0xff4f8b, open ? 0.18 : 0.3);
-        this.world.lineBetween(door.x + 3, y, door.x + door.w - 3, y);
-      }
-      const nodeColor = open ? 0x43f7ff : 0xff4f8b;
-      this.world.fillStyle(nodeColor, open ? 0.42 : 0.86);
-      this.world.fillCircle(door.x + door.w / 2, door.y + 15, 4);
-      this.world.fillCircle(door.x + door.w / 2, door.y + door.h - 15, 4);
-      this.world.lineStyle(1, nodeColor, open ? 0.2 : 0.56);
-      this.world.lineBetween(door.x + door.w / 2, door.y + 21, door.x + door.w / 2, door.y + door.h - 21);
     }
   }
 
@@ -544,10 +523,6 @@ export class GameScene extends Phaser.Scene {
         6,
         0.96
       );
-      this.world.fillStyle(active ? 0xffe35a : 0x163247, active ? 0.9 : 0.78);
-      this.world.fillRect(plate.x, plate.y, plate.w, plate.h);
-      this.world.lineStyle(2, active ? 0xfff4a0 : 0x43f7ff, active ? 0.86 : 0.36);
-      this.world.strokeRect(plate.x, plate.y, plate.w, plate.h);
     }
   }
 
@@ -564,12 +539,6 @@ export class GameScene extends Phaser.Scene {
         6,
         active ? 1 : 0.86
       );
-      this.world.fillStyle(active ? 0xffe35a : 0x2b1d46, active ? 0.82 : 0.72);
-      this.world.fillRoundedRect(timedSwitch.x, timedSwitch.y, timedSwitch.w, timedSwitch.h, 3);
-      this.world.lineStyle(2, active ? 0xfff4a0 : 0xbd5cff, active ? 0.86 : 0.48);
-      this.world.strokeRoundedRect(timedSwitch.x, timedSwitch.y, timedSwitch.w, timedSwitch.h, 3);
-      this.world.lineStyle(1, active ? 0x05070d : 0xbd5cff, active ? 0.48 : 0.54);
-      this.world.strokeCircle(timedSwitch.x + timedSwitch.w / 2, timedSwitch.y + timedSwitch.h / 2, Math.max(4, Math.min(timedSwitch.w, timedSwitch.h) / 3));
     }
   }
 
@@ -577,14 +546,6 @@ export class GameScene extends Phaser.Scene {
     for (const sensor of this.level.echoSensors || []) {
       const active = activePlates.has(sensor.id);
       this.syncTileAsset(`echo-sensor:${sensor.id}`, active ? OBJECT_FRAME.doorOpen : OBJECT_FRAME.block, sensor, 3, active ? 0.62 : 0.42, 0.54);
-      this.world.fillStyle(active ? 0x50ffc2 : 0x12283f, active ? 0.16 : 0.1);
-      this.world.fillRect(sensor.x, sensor.y, sensor.w, sensor.h);
-      this.world.lineStyle(2, active ? 0x50ffc2 : 0xbd5cff, active ? 0.82 : 0.48);
-      this.world.strokeRect(sensor.x, sensor.y, sensor.w, sensor.h);
-      this.world.lineStyle(1, active ? 0x50ffc2 : 0xbd5cff, active ? 0.32 : 0.24);
-      for (let y = sensor.y + 8; y < sensor.y + sensor.h; y += 12) {
-        this.world.lineBetween(sensor.x + 4, y, sensor.x + sensor.w - 4, y);
-      }
     }
   }
 
@@ -600,14 +561,6 @@ export class GameScene extends Phaser.Scene {
         4,
         0.92
       );
-      this.world.fillStyle(0x143447, 0.84);
-      this.world.fillRect(pad.x, pad.y, pad.w, pad.h);
-      this.world.lineStyle(2, 0x50ffc2, 0.86);
-      this.world.strokeRect(pad.x, pad.y, pad.w, pad.h);
-      this.world.fillStyle(0x50ffc2, 0.68);
-      for (let x = pad.x + 6; x < pad.x + pad.w; x += 16) {
-        this.world.fillTriangle(x, pad.y + pad.h - 3, x + 6, pad.y + 4, x + 12, pad.y + pad.h - 3);
-      }
     }
   }
 
@@ -633,22 +586,7 @@ export class GameScene extends Phaser.Scene {
       const active = laserIsActive(laser, activePlates);
       const visual = this.expandedBeamRect(laser);
       this.syncLaserAsset(`laser:${laser.id}`, active ? OBJECT_FRAME.laserActive : OBJECT_FRAME.laserInactive, visual, 6, active ? 0.96 : 0.42);
-      if (!active) {
-        this.world.lineStyle(2, 0x43f7ff, 0.16);
-        this.world.strokeRect(laser.x, laser.y, laser.w, laser.h);
-        continue;
-      }
-      const blocked = blockedLasers.has(laser.id);
-      this.world.fillStyle(blocked ? 0xffe35a : 0xff2f6c, blocked ? 0.3 : 0.72);
-      this.world.fillRect(laser.x, laser.y, laser.w, laser.h);
-      this.world.lineStyle(2, blocked ? 0xffe35a : 0xff4f8b, blocked ? 0.9 : 1);
-      this.world.strokeRect(laser.x, laser.y, laser.w, laser.h);
-      this.world.fillStyle(0xffffff, blocked ? 0.18 : 0.34);
-      this.world.fillRect(laser.x, laser.y + laser.h / 2 - 1, laser.w, 2);
-      this.world.fillStyle(blocked ? 0xffe35a : 0xffffff, blocked ? 0.14 : 0.28);
-      for (let x = laser.x + ((this.simulation.tick * 2) % 16); x < laser.x + laser.w; x += 18) {
-        this.world.fillRect(x, laser.y + 2, 7, Math.max(2, laser.h - 4));
-      }
+      if (active) this.drawLaserCore(laser, blockedLasers.has(laser.id));
     }
   }
 
@@ -669,32 +607,13 @@ export class GameScene extends Phaser.Scene {
       } else {
         this.world.lineBetween(laser.x + laser.w / 2, laser.y, laser.x + laser.w / 2, laser.y + laser.distance);
       }
-      if (!active) {
-        this.world.lineStyle(2, 0x43f7ff, 0.18);
-        this.world.strokeRect(rect.x, rect.y, rect.w, rect.h);
-        continue;
-      }
-      const blocked = blockedLasers.has(laser.id);
-      this.world.fillStyle(blocked ? 0xffe35a : 0xff2f6c, blocked ? 0.28 : 0.72);
-      this.world.fillRect(rect.x, rect.y, rect.w, rect.h);
-      this.world.lineStyle(2, blocked ? 0xffe35a : 0xff4f8b, blocked ? 0.9 : 1);
-      this.world.strokeRect(rect.x, rect.y, rect.w, rect.h);
-      this.world.fillStyle(0xffffff, blocked ? 0.18 : 0.34);
-      this.world.fillRect(rect.x, rect.y + rect.h / 2 - 1, rect.w, 2);
+      if (active) this.drawLaserCore(rect, blockedLasers.has(laser.id));
     }
   }
 
   private drawHazards(): void {
     for (const hazard of this.level.hazards || []) {
       this.syncTileAsset(`hazard:${hazard.id}`, OBJECT_FRAME.warning, { ...hazard, y: hazard.y - 4, h: hazard.h + 8 }, 2, 0.74, 0.38);
-      this.world.fillStyle(0xff4f8b, 0.14);
-      this.world.fillRect(hazard.x, hazard.y - 6, hazard.w, hazard.h + 10);
-      this.world.fillStyle(0xff4f8b, 0.7);
-      for (let x = hazard.x; x < hazard.x + hazard.w; x += 12) {
-        this.world.fillTriangle(x, hazard.y + hazard.h, x + 6, hazard.y, x + 12, hazard.y + hazard.h);
-        this.world.lineStyle(1, 0xffffff, 0.16);
-        this.world.lineBetween(x + 6, hazard.y + 2, x + 6, hazard.y + hazard.h - 3);
-      }
     }
   }
 
@@ -719,17 +638,6 @@ export class GameScene extends Phaser.Scene {
       } else {
         this.world.lineBetween(drone.x + drone.w / 2, drone.y, drone.x + drone.w / 2, drone.y + drone.distance);
       }
-      this.world.fillStyle(active ? 0xff4f8b : 0x43f7ff, active ? 0.16 : 0.08);
-      this.world.fillCircle(center.x, center.y, 24);
-      this.world.fillStyle(active ? 0x160915 : 0x061722, active ? 0.94 : 0.62);
-      this.world.fillRoundedRect(rect.x, rect.y, rect.w, rect.h, 5);
-      this.world.lineStyle(2, active ? 0xff4f8b : 0x43f7ff, active ? 0.86 : 0.42);
-      this.world.strokeRoundedRect(rect.x, rect.y, rect.w, rect.h, 5);
-      this.world.fillStyle(active ? 0xffe35a : 0x43f7ff, active ? 0.88 : 0.28);
-      this.world.fillCircle(center.x - 5, center.y - 2, 2.5);
-      this.world.fillCircle(center.x + 5, center.y - 2, 2.5);
-      this.world.lineStyle(1, 0xffffff, 0.18);
-      this.world.lineBetween(rect.x + 5, rect.y + rect.h - 6, rect.x + rect.w - 5, rect.y + rect.h - 6);
     }
   }
 
@@ -1065,6 +973,39 @@ export class GameScene extends Phaser.Scene {
     }
     const w = Math.max(rect.w, 10);
     return { x: rect.x + rect.w / 2 - w / 2, y: rect.y, w, h: rect.h };
+  }
+
+  private drawLaserCore(rect: Rect, blocked: boolean): void {
+    const horizontal = rect.w >= rect.h;
+    const span = horizontal ? rect.w : rect.h;
+    const cross = horizontal ? rect.h : rect.w;
+    const glowSize = Math.max(4, Math.min(8, cross * 0.42));
+    const coreSize = Math.max(2, Math.min(4, cross * 0.22));
+    const glowColor = blocked ? 0xffe35a : 0xff4f8b;
+    const coreColor = blocked ? 0xfff4a0 : 0xffffff;
+    const pulseColor = blocked ? 0xffe35a : 0xff2f6c;
+
+    this.world.fillStyle(glowColor, blocked ? 0.18 : 0.24);
+    if (horizontal) {
+      const centerY = rect.y + rect.h / 2;
+      this.world.fillRect(rect.x, centerY - glowSize / 2, rect.w, glowSize);
+      this.world.fillStyle(coreColor, blocked ? 0.24 : 0.36);
+      this.world.fillRect(rect.x, centerY - coreSize / 2, rect.w, coreSize);
+      this.world.fillStyle(pulseColor, blocked ? 0.14 : 0.2);
+      for (let x = rect.x + ((this.simulation.tick * 2) % 18); x < rect.x + span; x += 22) {
+        this.world.fillRect(x, centerY - glowSize / 2, 5, glowSize);
+      }
+      return;
+    }
+
+    const centerX = rect.x + rect.w / 2;
+    this.world.fillRect(centerX - glowSize / 2, rect.y, glowSize, rect.h);
+    this.world.fillStyle(coreColor, blocked ? 0.24 : 0.36);
+    this.world.fillRect(centerX - coreSize / 2, rect.y, coreSize, rect.h);
+    this.world.fillStyle(pulseColor, blocked ? 0.14 : 0.2);
+    for (let y = rect.y + ((this.simulation.tick * 2) % 18); y < rect.y + span; y += 22) {
+      this.world.fillRect(centerX - glowSize / 2, y, glowSize, 5);
+    }
   }
 
   private drawDiamond(

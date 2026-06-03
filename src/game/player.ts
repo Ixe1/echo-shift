@@ -149,10 +149,16 @@ export const moveActor = (
   const collisionRects: CollisionRect[] = [
     ...solids,
     ...doors,
-    ...(dynamic.conveyors || []).map((conveyor) => ({ ...conveyor, conveyor })),
-    ...platforms.map((platform) => ({ ...platform.current, platformId: platform.platform.id }))
+    ...(dynamic.conveyors || []).map((conveyor) => ({ ...conveyor, conveyor }))
   ];
-  const oneWayRects: CollisionRect[] = (dynamic.oneWays || []).map((oneWay) => ({ ...oneWay, oneWay: true }));
+  const oneWayRects: CollisionRect[] = [
+    ...(dynamic.oneWays || []).map((oneWay) => ({ ...oneWay, oneWay: true })),
+    ...platforms.map((platform) => ({
+      ...platform.current,
+      oneWay: true,
+      platformId: platform.platform.id
+    }))
+  ];
   const crateRects = crateCollisionRects(dynamic.crates);
 
   actor.x += actor.vx;
