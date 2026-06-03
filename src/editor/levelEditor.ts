@@ -896,7 +896,7 @@ class LevelEditor {
     this.require<HTMLButtonElement>("[data-save-draft]").addEventListener("click", () => this.persistDraft("Draft saved"));
     this.require<HTMLButtonElement>("[data-playtest-draft]").addEventListener("click", () => this.playtestDraft());
     this.require<HTMLButtonElement>("[data-reset-source]").addEventListener("click", () => {
-      this.levels = cloneLevels(sourceLevels);
+      this.levels = exportableLevels(sourceLevels);
       this.currentIndex = 0;
       this.selection = null;
       this.tool = "select";

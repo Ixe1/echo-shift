@@ -983,9 +983,16 @@ try {
   const fallbackImportObjectIds = objectKinds.flatMap((kind) => (fallbackImportExport[kind] || []).map((object) => object.id));
   const fallbackImportValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   const fallbackImportValidationText = await page.locator("[data-validation]").textContent();
-  await page.locator("[data-import-json]").fill(JSON.stringify(parsedExport[0], null, 2));
+  const sourceDerivedImportLevel = {
+    ...parsedExport[0],
+    name: "Smoke Edited",
+    platforms: [{ id: "source-anchored-platform", x: 420, y: 360, w: 100, h: 20, axis: "x", distance: 80, period: 120, phase: 0.4 }]
+  };
+  await page.locator("[data-import-json]").fill(JSON.stringify(sourceDerivedImportLevel, null, 2));
   await page.locator("[data-apply-import]").click();
   await page.waitForFunction(() => document.querySelector("[data-level-select] option")?.textContent?.includes("Smoke Edited"));
+  const sourceDerivedImportExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
+  const sourceDerivedImportPlatform = sourceDerivedImportExport.platforms.find((platform) => platform.id === "source-anchored-platform");
   const importedName = await page.locator("[data-level-select] option").first().textContent();
   const importedValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   await page.evaluate(() => window.localStorage.clear());
@@ -1331,6 +1338,10 @@ try {
   );
   assert(fallbackImportExport.soundtrackKey === "level-4", `Expected imported soundtrack key level-4, got ${fallbackImportExport.soundtrackKey}`);
   assert(fallbackImportExport.backgroundKey === "time-lab-prototype", `Expected imported background key time-lab-prototype, got ${fallbackImportExport.backgroundKey}`);
+  assert(
+    sourceDerivedImportExport.motionModel === "anchored" && sourceDerivedImportPlatform?.x === 420 && sourceDerivedImportPlatform?.distance === 80,
+    `Expected anchored source-derived import to avoid legacy double migration, got ${JSON.stringify(sourceDerivedImportPlatform)}`
+  );
   assert(importedName?.includes("Smoke Edited"), `Import did not update the level name: ${importedName}`);
   assert(importedValidation === "clean", `Expected clean validation after import, got ${importedValidation}`);
   assert(mobileValidation === "clean", `Expected clean mobile validation, got ${mobileValidation}`);

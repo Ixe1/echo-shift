@@ -1,4 +1,5 @@
 import type { Level, MovingPlatform, PatrolDrone, Rect, Solid } from "../game/types";
+import { markAnchoredMotionModel } from "./motionModel";
 
 const r = (x: number, y: number, w: number, h: number): Rect => ({ x, y, w, h });
 const s = (id: string, x: number, y: number, w: number, h: number, tone: Solid["tone"] = "steel"): Solid => ({
@@ -346,17 +347,17 @@ const runtimeLevelIndex = (index: number): number => {
   return Math.max(0, Math.min(levels.length - 1, Math.round(index)));
 };
 
-export const levels: Level[] = cloneLevels(sourceLevels);
+export const levels: Level[] = cloneLevels(sourceLevels).map((level) => markAnchoredMotionModel(level));
 
 let draftPlaytestActive = false;
 
 export const setRuntimeLevels = (items: Level[], options: { draftPlaytest?: boolean } = {}): void => {
-  levels.splice(0, levels.length, ...cloneLevels(items));
+  levels.splice(0, levels.length, ...cloneLevels(items).map((level) => markAnchoredMotionModel(level)));
   draftPlaytestActive = options.draftPlaytest === true;
 };
 
 export const resetRuntimeLevels = (): void => {
-  levels.splice(0, levels.length, ...cloneLevels(sourceLevels));
+  levels.splice(0, levels.length, ...cloneLevels(sourceLevels).map((level) => markAnchoredMotionModel(level)));
   draftPlaytestActive = false;
 };
 

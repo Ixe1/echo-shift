@@ -182,6 +182,7 @@ try {
   assert(levels.some((level) => (level.platforms || []).length > 0), "Expected at least one moving-platform level");
   assert(levels.some((level) => (level.drones || []).length > 0), "Expected at least one patrol-drone level");
   assert(levels.some((level) => (level.cores || []).length > 0), "Expected at least one core level");
+  assert(levels.every((level) => level.motionModel === "anchored"), "Expected canonical source levels to be marked with anchored motion model");
   assert(
     levels.every((level) => level.bounds.w >= 2400 && level.exit.x > 2200),
     "Expected every level to use expanded side-scrolling bounds and a distant exit"
