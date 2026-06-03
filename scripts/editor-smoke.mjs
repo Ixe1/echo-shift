@@ -22,7 +22,23 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
-const objectKinds = ["solids", "platforms", "hazards", "plates", "doors", "lasers", "cores", "drones"];
+const objectKinds = [
+  "solids",
+  "oneWays",
+  "conveyors",
+  "platforms",
+  "hazards",
+  "launchPads",
+  "plates",
+  "timedSwitches",
+  "echoSensors",
+  "doors",
+  "lasers",
+  "movingLasers",
+  "cores",
+  "drones",
+  "crates"
+];
 
 const messages = [];
 const collectConsole = (page) => {
@@ -628,6 +644,59 @@ try {
   await page.locator("[data-delete-object]").click();
   const generatedGlobalCleanupValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
+  await dragToolToWorld(page, "oneWays", { x: 700, y: 360 });
+  await page.locator("[data-object-field='id']").fill("smoke-one-way");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+
+  await dragToolToWorld(page, "conveyors", { x: 760, y: 500 });
+  await page.locator("[data-object-field='id']").fill("smoke-conveyor");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await page.locator("[data-object-field='direction']").selectOption("-1");
+  await setObjectField(page, "conveyorSpeed", 2.5);
+  const toolkitConveyorY = await objectNumber(page, "y");
+  const toolkitConveyorBottom = toolkitConveyorY + (await objectNumber(page, "h"));
+
+  await dragToolToWorld(page, "launchPads", { x: 840, y: 500 });
+  await page.locator("[data-object-field='id']").fill("smoke-launch");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await setObjectField(page, "powerX", 1.5);
+  await setObjectField(page, "powerY", 14);
+
+  await dragToolToWorld(page, "timedSwitches", { x: 920, y: 500 });
+  await page.locator("[data-object-field='id']").fill("smoke-timer");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await setObjectField(page, "duration", 150);
+
+  await dragToolToWorld(page, "echoSensors", { x: 980, y: 340 });
+  await page.locator("[data-object-field='id']").fill("smoke-sensor");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await page.locator("[data-object-field='actors']").selectOption("both");
+
+  await dragToolToWorld(page, "movingLasers", { x: 1100, y: 340 });
+  await page.locator("[data-object-field='id']").fill("smoke-sweeper");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await page.locator("[data-object-field='axis']").selectOption("y");
+  await setObjectField(page, "pathStart", 300);
+  await setObjectField(page, "pathEnd", 420);
+  await setObjectField(page, "speed", 160);
+  await page.locator("[data-object-field='disabledBy']").fill("smoke-timer");
+  await dispatchChange(page.locator("[data-object-field='disabledBy']"));
+
+  await dragToolToWorld(page, "crates", { x: 1220, y: 500 });
+  await page.locator("[data-object-field='id']").fill("smoke-crate");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  const toolkitCrateY = await objectNumber(page, "y");
+  const toolkitCrateBottom = toolkitCrateY + (await objectNumber(page, "h"));
+
+  const toolkitLevel = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
+  const toolkitValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const toolkitConveyor = toolkitLevel.conveyors.find((item) => item.id === "smoke-conveyor");
+  const toolkitLaunch = toolkitLevel.launchPads.find((item) => item.id === "smoke-launch");
+  const toolkitTimer = toolkitLevel.timedSwitches.find((item) => item.id === "smoke-timer");
+  const toolkitSensor = toolkitLevel.echoSensors.find((item) => item.id === "smoke-sensor");
+  const toolkitSweeper = toolkitLevel.movingLasers.find((item) => item.id === "smoke-sweeper");
+  const toolkitCrate = toolkitLevel.crates.find((item) => item.id === "smoke-crate");
+
   await openTab(page, "objects");
   await page.locator("[data-object-list] [data-kind='solids'][data-id='step-1']").click();
   const offGridStepXBefore = await objectNumber(page, "x");
@@ -648,15 +717,15 @@ try {
   await page.locator("[data-add-object]").click();
   await page.locator("[data-object-field='id']").fill("smoke-narrow-support");
   await dispatchChange(page.locator("[data-object-field='id']"));
-  await setObjectField(page, "x", 640);
+  await setObjectField(page, "x", 610);
   await setObjectField(page, "y", 420);
   await setObjectField(page, "w", 30);
   await setObjectField(page, "h", 18);
-  await dragToolToWorld(page, "plates", { x: 646, y: 420 });
+  await dragToolToWorld(page, "plates", { x: 616, y: 420 });
   const narrowPlateY = await objectNumber(page, "y");
   const narrowPlateBottom = narrowPlateY + (await objectNumber(page, "h"));
   await page.locator("[data-delete-object]").click();
-  await dragToolToWorld(page, "lasers", { x: 646, y: 440 });
+  await dragToolToWorld(page, "lasers", { x: 616, y: 440 });
   const underSupportLaserY = await objectNumber(page, "y");
   await page.locator("[data-delete-object]").click();
 
@@ -988,6 +1057,18 @@ try {
     generatedGlobalCleanupValidation === "clean",
     `Expected clean validation after global ID generation cleanup, got ${generatedGlobalCleanupValidation}`
   );
+  assert(toolkitValidation === "clean", `Expected clean validation after entity toolkit creation, got ${toolkitValidation}`);
+  assert(toolkitLevel.oneWays.some((item) => item.id === "smoke-one-way"), "Expected one-way platform to export");
+  assert(toolkitConveyor?.direction === -1 && toolkitConveyor?.speed === 2.5, `Expected conveyor settings to export, got ${JSON.stringify(toolkitConveyor)}`);
+  assert(toolkitConveyorBottom === 500, `Expected conveyor to snap flush to floor y=500, got bottom ${toolkitConveyorBottom}`);
+  assert(toolkitLaunch?.powerX === 1.5 && toolkitLaunch?.powerY === 14, `Expected launch pad settings to export, got ${JSON.stringify(toolkitLaunch)}`);
+  assert(toolkitTimer?.duration === 150, `Expected timed switch duration to export, got ${JSON.stringify(toolkitTimer)}`);
+  assert(toolkitSensor?.actors === "both", `Expected echo sensor actor mode to export, got ${JSON.stringify(toolkitSensor)}`);
+  assert(
+    toolkitSweeper?.axis === "y" && toolkitSweeper?.distance === 60 && toolkitSweeper?.disabledBy?.includes("smoke-timer"),
+    `Expected moving laser path/link settings to export, got ${JSON.stringify(toolkitSweeper)}`
+  );
+  assert(toolkitCrate && toolkitCrateBottom === 500, `Expected crate to export and snap flush to floor, got ${JSON.stringify(toolkitCrate)} bottom ${toolkitCrateBottom}`);
   assert(narrowPlateBottom === 420, `Expected dropped plate bottom to snap flush to narrow support y=420, got ${narrowPlateY}+h=${narrowPlateBottom}`);
   assert(underSupportLaserY === 440, `Expected laser placed below support to stay at y=440 instead of snapping upward, got ${underSupportLaserY}`);
   assert(surfaceSnapValidation === "clean", `Expected clean validation after surface snap checks, got ${surfaceSnapValidation}`);

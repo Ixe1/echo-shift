@@ -15,7 +15,7 @@ A compact rewind puzzle-platformer built for the Community Dev Challenge. Previo
 
 ## Level Editor
 
-Run `npm run dev` and open `http://localhost:5173/?editor=1`. The editor loads the current level schema, saves browser drafts in `localStorage`, validates object references, and exports JSON for deliberate source updates. The grouped palette includes one-grid-thick Floor and Wall presets plus Block presets that create normal `solids`. Level settings include the MP3 soundtrack key, background key, and medal thresholds with seconds shown at 60 frames per second. Use the editor's Playtest button to boot the current saved draft in game mode; draft playtest clears do not write normal campaign progress.
+Run `npm run dev` and open `http://localhost:5173/?editor=1`. The editor loads the current level schema, saves browser drafts in `localStorage`, validates object references, and exports JSON for deliberate source updates. The grouped palette includes one-grid-thick Floor and Wall presets plus the entity toolkit described in `docs/entity-toolkit.md`. Level settings include the MP3 soundtrack key, background key, and medal thresholds with seconds shown at 60 frames per second. Use the editor's Playtest button to boot the current saved draft in game mode; draft playtest clears do not write normal campaign progress.
 
 ## Controls
 

@@ -68,6 +68,14 @@ const routeObstacleRects = (simulation) => {
       laser.y + laser.h > actor.y + 2
     );
   });
+  const activeMovingLasers = (simulation.level.movingLasers || [])
+    .filter((laser) => {
+      const startsOn = laser.startsOn !== false;
+      const disabled = (laser.disabledBy || []).some((id) => simulation.objectState.activePlates.has(id));
+      return startsOn && !disabled && !simulation.objectState.blockedLasers.has(laser.id);
+    })
+    .map((laser) => oscillatingRectAt(laser, simulation.tick))
+    .filter((laser) => laser.y < footY && laser.y + laser.h > actor.y + 2);
   const activeHazards = (simulation.level.hazards || []).filter(
     (hazard) => hazard.y < footY && hazard.y + hazard.h > actor.y + 2
   );
@@ -81,12 +89,15 @@ const routeObstacleRects = (simulation) => {
       solid.y < footY &&
       solid.y + solid.h > actor.y + 10
   );
-  return [...activeHazards, ...activeLasers, ...activeDrones, ...lowSolids];
+  return [...activeHazards, ...activeLasers, ...activeMovingLasers, ...activeDrones, ...lowSolids];
 };
 
 const supportRects = (simulation) => [
   ...simulation.level.solids,
-  ...(simulation.level.platforms || []).map((platform) => oscillatingRectAt(platform, simulation.tick))
+  ...(simulation.level.oneWays || []),
+  ...(simulation.level.conveyors || []),
+  ...(simulation.level.platforms || []).map((platform) => oscillatingRectAt(platform, simulation.tick)),
+  ...simulation.objectState.crates.values()
 ];
 
 const hasSupportAhead = (simulation) => {
@@ -470,6 +481,106 @@ try {
   assert(blocked, "Echo did not block the laser beam");
   assert(!laserSim.dead, "Player died while the laser was blocked by an echo");
 
+  const oneWayLandingLevel = {
+    ...baseLevel,
+    start: { x: 82, y: 72 },
+    solids: [
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 220 },
+      { id: "right-wall", x: 320, y: 0, w: 20, h: 220 }
+    ],
+    oneWays: [{ id: "one-way-a", x: 60, y: 120, w: 120, h: 12 }]
+  };
+  const oneWayLandingSim = new RoomSimulation(oneWayLandingLevel);
+  runFrames(oneWayLandingSim, 45, idle);
+  assert(oneWayLandingSim.player.onGround, "Player did not land on one-way platform from above");
+  assert(
+    Math.abs(oneWayLandingSim.player.y + oneWayLandingSim.player.h - 120) < 0.01,
+    `Player landed at wrong one-way height: ${oneWayLandingSim.player.y + oneWayLandingSim.player.h}`
+  );
+  const oneWayPassSim = new RoomSimulation(oneWayLandingLevel);
+  oneWayPassSim.player.x = 82;
+  oneWayPassSim.player.y = 132;
+  oneWayPassSim.player.onGround = true;
+  oneWayPassSim.player.coyote = 7;
+  runFrames(oneWayPassSim, 18, jump);
+  assert(oneWayPassSim.player.y < 112, `Player should jump up through one-way from below, got y=${oneWayPassSim.player.y}`);
+
+  const conveyorLevel = {
+    ...baseLevel,
+    start: { x: 64, y: 86 },
+    solids: [
+      { id: "floor-left", x: 0, y: 120, w: 60, h: 40 },
+      { id: "floor-right", x: 180, y: 120, w: 140, h: 40 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 220 },
+      { id: "right-wall", x: 320, y: 0, w: 20, h: 220 }
+    ],
+    conveyors: [{ id: "belt-a", x: 60, y: 120, w: 120, h: 20, direction: 1, speed: 1.6 }]
+  };
+  const conveyorSim = new RoomSimulation(conveyorLevel);
+  runFrames(conveyorSim, 45, idle);
+  assert(conveyorSim.player.x > 90, `Conveyor did not push idle player right, got x=${conveyorSim.player.x}`);
+
+  const launchLevel = {
+    ...baseLevel,
+    start: { x: 26, y: 86 },
+    launchPads: [{ id: "launch-a", x: 20, y: 112, w: 70, h: 8, powerY: 13.5, powerX: 1 }]
+  };
+  const launchSim = new RoomSimulation(launchLevel);
+  const launchEvent = launchSim.step(idle);
+  assert(launchEvent.launched, "Launch pad did not report a launch event");
+  assert(launchSim.player.vy < -12 && launchSim.player.vx > 0, `Launch pad did not apply impulse: vx=${launchSim.player.vx}, vy=${launchSim.player.vy}`);
+
+  const timedSwitchLevel = {
+    ...baseLevel,
+    timedSwitches: [{ id: "timer-a", x: 18, y: 112, w: 50, h: 8, duration: 20 }],
+    doors: [{ id: "timer-door", x: 170, y: 70, w: 18, h: 50, opensWith: ["timer-a"] }]
+  };
+  const timedSim = new RoomSimulation(timedSwitchLevel);
+  timedSim.step(idle);
+  assert(timedSim.objectState.activePlates.has("timer-a"), "Timed switch did not become active on contact");
+  assert(timedSim.objectState.openDoors.has("timer-door"), "Timed switch did not open linked door");
+  timedSim.player.x = 100;
+  runFrames(timedSim, 12, idle);
+  assert(timedSim.objectState.activePlates.has("timer-a"), "Timed switch expired too early");
+  runFrames(timedSim, 28, idle);
+  assert(!timedSim.objectState.activePlates.has("timer-a"), "Timed switch did not expire after duration");
+
+  const echoSensorLevel = {
+    ...baseLevel,
+    echoSensors: [{ id: "echo-sensor-a", x: 112, y: 84, w: 38, h: 40 }],
+    doors: [{ id: "sensor-door", x: 210, y: 70, w: 18, h: 50, opensWith: ["echo-sensor-a"] }]
+  };
+  const echoSensorPlayerOnlySim = new RoomSimulation({ ...echoSensorLevel, start: { x: 112, y: 86 } });
+  echoSensorPlayerOnlySim.step(idle);
+  assert(!echoSensorPlayerOnlySim.objectState.activePlates.has("echo-sensor-a"), "Echo-only sensor should not activate for the player");
+  const echoSensorSim = new RoomSimulation(echoSensorLevel);
+  runFrames(echoSensorSim, 34, right);
+  assert(echoSensorSim.rewindToEcho(), "Expected echo sensor setup attempt to become an echo");
+  runFrames(echoSensorSim, 46, idle);
+  assert(echoSensorSim.objectState.activePlates.has("echo-sensor-a"), "Echo did not activate echo sensor");
+  assert(echoSensorSim.objectState.openDoors.has("sensor-door"), "Echo sensor did not open linked door");
+
+  const movingLaserLevel = {
+    ...baseLevel,
+    movingLasers: [{ id: "sweeper-a", x: 20, y: 86, w: 40, h: 34, axis: "x", distance: 0, period: 120, startsOn: true }]
+  };
+  const movingLaserSim = new RoomSimulation(movingLaserLevel);
+  movingLaserSim.step(idle);
+  assert(movingLaserSim.dead, "Overlapping moving laser should kill the player");
+
+  const crateLevel = {
+    ...baseLevel,
+    plates: [{ id: "crate-plate", x: 184, y: 112, w: 50, h: 8 }],
+    crates: [{ id: "crate-a", x: 62, y: 86, w: 30, h: 34 }],
+    doors: [{ id: "crate-door", x: 220, y: 70, w: 18, h: 50, opensWith: ["crate-plate"] }]
+  };
+  const crateSim = new RoomSimulation(crateLevel);
+  runFrames(crateSim, 34, right);
+  const crateAfterPush = crateSim.objectState.crates.get("crate-a");
+  assert(crateAfterPush && crateAfterPush.x > 78, `Player did not push crate right, got ${JSON.stringify(crateAfterPush)}`);
+  assert(crateSim.objectState.activePlates.has("crate-plate"), "Crate did not hold pressure plate after being pushed");
+  assert(crateSim.objectState.openDoors.has("crate-door"), "Crate-held plate did not open linked door");
+
   const deathLevel = {
     ...baseLevel,
     hazards: [{ id: "death-zone", x: 20, y: 86, w: 28, h: 34 }]
@@ -556,6 +667,7 @@ try {
           "core-door",
           "echo-core-origin",
           "laser-blocking",
+          "entity-toolkit",
           "death-freeze",
           "drone-hazard",
           "fall-death-freeze",

@@ -4,7 +4,7 @@ import { getLevel, isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
 import { backgroundForLevel } from "../game/backgrounds";
 import { rectCenter } from "../game/geometry";
-import { droneRectAt, laserIsActive } from "../game/objects";
+import { droneRectAt, laserIsActive, movingLaserRectAt } from "../game/objects";
 import { platformRectAt } from "../game/player";
 import { recordLevelScore } from "../game/progress";
 import { soundtrackForLevel } from "../game/soundtracks";
@@ -158,7 +158,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleEvents(events: ReturnType<RoomSimulation["step"]>): void {
-    if (events.jumped) audio.play("jump");
+    if (events.jumped || events.launched) audio.play("jump");
     if (events.landed) audio.play("land");
     if (events.switched) audio.play("switch");
     if (events.core) {
@@ -273,11 +273,18 @@ export class GameScene extends Phaser.Scene {
     this.fx.clear();
     this.drawBackground();
     this.drawSolids();
+    this.drawOneWayPlatforms();
+    this.drawConveyors();
     this.drawPlatforms(snapshot.tick);
+    this.drawCrates(snapshot.crates);
     this.drawDoors(snapshot.openDoors);
     this.drawPlates(snapshot.activePlates);
+    this.drawTimedSwitches(snapshot.activePlates);
+    this.drawEchoSensors(snapshot.activePlates);
+    this.drawLaunchPads();
     this.drawCores(snapshot.collectedCores);
     this.drawLasers(snapshot.activePlates, snapshot.blockedLasers);
+    this.drawMovingLasers(snapshot.tick, snapshot.activePlates, snapshot.blockedLasers);
     this.drawHazards();
     this.drawDrones(snapshot.tick);
     this.drawExit(this.level.exit, snapshot.won);
@@ -384,6 +391,45 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private drawOneWayPlatforms(): void {
+    for (const platform of this.level.oneWays || []) {
+      this.world.fillStyle(0x123247, 0.58);
+      this.world.fillRect(platform.x, platform.y, platform.w, platform.h);
+      this.world.lineStyle(2, 0x50ffc2, 0.78);
+      this.world.lineBetween(platform.x, platform.y, platform.x + platform.w, platform.y);
+      this.world.lineStyle(1, 0x50ffc2, 0.28);
+      for (let x = platform.x + 8; x < platform.x + platform.w; x += 18) {
+        this.world.lineBetween(x, platform.y + platform.h - 3, x + 7, platform.y + 4);
+      }
+    }
+  }
+
+  private drawConveyors(): void {
+    for (const conveyor of this.level.conveyors || []) {
+      this.drawNeonRect(conveyor, 0x15263a, 0xffe35a, 0.62);
+      const direction = conveyor.direction >= 0 ? 1 : -1;
+      this.world.lineStyle(2, 0xffe35a, 0.72);
+      for (let x = conveyor.x + 12; x < conveyor.x + conveyor.w - 8; x += 28) {
+        const arrowX = x + ((this.simulation.tick * direction) % 28);
+        const clampedX = Phaser.Math.Wrap(arrowX, conveyor.x + 8, conveyor.x + conveyor.w - 8);
+        this.world.lineBetween(clampedX - direction * 8, conveyor.y + conveyor.h / 2, clampedX + direction * 8, conveyor.y + conveyor.h / 2);
+        this.world.lineBetween(clampedX + direction * 8, conveyor.y + conveyor.h / 2, clampedX + direction * 3, conveyor.y + conveyor.h / 2 - 5);
+        this.world.lineBetween(clampedX + direction * 8, conveyor.y + conveyor.h / 2, clampedX + direction * 3, conveyor.y + conveyor.h / 2 + 5);
+      }
+    }
+  }
+
+  private drawCrates(crates: Map<string, Rect>): void {
+    for (const [id, crate] of crates) {
+      this.drawNeonRect(crate, 0x2c2438, 0xffe35a, 0.76);
+      this.world.lineStyle(1, 0xffe35a, 0.36);
+      this.world.lineBetween(crate.x + 6, crate.y + 6, crate.x + crate.w - 6, crate.y + crate.h - 6);
+      this.world.lineBetween(crate.x + crate.w - 6, crate.y + 6, crate.x + 6, crate.y + crate.h - 6);
+      this.world.fillStyle(0xffe35a, 0.72);
+      this.world.fillRect(crate.x + 5, crate.y + crate.h - 5, Math.min(crate.w - 10, id.length * 3), 2);
+    }
+  }
+
   private drawDoors(openDoors: Set<string>): void {
     for (const door of this.level.doors || []) {
       const open = openDoors.has(door.id);
@@ -411,6 +457,45 @@ export class GameScene extends Phaser.Scene {
       this.world.fillRect(plate.x, plate.y, plate.w, plate.h);
       this.world.lineStyle(2, active ? 0xfff4a0 : 0x43f7ff, active ? 0.86 : 0.36);
       this.world.strokeRect(plate.x, plate.y, plate.w, plate.h);
+    }
+  }
+
+  private drawTimedSwitches(activePlates: Set<string>): void {
+    for (const timedSwitch of this.level.timedSwitches || []) {
+      const active = activePlates.has(timedSwitch.id);
+      this.world.fillStyle(active ? 0xffe35a : 0x2b1d46, active ? 0.82 : 0.72);
+      this.world.fillRoundedRect(timedSwitch.x, timedSwitch.y, timedSwitch.w, timedSwitch.h, 3);
+      this.world.lineStyle(2, active ? 0xfff4a0 : 0xbd5cff, active ? 0.86 : 0.48);
+      this.world.strokeRoundedRect(timedSwitch.x, timedSwitch.y, timedSwitch.w, timedSwitch.h, 3);
+      this.world.lineStyle(1, active ? 0x05070d : 0xbd5cff, active ? 0.48 : 0.54);
+      this.world.strokeCircle(timedSwitch.x + timedSwitch.w / 2, timedSwitch.y + timedSwitch.h / 2, Math.max(4, Math.min(timedSwitch.w, timedSwitch.h) / 3));
+    }
+  }
+
+  private drawEchoSensors(activePlates: Set<string>): void {
+    for (const sensor of this.level.echoSensors || []) {
+      const active = activePlates.has(sensor.id);
+      this.world.fillStyle(active ? 0x50ffc2 : 0x12283f, active ? 0.16 : 0.1);
+      this.world.fillRect(sensor.x, sensor.y, sensor.w, sensor.h);
+      this.world.lineStyle(2, active ? 0x50ffc2 : 0xbd5cff, active ? 0.82 : 0.48);
+      this.world.strokeRect(sensor.x, sensor.y, sensor.w, sensor.h);
+      this.world.lineStyle(1, active ? 0x50ffc2 : 0xbd5cff, active ? 0.32 : 0.24);
+      for (let y = sensor.y + 8; y < sensor.y + sensor.h; y += 12) {
+        this.world.lineBetween(sensor.x + 4, y, sensor.x + sensor.w - 4, y);
+      }
+    }
+  }
+
+  private drawLaunchPads(): void {
+    for (const pad of this.level.launchPads || []) {
+      this.world.fillStyle(0x143447, 0.84);
+      this.world.fillRect(pad.x, pad.y, pad.w, pad.h);
+      this.world.lineStyle(2, 0x50ffc2, 0.86);
+      this.world.strokeRect(pad.x, pad.y, pad.w, pad.h);
+      this.world.fillStyle(0x50ffc2, 0.68);
+      for (let x = pad.x + 6; x < pad.x + pad.w; x += 16) {
+        this.world.fillTriangle(x, pad.y + pad.h - 3, x + 6, pad.y + 4, x + 12, pad.y + pad.h - 3);
+      }
     }
   }
 
@@ -450,6 +535,32 @@ export class GameScene extends Phaser.Scene {
       for (let x = laser.x + ((this.simulation.tick * 2) % 16); x < laser.x + laser.w; x += 18) {
         this.world.fillRect(x, laser.y + 2, 7, Math.max(2, laser.h - 4));
       }
+    }
+  }
+
+  private drawMovingLasers(tick: number, activePlates: Set<string>, blockedLasers: Set<string>): void {
+    for (const laser of this.level.movingLasers || []) {
+      const rect = movingLaserRectAt(laser, tick);
+      const active = laserIsActive(laser, activePlates);
+      const center = rectCenter(rect);
+      this.world.lineStyle(1, 0xff4f8b, 0.22);
+      if (laser.axis === "x") {
+        this.world.lineBetween(laser.x - laser.distance, center.y, laser.x + laser.w + laser.distance, center.y);
+      } else {
+        this.world.lineBetween(center.x, laser.y - laser.distance, center.x, laser.y + laser.h + laser.distance);
+      }
+      if (!active) {
+        this.world.lineStyle(2, 0x43f7ff, 0.18);
+        this.world.strokeRect(rect.x, rect.y, rect.w, rect.h);
+        continue;
+      }
+      const blocked = blockedLasers.has(laser.id);
+      this.world.fillStyle(blocked ? 0xffe35a : 0xff2f6c, blocked ? 0.28 : 0.72);
+      this.world.fillRect(rect.x, rect.y, rect.w, rect.h);
+      this.world.lineStyle(2, blocked ? 0xffe35a : 0xff4f8b, blocked ? 0.9 : 1);
+      this.world.strokeRect(rect.x, rect.y, rect.w, rect.h);
+      this.world.fillStyle(0xffffff, blocked ? 0.18 : 0.34);
+      this.world.fillRect(rect.x, rect.y + rect.h / 2 - 1, rect.w, 2);
     }
   }
 

@@ -51,10 +51,38 @@ export type PatrolDrone = Rect & {
   phase?: number;
 };
 
+export type OneWayPlatform = Rect & {
+  id: string;
+};
+
+export type Conveyor = Rect & {
+  id: string;
+  direction: -1 | 1;
+  speed: number;
+};
+
+export type LaunchPad = Rect & {
+  id: string;
+  powerX?: number;
+  powerY: number;
+};
+
 export type PressurePlate = Rect & {
   id: string;
   label?: string;
   once?: boolean;
+};
+
+export type TimedSwitch = Rect & {
+  id: string;
+  duration: number;
+  label?: string;
+};
+
+export type EchoSensor = Rect & {
+  id: string;
+  actors?: "echo" | "player" | "both";
+  label?: string;
 };
 
 export type Door = Rect & {
@@ -70,12 +98,23 @@ export type Laser = Rect & {
   startsOn?: boolean;
 };
 
+export type MovingLaser = Laser & {
+  axis: "x" | "y";
+  distance: number;
+  period: number;
+  phase?: number;
+};
+
 export type Core = Rect & {
   id: string;
   label?: string;
 };
 
 export type Hazard = Rect & {
+  id: string;
+};
+
+export type PushableCrate = Rect & {
   id: string;
 };
 
@@ -108,12 +147,19 @@ export type Level = {
   bounds: Rect;
   solids: Solid[];
   platforms?: MovingPlatform[];
+  oneWays?: OneWayPlatform[];
+  conveyors?: Conveyor[];
+  launchPads?: LaunchPad[];
   drones?: PatrolDrone[];
   plates?: PressurePlate[];
+  timedSwitches?: TimedSwitch[];
+  echoSensors?: EchoSensor[];
   doors?: Door[];
   lasers?: Laser[];
+  movingLasers?: MovingLaser[];
   cores?: Core[];
   hazards?: Hazard[];
+  crates?: PushableCrate[];
   perfectEchoes: number;
   medalFrames: {
     gold: number;
@@ -133,6 +179,7 @@ export type Medal = "Quantum" | "Gold" | "Silver" | "Bronze";
 
 export type StepEvents = {
   jumped: boolean;
+  launched: boolean;
   landed: boolean;
   switched: boolean;
   core: Vec2 | null;
@@ -147,6 +194,7 @@ export type SimulationSnapshot = {
   openDoors: Set<string>;
   collectedCores: Set<string>;
   blockedLasers: Set<string>;
+  crates: Map<string, Rect>;
   tick: number;
   totalFrames: number;
   dead: boolean;

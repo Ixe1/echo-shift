@@ -3,23 +3,61 @@ import { EDITOR_DRAFT_STORAGE_KEY } from "../data/editorDraft";
 import { backgroundForLevel, isLevelBackgroundKey, levelBackgroundKeys, levelBackgrounds } from "../game/backgrounds";
 import { defaultSoundtrackKeyForLevel, isLevelSoundtrackKey, levelSoundtrackKeys, soundtracks } from "../game/soundtracks";
 import type {
+  Conveyor,
   Core,
   Door,
+  EchoSensor,
   Hazard,
+  LaunchPad,
   Laser,
   Level,
+  MovingLaser,
   MovingPlatform,
+  OneWayPlatform,
   PatrolDrone,
   PressurePlate,
+  PushableCrate,
   Rect,
   Solid,
+  TimedSwitch,
   Vec2
 } from "../game/types";
 import "./levelEditor.css";
 
-const rectCollections = ["solids", "platforms", "hazards", "plates", "doors", "lasers", "cores", "drones"] as const;
+const rectCollections = [
+  "solids",
+  "oneWays",
+  "conveyors",
+  "platforms",
+  "hazards",
+  "launchPads",
+  "plates",
+  "timedSwitches",
+  "echoSensors",
+  "doors",
+  "lasers",
+  "movingLasers",
+  "cores",
+  "drones",
+  "crates"
+] as const;
 type RectCollection = (typeof rectCollections)[number];
-type RectObject = Solid | MovingPlatform | Hazard | PressurePlate | Door | Laser | Core | PatrolDrone;
+type RectObject =
+  | Solid
+  | OneWayPlatform
+  | Conveyor
+  | MovingPlatform
+  | Hazard
+  | LaunchPad
+  | PressurePlate
+  | TimedSwitch
+  | EchoSensor
+  | Door
+  | Laser
+  | MovingLaser
+  | Core
+  | PatrolDrone
+  | PushableCrate;
 type SelectableKind = RectCollection | "start" | "exit";
 type Tool = SelectableKind | "select";
 type PlaceableTool = Exclude<Tool, "select">;
@@ -31,7 +69,7 @@ type PalettePlacement = {
 type EditorPanel = "inspect" | "objects" | "validation" | "export";
 type ValidationSeverity = "error" | "warning";
 type ResizeHandle = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
-type MovingKind = "platforms" | "drones";
+type MovingKind = "platforms" | "drones" | "movingLasers";
 type PathEndpoint = "start" | "end";
 type SelectOption = string | { value: string; label: string };
 
@@ -98,13 +136,20 @@ const CLOSED_GATE_MAX_TOP = 220;
 
 const collectionLabels: Record<RectCollection, string> = {
   solids: "Solids",
+  oneWays: "One-Ways",
+  conveyors: "Conveyors",
   platforms: "Platforms",
   hazards: "Hazards",
+  launchPads: "Launch Pads",
   plates: "Plates",
+  timedSwitches: "Timed Switches",
+  echoSensors: "Echo Sensors",
   doors: "Doors",
   lasers: "Lasers",
   cores: "Cores",
-  drones: "Drones"
+  drones: "Drones",
+  movingLasers: "Moving Lasers",
+  crates: "Crates"
 };
 
 const toolLabels: Record<Tool, string> = {
@@ -112,13 +157,38 @@ const toolLabels: Record<Tool, string> = {
   start: "Start",
   exit: "Exit",
   solids: "Solid",
+  oneWays: "One-Way",
+  conveyors: "Conveyor",
   platforms: "Platform",
   hazards: "Hazard",
+  launchPads: "Launch Pad",
   plates: "Plate",
+  timedSwitches: "Timed Switch",
+  echoSensors: "Echo Sensor",
   doors: "Door",
   lasers: "Laser",
   cores: "Core",
-  drones: "Drone"
+  drones: "Drone",
+  movingLasers: "Moving Laser",
+  crates: "Crate"
+};
+
+const objectIdStems: Record<RectCollection, string> = {
+  solids: "solid",
+  oneWays: "one-way",
+  conveyors: "conveyor",
+  platforms: "platform",
+  hazards: "hazard",
+  launchPads: "launch-pad",
+  plates: "plate",
+  timedSwitches: "timed-switch",
+  echoSensors: "echo-sensor",
+  doors: "door",
+  lasers: "laser",
+  movingLasers: "moving-laser",
+  cores: "core",
+  drones: "drone",
+  crates: "crate"
 };
 
 const solidPresetLabels: Record<SolidPreset, string> = {
@@ -234,12 +304,19 @@ const styleForKind = (kind: SelectableKind, item?: RectObject): { fill: string; 
     if (tone === "glass") return { fill: "#143447", stroke: "#43f7ff", text: "#ecfbff" };
     return { fill: "#17243a", stroke: "#43f7ff", text: "#ecfbff" };
   }
+  if (kind === "oneWays") return { fill: "rgba(80, 255, 194, 0.22)", stroke: "#50ffc2", text: "#ecfbff" };
+  if (kind === "conveyors") return { fill: "rgba(255, 227, 90, 0.28)", stroke: "#ffe35a", text: "#05070d" };
   if (kind === "platforms") return { fill: "#25344d", stroke: "#ffe35a", text: "#fff8bf" };
   if (kind === "hazards") return { fill: "rgba(255, 79, 139, 0.42)", stroke: "#ff4f8b", text: "#fff" };
+  if (kind === "launchPads") return { fill: "rgba(80, 255, 194, 0.36)", stroke: "#50ffc2", text: "#041018" };
   if (kind === "plates") return { fill: "rgba(255, 227, 90, 0.72)", stroke: "#fff4a0", text: "#05070d" };
+  if (kind === "timedSwitches") return { fill: "rgba(189, 92, 255, 0.42)", stroke: "#bd5cff", text: "#ecfbff" };
+  if (kind === "echoSensors") return { fill: "rgba(80, 255, 194, 0.13)", stroke: "#bd5cff", text: "#ecfbff" };
   if (kind === "doors") return { fill: "rgba(189, 92, 255, 0.28)", stroke: "#ff4f8b", text: "#ecfbff" };
   if (kind === "lasers") return { fill: "rgba(255, 47, 108, 0.62)", stroke: "#ff4f8b", text: "#fff" };
+  if (kind === "movingLasers") return { fill: "rgba(255, 47, 108, 0.48)", stroke: "#ff4f8b", text: "#fff" };
   if (kind === "cores") return { fill: "rgba(255, 227, 90, 0.8)", stroke: "#ecfbff", text: "#05070d" };
+  if (kind === "crates") return { fill: "rgba(255, 227, 90, 0.32)", stroke: "#ffe35a", text: "#fff8bf" };
   return { fill: "rgba(255, 79, 139, 0.5)", stroke: "#ff4f8b", text: "#fff" };
 };
 
@@ -250,24 +327,38 @@ const defaultSizeFor = (kind: RectCollection, solidPreset: SolidPreset | null = 
       if (solidPreset === "wall") return { w: 20, h: 180 };
       if (solidPreset === "block") return { w: 80, h: 80 };
       return { w: 180, h: 20 };
+    case "oneWays":
+      return { w: 140, h: 16 };
+    case "conveyors":
+      return { w: 180, h: 20 };
     case "platforms":
       return { w: 120, h: 20 };
     case "hazards":
       return { w: 60, h: 20 };
+    case "launchPads":
+      return { w: 80, h: 20 };
     case "plates":
       return { w: 80, h: 20 };
+    case "timedSwitches":
+      return { w: 80, h: 20 };
+    case "echoSensors":
+      return { w: 120, h: 80 };
     case "doors":
       return { w: 20, h: 300 };
     case "lasers":
+      return { w: 140, h: 20 };
+    case "movingLasers":
       return { w: 140, h: 20 };
     case "cores":
       return { w: 20, h: 20 };
     case "drones":
       return { w: 40, h: 20 };
+    case "crates":
+      return { w: 40, h: 40 };
   }
 };
 
-const movingPath = (item: MovingPlatform | PatrolDrone): { start: number; end: number; center: number; speed: number } => {
+const movingPath = (item: MovingPlatform | PatrolDrone | MovingLaser): { start: number; end: number; center: number; speed: number } => {
   const center = item.axis === "x" ? item.x : item.y;
   const distance = nonNegativeNumber(item.distance, 0);
   return {
@@ -278,7 +369,7 @@ const movingPath = (item: MovingPlatform | PatrolDrone): { start: number; end: n
   };
 };
 
-const movingPathPoints = (item: MovingPlatform | PatrolDrone): { start: Vec2; end: Vec2 } => {
+const movingPathPoints = (item: MovingPlatform | PatrolDrone | MovingLaser): { start: Vec2; end: Vec2 } => {
   const distance = nonNegativeNumber(item.distance, 0);
   return {
     start:
@@ -293,7 +384,7 @@ const movingPathPoints = (item: MovingPlatform | PatrolDrone): { start: Vec2; en
 };
 
 const setMovingPath = (
-  item: MovingPlatform | PatrolDrone,
+  item: MovingPlatform | PatrolDrone | MovingLaser,
   nextStart: number,
   nextEnd: number
 ): void => {
@@ -330,7 +421,7 @@ const ensureCollection = (level: Level, kind: RectCollection): RectObject[] => {
   return record[kind] || [];
 };
 
-const objectIdStem = (kind: RectCollection): string => kind.slice(0, -1) || kind;
+const objectIdStem = (kind: RectCollection): string => objectIdStems[kind];
 
 const normalizedObjectIdValue = (value: unknown): string => {
   if (value === null || value === undefined) return "";
@@ -397,13 +488,20 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number): Level | 
       h: positiveNumber(boundsRecord.h, 540)
     }),
     solids: Array.isArray(value.solids) ? (value.solids as Solid[]).map((item) => normalizeObject(item, "solids", usedObjectIds)) : [],
+    oneWays: normalizeOptionalCollection(value.oneWays, "oneWays", usedObjectIds) as OneWayPlatform[],
+    conveyors: normalizeOptionalCollection(value.conveyors, "conveyors", usedObjectIds) as Conveyor[],
     platforms: normalizeOptionalCollection(value.platforms, "platforms", usedObjectIds) as MovingPlatform[],
+    launchPads: normalizeOptionalCollection(value.launchPads, "launchPads", usedObjectIds) as LaunchPad[],
     drones: normalizeOptionalCollection(value.drones, "drones", usedObjectIds) as PatrolDrone[],
     plates: normalizeOptionalCollection(value.plates, "plates", usedObjectIds) as PressurePlate[],
+    timedSwitches: normalizeOptionalCollection(value.timedSwitches, "timedSwitches", usedObjectIds) as TimedSwitch[],
+    echoSensors: normalizeOptionalCollection(value.echoSensors, "echoSensors", usedObjectIds) as EchoSensor[],
     doors: normalizeOptionalCollection(value.doors, "doors", usedObjectIds) as Door[],
     lasers: normalizeOptionalCollection(value.lasers, "lasers", usedObjectIds) as Laser[],
+    movingLasers: normalizeOptionalCollection(value.movingLasers, "movingLasers", usedObjectIds) as MovingLaser[],
     cores: normalizeOptionalCollection(value.cores, "cores", usedObjectIds) as Core[],
     hazards: normalizeOptionalCollection(value.hazards, "hazards", usedObjectIds) as Hazard[],
+    crates: normalizeOptionalCollection(value.crates, "crates", usedObjectIds) as PushableCrate[],
     perfectEchoes: nonNegativeInteger(value.perfectEchoes, 0),
     medalFrames: {
       gold: positiveInteger(medalRecord.gold, 1800),
@@ -430,15 +528,37 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
   const id = explicitId || nextImportedObjectId(kind, usedIds);
 
   if (kind === "solids") return { ...base, id, tone: record.tone as Solid["tone"] };
-  if (kind === "platforms" || kind === "drones") {
+  if (kind === "conveyors") {
+    return {
+      ...base,
+      id,
+      direction: record.direction === -1 || record.direction === "left" ? -1 : 1,
+      speed: nonNegativeNumber(record.speed, 1.4)
+    } as Conveyor;
+  }
+  if (kind === "platforms" || kind === "drones" || kind === "movingLasers") {
     return {
       ...base,
       id,
       axis: record.axis === "y" ? "y" : "x",
       distance: nonNegativeNumber(record.distance, 100),
       period: positiveInteger(record.period, 180),
-      phase: positiveNumber(record.phase, 0)
-    } as MovingPlatform | PatrolDrone;
+      phase: positiveNumber(record.phase, 0),
+      ...(kind === "movingLasers"
+        ? {
+            disabledBy: Array.isArray(record.disabledBy) ? record.disabledBy.map(String) : undefined,
+            startsOn: record.startsOn === false ? false : record.startsOn === true ? true : undefined
+          }
+        : {})
+    } as MovingPlatform | PatrolDrone | MovingLaser;
+  }
+  if (kind === "launchPads") {
+    return {
+      ...base,
+      id,
+      powerX: Number.isFinite(Number(record.powerX)) ? Number(record.powerX) : undefined,
+      powerY: Math.max(1, positiveNumber(record.powerY, 12))
+    } as LaunchPad;
   }
   if (kind === "plates") {
     return {
@@ -447,6 +567,22 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
       label: typeof record.label === "string" ? record.label : undefined,
       once: record.once === true ? true : undefined
     } as PressurePlate;
+  }
+  if (kind === "timedSwitches") {
+    return {
+      ...base,
+      id,
+      duration: positiveInteger(record.duration, 180),
+      label: typeof record.label === "string" ? record.label : undefined
+    } as TimedSwitch;
+  }
+  if (kind === "echoSensors") {
+    return {
+      ...base,
+      id,
+      actors: record.actors === "player" || record.actors === "both" ? record.actors : "echo",
+      label: typeof record.label === "string" ? record.label : undefined
+    } as EchoSensor;
   }
   if (kind === "doors") {
     return {
@@ -472,7 +608,7 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
       label: typeof record.label === "string" ? record.label : undefined
     } as Core;
   }
-  return { ...base, id } as Hazard;
+  return { ...base, id } as Hazard | OneWayPlatform | PushableCrate;
 };
 
 class LevelEditor {
@@ -546,6 +682,8 @@ class LevelEditor {
           { id: "wall", tool: "solids", label: "Wall", preset: "wall", compact: true },
           { id: "block", tool: "solids", label: "Block", preset: "block", compact: true },
           { id: "solids", tool: "solids", label: "Solid", compact: true },
+          { id: "oneWays", tool: "oneWays", label: "One-Way" },
+          { id: "conveyors", tool: "conveyors", label: "Conveyor" },
           { id: "platforms", tool: "platforms", label: "Platform" }
         ]
       },
@@ -553,18 +691,28 @@ class LevelEditor {
         label: "Hazards",
         tools: [
           { id: "hazards", tool: "hazards", label: "Hazard", compact: true },
-          { id: "lasers", tool: "lasers", label: "Laser", compact: true }
+          { id: "lasers", tool: "lasers", label: "Laser", compact: true },
+          { id: "movingLasers", tool: "movingLasers", label: "Moving Laser" },
+          { id: "launchPads", tool: "launchPads", label: "Launch Pad" }
         ]
       },
       {
         label: "Logic",
         tools: [
           { id: "plates", tool: "plates", label: "Plate", compact: true },
+          { id: "timedSwitches", tool: "timedSwitches", label: "Timed Switch" },
+          { id: "echoSensors", tool: "echoSensors", label: "Echo Sensor" },
           { id: "doors", tool: "doors", label: "Door", compact: true },
           { id: "cores", tool: "cores", label: "Core", compact: true }
         ]
       },
-      { label: "Actors", tools: [{ id: "drones", tool: "drones", label: "Drone" }] },
+      {
+        label: "Actors",
+        tools: [
+          { id: "drones", tool: "drones", label: "Drone", compact: true },
+          { id: "crates", tool: "crates", label: "Crate", compact: true }
+        ]
+      },
       {
         label: "Markers",
         tools: [
@@ -862,14 +1010,36 @@ class LevelEditor {
       record.axis = value === "y" ? "y" : "x";
       return;
     }
+    if (field === "direction") {
+      record.direction = value === "-1" || value === -1 || value === "left" ? -1 : 1;
+      return;
+    }
+    if (field === "actors") {
+      record.actors = value === "player" || value === "both" ? value : "echo";
+      return;
+    }
+    if (field === "conveyorSpeed") {
+      record.speed = Math.max(0, Number(value));
+      return;
+    }
+    if (field === "powerX") {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric) && numeric !== 0) record.powerX = numeric;
+      else delete record.powerX;
+      return;
+    }
+    if (field === "powerY" || field === "duration") {
+      record[field] = field === "duration" ? positiveInteger(value, 1) : Math.max(1, Number(value));
+      return;
+    }
     if (field === "pathStart" || field === "pathEnd") {
-      const moving = target as MovingPlatform | PatrolDrone;
+      const moving = target as MovingPlatform | PatrolDrone | MovingLaser;
       const path = movingPath(moving);
       setMovingPath(moving, field === "pathStart" ? snap(Number(value)) : path.start, field === "pathEnd" ? snap(Number(value)) : path.end);
       return;
     }
     if (field === "speed") {
-      const moving = target as MovingPlatform | PatrolDrone;
+      const moving = target as MovingPlatform | PatrolDrone | MovingLaser;
       const speed = Math.max(1, Number(value));
       moving.period = Math.max(1, Math.round((240 * Math.max(1, moving.distance)) / speed));
       return;
@@ -1102,7 +1272,7 @@ class LevelEditor {
     if (this.drag.mode === "path") {
       const target = this.findObject(this.drag.selection.kind, this.drag.selection.id);
       if (!target) return;
-      const moving = target as MovingPlatform | PatrolDrone;
+      const moving = target as MovingPlatform | PatrolDrone | MovingLaser;
       const axisValue = moving.axis === "x" ? world.x : world.y;
       const path = movingPath(moving);
       setMovingPath(moving, this.drag.endpoint === "start" ? axisValue : path.start, this.drag.endpoint === "end" ? axisValue : path.end);
@@ -1189,16 +1359,16 @@ class LevelEditor {
 
   private hitMotionEndpoint(point: Vec2): { selection: { kind: MovingKind; id: string }; endpoint: PathEndpoint } | null {
     const tolerance = Math.max(HIT_TOLERANCE_PX / this.view.w, 6);
-    const candidates: Array<{ kind: MovingKind; object: MovingPlatform | PatrolDrone }> = [];
+    const candidates: Array<{ kind: MovingKind; object: MovingPlatform | PatrolDrone | MovingLaser }> = [];
     const selected = this.selection;
 
-    if (selected && (selected.kind === "platforms" || selected.kind === "drones")) {
+    if (selected && (selected.kind === "platforms" || selected.kind === "drones" || selected.kind === "movingLasers")) {
       const object = this.findObject(selected.kind, selected.id);
-      if (object) candidates.push({ kind: selected.kind, object: object as MovingPlatform | PatrolDrone });
+      if (object) candidates.push({ kind: selected.kind, object: object as MovingPlatform | PatrolDrone | MovingLaser });
     }
 
-    for (const kind of ["drones", "platforms"] as MovingKind[]) {
-      const objects = [...readCollection(this.level, kind)].reverse() as Array<MovingPlatform | PatrolDrone>;
+    for (const kind of ["drones", "movingLasers", "platforms"] as MovingKind[]) {
+      const objects = [...readCollection(this.level, kind)].reverse() as Array<MovingPlatform | PatrolDrone | MovingLaser>;
       for (const object of objects) candidates.push({ kind, object });
     }
 
@@ -1219,7 +1389,7 @@ class LevelEditor {
   }
 
   private canResizeSelection(selection: Selection): boolean {
-    return selection.kind !== "start" && selection.kind !== "exit" && selection.kind !== "plates" && selection.kind !== "drones";
+    return selection.kind !== "start" && selection.kind !== "exit" && selection.kind !== "plates" && selection.kind !== "timedSwitches" && selection.kind !== "drones";
   }
 
   private addObjectAtViewCenter(): void {
@@ -1261,22 +1431,31 @@ class LevelEditor {
 
   private snapToNearbySurface(kind: RectCollection, rect: Rect): void {
     if (!this.isSurfaceMounted(kind)) return;
-    const surface = this.nearestSurfaceTop(rect);
+    const snapDistance = kind === "crates" ? Math.max(SURFACE_SNAP_DISTANCE, rect.h + 4) : SURFACE_SNAP_DISTANCE;
+    const surface = this.nearestSurfaceTop(rect, snapDistance);
     if (surface === null) return;
     rect.y = surface - rect.h;
   }
 
   private isSurfaceMounted(kind: RectCollection): boolean {
-    return kind === "plates" || kind === "hazards" || kind === "lasers";
+    return (
+      kind === "plates" ||
+      kind === "timedSwitches" ||
+      kind === "hazards" ||
+      kind === "lasers" ||
+      kind === "launchPads" ||
+      kind === "conveyors" ||
+      kind === "crates"
+    );
   }
 
-  private nearestSurfaceTop(rect: Rect): number | null {
-    const candidates = [...this.level.solids, ...readCollection(this.level, "platforms")]
+  private nearestSurfaceTop(rect: Rect, snapDistance = SURFACE_SNAP_DISTANCE): number | null {
+    const candidates = [...this.level.solids, ...readCollection(this.level, "platforms"), ...readCollection(this.level, "oneWays"), ...readCollection(this.level, "conveyors")]
       .filter((surface) => rectsOverlapX(rect, surface))
       .map((surface) => surface.y)
       .filter((surfaceY) => {
         const bottomDistance = Math.abs(rect.y + rect.h - surfaceY);
-        return rect.y <= surfaceY && bottomDistance <= SURFACE_SNAP_DISTANCE;
+        return rect.y <= surfaceY && bottomDistance <= snapDistance;
       })
       .sort((a, b) => Math.abs(rect.y + rect.h - a) - Math.abs(rect.y + rect.h - b));
 
@@ -1329,8 +1508,27 @@ class LevelEditor {
     const collection = ensureCollection(this.level, kind);
     const next = collection.filter((item) => item.id !== id);
     (this.level as unknown as Record<RectCollection, RectObject[]>)[kind] = next;
+    this.removeDeletedObjectReferences(kind, id);
     this.selection = null;
     this.afterMutation("Object deleted");
+  }
+
+  private removeDeletedObjectReferences(kind: RectCollection, id: string): void {
+    if (kind === "plates" || kind === "timedSwitches" || kind === "echoSensors") {
+      for (const door of readCollection(this.level, "doors") as Door[]) {
+        door.opensWith = (door.opensWith || []).filter((triggerId) => triggerId !== id);
+      }
+      for (const laser of [...readCollection(this.level, "lasers"), ...readCollection(this.level, "movingLasers")] as Array<Laser | MovingLaser>) {
+        const next = (laser.disabledBy || []).filter((triggerId) => triggerId !== id);
+        if (next.length > 0) laser.disabledBy = next;
+        else delete laser.disabledBy;
+      }
+    }
+    if (kind === "cores") {
+      for (const door of readCollection(this.level, "doors") as Door[]) {
+        if (door.requiresCore === id) delete door.requiresCore;
+      }
+    }
   }
 
   private createObject(kind: RectCollection, point: Vec2, solidPreset: SolidPreset | null = null): RectObject {
@@ -1341,13 +1539,20 @@ class LevelEditor {
       const tone: Solid["tone"] = solidPreset === "wall" ? "dark" : solidPreset === "block" ? "glass" : "steel";
       return { ...base, tone };
     }
+    if (kind === "oneWays") return base as OneWayPlatform;
+    if (kind === "conveyors") return { ...base, direction: 1, speed: 1.4 } as Conveyor;
     if (kind === "platforms") return { ...base, axis: "x", distance: 100, period: 180, phase: 0 } as MovingPlatform;
     if (kind === "hazards") return base as Hazard;
+    if (kind === "launchPads") return { ...base, powerY: 12 } as LaunchPad;
     if (kind === "plates") return base as PressurePlate;
+    if (kind === "timedSwitches") return { ...base, duration: 180 } as TimedSwitch;
+    if (kind === "echoSensors") return { ...base, actors: "echo" } as EchoSensor;
     if (kind === "doors") return { ...base, opensWith: [] } as Door;
     if (kind === "lasers") return { ...base, startsOn: true } as Laser;
+    if (kind === "movingLasers") return { ...base, startsOn: true, axis: "x", distance: 100, period: 180, phase: 0 } as MovingLaser;
     if (kind === "cores") return { ...base, label: id.split("-").at(-1)?.toUpperCase() } as Core;
-    return { ...base, axis: "x", distance: 120, period: 200, phase: 0 } as PatrolDrone;
+    if (kind === "drones") return { ...base, axis: "x", distance: 120, period: 200, phase: 0 } as PatrolDrone;
+    return base as PushableCrate;
   }
 
   private nextObjectId(kind: RectCollection, stemOverride?: string): string {
@@ -1516,11 +1721,22 @@ class LevelEditor {
     if (kind === "solids") {
       return this.selectField("Tone", "tone", String(record.tone || ""), ["", "steel", "glass", "warning", "dark"]);
     }
-    if (kind === "platforms" || kind === "drones") {
-      const moving = object as MovingPlatform | PatrolDrone;
+    if (kind === "conveyors") {
+      return `
+        <div class="inspector-grid two">
+          ${this.selectField("Direction", "direction", String(record.direction || 1), [
+            { value: "1", label: "Right" },
+            { value: "-1", label: "Left" }
+          ])}
+          ${this.numberField("Speed", "conveyorSpeed", Number(record.speed || 1.4), "object", 0.1)}
+        </div>
+      `;
+    }
+    if (kind === "platforms" || kind === "drones" || kind === "movingLasers") {
+      const moving = object as MovingPlatform | PatrolDrone | MovingLaser;
       const path = movingPath(moving);
       const axisName = moving.axis === "x" ? "X" : "Y";
-      return `
+      const movingFields = `
         <div class="inspector-grid two">
           ${this.selectField("Axis", "axis", String(record.axis || "x"), ["x", "y"])}
           ${this.numberField("Speed", "speed", path.speed || 1, "object", 5)}
@@ -1532,9 +1748,38 @@ class LevelEditor {
           ${this.numberField("Phase", "phase", Number(record.phase || 0), "object", 0.1)}
         </div>
       `;
+      if (kind !== "movingLasers") return movingFields;
+      return `${movingFields}
+        ${this.textField("Disabled By", "disabledBy", listToCsv(record.disabledBy as string[] | undefined), "object")}
+        ${this.checkboxField("Starts On", "startsOn", record.startsOn !== false)}
+      `;
+    }
+    if (kind === "launchPads") {
+      return `
+        <div class="inspector-grid two">
+          ${this.numberField("Power X", "powerX", Number(record.powerX || 0), "object", 0.5)}
+          ${this.numberField("Power Y", "powerY", Number(record.powerY || 12), "object", 0.5)}
+        </div>
+      `;
     }
     if (kind === "plates") {
       return `${this.textField("Label", "label", String(record.label || ""), "object")}${this.checkboxField("Once", "once", record.once === true)}`;
+    }
+    if (kind === "timedSwitches") {
+      return `
+        ${this.textField("Label", "label", String(record.label || ""), "object")}
+        ${this.numberField("Duration", "duration", Number(record.duration || 180), "object", 1)}
+      `;
+    }
+    if (kind === "echoSensors") {
+      return `
+        ${this.textField("Label", "label", String(record.label || ""), "object")}
+        ${this.selectField("Actors", "actors", String(record.actors || "echo"), [
+          { value: "echo", label: "Echo Only" },
+          { value: "player", label: "Player Only" },
+          { value: "both", label: "Either" }
+        ])}
+      `;
     }
     if (kind === "doors") {
       return `
@@ -1698,13 +1943,37 @@ class LevelEditor {
         if (object.w <= 0 || object.h <= 0) {
           messages.push({ severity: "error", text: `${level.name}:${object.id} has non-positive size.` });
         }
-        if (kind === "platforms" || kind === "drones") {
-          const moving = object as MovingPlatform | PatrolDrone;
+        if (kind === "platforms" || kind === "drones" || kind === "movingLasers") {
+          const moving = object as MovingPlatform | PatrolDrone | MovingLaser;
           if (!Number.isFinite(moving.distance) || moving.distance < 0) {
             messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid movement distance.` });
           }
           if (!Number.isFinite(moving.period) || moving.period <= 0) {
             messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid movement period.` });
+          }
+        }
+        if (kind === "conveyors") {
+          const conveyor = object as Conveyor;
+          if ((conveyor.direction !== -1 && conveyor.direction !== 1) || !Number.isFinite(conveyor.speed) || conveyor.speed < 0) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid conveyor settings.` });
+          }
+        }
+        if (kind === "launchPads") {
+          const launchPad = object as LaunchPad;
+          if (!Number.isFinite(launchPad.powerY) || launchPad.powerY <= 0 || (launchPad.powerX !== undefined && !Number.isFinite(launchPad.powerX))) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid launch force.` });
+          }
+        }
+        if (kind === "timedSwitches") {
+          const timedSwitch = object as TimedSwitch;
+          if (!Number.isFinite(timedSwitch.duration) || timedSwitch.duration <= 0) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid timed switch duration.` });
+          }
+        }
+        if (kind === "echoSensors") {
+          const sensor = object as EchoSensor;
+          if (sensor.actors && sensor.actors !== "echo" && sensor.actors !== "player" && sensor.actors !== "both") {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid sensor actor mode.` });
           }
         }
         const structuralSolid =
@@ -1716,12 +1985,16 @@ class LevelEditor {
       }
     }
 
-    const plateIds = new Set(readCollection(level, "plates").map((plate) => plate.id));
+    const triggerIds = new Set([
+      ...readCollection(level, "plates").map((plate) => plate.id),
+      ...readCollection(level, "timedSwitches").map((timedSwitch) => timedSwitch.id),
+      ...readCollection(level, "echoSensors").map((sensor) => sensor.id)
+    ]);
     const coreIds = new Set(readCollection(level, "cores").map((core) => core.id));
     for (const door of readCollection(level, "doors") as Door[]) {
-      for (const plateId of door.opensWith || []) {
-        if (!plateIds.has(plateId)) {
-          messages.push({ severity: "error", text: `${level.name}:${door.id} references missing plate ${plateId}.` });
+      for (const triggerId of door.opensWith || []) {
+        if (!triggerIds.has(triggerId)) {
+          messages.push({ severity: "error", text: `${level.name}:${door.id} references missing trigger ${triggerId}.` });
         }
       }
       if (door.requiresCore && !coreIds.has(door.requiresCore)) {
@@ -1732,10 +2005,10 @@ class LevelEditor {
         messages.push({ severity: "warning", text: `${level.name}:${door.id} may be short enough to jump over.` });
       }
     }
-    for (const laser of readCollection(level, "lasers") as Laser[]) {
-      for (const plateId of laser.disabledBy || []) {
-        if (!plateIds.has(plateId)) {
-          messages.push({ severity: "error", text: `${level.name}:${laser.id} references missing plate ${plateId}.` });
+    for (const laser of [...readCollection(level, "lasers"), ...readCollection(level, "movingLasers")] as Array<Laser | MovingLaser>) {
+      for (const triggerId of laser.disabledBy || []) {
+        if (!triggerIds.has(triggerId)) {
+          messages.push({ severity: "error", text: `${level.name}:${laser.id} references missing trigger ${triggerId}.` });
         }
       }
     }
@@ -1822,17 +2095,37 @@ class LevelEditor {
     const style = styleForKind(kind, object);
     const selected = this.selectionMatches({ kind, id: object.id });
 
-    if (kind === "platforms" || kind === "drones") {
-      const moving = object as MovingPlatform | PatrolDrone;
+    if (kind === "platforms" || kind === "drones" || kind === "movingLasers") {
+      const moving = object as MovingPlatform | PatrolDrone | MovingLaser;
       this.drawMotionPath(kind, moving, selected);
     }
 
+    if (kind === "oneWays") {
+      this.drawOneWay(object, style, selected);
+      return;
+    }
+    if (kind === "conveyors") {
+      this.drawConveyor(object as Conveyor, style, selected);
+      return;
+    }
     if (kind === "cores") {
       this.drawDiamond(object, style, selected);
       return;
     }
+    if (kind === "launchPads") {
+      this.drawLaunchPad(object, style, selected);
+      return;
+    }
+    if (kind === "echoSensors") {
+      this.drawEchoSensor(object, style, selected);
+      return;
+    }
     if (kind === "hazards") {
       this.drawHazard(object, style, selected);
+      return;
+    }
+    if (kind === "movingLasers") {
+      this.drawMovingLaser(object, style, selected);
       return;
     }
     if (kind === "drones") {
@@ -1845,6 +2138,89 @@ class LevelEditor {
     ctx.lineWidth = selected ? 4 / this.view.w : 2 / this.view.w;
     ctx.fillRect(object.x, object.y, object.w, object.h);
     ctx.strokeRect(object.x, object.y, object.w, object.h);
+    this.drawObjectLabel(object, object.id, style.text);
+  }
+
+  private drawOneWay(object: RectObject, style: { fill: string; stroke: string; text: string }, selected: boolean): void {
+    const ctx = this.context;
+    ctx.fillStyle = style.fill;
+    ctx.strokeStyle = selected ? "#fff8bf" : style.stroke;
+    ctx.lineWidth = selected ? 4 / this.view.w : 2 / this.view.w;
+    ctx.fillRect(object.x, object.y, object.w, object.h);
+    ctx.beginPath();
+    ctx.moveTo(object.x, object.y);
+    ctx.lineTo(object.x + object.w, object.y);
+    ctx.stroke();
+    for (let x = object.x + 8; x < object.x + object.w; x += 18) {
+      ctx.beginPath();
+      ctx.moveTo(x, object.y + object.h - 3);
+      ctx.lineTo(x + 7, object.y + 4);
+      ctx.stroke();
+    }
+    this.drawObjectLabel(object, object.id, style.text);
+  }
+
+  private drawConveyor(object: Conveyor, style: { fill: string; stroke: string; text: string }, selected: boolean): void {
+    const ctx = this.context;
+    const direction = object.direction >= 0 ? 1 : -1;
+    ctx.fillStyle = style.fill;
+    ctx.strokeStyle = selected ? "#fff8bf" : style.stroke;
+    ctx.lineWidth = selected ? 4 / this.view.w : 2 / this.view.w;
+    ctx.fillRect(object.x, object.y, object.w, object.h);
+    ctx.strokeRect(object.x, object.y, object.w, object.h);
+    for (let x = object.x + 12; x < object.x + object.w - 8; x += 26) {
+      ctx.beginPath();
+      ctx.moveTo(x - direction * 7, object.y + object.h / 2);
+      ctx.lineTo(x + direction * 7, object.y + object.h / 2);
+      ctx.lineTo(x + direction * 2, object.y + object.h / 2 - 5);
+      ctx.moveTo(x + direction * 7, object.y + object.h / 2);
+      ctx.lineTo(x + direction * 2, object.y + object.h / 2 + 5);
+      ctx.stroke();
+    }
+    this.drawObjectLabel(object, object.id, style.text);
+  }
+
+  private drawLaunchPad(object: RectObject, style: { fill: string; stroke: string; text: string }, selected: boolean): void {
+    const ctx = this.context;
+    ctx.fillStyle = style.fill;
+    ctx.strokeStyle = selected ? "#fff8bf" : style.stroke;
+    ctx.lineWidth = selected ? 4 / this.view.w : 2 / this.view.w;
+    ctx.fillRect(object.x, object.y, object.w, object.h);
+    ctx.strokeRect(object.x, object.y, object.w, object.h);
+    for (let x = object.x + 6; x < object.x + object.w; x += 16) {
+      ctx.beginPath();
+      ctx.moveTo(x, object.y + object.h - 3);
+      ctx.lineTo(x + 6, object.y + 4);
+      ctx.lineTo(x + 12, object.y + object.h - 3);
+      ctx.stroke();
+    }
+    this.drawObjectLabel(object, object.id, style.text);
+  }
+
+  private drawEchoSensor(object: RectObject, style: { fill: string; stroke: string; text: string }, selected: boolean): void {
+    const ctx = this.context;
+    ctx.fillStyle = style.fill;
+    ctx.strokeStyle = selected ? "#fff8bf" : style.stroke;
+    ctx.lineWidth = selected ? 4 / this.view.w : 2 / this.view.w;
+    ctx.fillRect(object.x, object.y, object.w, object.h);
+    ctx.strokeRect(object.x, object.y, object.w, object.h);
+    ctx.setLineDash([8 / this.view.w, 5 / this.view.w]);
+    ctx.strokeRect(object.x + 5, object.y + 5, Math.max(0, object.w - 10), Math.max(0, object.h - 10));
+    ctx.setLineDash([]);
+    this.drawObjectLabel(object, object.id, style.text);
+  }
+
+  private drawMovingLaser(object: RectObject, style: { fill: string; stroke: string; text: string }, selected: boolean): void {
+    const ctx = this.context;
+    ctx.fillStyle = style.fill;
+    ctx.strokeStyle = selected ? "#fff8bf" : style.stroke;
+    ctx.lineWidth = selected ? 4 / this.view.w : 2 / this.view.w;
+    ctx.fillRect(object.x, object.y, object.w, object.h);
+    ctx.strokeRect(object.x, object.y, object.w, object.h);
+    ctx.beginPath();
+    ctx.moveTo(object.x, object.y + object.h / 2);
+    ctx.lineTo(object.x + object.w, object.y + object.h / 2);
+    ctx.stroke();
     this.drawObjectLabel(object, object.id, style.text);
   }
 
@@ -1920,7 +2296,7 @@ class LevelEditor {
     this.drawObjectLabel(exit, "exit", exitStyle.text);
   }
 
-  private drawMotionPath(kind: "platforms" | "drones", object: MovingPlatform | PatrolDrone, selected: boolean): void {
+  private drawMotionPath(kind: MovingKind, object: MovingPlatform | PatrolDrone | MovingLaser, selected: boolean): void {
     const ctx = this.context;
     const { start, end } = movingPathPoints(object);
     const color = kind === "platforms" ? "#ffe35a" : "#ff4f8b";

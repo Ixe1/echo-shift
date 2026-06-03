@@ -50,13 +50,26 @@ const movingObjectLike = (value: unknown): boolean =>
   (value.phase === undefined || finiteValue(value.phase));
 
 const solidLike = (value: unknown): boolean => objectRectLike(value) && optionalString(value.tone);
+const oneWayLike = (value: unknown): boolean => objectRectLike(value);
+const conveyorLike = (value: unknown): boolean =>
+  objectRectLike(value) && (value.direction === -1 || value.direction === 1) && finiteValue(value.speed) && value.speed >= 0;
 const hazardLike = (value: unknown): boolean => objectRectLike(value);
+const launchPadLike = (value: unknown): boolean =>
+  objectRectLike(value) && finiteValue(value.powerY) && value.powerY > 0 && (value.powerX === undefined || finiteValue(value.powerX));
 const plateLike = (value: unknown): boolean => objectRectLike(value) && optionalString(value.label) && optionalBoolean(value.once);
+const timedSwitchLike = (value: unknown): boolean =>
+  objectRectLike(value) && positiveIntegerValue(value.duration) && optionalString(value.label);
+const echoSensorLike = (value: unknown): boolean =>
+  objectRectLike(value) &&
+  (value.actors === undefined || value.actors === "echo" || value.actors === "player" || value.actors === "both") &&
+  optionalString(value.label);
 const coreLike = (value: unknown): boolean => objectRectLike(value) && optionalString(value.label);
 const doorLike = (value: unknown): boolean =>
   objectRectLike(value) && optionalStringArray(value.opensWith) && optionalString(value.requiresCore) && optionalBoolean(value.inverted);
 const laserLike = (value: unknown): boolean =>
   objectRectLike(value) && optionalStringArray(value.disabledBy) && optionalBoolean(value.startsOn);
+const movingLaserLike = (value: unknown): boolean => movingObjectLike(value) && optionalStringArray((value as Record<string, unknown>).disabledBy) && optionalBoolean((value as Record<string, unknown>).startsOn);
+const crateLike = (value: unknown): boolean => objectRectLike(value);
 
 const optionalObjectArray = (value: unknown, predicate: (item: unknown) => boolean): boolean =>
   value === undefined || (Array.isArray(value) && value.every(predicate));
@@ -78,13 +91,20 @@ const levelLike = (value: unknown): value is Level => {
     rectLike(value.bounds) &&
     Array.isArray(value.solids) &&
     value.solids.every(solidLike) &&
+    optionalObjectArray(value.oneWays, oneWayLike) &&
+    optionalObjectArray(value.conveyors, conveyorLike) &&
     optionalObjectArray(value.platforms, movingObjectLike) &&
+    optionalObjectArray(value.launchPads, launchPadLike) &&
     optionalObjectArray(value.drones, movingObjectLike) &&
     optionalObjectArray(value.plates, plateLike) &&
+    optionalObjectArray(value.timedSwitches, timedSwitchLike) &&
+    optionalObjectArray(value.echoSensors, echoSensorLike) &&
     optionalObjectArray(value.doors, doorLike) &&
     optionalObjectArray(value.lasers, laserLike) &&
+    optionalObjectArray(value.movingLasers, movingLaserLike) &&
     optionalObjectArray(value.cores, coreLike) &&
     optionalObjectArray(value.hazards, hazardLike) &&
+    optionalObjectArray(value.crates, crateLike) &&
     nonNegativeIntegerValue(value.perfectEchoes) &&
     isRecord(medalFrames) &&
     positiveIntegerValue(medalFrames.gold) &&

@@ -1,5 +1,5 @@
 import { clamp, rectsOverlap } from "./geometry";
-import type { ActorBody, InputFrame, MovingPlatform, Rect, Solid } from "./types";
+import type { ActorBody, Conveyor, InputFrame, MovingPlatform, OneWayPlatform, Rect, Solid } from "./types";
 
 const PLAYER_WIDTH = 24;
 const PLAYER_HEIGHT = 34;
@@ -48,6 +48,19 @@ export type PlatformFrame = {
   previous: Rect;
 };
 
+export type DynamicCollisionState = {
+  oneWays?: OneWayPlatform[];
+  conveyors?: Conveyor[];
+  crates?: Map<string, Rect>;
+};
+
+type CollisionRect = Rect & {
+  platformId?: string;
+  oneWay?: boolean;
+  conveyor?: Conveyor;
+  crateId?: string;
+};
+
 export type MoveResult = {
   jumped: boolean;
   landed: boolean;
@@ -81,7 +94,8 @@ export const moveActor = (
   solids: Solid[],
   doors: Rect[],
   platforms: PlatformFrame[],
-  bounds: Rect
+  bounds: Rect,
+  dynamic: DynamicCollisionState = {}
 ): MoveResult => {
   const wasGrounded = actor.onGround;
   const platformFrame = actor.standingOn
@@ -132,17 +146,23 @@ export const moveActor = (
   actor.onGround = false;
   actor.standingOn = null;
 
-  const collisionRects: Array<Rect & { platformId?: string }> = [
+  const collisionRects: CollisionRect[] = [
     ...solids,
     ...doors,
+    ...(dynamic.conveyors || []).map((conveyor) => ({ ...conveyor, conveyor })),
     ...platforms.map((platform) => ({ ...platform.current, platformId: platform.platform.id }))
   ];
+  const oneWayRects: CollisionRect[] = (dynamic.oneWays || []).map((oneWay) => ({ ...oneWay, oneWay: true }));
+  const crateRects = crateCollisionRects(dynamic.crates);
 
   actor.x += actor.vx;
-  resolveAxis(actor, collisionRects, "x");
+  resolveAxis(actor, [...collisionRects, ...crateRects], "x", bounds, dynamic.crates);
 
+  const previousY = actor.y;
   actor.y += actor.vy;
-  resolveAxis(actor, collisionRects, "y");
+  resolveAxis(actor, [...collisionRects, ...oneWayRects, ...crateCollisionRects(dynamic.crates)], "y", bounds, dynamic.crates, previousY);
+
+  applyConveyor(actor, dynamic.conveyors || [], [...collisionRects, ...crateCollisionRects(dynamic.crates)], bounds, dynamic.crates);
 
   actor.x = clamp(actor.x, bounds.x, bounds.x + bounds.w - actor.w);
   if (actor.y > bounds.y + bounds.h + 120) {
@@ -155,12 +175,28 @@ export const moveActor = (
 
 const resolveAxis = (
   actor: ActorBody,
-  solids: Array<Solid | (Rect & { platformId?: string })>,
+  solids: CollisionRect[],
   axis: "x" | "y",
+  bounds: Rect,
+  crates?: Map<string, Rect>,
+  previousY = actor.y
 ): void => {
   for (const solid of solids) {
+    if (solid.oneWay && axis === "x") continue;
+    if (solid.oneWay && (actor.vy <= 0 || previousY + actor.h > solid.y + 3)) continue;
     if (!rectsOverlap(actor, solid)) continue;
     if (axis === "x") {
+      if (solid.crateId && crates && actor.vx !== 0) {
+        pushCrate(solid.crateId, actor.vx, crates, solids, bounds);
+        const crate = crates.get(solid.crateId);
+        if (crate) {
+          solid.x = crate.x;
+          solid.y = crate.y;
+          solid.w = crate.w;
+          solid.h = crate.h;
+        }
+        if (!rectsOverlap(actor, solid)) continue;
+      }
       if (actor.vx > 0) actor.x = solid.x - actor.w;
       else if (actor.vx < 0) actor.x = solid.x + solid.w;
       actor.vx = 0;
@@ -176,4 +212,38 @@ const resolveAxis = (
       }
     }
   }
+};
+
+const crateCollisionRects = (crates?: Map<string, Rect>): CollisionRect[] =>
+  [...(crates || new Map()).entries()].map(([id, rect]) => ({ ...rect, crateId: id }));
+
+const pushCrate = (
+  id: string,
+  amount: number,
+  crates: Map<string, Rect>,
+  collisionRects: CollisionRect[],
+  bounds: Rect
+): void => {
+  const crate = crates.get(id);
+  if (!crate) return;
+  const next = { ...crate, x: crate.x + amount };
+  if (next.x < bounds.x || next.x + next.w > bounds.x + bounds.w) return;
+  const blockers = collisionRects.filter((rect) => rect.crateId !== id && !rect.oneWay);
+  if (blockers.some((blocker) => rectsOverlap(next, blocker))) return;
+  crate.x = next.x;
+};
+
+const applyConveyor = (
+  actor: ActorBody,
+  conveyors: Conveyor[],
+  collisionRects: CollisionRect[],
+  bounds: Rect,
+  crates?: Map<string, Rect>
+): void => {
+  if (!actor.onGround) return;
+  const foot = actorFoot(actor);
+  const conveyor = conveyors.find((item) => Math.abs(foot.y + foot.h - item.y) <= 7 && rectsOverlap(foot, item));
+  if (!conveyor) return;
+  actor.x += conveyor.direction * conveyor.speed;
+  resolveAxis(actor, [...collisionRects, ...crateCollisionRects(crates)], "x", bounds, crates);
 };

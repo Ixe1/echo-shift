@@ -65,13 +65,14 @@ export class RoomSimulation {
     this.echoes = this.echoRecordings.map((recording) =>
       makeActor(recording.id, "echo", this.level.start)
     );
-    this.objectState = createObjectState();
+    this.objectState = createObjectState(this.level);
     if (!keepRecording) this.currentRecording = [];
   }
 
   step(input: InputFrame): StepEvents {
     const events: StepEvents = {
       jumped: false,
+      launched: false,
       landed: false,
       switched: false,
       core: null,
@@ -84,22 +85,29 @@ export class RoomSimulation {
     const platforms = platformFramesAt(this.level.platforms, this.tick);
     const doors = closedDoorRects(this.level, this.objectState.openDoors);
     const solids = this.level.solids;
+    const dynamic = {
+      oneWays: this.level.oneWays,
+      conveyors: this.level.conveyors,
+      crates: this.objectState.crates
+    };
 
     for (let index = 0; index < this.echoes.length; index += 1) {
       const echo = this.echoes[index];
       const recording = this.echoRecordings[index];
       const echoInput = recording.frames[this.tick] || blankInputFrame();
-      moveActor(echo, echoInput, solids, doors, platforms, this.level.bounds);
+      moveActor(echo, echoInput, solids, doors, platforms, this.level.bounds, dynamic);
+      this.applyLaunchPads(echo);
     }
 
     if (!this.dead) {
       this.currentRecording.push(cloneInputFrame(input));
-      const moved = moveActor(this.player, input, solids, doors, platforms, this.level.bounds);
+      const moved = moveActor(this.player, input, solids, doors, platforms, this.level.bounds, dynamic);
       events.jumped = moved.jumped;
       events.landed = moved.landed;
+      events.launched = this.applyLaunchPads(this.player);
     }
 
-    const objectUpdate = updateObjects(this.level, [this.player, ...this.echoes], this.objectState);
+    const objectUpdate = updateObjects(this.level, [this.player, ...this.echoes], this.objectState, this.tick);
     this.objectState = objectUpdate.state;
     events.switched = objectUpdate.switched;
     events.core = objectUpdate.core;
@@ -133,6 +141,7 @@ export class RoomSimulation {
       openDoors: new Set(this.objectState.openDoors),
       collectedCores: new Set(this.objectState.collectedCores),
       blockedLasers: new Set(this.objectState.blockedLasers),
+      crates: new Map([...this.objectState.crates.entries()].map(([id, rect]) => [id, { ...rect }])),
       tick: this.tick,
       totalFrames: this.totalFrames,
       dead: this.dead,
@@ -157,5 +166,17 @@ export class RoomSimulation {
     const plates = [...this.objectState.activePlates].join(", ") || "none";
     const cores = [...this.objectState.collectedCores].join(", ") || "none";
     return `Level ${this.level.index + 1}, ${seconds}s, ${this.echoRecordings.length} echoes, plates ${plates}, cores ${cores}`;
+  }
+
+  private applyLaunchPads(actor: ActorBody): boolean {
+    if (!actor.alive || actor.vy < 0) return false;
+    const launchPad = (this.level.launchPads || []).find((pad) => rectsOverlap(actor, pad));
+    if (!launchPad) return false;
+    actor.vx += launchPad.powerX || 0;
+    actor.vy = -Math.max(1, launchPad.powerY);
+    actor.onGround = false;
+    actor.coyote = 0;
+    actor.standingOn = null;
+    return true;
   }
 }

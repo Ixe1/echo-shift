@@ -1,11 +1,13 @@
 import { rectsOverlap } from "./geometry";
 import type {
   ActorBody,
+  EchoSensor,
   Core,
   Door,
   Hazard,
   Laser,
   Level,
+  MovingLaser,
   PatrolDrone,
   PressurePlate,
   Rect
@@ -14,25 +16,34 @@ import type {
 export type ObjectState = {
   activePlates: Set<string>;
   latchedPlates: Set<string>;
+  timedSwitchTimers: Map<string, number>;
   openDoors: Set<string>;
   collectedCores: Set<string>;
   blockedLasers: Set<string>;
+  crates: Map<string, Rect>;
 };
 
-export const createObjectState = (): ObjectState => ({
+export const createObjectState = (level?: Level): ObjectState => ({
   activePlates: new Set(),
   latchedPlates: new Set(),
+  timedSwitchTimers: new Map(),
   openDoors: new Set(),
   collectedCores: new Set(),
-  blockedLasers: new Set()
+  blockedLasers: new Set(),
+  crates: new Map((level?.crates || []).map((crate) => [crate.id, { x: crate.x, y: crate.y, w: crate.w, h: crate.h }]))
 });
 
 export const updateObjects = (
   level: Level,
   actors: ActorBody[],
-  previous: ObjectState
+  previous: ObjectState,
+  tick = 0
 ): { state: ObjectState; switched: boolean; core: { x: number; y: number } | null } => {
-  const activePlates = collectActivePlates(level.plates || [], actors, previous.latchedPlates);
+  const crateRects = [...previous.crates.values()];
+  const timedSwitchTimers = updateTimedSwitchTimers(level, actors, crateRects, previous.timedSwitchTimers);
+  const activePlates = collectActivePlates(level.plates || [], actors, crateRects, previous.latchedPlates);
+  collectActiveTimedSwitches(timedSwitchTimers, activePlates);
+  collectActiveEchoSensors(level.echoSensors || [], actors, activePlates);
   const latchedPlates = new Set(previous.latchedPlates);
   for (const plate of level.plates || []) {
     if (plate.once && activePlates.has(plate.id)) latchedPlates.add(plate.id);
@@ -52,17 +63,21 @@ export const updateObjects = (
   }
 
   const openDoors = collectOpenDoors(level.doors || [], activePlates, collectedCores);
-  const blockedLasers = collectBlockedLasers(level.lasers || [], actors);
+  const blockedLasers = collectBlockedLasers([...(level.lasers || []), ...(level.movingLasers || [])], actors, crateRects, tick);
   const switched =
-    setChanged(previous.activePlates, activePlates) || setChanged(previous.openDoors, openDoors);
+    setChanged(previous.activePlates, activePlates) ||
+    setChanged(previous.openDoors, openDoors) ||
+    setChanged(previous.blockedLasers, blockedLasers);
 
   return {
     state: {
       activePlates,
       latchedPlates,
+      timedSwitchTimers,
       openDoors,
       collectedCores,
-      blockedLasers
+      blockedLasers,
+      crates: previous.crates
     },
     switched,
     core
@@ -89,6 +104,13 @@ export const playerTouchesHazard = (
     if (!objectState.blockedLasers.has(laser.id)) return true;
   }
 
+  for (const laser of level.movingLasers || []) {
+    const rect = movingLaserRectAt(laser, tick);
+    if (!laserIsActive(laser, objectState.activePlates)) continue;
+    if (!rectsOverlap(player, rect)) continue;
+    if (!objectState.blockedLasers.has(laser.id)) return true;
+  }
+
   return false;
 };
 
@@ -110,18 +132,71 @@ export const laserIsActive = (laser: Laser, activePlates: Set<string>): boolean 
   return startsOn && !disabled;
 };
 
+export const movingLaserRectAt = (laser: MovingLaser, tick: number): Rect => {
+  const phase = laser.phase || 0;
+  const wave = Math.sin(((tick / laser.period) * Math.PI * 2) + phase);
+  const offset = wave * laser.distance;
+  return {
+    x: laser.x + (laser.axis === "x" ? offset : 0),
+    y: laser.y + (laser.axis === "y" ? offset : 0),
+    w: laser.w,
+    h: laser.h
+  };
+};
+
 const collectActivePlates = (
   plates: PressurePlate[],
   actors: ActorBody[],
+  crates: Rect[],
   latchedPlates: Set<string>
 ): Set<string> => {
   const active = new Set(latchedPlates);
   for (const plate of plates) {
-    if (actors.some((actor) => actor.alive && rectsOverlap(actor, plate))) {
+    if (actors.some((actor) => actor.alive && rectsOverlap(actor, plate)) || crates.some((crate) => rectsOverlap(crate, plate))) {
       active.add(plate.id);
     }
   }
   return active;
+};
+
+const updateTimedSwitchTimers = (
+  level: Level,
+  actors: ActorBody[],
+  crates: Rect[],
+  previous: Map<string, number>
+): Map<string, number> => {
+  const timers = new Map<string, number>();
+  for (const [id, remaining] of previous) {
+    if (remaining > 1) timers.set(id, remaining - 1);
+  }
+  for (const timedSwitch of level.timedSwitches || []) {
+    if (actors.some((actor) => actor.alive && rectsOverlap(actor, timedSwitch)) || crates.some((crate) => rectsOverlap(crate, timedSwitch))) {
+      timers.set(timedSwitch.id, Math.max(1, Math.round(timedSwitch.duration)));
+    }
+  }
+  return timers;
+};
+
+const collectActiveTimedSwitches = (timers: Map<string, number>, active: Set<string>): void => {
+  for (const [id, remaining] of timers) {
+    if (remaining > 0) active.add(id);
+  }
+};
+
+const collectActiveEchoSensors = (sensors: EchoSensor[], actors: ActorBody[], active: Set<string>): void => {
+  for (const sensor of sensors) {
+    const actorMode = sensor.actors || "echo";
+    if (
+      actors.some(
+        (actor) =>
+          actor.alive &&
+          rectsOverlap(actor, sensor) &&
+          (actorMode === "both" || actor.kind === actorMode)
+      )
+    ) {
+      active.add(sensor.id);
+    }
+  }
 };
 
 const collectOpenDoors = (
@@ -139,11 +214,12 @@ const collectOpenDoors = (
   return open;
 };
 
-const collectBlockedLasers = (lasers: Laser[], actors: ActorBody[]): Set<string> => {
+const collectBlockedLasers = (lasers: Laser[], actors: ActorBody[], crates: Rect[], tick: number): Set<string> => {
   const blocked = new Set<string>();
   const echoes = actors.filter((actor) => actor.kind === "echo" && actor.alive);
   for (const laser of lasers) {
-    if (echoes.some((echo) => rectsOverlap(echo, laser))) {
+    const rect = "axis" in laser ? movingLaserRectAt(laser as MovingLaser, tick) : laser;
+    if (echoes.some((echo) => rectsOverlap(echo, rect)) || crates.some((crate) => rectsOverlap(crate, rect))) {
       blocked.add(laser.id);
     }
   }
