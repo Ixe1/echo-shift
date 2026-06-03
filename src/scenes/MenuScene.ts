@@ -28,7 +28,7 @@ export class MenuScene extends Phaser.Scene {
             <h1>${draftPlaytest ? "Draft Playtest" : "Echo Shift"}</h1>
             <p>${
               draftPlaytest
-                ? "Testing the browser-saved editor draft. Clears and medals are not written to normal progress."
+                ? "Testing the browser-saved editor draft. Clears and scores are not written to normal progress."
                 : "Community Dev Challenge build. Codex-assisted design, code, and QA."
             }</p>
             <div class="button-grid">

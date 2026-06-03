@@ -1,5 +1,6 @@
 import { formatFrames } from "../game/geometry";
-import type { LevelScore, Medal } from "../game/types";
+import { formatScore } from "../game/scoring";
+import type { LevelScore } from "../game/types";
 import { clearUi, icon, uiRoot } from "./dom";
 
 type HudCallbacks = {
@@ -20,8 +21,8 @@ type HudState = {
   levelNumber: number;
   levelName: string;
   frames: number;
-  echoes: number;
-  medal: Medal;
+  score: number;
+  lives: number;
   dead: boolean;
 };
 
@@ -36,19 +37,22 @@ export class Hud {
     this.root.innerHTML = `
       <div class="hud">
         <div class="hud-top">
-          <div class="hud-group">
-            <span class="hud-label">Level</span>
-            <span class="hud-value" data-level></span>
-          </div>
-          <div class="hud-group center">
-            <span class="hud-label">Time</span>
-            <span class="hud-value accent" data-time></span>
-            <span class="hud-label">Echoes</span>
-            <span class="hud-value" data-echoes></span>
-          </div>
-          <div class="hud-group right">
-            <span class="hud-label">Medal</span>
-            <span class="hud-value medal" data-medal></span>
+          <div class="hud-scoreboard">
+            <span class="hud-level" data-level></span>
+            <div class="hud-metrics">
+              <div class="hud-metric">
+                <span class="hud-label">Score</span>
+                <span class="hud-value accent" data-score></span>
+              </div>
+              <div class="hud-metric">
+                <span class="hud-label">Time</span>
+                <span class="hud-value" data-time></span>
+              </div>
+              <div class="hud-metric">
+                <span class="hud-label">Lives</span>
+                <span class="hud-value" data-lives></span>
+              </div>
+            </div>
           </div>
         </div>
         <div class="toast" data-toast></div>
@@ -82,8 +86,8 @@ export class Hud {
   update(state: HudState): void {
     this.set("[data-level]", `${state.levelNumber}. ${state.levelName}`);
     this.set("[data-time]", formatFrames(state.frames));
-    this.set("[data-echoes]", `${state.echoes}`);
-    this.set("[data-medal]", state.medal);
+    this.set("[data-score]", formatScore(state.score));
+    this.set("[data-lives]", `${state.lives}`);
     this.set("[data-status]", state.dead ? "Signal lost" : "Timeline stable");
   }
 
@@ -138,11 +142,14 @@ export class Hud {
     modal.innerHTML = `
       <section class="panel complete-panel">
         <h1>${isFinal ? "Timeline Complete" : "Room Clear"}</h1>
-        <p>${isFinal ? "Every shift is synchronized." : "Echoes folded cleanly into the exit."}</p>
+        <p>${isFinal ? "Every shift is synchronized." : "Score locked for this run."}</p>
         <div class="score-row">
+          <div class="score-cell"><strong>Score</strong><span>${formatScore(score.score)}</span></div>
           <div class="score-cell"><strong>Time</strong><span>${formatFrames(score.frames)}</span></div>
+          <div class="score-cell"><strong>Time Bonus</strong><span>${formatScore(score.timeBonus)}</span></div>
+          <div class="score-cell"><strong>Cores</strong><span>${score.cores}</span></div>
+          <div class="score-cell"><strong>Deaths</strong><span>${score.deaths}</span></div>
           <div class="score-cell"><strong>Echoes</strong><span>${score.echoes}</span></div>
-          <div class="score-cell"><strong>Medal</strong><span class="medal">${score.medal}</span></div>
         </div>
         <div class="button-grid">
           ${
@@ -160,6 +167,27 @@ export class Hud {
     this.modalButton("[data-next]", this.callbacks.onNext);
     this.modalButton("[data-levels]", this.callbacks.onLevelSelect);
     this.modalButton("[data-replay-level]", this.callbacks.onReplay);
+    this.modalButton("[data-editor]", () => this.callbacks.onEditor?.());
+    this.modalButton("[data-exit-menu]", this.callbacks.onTitle);
+  }
+
+  showRetryRequired(levelName: string): void {
+    const modal = this.modal();
+    modal.innerHTML = `
+      <section class="panel complete-panel">
+        <h1>Retry Required</h1>
+        <p>${levelName} signal budget exhausted.</p>
+        <div class="button-grid">
+          <button class="ui-button primary" data-replay-level>${icon("restart")} Retry Room</button>
+          <button class="ui-button" data-levels>${icon("levels")} Level Select</button>
+          ${this.callbacks.draftPlaytest ? `<button class="ui-button" data-editor>${icon("levels")} Editor</button>` : ""}
+          <button class="ui-button" data-exit-menu>${icon("back")} Title</button>
+        </div>
+      </section>
+    `;
+    modal.classList.add("show");
+    this.modalButton("[data-replay-level]", this.callbacks.onReplay);
+    this.modalButton("[data-levels]", this.callbacks.onLevelSelect);
     this.modalButton("[data-editor]", () => this.callbacks.onEditor?.());
     this.modalButton("[data-exit-menu]", this.callbacks.onTitle);
   }

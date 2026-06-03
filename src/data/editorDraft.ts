@@ -1,5 +1,6 @@
 import type { Level } from "../game/types";
 import { isLevelBackgroundKey } from "../game/backgrounds";
+import { normalizeScoreSettings } from "../game/scoring";
 import { normalizeSolid, solidSpriteValues } from "../game/solidSprites";
 import { isLevelSoundtrackKey } from "../game/soundtracks";
 import { ANCHORED_MOTION_MODEL, normalizeLevelMotionModel, usesAnchoredMotionModel } from "./motionModel";
@@ -37,6 +38,20 @@ const optionalLevelBackgroundKey = (value: unknown): boolean => value === undefi
 const optionalBoolean = (value: unknown): boolean => value === undefined || typeof value === "boolean";
 
 const optionalStringArray = (value: unknown): boolean => value === undefined || (Array.isArray(value) && value.every(stringValue));
+
+const scoreSettingsLike = (value: unknown): boolean =>
+  isRecord(value) &&
+  positiveIntegerValue(value.lives) &&
+  nonNegativeIntegerValue(value.coreScore) &&
+  nonNegativeIntegerValue(value.deathPenalty) &&
+  positiveIntegerValue(value.timeBonusTargetSeconds) &&
+  nonNegativeIntegerValue(value.timeBonusPerSecond);
+
+const legacyMedalSettingsLike = (value: unknown): boolean =>
+  isRecord(value) &&
+  positiveIntegerValue(value.gold) &&
+  positiveIntegerValue(value.silver) &&
+  value.silver >= value.gold;
 
 const rectLike = (value: unknown): value is Record<string, unknown> =>
   isRecord(value) && finiteValue(value.x) && finiteValue(value.y) && finiteValue(value.w) && finiteValue(value.h) && value.w > 0 && value.h > 0;
@@ -112,13 +127,24 @@ const levelLike = (value: unknown): value is Level => {
     optionalObjectArray(value.cores, coreLike) &&
     optionalObjectArray(value.hazards, hazardLike) &&
     optionalObjectArray(value.crates, crateLike) &&
-    nonNegativeIntegerValue(value.perfectEchoes) &&
-    isRecord(medalFrames) &&
-    positiveIntegerValue(medalFrames.gold) &&
-    positiveIntegerValue(medalFrames.silver) &&
-    medalFrames.silver >= medalFrames.gold &&
+    (scoreSettingsLike(value.score) || legacyMedalSettingsLike(medalFrames)) &&
     stringValue(value.hint)
   );
+};
+
+const normalizedDraftLevel = (level: Level, draftAnchored: boolean): Level => {
+  const legacyLevel = level as Level & { medalFrames?: Record<string, unknown>; perfectEchoes?: unknown };
+  const normalized = normalizeLevelMotionModel(level, draftAnchored || usesAnchoredMotionModel(level)) as Level & {
+    medalFrames?: Record<string, unknown>;
+    perfectEchoes?: unknown;
+  };
+  const { medalFrames, perfectEchoes, ...levelWithoutLegacy } = normalized;
+  void perfectEchoes;
+  return {
+    ...levelWithoutLegacy,
+    score: normalizeScoreSettings(legacyLevel.score, legacyLevel.medalFrames?.gold),
+    solids: normalized.solids.map(normalizeSolid)
+  };
 };
 
 export const readEditorDraftSnapshot = (): EditorDraftSnapshot | null => {
@@ -129,13 +155,7 @@ export const readEditorDraftSnapshot = (): EditorDraftSnapshot | null => {
     if (!isRecord(parsed) || !Array.isArray(parsed.levels)) return null;
     if (parsed.levels.length === 0 || !parsed.levels.every(levelLike)) return null;
     const draftAnchored = usesAnchoredMotionModel(parsed);
-    const levels = parsed.levels.map((level) => {
-      const normalized = normalizeLevelMotionModel(level, draftAnchored || usesAnchoredMotionModel(level));
-      return {
-        ...normalized,
-        solids: normalized.solids.map(normalizeSolid)
-      };
-    });
+    const levels = parsed.levels.map((level) => normalizedDraftLevel(level, draftAnchored));
     return {
       motionModel: ANCHORED_MOTION_MODEL,
       levels,

@@ -14,7 +14,8 @@ import {
   trimRecording,
   type EchoRecording
 } from "./recording";
-import type { ActorBody, InputFrame, Level, Medal, SimulationSnapshot, StepEvents } from "./types";
+import { finalScoreForLevel, timeBonusForFrames } from "./scoring";
+import type { ActorBody, InputFrame, Level, SimulationSnapshot, StepEvents } from "./types";
 
 const MIN_ECHO_FRAMES = 18;
 
@@ -27,8 +28,11 @@ export class RoomSimulation {
   objectState: ObjectState = createObjectState();
   tick = 0;
   totalFrames = 0;
+  score = 0;
+  deaths = 0;
   dead = false;
   won = false;
+  private readonly currentAttemptCollectedCoreIds = new Set<string>();
 
   constructor(level: Level) {
     this.level = level;
@@ -39,6 +43,9 @@ export class RoomSimulation {
   resetLevel(): void {
     this.echoRecordings.length = 0;
     this.totalFrames = 0;
+    this.score = 0;
+    this.deaths = 0;
+    this.currentAttemptCollectedCoreIds.clear();
     this.resetAttempt(false);
   }
 
@@ -59,6 +66,7 @@ export class RoomSimulation {
   }
 
   resetAttempt(keepRecording = false): void {
+    this.removeDiscardedCoreScore();
     this.tick = 0;
     this.dead = false;
     this.won = false;
@@ -78,6 +86,7 @@ export class RoomSimulation {
       switched: false,
       core: null,
       died: false,
+      livesExhausted: false,
       won: false
     };
 
@@ -126,16 +135,14 @@ export class RoomSimulation {
 
     events.switched = objectUpdate.switched;
     events.core = objectUpdate.core;
+    if (objectUpdate.core) this.addCoreScore(objectUpdate.core.id);
 
     if (!this.dead && playerTouchesHazard(this.level, this.player, this.objectState, this.tick)) {
-      this.dead = true;
-      this.player.alive = false;
-      events.died = true;
+      this.markPlayerDead(events);
     }
 
     if (!this.dead && !this.player.alive) {
-      this.dead = true;
-      events.died = true;
+      this.markPlayerDead(events);
     }
 
     if (!this.dead && rectsOverlap(this.player, this.level.exit)) {
@@ -159,28 +166,52 @@ export class RoomSimulation {
       crates: new Map([...this.objectState.crates.entries()].map(([id, rect]) => [id, { ...rect }])),
       tick: this.tick,
       totalFrames: this.totalFrames,
+      score: this.score,
+      deaths: this.deaths,
+      livesRemaining: this.livesRemaining(),
       dead: this.dead,
       won: this.won
     };
   }
 
-  scoreMedal(): Medal {
-    if (
-      this.echoRecordings.length <= this.level.perfectEchoes &&
-      this.totalFrames <= this.level.medalFrames.gold
-    ) {
-      return "Quantum";
-    }
-    if (this.totalFrames <= this.level.medalFrames.gold) return "Gold";
-    if (this.totalFrames <= this.level.medalFrames.silver) return "Silver";
-    return "Bronze";
+  livesRemaining(): number {
+    return Math.max(0, this.level.score.lives - this.deaths);
+  }
+
+  timeBonus(): number {
+    return timeBonusForFrames(this.totalFrames, this.level.score);
+  }
+
+  finalScore(): number {
+    return finalScoreForLevel(this.level, this.totalFrames, this.score);
   }
 
   replaySummary(): string {
     const seconds = Math.floor(this.totalFrames / 60);
     const plates = [...this.objectState.activePlates].join(", ") || "none";
     const cores = [...this.objectState.collectedCores].join(", ") || "none";
-    return `Level ${this.level.index + 1}, ${seconds}s, ${this.echoRecordings.length} echoes, plates ${plates}, cores ${cores}`;
+    return `Level ${this.level.index + 1}, ${seconds}s, ${this.score} score, ${this.deaths} deaths, ${this.echoRecordings.length} echoes, plates ${plates}, cores ${cores}`;
+  }
+
+  private addCoreScore(coreId: string): void {
+    if (this.currentAttemptCollectedCoreIds.has(coreId)) return;
+    this.currentAttemptCollectedCoreIds.add(coreId);
+    this.score += this.level.score.coreScore;
+  }
+
+  private removeDiscardedCoreScore(): void {
+    if (this.currentAttemptCollectedCoreIds.size === 0) return;
+    this.score = Math.max(0, this.score - this.currentAttemptCollectedCoreIds.size * this.level.score.coreScore);
+    this.currentAttemptCollectedCoreIds.clear();
+  }
+
+  private markPlayerDead(events: StepEvents): void {
+    this.dead = true;
+    this.player.alive = false;
+    this.deaths += 1;
+    this.score = Math.max(0, this.score - this.level.score.deathPenalty);
+    events.died = true;
+    events.livesExhausted = this.livesRemaining() <= 0;
   }
 
   private applyLaunchPads(actor: ActorBody, previousY: number): boolean {

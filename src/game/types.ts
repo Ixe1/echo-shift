@@ -139,6 +139,14 @@ export type LevelSoundtrackKey = Exclude<SoundtrackKey, "menu">;
 
 export type LevelBackgroundKey = "time-lab-prototype" | "level-1-time-lab-no-portals";
 
+export type LevelScoreSettings = {
+  lives: number;
+  coreScore: number;
+  deathPenalty: number;
+  timeBonusTargetSeconds: number;
+  timeBonusPerSecond: number;
+};
+
 export type Level = {
   id: string;
   index: number;
@@ -165,30 +173,32 @@ export type Level = {
   cores?: Core[];
   hazards?: Hazard[];
   crates?: PushableCrate[];
-  perfectEchoes: number;
-  medalFrames: {
-    gold: number;
-    silver: number;
-  };
+  score: LevelScoreSettings;
   hint: string;
 };
 
 export type LevelScore = {
   levelId: string;
+  score: number;
   frames: number;
   echoes: number;
-  medal: Medal;
+  deaths: number;
+  cores: number;
+  timeBonus: number;
 };
 
-export type Medal = "Quantum" | "Gold" | "Silver" | "Bronze";
+export type CorePickupEvent = Vec2 & {
+  id: string;
+};
 
 export type StepEvents = {
   jumped: boolean;
   launched: boolean;
   landed: boolean;
   switched: boolean;
-  core: Vec2 | null;
+  core: CorePickupEvent | null;
   died: boolean;
+  livesExhausted: boolean;
   won: boolean;
 };
 
@@ -202,6 +212,9 @@ export type SimulationSnapshot = {
   crates: Map<string, Rect>;
   tick: number;
   totalFrames: number;
+  score: number;
+  deaths: number;
+  livesRemaining: number;
   dead: boolean;
   won: boolean;
 };

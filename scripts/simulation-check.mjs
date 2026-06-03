@@ -19,8 +19,13 @@ const baseLevel = {
   exit: { x: 280, y: 82, w: 28, h: 38 },
   bounds: { x: 0, y: 0, w: 320, h: 180 },
   solids: frame(),
-  perfectEchoes: 1,
-  medalFrames: { gold: 600, silver: 900 },
+  score: {
+    lives: 3,
+    coreScore: 100,
+    deathPenalty: 500,
+    timeBonusTargetSeconds: 10,
+    timeBonusPerSecond: 100
+  },
   hint: "test"
 };
 
@@ -371,6 +376,18 @@ try {
   assert(levels.some((level) => (level.cores || []).length > 0), "Expected at least one core level");
   assert(levels.every((level) => level.motionModel === "anchored"), "Expected canonical source levels to be marked with anchored motion model");
   assert(
+    levels.every(
+      (level) =>
+        level.score?.lives === 3 &&
+        level.score.coreScore === 100 &&
+        level.score.deathPenalty === 500 &&
+        level.score.timeBonusPerSecond === 100 &&
+        Number.isInteger(level.score.timeBonusTargetSeconds) &&
+        level.score.timeBonusTargetSeconds > 0
+    ),
+    "Expected every handcrafted level to use score/time/lives settings"
+  );
+  assert(
     levels.every((level) => level.bounds.w >= 2400 && level.exit.x > 2200),
     "Expected every level to use expanded side-scrolling bounds and a distant exit"
   );
@@ -583,7 +600,7 @@ try {
   const rightOnlyBypasses = [];
   for (const level of levels) {
     const simulation = new RoomSimulation(level);
-    runFrames(simulation, level.medalFrames.silver, right);
+    runFrames(simulation, Math.ceil(level.score.timeBonusTargetSeconds * 60 + 900), right);
     if (simulation.won) rightOnlyBypasses.push(level.id);
   }
   assert(
@@ -601,14 +618,10 @@ try {
 
     assert(simulation.won, `${level.name} route should reach the portal`);
     assert(!simulation.dead, `${level.name} route should not end dead`);
-    assert(
-      simulation.echoRecordings.length <= level.perfectEchoes,
-      `${level.name} route used ${simulation.echoRecordings.length} echoes, perfect budget is ${level.perfectEchoes}`
-    );
-    assert(simulation.scoreMedal() === "Quantum", `${level.name} route should score Quantum`);
+    assert(simulation.finalScore() > 0, `${level.name} route should finish with a positive score`);
 
-    const goldSlack = level.medalFrames.gold - simulation.totalFrames;
-    assert(goldSlack >= 420, `${level.name} Quantum route leaves only ${goldSlack} gold-threshold slack frames`);
+    const bonusSlack = Math.round(level.score.timeBonusTargetSeconds * 60 - simulation.totalFrames);
+    assert(bonusSlack >= 420, `${level.name} route leaves only ${bonusSlack} time-bonus slack frames`);
     assert(
       simulation.totalFrames >= 600,
       `${level.name} route completed too quickly for the expanded side-scrolling soundtrack target: ${simulation.totalFrames}`
@@ -625,7 +638,8 @@ try {
       id: level.id,
       frames: simulation.totalFrames,
       echoes: simulation.echoRecordings.length,
-      goldSlack
+      bonusSlack,
+      score: simulation.finalScore()
     });
   }
 
@@ -642,13 +656,15 @@ try {
   runSmartRight(liftPhaseExpanded, 1900, { untilWin: true });
   assert(liftPhaseExpanded.won, "Lift Phase expanded route should reach the side-scrolling portal");
 
-  const goldScore = { levelId: "score-test", frames: 600, echoes: 3, medal: "Gold" };
-  const slowBronzeFewerEchoes = { levelId: "score-test", frames: 2400, echoes: 0, medal: "Bronze" };
-  const fasterGold = { levelId: "score-test", frames: 540, echoes: 3, medal: "Gold" };
-  const fewerEchoGold = { levelId: "score-test", frames: 660, echoes: 2, medal: "Gold" };
-  assert(!isBetterLevelScore(slowBronzeFewerEchoes, goldScore), "Worse medal should not replace better medal");
-  assert(isBetterLevelScore(fewerEchoGold, goldScore), "Same medal with fewer echoes should replace previous score");
-  assert(isBetterLevelScore(fasterGold, goldScore), "Same medal and echoes with faster time should replace previous score");
+  const bestScore = { levelId: "score-test", score: 1500, frames: 600, echoes: 3, deaths: 1, cores: 1, timeBonus: 1400 };
+  const lowerScoreFewerDeaths = { levelId: "score-test", score: 1400, frames: 540, echoes: 0, deaths: 0, cores: 1, timeBonus: 1300 };
+  const sameScoreFewerDeaths = { levelId: "score-test", score: 1500, frames: 660, echoes: 3, deaths: 0, cores: 1, timeBonus: 1400 };
+  const sameScoreFewerEchoes = { levelId: "score-test", score: 1500, frames: 660, echoes: 2, deaths: 1, cores: 1, timeBonus: 1400 };
+  const sameScoreFaster = { levelId: "score-test", score: 1500, frames: 540, echoes: 3, deaths: 1, cores: 1, timeBonus: 1400 };
+  assert(!isBetterLevelScore(lowerScoreFewerDeaths, bestScore), "Lower score should not replace a higher score");
+  assert(isBetterLevelScore(sameScoreFewerDeaths, bestScore), "Same score with fewer deaths should replace previous score");
+  assert(isBetterLevelScore(sameScoreFewerEchoes, bestScore), "Same score/deaths with fewer echoes should replace previous score");
+  assert(isBetterLevelScore(sameScoreFaster, bestScore), "Same score/deaths/echoes with faster time should replace previous score");
 
   const echoPlateLevel = {
     ...baseLevel,
@@ -673,6 +689,14 @@ try {
   assert(coreSim.objectState.collectedCores.has("core-a"), "Player did not collect overlapping core");
   assert(coreSim.objectState.openDoors.has("core-door"), "Core-locked door did not open after collection");
   assert(coreEvent.core && coreEvent.core.x > 20 && coreEvent.core.x < 50, "Core pickup event did not report player location");
+  assert(coreEvent.core?.id === "core-a", `Core pickup event did not report the collected core id: ${JSON.stringify(coreEvent.core)}`);
+  assert(coreSim.score === 100, `Core pickup did not add score, got ${coreSim.score}`);
+
+  const coreFarmingSim = new RoomSimulation(coreLevel);
+  coreFarmingSim.step(idle);
+  assert(coreFarmingSim.score === 100, "Expected overlapping core to add score before rewind");
+  assert(!coreFarmingSim.rewindToEcho(), "Short core pickup attempt should reset without adding an echo");
+  assert(coreFarmingSim.score === 0, `Rewind should remove discarded timeline core score, got ${coreFarmingSim.score}`);
 
   const echoCoreLevel = {
     ...baseLevel,
@@ -691,6 +715,7 @@ try {
   }
   assert(echoCoreEvent, "Echo did not collect the core during replay");
   assert(echoCoreEvent.x > 100, `Echo core pickup event used the wrong origin: ${JSON.stringify(echoCoreEvent)}`);
+  assert(echoCoreSim.score === 100, `Echo-collected core should add score once in the active timeline, got ${echoCoreSim.score}`);
 
   const laserLevel = {
     ...baseLevel,
@@ -942,13 +967,30 @@ try {
     hazards: [{ id: "death-zone", x: 20, y: 86, w: 28, h: 34 }]
   };
   const deathSim = new RoomSimulation(deathLevel);
-  deathSim.step(idle);
+  const deathEvent = deathSim.step(idle);
   assert(deathSim.dead, "Expected overlapping hazard to kill the player");
+  assert(deathEvent.died && !deathEvent.livesExhausted, "First death should not exhaust the default signal budget");
+  assert(deathSim.deaths === 1, `Expected first death to increment death count, got ${deathSim.deaths}`);
+  assert(deathSim.livesRemaining() === 2, `Expected two lives remaining after first death, got ${deathSim.livesRemaining()}`);
+  assert(deathSim.score === 0, `Death penalty should floor score at 0, got ${deathSim.score}`);
   const deadTick = deathSim.tick;
   const deadFrames = deathSim.totalFrames;
   runFrames(deathSim, 30, right);
   assert(deathSim.tick === deadTick, "Dead attempt should not continue ticking");
   assert(deathSim.totalFrames === deadFrames, "Dead attempt should not continue scoring time");
+
+  const exhaustedLivesSim = new RoomSimulation({ ...deathLevel, score: { ...baseLevel.score, lives: 2 } });
+  const firstDeath = exhaustedLivesSim.step(idle);
+  exhaustedLivesSim.resetAttempt(false);
+  const secondDeath = exhaustedLivesSim.step(idle);
+  assert(firstDeath.died && !firstDeath.livesExhausted, "First two-life death should not require retry");
+  assert(secondDeath.died && secondDeath.livesExhausted, "Second two-life death should require retry");
+  assert(exhaustedLivesSim.livesRemaining() === 0, `Expected no lives remaining, got ${exhaustedLivesSim.livesRemaining()}`);
+
+  const bonusSim = new RoomSimulation(baseLevel);
+  runFrames(bonusSim, 60, idle);
+  assert(bonusSim.timeBonus() === 900, `Expected 900 score time bonus after 1s under a 10s target, got ${bonusSim.timeBonus()}`);
+  assert(bonusSim.finalScore() === 900, `Expected final score to include time bonus, got ${bonusSim.finalScore()}`);
 
   const droneLevel = {
     ...baseLevel,
@@ -1060,16 +1102,16 @@ try {
           "death-freeze",
           "drone-disable-vaporization",
           "fall-death-freeze",
-    "deterministic-replay",
-    "audio-unlock-retry",
-    "soundtrack-manifest",
+          "deterministic-replay",
+          "audio-unlock-retry",
+          "soundtrack-manifest",
           "draft-motion-migration",
           "side-scrolling-bounds",
           "closed-gate-top-contract",
           "closed-floor-gate-bypass",
           "multi-segment-level-density",
           "right-only-bypass-regression",
-          "all-level-quantum-routes"
+          "all-level-score-routes"
         ],
         routeSummaries
       },

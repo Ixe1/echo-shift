@@ -1,4 +1,4 @@
-import type { LevelScore, Medal } from "./types";
+import type { LevelScore } from "./types";
 
 const KEY = "echo-shift-progress-v1";
 
@@ -12,6 +12,30 @@ const fallback: ProgressData = {
   scores: {}
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const levelScoreLike = (value: unknown): value is LevelScore =>
+  isRecord(value) &&
+  typeof value.levelId === "string" &&
+  typeof value.score === "number" &&
+  Number.isFinite(value.score) &&
+  typeof value.frames === "number" &&
+  Number.isFinite(value.frames) &&
+  typeof value.echoes === "number" &&
+  Number.isFinite(value.echoes) &&
+  typeof value.deaths === "number" &&
+  Number.isFinite(value.deaths) &&
+  typeof value.cores === "number" &&
+  Number.isFinite(value.cores) &&
+  typeof value.timeBonus === "number" &&
+  Number.isFinite(value.timeBonus);
+
+const normalizedScores = (value: unknown): Record<string, LevelScore> => {
+  if (!isRecord(value)) return {};
+  return Object.fromEntries(Object.entries(value).filter(([, score]) => levelScoreLike(score))) as Record<string, LevelScore>;
+};
+
 const readProgress = (): ProgressData => {
   try {
     const raw = window.localStorage.getItem(KEY);
@@ -19,7 +43,7 @@ const readProgress = (): ProgressData => {
     const parsed = JSON.parse(raw) as ProgressData;
     return {
       unlocked: Math.max(1, parsed.unlocked || 1),
-      scores: parsed.scores || {}
+      scores: normalizedScores(parsed.scores)
     };
   } catch {
     return { ...fallback, scores: {} };
@@ -38,17 +62,10 @@ export const getUnlockedLevelCount = (): number => readProgress().unlocked;
 
 export const getBestScores = (): Record<string, LevelScore> => readProgress().scores;
 
-const medalRank: Record<Medal, number> = {
-  Quantum: 4,
-  Gold: 3,
-  Silver: 2,
-  Bronze: 1
-};
-
 export const isBetterLevelScore = (score: LevelScore, previous: LevelScore | undefined): boolean => {
   if (!previous) return true;
-  const medalDelta = medalRank[score.medal] - medalRank[previous.medal];
-  if (medalDelta !== 0) return medalDelta > 0;
+  if (score.score !== previous.score) return score.score > previous.score;
+  if (score.deaths !== previous.deaths) return score.deaths < previous.deaths;
   if (score.echoes !== previous.echoes) return score.echoes < previous.echoes;
   return score.frames < previous.frames;
 };

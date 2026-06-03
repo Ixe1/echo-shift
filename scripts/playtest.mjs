@@ -136,8 +136,13 @@ const draftLevel = (overrides) => ({
   exit: { x: 470, y: 82, w: 28, h: 38 },
   bounds: { x: 0, y: 0, w: 520, h: 180 },
   solids: draftBaseSolids(),
-  perfectEchoes: 2,
-  medalFrames: { gold: 600, silver: 900 },
+  score: {
+    lives: 3,
+    coreScore: 100,
+    deathPenalty: 500,
+    timeBonusTargetSeconds: 10,
+    timeBonusPerSecond: 100
+  },
   hint: "QA",
   ...overrides
 });
@@ -573,7 +578,8 @@ try {
   await page.waitForTimeout(100);
   await page.keyboard.up("KeyR");
   await page.waitForTimeout(500);
-  const echoesText = await page.locator("[data-echoes]").textContent();
+  const scoreText = await page.locator("[data-score]").textContent();
+  const livesText = await page.locator("[data-lives]").textContent();
   await page.screenshot({ path: artifacts.desktopEcho });
   await page.keyboard.down("KeyR");
   await page.waitForTimeout(80);
@@ -828,13 +834,18 @@ try {
     `Expected Level 1 no-portal background key, got ${desktopBackgroundKey}`
   );
   assert(objectAssetCount >= 10, `Expected object atlas sprites to instantiate on Level 1, got ${objectAssetCount}`);
-  assert(echoesText === "1", `Expected one echo after rewind, got ${echoesText}`);
+  assert(scoreText === "000000", `Expected score HUD to start at zero after a rewind, got ${scoreText}`);
+  assert(livesText === "3", `Expected default lives HUD to start at 3, got ${livesText}`);
   assert(retryCastPixels < 24, `Expected retry to clear rewind-cast sprite pixels, got ${retryCastPixels}`);
   assert(pauseVisible, "Pause modal did not become visible");
   assert(returnedToTitle, "Title button did not return to the menu");
   assert(completionTitle === "Room Clear", `Expected first room completion modal, got ${completionTitle}`);
   assert(storedProgress?.unlocked >= 2, `Expected completion to unlock level 2: ${JSON.stringify(storedProgress)}`);
-  assert(storedProgress?.scores?.["portal-primer"], "Expected first room score to persist");
+  assert(
+    typeof storedProgress?.scores?.["portal-primer"]?.score === "number" &&
+      storedProgress.scores["portal-primer"].score > 0,
+    `Expected first room numeric score to persist: ${JSON.stringify(storedProgress)}`
+  );
   assert(nextLevelLabel?.includes("2. First Afterimage"), `Expected Next Room to load level 2, got ${nextLevelLabel}`);
   assert(corePixels > 60, `Expected generated core/effect sprite pixels in Relay Key, got ${corePixels}`);
   assert(
@@ -926,7 +937,8 @@ try {
         title,
         desktopBackgroundKey,
         objectAssetCount,
-        echoesText,
+        scoreText,
+        livesText,
         retryCastPixels,
         pauseVisible,
         returnedToTitle,

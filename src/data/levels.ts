@@ -1,4 +1,5 @@
 import type { Level, MovingPlatform, PatrolDrone, Rect, Solid } from "../game/types";
+import { scoreSettingsFromGoldFrames } from "../game/scoring";
 import { markAnchoredMotionModel } from "./motionModel";
 
 const r = (x: number, y: number, w: number, h: number): Rect => ({ x, y, w, h });
@@ -53,6 +54,7 @@ const m = (
 ): MovingPlatform => ({ id, ...anchoredMotionRect(x, y, w, h, axis, distance), axis, distance: distance * 2, period, phase: anchoredPhase(phase) });
 
 const bounds = (width: number): Rect => r(0, 0, width, 540);
+const score = scoreSettingsFromGoldFrames;
 const frame = (width: number, floorY = 500, gaps: Array<[number, number]> = []): Solid[] => {
   const floors: Solid[] = [];
   let cursor = 0;
@@ -96,8 +98,7 @@ const sourceLevels: Level[] = [
     ],
     hazards: [h("spark-strip-a", 1388, 496, 58, 4), h("spark-strip-b", 2140, 496, 58, 4)],
     drones: [d("drone-a", 1430, 472, 30, 24, "x", 92, 190), d("drone-b", 2260, 360, 30, 24, "y", 34, 160, 1.7)],
-    perfectEchoes: 0,
-    medalFrames: { gold: 2040, silver: 2700 },
+    score: score(2040),
     hint: "The portal is stable. Keep momentum and hop the discharge strip."
   },
   {
@@ -118,8 +119,7 @@ const sourceLevels: Level[] = [
     doors: [{ id: "gate-a", ...r(1180, 200, 26, 300), opensWith: ["plate-a"] }],
     hazards: [h("relay-spark", 2180, 496, 58, 4), h("final-spark", 2520, 496, 58, 4)],
     drones: [d("drone-c", 1820, 472, 30, 24, "x", 120, 210), d("drone-d", 2720, 472, 30, 24, "x", 90, 170, 1.4)],
-    perfectEchoes: 1,
-    medalFrames: { gold: 2580, silver: 3360 },
+    score: score(2580),
     hint: "Leave an echo standing on the left pressure plate, then take the open lane."
   },
   {
@@ -142,8 +142,7 @@ const sourceLevels: Level[] = [
     doors: [{ id: "gate-b", ...r(1610, 200, 28, 300), opensWith: ["plate-b"] }],
     hazards: [h("handoff-spark", 1180, 496, 58, 4), h("exit-spark", 2650, 496, 58, 4)],
     drones: [d("drone-e", 1080, 360, 30, 24, "y", 30, 150), d("drone-f", 2440, 300, 30, 24, "x", 150, 240, 0.6)],
-    perfectEchoes: 1,
-    medalFrames: { gold: 3060, silver: 3960 },
+    score: score(3060),
     hint: "The upper gate closes fast. Make a patient echo on the floor plate."
   },
   {
@@ -169,8 +168,7 @@ const sourceLevels: Level[] = [
     cores: [{ id: "core-c", ...r(930, 466, 24, 24), label: "C" }],
     hazards: [h("core-spark", 1580, 496, 58, 4), h("lock-spark", 2320, 496, 58, 4)],
     drones: [d("drone-g", 1640, 472, 30, 24, "x", 110, 180, 1.2), d("drone-h", 3090, 360, 30, 24, "x", 130, 220)],
-    perfectEchoes: 1,
-    medalFrames: { gold: 3420, silver: 4380 },
+    score: score(3420),
     hint: "An echo can hold the first gate while you climb for the core."
   },
   {
@@ -194,8 +192,7 @@ const sourceLevels: Level[] = [
       m("lift-a2", 1830, 438, 120, 18, "y", 72, 180, 1.4)
     ],
     drones: [d("drone-i", 1340, 472, 30, 24, "x", 100, 170), d("drone-j", 2960, 444, 30, 24, "y", 38, 160, 0.8)],
-    perfectEchoes: 0,
-    medalFrames: { gold: 3000, silver: 3900 },
+    score: score(3000),
     hint: "The lift is deterministic. Watch one cycle, then commit."
   },
   {
@@ -220,8 +217,7 @@ const sourceLevels: Level[] = [
       { id: "beam-a2", ...r(1860, 496, 58, 4), startsOn: true }
     ],
     drones: [d("drone-k", 1160, 472, 30, 24, "x", 115, 200, 0.5), d("drone-l", 2720, 472, 30, 24, "x", 120, 220, 1.1)],
-    perfectEchoes: 1,
-    medalFrames: { gold: 3720, silver: 4860 },
+    score: score(3720),
     hint: "Record an echo on the beam switch, then cross while the plate disables the laser."
   },
   {
@@ -243,8 +239,7 @@ const sourceLevels: Level[] = [
     doors: [{ id: "gate-d", ...r(2780, 200, 28, 300), opensWith: ["plate-d1", "plate-d2"] }],
     hazards: [h("dual-spark-a", 1600, 496, 58, 4), h("dual-spark-b", 2520, 496, 58, 4)],
     drones: [d("drone-m", 1480, 320, 30, 24, "x", 160, 230), d("drone-n", 2350, 444, 30, 24, "y", 42, 170, 2.1)],
-    perfectEchoes: 2,
-    medalFrames: { gold: 4200, silver: 5460 },
+    score: score(4200),
     hint: "Make one echo for each floor plate. The third run is the escape."
   },
   {
@@ -272,8 +267,7 @@ const sourceLevels: Level[] = [
     cores: [{ id: "core-e", ...r(994, 466, 24, 24), label: "E" }],
     hazards: [h("current-spark-a", 2050, 496, 58, 4), h("current-spark-b", 3230, 496, 58, 4)],
     drones: [d("drone-o", 2120, 472, 30, 24, "x", 140, 220), d("drone-p", 3640, 320, 30, 24, "x", 120, 190, 1.3)],
-    perfectEchoes: 1,
-    medalFrames: { gold: 4560, silver: 5940 },
+    score: score(4560),
     hint: "The gate needs the ledge plate and the core. Split the jobs across time."
   },
   {
@@ -298,8 +292,7 @@ const sourceLevels: Level[] = [
     cores: [{ id: "core-f", ...r(876, 466, 24, 24), label: "F" }],
     lasers: [{ id: "beam-f", ...r(700, 496, 58, 4), startsOn: true }],
     drones: [d("drone-q", 1880, 472, 30, 24, "x", 140, 210), d("drone-r", 2840, 320, 30, 24, "y", 46, 170, 1.1)],
-    perfectEchoes: 2,
-    medalFrames: { gold: 4920, silver: 6360 },
+    score: score(4920),
     hint: "Two echoes hold the upper plates. The live route braids through the core and open gate."
   },
   {
@@ -335,8 +328,7 @@ const sourceLevels: Level[] = [
       d("drone-t", 3440, 320, 30, 24, "y", 48, 180, 1.7),
       d("drone-u", 4160, 320, 30, 24, "x", 140, 210, 0.4)
     ],
-    perfectEchoes: 3,
-    medalFrames: { gold: 6600, silver: 8400 },
+    score: score(6600),
     hint: "Three echoes hold the perches. Take the lift arc through the core, then cross the open gate."
   }
 ];

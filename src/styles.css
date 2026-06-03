@@ -298,20 +298,13 @@ button {
 .hud-top {
   position: absolute;
   top: 14px;
-  left: 50%;
-  width: min(920px, calc(100vw - 24px));
-  transform: translateX(-50%);
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 12px;
+  left: 14px;
+  width: min(420px, calc(100vw - 28px));
 }
 
-.hud-group {
-  min-height: 42px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.hud-scoreboard {
+  display: grid;
+  gap: 6px;
   padding: 7px 10px;
   border: 1px solid var(--line);
   background: rgba(4, 8, 18, 0.7);
@@ -320,12 +313,25 @@ button {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
 }
 
-.hud-group.center {
-  justify-content: center;
+.hud-level {
+  color: rgba(236, 251, 255, 0.66);
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.hud-group.right {
-  justify-content: flex-end;
+.hud-metrics {
+  display: grid;
+  grid-template-columns: minmax(112px, 1.2fr) minmax(92px, 1fr) minmax(60px, 0.7fr);
+  gap: 8px;
+}
+
+.hud-metric {
+  display: grid;
+  gap: 1px;
 }
 
 .hud-label {
@@ -505,10 +511,6 @@ button {
   color: #fff;
 }
 
-.medal {
-  color: var(--yellow);
-}
-
 .scanline {
   position: fixed;
   inset: 0;
@@ -550,14 +552,13 @@ button {
   }
 
   .hud-top {
-    grid-template-columns: 1fr;
-    gap: 6px;
     top: 8px;
+    left: 8px;
+    width: min(360px, calc(100vw - 16px));
   }
 
-  .hud-group,
-  .hud-group.right {
-    justify-content: space-between;
+  .hud-metrics {
+    grid-template-columns: minmax(108px, 1fr) minmax(90px, 1fr) minmax(52px, 0.6fr);
   }
 
   .hud-bottom {

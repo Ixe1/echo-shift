@@ -39,7 +39,7 @@ export const updateObjects = (
   actors: ActorBody[],
   previous: ObjectState,
   tick = 0
-): { state: ObjectState; switched: boolean; core: { x: number; y: number } | null } => {
+): { state: ObjectState; switched: boolean; core: { id: string; x: number; y: number } | null } => {
   const crateRects = [...previous.crates.values()];
   const timedSwitchTimers = updateTimedSwitchTimers(level, actors, crateRects, previous.timedSwitchTimers);
   const activePlates = collectActivePlates(level.plates || [], actors, crateRects, previous.latchedPlates);
@@ -51,12 +51,13 @@ export const updateObjects = (
   }
 
   const collectedCores = new Set(previous.collectedCores);
-  let core: { x: number; y: number } | null = null;
+  let core: { id: string; x: number; y: number } | null = null;
   for (const item of level.cores || []) {
     const collector = actors.find((actor) => actor.alive && rectsOverlap(actor, item));
     if (!collectedCores.has(item.id) && collector) {
       collectedCores.add(item.id);
       core = {
+        id: item.id,
         x: collector.x + collector.w / 2,
         y: collector.y + collector.h / 2
       };

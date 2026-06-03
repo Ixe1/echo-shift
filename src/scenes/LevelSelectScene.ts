@@ -3,6 +3,7 @@ import { isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
 import { formatFrames } from "../game/geometry";
 import { getBestScores } from "../game/progress";
+import { formatScore } from "../game/scoring";
 import { clearUi, icon, uiRoot } from "../ui/dom";
 
 export class LevelSelectScene extends Phaser.Scene {
@@ -21,7 +22,7 @@ export class LevelSelectScene extends Phaser.Scene {
       .map((level, levelPosition) => {
         const locked = levelPosition + 1 > unlocked;
         const score = scores[level.id];
-        const best = score ? `${score.medal} · ${formatFrames(score.frames)} · ${score.echoes}E` : "No clear";
+        const best = score ? `${formatScore(score.score)} · ${formatFrames(score.frames)} · ${score.deaths}D` : "No clear";
         return `
           <button class="level-button ${locked ? "locked" : ""}" data-level="${levelPosition}" ${locked ? "disabled" : ""}>
             <span class="level-number">${level.index + 1}</span>
@@ -38,7 +39,7 @@ export class LevelSelectScene extends Phaser.Scene {
           <div>
             <h1>${draftPlaytest ? "Draft Levels" : "Level Select"}</h1>
             <p class="credits-text">${
-              draftPlaytest ? "Testing the browser-saved editor draft. Draft clears do not save medals." : "All rooms are available. Cleared runs save medals."
+              draftPlaytest ? "Testing the browser-saved editor draft. Draft clears do not save scores." : "All rooms are available. Cleared runs save scores."
             }</p>
           </div>
           <div class="level-grid">${buttons}</div>

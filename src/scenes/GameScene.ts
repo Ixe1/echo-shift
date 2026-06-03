@@ -156,8 +156,8 @@ export class GameScene extends Phaser.Scene {
       levelNumber: this.level.index + 1,
       levelName: this.level.name,
       frames: this.simulation.totalFrames,
-      echoes: this.simulation.echoRecordings.length,
-      medal: this.simulation.scoreMedal(),
+      score: this.simulation.score,
+      lives: this.simulation.livesRemaining(),
       dead: this.simulation.dead
     });
   }
@@ -205,7 +205,12 @@ export class GameScene extends Phaser.Scene {
     if (events.died) {
       audio.play("death");
       this.cameras.main.shake(180, 0.006);
-      this.hud.toast("Signal lost. Rewind or retry.");
+      if (events.livesExhausted) {
+        this.pausedByHud = true;
+        this.hud.showRetryRequired(this.level.name);
+      } else {
+        this.hud.toast(`Signal lost. ${this.simulation.livesRemaining()} lives left.`);
+      }
     }
     if (events.won) this.completeLevel();
   }
@@ -223,11 +228,11 @@ export class GameScene extends Phaser.Scene {
 
   private retryAttempt(): void {
     if (this.completeHandled || this.pausedByHud) return;
-    this.simulation.resetAttempt(false);
+    this.simulation.resetLevel();
     this.playerCastUntil = 0;
     this.echoTrails.clear();
     audio.play("select");
-    this.hud.toast("Attempt reset");
+    this.hud.toast("Run reset");
   }
 
   private restartLevel(): void {
@@ -255,9 +260,12 @@ export class GameScene extends Phaser.Scene {
     audio.play("portal");
     const score: LevelScore = {
       levelId: this.level.id,
+      score: this.simulation.finalScore(),
       frames: this.simulation.totalFrames,
       echoes: this.simulation.echoRecordings.length,
-      medal: this.simulation.scoreMedal()
+      deaths: this.simulation.deaths,
+      cores: this.simulation.objectState.collectedCores.size,
+      timeBonus: this.simulation.timeBonus()
     };
     if (!isDraftPlaytestActive()) recordLevelScore(score, this.level.index);
     this.cameras.main.flash(280, 255, 227, 90, false);

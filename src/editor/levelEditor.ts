@@ -2,6 +2,7 @@ import { levels as sourceLevels } from "../data/levels";
 import { EDITOR_DRAFT_STORAGE_KEY } from "../data/editorDraft";
 import { ANCHORED_MOTION_MODEL, markAnchoredMotionModel, normalizeLevelMotionModel, usesAnchoredMotionModel } from "../data/motionModel";
 import { backgroundForLevel, isLevelBackgroundKey, levelBackgroundKeys, levelBackgrounds } from "../game/backgrounds";
+import { normalizeScoreSettings } from "../game/scoring";
 import { normalizeSolid, normalizeSolidSprite, solidSpriteValues } from "../game/solidSprites";
 import { defaultSoundtrackKeyForLevel, isLevelSoundtrackKey, levelSoundtrackKeys, soundtracks } from "../game/soundtracks";
 import type {
@@ -263,7 +264,8 @@ const positiveInteger = (value: unknown, fallback: number): number => Math.max(1
 
 const levelIndex = (value: unknown, maxIndex: number, fallback = 0): number => clamp(nonNegativeInteger(value, fallback), 0, Math.max(0, maxIndex));
 
-const framesToSeconds = (frames: number): string => `${(frames / 60).toFixed(1)}s`;
+const scoreSummary = (level: Level): string =>
+  `+${level.score.timeBonusPerSecond} per full second under ${level.score.timeBonusTargetSeconds}s`;
 
 const csvToList = (value: string): string[] =>
   value
@@ -474,6 +476,7 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number, draftAnch
   const exitRecord = isRecord(value.exit) ? value.exit : {};
   const startRecord = isRecord(value.start) ? value.start : {};
   const medalRecord = isRecord(value.medalFrames) ? value.medalFrames : {};
+  const scoreSettings = normalizeScoreSettings(value.score, medalRecord.gold);
   const usedObjectIds = explicitImportedObjectIds(value);
   const importedSoundtrackKey = isLevelSoundtrackKey(value.soundtrackKey) ? value.soundtrackKey : undefined;
   const importedBackgroundKey = isLevelBackgroundKey(value.backgroundKey) ? value.backgroundKey : undefined;
@@ -518,11 +521,7 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number, draftAnch
     cores: normalizeOptionalCollection(value.cores, "cores", usedObjectIds) as Core[],
     hazards: normalizeOptionalCollection(value.hazards, "hazards", usedObjectIds) as Hazard[],
     crates: normalizeOptionalCollection(value.crates, "crates", usedObjectIds) as PushableCrate[],
-    perfectEchoes: nonNegativeInteger(value.perfectEchoes, 0),
-    medalFrames: {
-      gold: positiveInteger(medalRecord.gold, 1800),
-      silver: positiveInteger(medalRecord.silver, 2400)
-    },
+    score: scoreSettings,
     hint: String(value.hint || "")
   };
 
@@ -967,13 +966,15 @@ class LevelEditor {
       const key = field.split(".")[1] as keyof Rect;
       level.bounds[key] = Number(value);
       if (key === "w" || key === "h") level.bounds[key] = Math.max(1, level.bounds[key]);
-    } else if (field === "perfectEchoes") {
-      level.perfectEchoes = Math.max(0, Math.round(Number(value)));
     } else if (field === "index") {
       level.index = Math.max(0, Math.round(Number(value)));
-    } else if (field === "medalFrames.gold" || field === "medalFrames.silver") {
-      const key = field.split(".")[1] as "gold" | "silver";
-      level.medalFrames[key] = Math.max(1, Math.round(Number(value)));
+    } else if (field.startsWith("score.")) {
+      const key = field.split(".")[1] as keyof Level["score"];
+      if (key === "lives" || key === "timeBonusTargetSeconds") {
+        level.score[key] = Math.max(1, Math.round(Number(value)));
+      } else {
+        level.score[key] = Math.max(0, Math.round(Number(value)));
+      }
     }
     this.afterMutation("Level updated");
   }
@@ -1737,15 +1738,17 @@ class LevelEditor {
         ${this.backgroundField(level)}
         ${this.textAreaField("Hint", "hint", level.hint)}
       </div>
-      <div class="inspector-section" data-medal-settings>
-        <h3>Medals</h3>
-        <p class="editor-field-note">Quantum uses the echo budget plus Gold Frames. Gold and Silver use frame thresholds.</p>
+      <div class="inspector-section" data-score-settings>
+        <h3>Scoring</h3>
+        <p class="editor-field-note">Score uses cores, deaths, and a clear-time bonus. Rewinds do not count as deaths.</p>
         <div class="inspector-grid three">
-          ${this.numberField("Perfect Echoes", "perfectEchoes", level.perfectEchoes, "level", 1)}
-          ${this.numberField("Gold Frames", "medalFrames.gold", level.medalFrames.gold, "level", 1)}
-          ${this.numberField("Silver Frames", "medalFrames.silver", level.medalFrames.silver, "level", 1)}
+          ${this.numberField("Lives", "score.lives", level.score.lives, "level", 1)}
+          ${this.numberField("Core Score", "score.coreScore", level.score.coreScore, "level", 1)}
+          ${this.numberField("Death Penalty", "score.deathPenalty", level.score.deathPenalty, "level", 1)}
+          ${this.numberField("Bonus Target (s)", "score.timeBonusTargetSeconds", level.score.timeBonusTargetSeconds, "level", 1)}
+          ${this.numberField("Score / Saved Sec", "score.timeBonusPerSecond", level.score.timeBonusPerSecond, "level", 1)}
         </div>
-        <p class="editor-field-note" data-medal-seconds>60 frames = 1s · Gold ${framesToSeconds(level.medalFrames.gold)} · Silver ${framesToSeconds(level.medalFrames.silver)}</p>
+        <p class="editor-field-note" data-score-summary>${scoreSummary(level)}</p>
       </div>
       <div class="inspector-section">
         <h3>Selection</h3>
@@ -1992,9 +1995,6 @@ class LevelEditor {
     if (!Number.isInteger(level.index) || level.index < 0) {
       messages.push({ severity: "error", text: `${level.name} index must be a non-negative integer.` });
     }
-    if (!Number.isInteger(level.perfectEchoes) || level.perfectEchoes < 0) {
-      messages.push({ severity: "error", text: `${level.name} perfect echoes must be a non-negative integer.` });
-    }
     if (level.soundtrackKey && !isLevelSoundtrackKey(level.soundtrackKey)) {
       messages.push({ severity: "error", text: `${level.name} references an unknown level soundtrack ${level.soundtrackKey}.` });
     }
@@ -2010,11 +2010,20 @@ class LevelEditor {
     if (!rectInside(level.exit, level.bounds)) {
       messages.push({ severity: "error", text: `${level.name} exit is outside bounds.` });
     }
-    if (level.medalFrames.gold <= 0 || level.medalFrames.silver <= 0 || level.medalFrames.silver < level.medalFrames.gold) {
-      messages.push({ severity: "error", text: `${level.name} medal frame thresholds are invalid.` });
+    if (!Number.isInteger(level.score.lives) || level.score.lives <= 0) {
+      messages.push({ severity: "error", text: `${level.name} lives must be a positive integer.` });
     }
-    if (!Number.isInteger(level.medalFrames.gold) || !Number.isInteger(level.medalFrames.silver)) {
-      messages.push({ severity: "error", text: `${level.name} medal frame thresholds must be integers.` });
+    if (!Number.isInteger(level.score.coreScore) || level.score.coreScore < 0) {
+      messages.push({ severity: "error", text: `${level.name} core score must be a non-negative integer.` });
+    }
+    if (!Number.isInteger(level.score.deathPenalty) || level.score.deathPenalty < 0) {
+      messages.push({ severity: "error", text: `${level.name} death penalty must be a non-negative integer.` });
+    }
+    if (!Number.isInteger(level.score.timeBonusTargetSeconds) || level.score.timeBonusTargetSeconds <= 0) {
+      messages.push({ severity: "error", text: `${level.name} time bonus target must be a positive whole second count.` });
+    }
+    if (!Number.isInteger(level.score.timeBonusPerSecond) || level.score.timeBonusPerSecond < 0) {
+      messages.push({ severity: "error", text: `${level.name} score per saved second must be a non-negative integer.` });
     }
 
     const objectIds = new Map<string, string>();

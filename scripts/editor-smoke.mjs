@@ -498,8 +498,8 @@ try {
   const toolbarOverflowY = await page.locator(".toolbar-panel").evaluate((element) => getComputedStyle(element).overflowY);
   const inspectorOverflowY = await page.locator("[data-inspector]").evaluate((element) => getComputedStyle(element).overflowY);
   const paletteGroupLabels = await page.locator(".editor-tool-group-title").allTextContents();
-  const medalSettingsText = await page.locator("[data-medal-settings]").textContent();
-  const medalSecondsText = await page.locator("[data-medal-seconds]").textContent();
+  const scoreSettingsText = await page.locator("[data-score-settings]").textContent();
+  const scoreSummaryText = await page.locator("[data-score-summary]").textContent();
   const soundtrackSelect = page.locator("[data-level-field='soundtrackKey']");
   const soundtrackOptions = await soundtrackSelect.locator("option").allTextContents();
   await soundtrackSelect.selectOption("level-6");
@@ -1170,12 +1170,11 @@ try {
   assert(backgroundOptions.some((option) => option.includes("1672x941")), `Expected background dimensions in options, got ${backgroundOptions.join(", ")}`);
   assert(backgroundOptions.some((option) => option.includes("1881x836")), `Expected Level 1 background dimensions in options, got ${backgroundOptions.join(", ")}`);
   assert(backgroundExportKey === "time-lab-prototype", `Expected selected background key to export as time-lab-prototype, got ${backgroundExportKey}`);
-  assert(medalSettingsText?.includes("Perfect Echoes"), `Expected medal settings to label Perfect Echoes, got ${medalSettingsText}`);
-  assert(medalSettingsText?.includes("Gold Frames"), `Expected medal settings to label Gold Frames, got ${medalSettingsText}`);
-  assert(medalSettingsText?.includes("Silver Frames"), `Expected medal settings to label Silver Frames, got ${medalSettingsText}`);
-  assert(medalSecondsText?.includes("60 frames = 1s"), `Expected medal settings to explain frame timing, got ${medalSecondsText}`);
-  assert(medalSecondsText?.includes("Gold 34.0s"), `Expected medal settings to show Gold seconds, got ${medalSecondsText}`);
-  assert(medalSecondsText?.includes("Silver 45.0s"), `Expected medal settings to show Silver seconds, got ${medalSecondsText}`);
+  assert(scoreSettingsText?.includes("Lives"), `Expected score settings to label Lives, got ${scoreSettingsText}`);
+  assert(scoreSettingsText?.includes("Core Score"), `Expected score settings to label Core Score, got ${scoreSettingsText}`);
+  assert(scoreSettingsText?.includes("Death Penalty"), `Expected score settings to label Death Penalty, got ${scoreSettingsText}`);
+  assert(scoreSettingsText?.includes("Bonus Target"), `Expected score settings to label Bonus Target, got ${scoreSettingsText}`);
+  assert(scoreSummaryText?.includes("under 34s"), `Expected score summary to explain Level 1 time target, got ${scoreSummaryText}`);
   assert(zoomBeforeWheel !== zoomAfterWheel, `Expected wheel input to zoom canvas, got ${zoomBeforeWheel} -> ${zoomAfterWheel}`);
   assert(zoomAfterWheel !== zoomAfterButton, `Expected zoom-out button to change zoom, got ${zoomAfterWheel} -> ${zoomAfterButton}`);
   assert(viewAfterPan.x !== viewBeforePan.x, `Expected empty-canvas drag to pan view x: ${viewBeforePan.x} -> ${viewAfterPan.x}`);
@@ -1387,7 +1386,13 @@ try {
     fallbackImportValidation === "clean",
     `Expected clean validation after fallback import, got ${fallbackImportValidation}: ${fallbackImportValidationText}`
   );
-  assert(fallbackImportExport.perfectEchoes === 0, `Expected imported perfectEchoes to normalize to 0, got ${fallbackImportExport.perfectEchoes}`);
+  assert(fallbackImportExport.score?.lives === 3, `Expected imported legacy score lives to default to 3, got ${JSON.stringify(fallbackImportExport.score)}`);
+  assert(fallbackImportExport.score?.coreScore === 100, `Expected imported legacy core score to default to 100, got ${JSON.stringify(fallbackImportExport.score)}`);
+  assert(fallbackImportExport.score?.deathPenalty === 500, `Expected imported legacy death penalty to default to 500, got ${JSON.stringify(fallbackImportExport.score)}`);
+  assert(
+    fallbackImportExport.score?.timeBonusTargetSeconds === 30,
+    `Expected imported legacy gold frames to convert to 30s bonus target, got ${JSON.stringify(fallbackImportExport.score)}`
+  );
   assert(
     fallbackImportPlatform?.distance === 0,
     `Expected imported negative platform distance to normalize to 0, got ${fallbackImportPlatform?.distance}`
@@ -1403,10 +1408,9 @@ try {
       Math.abs((fallbackImportDrone?.phase || 0) - (0.2 + Math.PI / 2)) < 0.000001,
     `Expected legacy imported drone to migrate to anchored motion, got ${JSON.stringify(fallbackImportDrone)}`
   );
-  assert(fallbackImportExport.medalFrames.gold === 1800, `Expected imported gold medal frames to round to 1800, got ${fallbackImportExport.medalFrames.gold}`);
   assert(
-    fallbackImportExport.medalFrames.silver === 2400,
-    `Expected imported silver medal frames to round to 2400, got ${fallbackImportExport.medalFrames.silver}`
+    !("perfectEchoes" in fallbackImportExport) && !("medalFrames" in fallbackImportExport),
+    `Expected imported legacy scoring fields to export as score settings only, got ${JSON.stringify(fallbackImportExport)}`
   );
   assert(fallbackImportExport.soundtrackKey === "level-4", `Expected imported soundtrack key level-4, got ${fallbackImportExport.soundtrackKey}`);
   assert(fallbackImportExport.backgroundKey === "time-lab-prototype", `Expected imported background key time-lab-prototype, got ${fallbackImportExport.backgroundKey}`);
