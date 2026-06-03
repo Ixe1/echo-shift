@@ -179,6 +179,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   const listeners = new Map();
   const mediaElements = [];
   const startedTones = [];
+  const pendingResumes = [];
   let mediaUnlocked = false;
 
   const fakeParam = () => ({
@@ -199,7 +200,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
 
     resume() {
       this.state = "running";
-      return Promise.resolve();
+      return new Promise((resolve) => pendingResumes.push(resolve));
     }
 
     createGain() {
@@ -269,6 +270,9 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       handler({ type, key: "Enter" });
     }
   };
+  const resolveResumes = () => {
+    for (const resolve of pendingResumes.splice(0)) resolve();
+  };
 
   Object.defineProperty(globalThis, "window", { configurable: true, value: fakeWindow });
   Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { dataset: {} } } });
@@ -287,6 +291,12 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     await settlePromises();
     assert(menu.playCalls >= 2 && menu.playing, "Expected keydown unlock to retry and start menu music");
     assert(document.documentElement.dataset.echoShiftAudioState === "playing", "Expected playing music state after input unlock");
+    resolveResumes();
+    await settlePromises();
+    assert(
+      document.documentElement.dataset.echoShiftAudioState === "playing",
+      "Expected later AudioContext resume resolution not to downgrade playing music state"
+    );
 
     audio.play("jump");
     await settlePromises();

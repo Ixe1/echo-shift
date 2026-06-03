@@ -549,6 +549,9 @@ try {
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.locator("[data-start-game]").waitFor({ state: "visible" });
   await page.screenshot({ path: artifacts.desktopGate });
+  const preGateTimerCount = await page.locator("[data-time]").count();
+  const preGateLevelCount = await page.locator("[data-level]").count();
+  const preGateMusicKey = await page.evaluate(() => document.documentElement.dataset.echoShiftMusicKey || "");
   await startAudioGate(page);
   await page.locator("[data-play]").waitFor({ state: "visible" });
   await page.waitForFunction(() => document.documentElement.dataset.echoShiftAudioState === "playing");
@@ -816,6 +819,8 @@ try {
   await touchFlowContext.close();
 
   assert(title === "Echo Shift", `Unexpected title: ${title}`);
+  assert(preGateTimerCount === 0 && preGateLevelCount === 0, "Expected no game HUD or timer before the audio gate");
+  assert(preGateMusicKey === "", `Expected no soundtrack request before the audio gate, got ${preGateMusicKey}`);
   assert(menuAudioState === "playing", `Expected menu audio to start after the audio gate, got ${menuAudioState}`);
   assert(levelAudioState === "playing", `Expected level audio to continue after Play, got ${levelAudioState}`);
   assert(

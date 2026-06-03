@@ -218,7 +218,9 @@ export class SynthAudio {
 
   private markAudioState(state: string): void {
     if (import.meta.env.DEV && typeof document !== "undefined") {
-      document.documentElement.dataset.echoShiftAudioState = state;
+      const dataset = document.documentElement.dataset;
+      if (state === "running" && dataset.echoShiftAudioState === "playing") return;
+      dataset.echoShiftAudioState = state;
     }
   }
 
