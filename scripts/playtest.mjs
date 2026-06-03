@@ -611,7 +611,9 @@ try {
   await page.locator("[data-level='4']").click();
   await page.locator("canvas").waitFor({ state: "visible" });
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  const liftPhaseTilePhasesBefore = await page.evaluate(() => document.documentElement.dataset.echoShiftTileAssetPhases || "");
   const liftPhaseRouteResult = await runKeyboardRouteWithHudFrames(page, liftPhaseClearRoute);
+  const liftPhaseTilePhasesAfter = await page.evaluate(() => document.documentElement.dataset.echoShiftTileAssetPhases || "");
   const liftPhaseCompletionTitle = liftPhaseRouteResult.modal || "Traversal preview";
   await page.screenshot({ path: artifacts.desktopLiftPhaseComplete });
 
@@ -777,13 +779,22 @@ try {
   assert(nextLevelLabel?.includes("2. First Afterimage"), `Expected Next Room to load level 2, got ${nextLevelLabel}`);
   assert(corePixels > 60, `Expected generated core/effect sprite pixels in Relay Key, got ${corePixels}`);
   assert(
-    heldOpenSolidFrames.includes("low-block:0") && heldOpenSolidFrames.includes("mid-ledge:0"),
+    heldOpenSolidFrames.includes("left-wall:1") &&
+      heldOpenSolidFrames.includes("right-wall:1") &&
+      heldOpenSolidFrames.includes("low-block:0") &&
+      heldOpenSolidFrames.includes("mid-ledge:0"),
     `Expected legacy Held Open ledges to use floor sprite frames, got ${heldOpenSolidFrames}`
   );
   assert(heldOpenCompletionTitle === "Room Clear", `Expected Held Open completion modal, got ${heldOpenCompletionTitle}`);
   assert(
     liftPhaseRouteResult.status !== "Signal lost" && liftPhaseRouteResult.endFrame >= liftPhaseRouteResult.startFrame + 320,
     `Expected Lift Phase traversal preview to remain alive through the visual route: ${JSON.stringify(liftPhaseRouteResult)}`
+  );
+  assert(
+    liftPhaseTilePhasesBefore.includes("platform:lift-a:") &&
+      liftPhaseTilePhasesAfter.includes("platform:lift-a:") &&
+      liftPhaseTilePhasesBefore.split(",").slice(0, 2).join(",") === liftPhaseTilePhasesAfter.split(",").slice(0, 2).join(","),
+    `Expected moving platform tile phase to remain object-anchored, got ${liftPhaseTilePhasesBefore} -> ${liftPhaseTilePhasesAfter}`
   );
   assert(
     disabledDroneStates.includes("disabled-drone:inactive"),
@@ -851,6 +862,8 @@ try {
         heldOpenSolidFrames,
         heldOpenCompletionTitle,
         liftPhaseRouteResult,
+        liftPhaseTilePhasesBefore,
+        liftPhaseTilePhasesAfter,
         liftPhaseCompletionTitle,
         disabledDroneStates,
         disabledDronePixels,

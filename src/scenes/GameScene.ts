@@ -67,6 +67,7 @@ export class GameScene extends Phaser.Scene {
   private objectAssets = new Map<string, ObjectAsset>();
   private activeObjectAssetIds = new Set<string>();
   private solidAssetFrames: string[] = [];
+  private tileAssetPhases: string[] = [];
   private exitSprite?: Phaser.GameObjects.Image;
   private backgroundImages: Phaser.GameObjects.Image[] = [];
   private cameraTarget?: Phaser.GameObjects.Zone;
@@ -91,6 +92,7 @@ export class GameScene extends Phaser.Scene {
     this.objectAssets.clear();
     this.activeObjectAssetIds.clear();
     this.solidAssetFrames = [];
+    this.tileAssetPhases = [];
     this.exitSprite = undefined;
     this.backgroundImages = [];
     this.cameraTarget = undefined;
@@ -422,7 +424,7 @@ export class GameScene extends Phaser.Scene {
   private drawPlatforms(tick: number): void {
     for (const platform of this.level.platforms || []) {
       const rect = platformRectAt(platform, tick);
-      this.syncTileAsset(`platform:${platform.id}`, OBJECT_FRAME.platform, rect, 3, 0.96, 0.44);
+      this.syncTileAsset(`platform:${platform.id}`, OBJECT_FRAME.platform, rect, 3, 0.96, 0.44, 0, platform);
       this.drawNeonRect(rect, 0x1f2e46, 0xffe35a, 0.72);
       this.world.lineStyle(1, 0xffe35a, 0.28);
       if (platform.axis === "y") {
@@ -630,7 +632,16 @@ export class GameScene extends Phaser.Scene {
     for (const laser of this.level.movingLasers || []) {
       const rect = movingLaserRectAt(laser, tick);
       const active = laserIsActive(laser, activePlates);
-      this.syncTileAsset(`moving-laser:${laser.id}`, active ? OBJECT_FRAME.laserActive : OBJECT_FRAME.laserInactive, this.expandedBeamRect(rect), 6, active ? 0.94 : 0.42, 0.38, tick * -2);
+      this.syncTileAsset(
+        `moving-laser:${laser.id}`,
+        active ? OBJECT_FRAME.laserActive : OBJECT_FRAME.laserInactive,
+        this.expandedBeamRect(rect),
+        6,
+        active ? 0.94 : 0.42,
+        0.38,
+        tick * -2,
+        this.expandedBeamRect(laser)
+      );
       this.world.lineStyle(1, 0xff4f8b, 0.22);
       if (laser.axis === "x") {
         this.world.lineBetween(laser.x, laser.y + laser.h / 2, laser.x + laser.distance, laser.y + laser.h / 2);
@@ -757,6 +768,7 @@ export class GameScene extends Phaser.Scene {
       .join(",");
     document.documentElement.dataset.echoShiftObjectAssetCount = String(this.activeObjectAssetIds.size);
     document.documentElement.dataset.echoShiftSolidAssetFrames = this.solidAssetFrames.join(",");
+    document.documentElement.dataset.echoShiftTileAssetPhases = this.tileAssetPhases.join(",");
   }
 
   private drawActor(actor: ActorBody, color: number, alpha: number): void {
@@ -903,6 +915,7 @@ export class GameScene extends Phaser.Scene {
   private beginObjectAssetSync(): void {
     this.activeObjectAssetIds.clear();
     this.solidAssetFrames = [];
+    this.tileAssetPhases = [];
   }
 
   private finishObjectAssetSync(): void {
@@ -918,7 +931,8 @@ export class GameScene extends Phaser.Scene {
     depth: number,
     alpha: number,
     tileScale: number,
-    tileOffsetX = 0
+    tileOffsetX = 0,
+    tileOrigin: Rect = rect
   ): void {
     if (!this.textures.exists(OBJECT_ATLAS_KEY) || rect.w <= 0 || rect.h <= 0) return;
     const asset = this.assetFor(id, "tile", frame) as Phaser.GameObjects.TileSprite;
@@ -932,9 +946,12 @@ export class GameScene extends Phaser.Scene {
     asset.setSize(Math.max(1, rect.w), Math.max(1, rect.h));
     asset.tileScaleX = tileScale;
     asset.tileScaleY = tileScale;
-    asset.tilePositionX = rect.x / Math.max(tileScale, 0.01) + tileOffsetX;
-    asset.tilePositionY = rect.y / Math.max(tileScale, 0.01);
+    asset.tilePositionX = tileOrigin.x / Math.max(tileScale, 0.01) + tileOffsetX;
+    asset.tilePositionY = tileOrigin.y / Math.max(tileScale, 0.01);
     this.activeObjectAssetIds.add(id);
+    if (id.startsWith("platform:") || id.startsWith("moving-laser:")) {
+      this.tileAssetPhases.push(`${id}:${Math.round(asset.tilePositionX)},${Math.round(asset.tilePositionY)}`);
+    }
   }
 
   private solidFrame(solid: Solid): number {
