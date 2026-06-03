@@ -94,7 +94,7 @@ export type SoundtrackKey =
 
 export type LevelSoundtrackKey = Exclude<SoundtrackKey, "menu">;
 
-export type LevelBackgroundKey = "time-lab-prototype";
+export type LevelBackgroundKey = "time-lab-prototype" | "level-1-time-lab-no-portals";
 
 export type Level = {
   id: string;

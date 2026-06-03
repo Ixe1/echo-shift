@@ -53,6 +53,7 @@ const sourceLevels: Level[] = [
     index: 0,
     name: "Portal Primer",
     subtitle: "A clean line through the lab",
+    backgroundKey: "level-1-time-lab-no-portals",
     start: { x: 58, y: 450 },
     exit: r(2286, 438, 48, 62),
     bounds: bounds(2400),

@@ -628,6 +628,22 @@ try {
   await page.locator("[data-delete-object]").click();
   const generatedGlobalCleanupValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
+  await openTab(page, "objects");
+  await page.locator("[data-object-list] [data-kind='solids'][data-id='step-1']").click();
+  const offGridStepXBefore = await objectNumber(page, "x");
+  const offGridStepYBefore = await objectNumber(page, "y");
+  const offGridStepWidthBefore = await objectNumber(page, "w");
+  const offGridStepHeightBefore = await objectNumber(page, "h");
+  await page.locator("[data-tool='select']").click();
+  await dragWorld(
+    page,
+    { x: offGridStepXBefore + offGridStepWidthBefore, y: offGridStepYBefore + offGridStepHeightBefore / 2 },
+    { x: offGridStepXBefore + offGridStepWidthBefore + 74, y: offGridStepYBefore + offGridStepHeightBefore / 2 }
+  );
+  const offGridStepXAfter = await objectNumber(page, "x");
+  const offGridStepYAfter = await objectNumber(page, "y");
+  const offGridStepWidthAfter = await objectNumber(page, "w");
+
   await page.locator("[data-tool='solids']").click();
   await page.locator("[data-add-object]").click();
   await page.locator("[data-object-field='id']").fill("smoke-narrow-support");
@@ -926,8 +942,9 @@ try {
   assert(soundtrackOptions.some((option) => option.includes("Auto: Echo Shift - Level 1")), `Expected auto soundtrack option, got ${soundtrackOptions.join(", ")}`);
   assert(soundtrackOptions.some((option) => option.includes("Echo Shift - Level 6")), `Expected selectable level MP3 options, got ${soundtrackOptions.join(", ")}`);
   assert(soundtrackExportKey === "level-6", `Expected selected soundtrack key to export as level-6, got ${soundtrackExportKey}`);
-  assert(backgroundOptions.some((option) => option.includes("Auto: Prototype Time Lab")), `Expected auto background option, got ${backgroundOptions.join(", ")}`);
+  assert(backgroundOptions.some((option) => option.includes("Auto: Level 1 Time Lab")), `Expected auto background option, got ${backgroundOptions.join(", ")}`);
   assert(backgroundOptions.some((option) => option.includes("1672x941")), `Expected background dimensions in options, got ${backgroundOptions.join(", ")}`);
+  assert(backgroundOptions.some((option) => option.includes("1881x836")), `Expected Level 1 background dimensions in options, got ${backgroundOptions.join(", ")}`);
   assert(backgroundExportKey === "time-lab-prototype", `Expected selected background key to export as time-lab-prototype, got ${backgroundExportKey}`);
   assert(medalSettingsText?.includes("Perfect Echoes"), `Expected medal settings to label Perfect Echoes, got ${medalSettingsText}`);
   assert(medalSettingsText?.includes("Gold Frames"), `Expected medal settings to label Gold Frames, got ${medalSettingsText}`);
@@ -1029,6 +1046,14 @@ try {
   assert(
     afterEditValidation === "clean",
     `Expected clean validation after edit, got ${afterEditValidation}: ${afterEditValidationText}`
+  );
+  assert(
+    offGridStepXAfter === offGridStepXBefore && offGridStepYAfter === offGridStepYBefore,
+    `Expected off-grid step east resize to keep anchored origin ${offGridStepXBefore},${offGridStepYBefore}; got ${offGridStepXAfter},${offGridStepYAfter}`
+  );
+  assert(
+    offGridStepWidthAfter > offGridStepWidthBefore && offGridStepWidthAfter % 20 === 0,
+    `Expected off-grid step east resize to snap widened size to grid: ${offGridStepWidthBefore} -> ${offGridStepWidthAfter}`
   );
   assert(floorDefaultHeight === 20, `Expected new solid defaults to be one grid snap thick, got height ${floorDefaultHeight}`);
   assert(reselectedThinSolidId === "smoke-floor", `Expected thin solid canvas hit tolerance to reselect smoke-floor, got ${reselectedThinSolidId}`);

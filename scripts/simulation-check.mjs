@@ -174,7 +174,9 @@ try {
   );
   assert(Boolean(soundtracks.menu), "Expected a main menu soundtrack");
   assert(Boolean(levelBackgrounds["time-lab-prototype"]), "Expected prototype level background");
-  assert(backgroundForLevel(levels[0], 0).key === "time-lab-prototype", "Expected source levels to use prototype background fallback");
+  assert(Boolean(levelBackgrounds["level-1-time-lab-no-portals"]), "Expected Level 1 no-portal background");
+  assert(backgroundForLevel(levels[0], 0).key === "level-1-time-lab-no-portals", "Expected Level 1 to use no-portal background");
+  assert(backgroundForLevel(levels[1], 1).key === "time-lab-prototype", "Expected levels without explicit backgrounds to use prototype fallback");
   assert(soundtrackForLevel({ ...levels[0], soundtrackKey: "level-6" }).key === "level-6", "Expected explicit level soundtrack key to override index fallback");
   assert(soundtrackForLevel({ ...levels[5], soundtrackKey: undefined }, 5).key === "level-6", "Expected missing soundtrack key to fall back to level slot");
   assert(soundtrackForLevel({ ...levels[5], soundtrackKey: "missing-track" }, 5).key === "level-6", "Expected unknown soundtrack key to fall back to level slot");

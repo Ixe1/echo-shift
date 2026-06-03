@@ -18,6 +18,13 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     src: "/assets/time-lab-background.png",
     sourceSize: { w: 1672, h: 941 },
     repeat: "x"
+  },
+  "level-1-time-lab-no-portals": {
+    key: "level-1-time-lab-no-portals",
+    title: "Level 1 Time Lab",
+    src: "/assets/backgrounds/level-1-time-lab-no-portals.png",
+    sourceSize: { w: 1881, h: 836 },
+    repeat: "x"
   }
 };
 

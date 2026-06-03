@@ -443,6 +443,7 @@ try {
   await page.locator("[data-play]").click();
   await page.waitForTimeout(600);
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  const desktopBackgroundKey = await page.evaluate(() => document.documentElement.dataset.echoShiftBackgroundKey);
   await page.screenshot({ path: artifacts.desktopGame });
   await page.keyboard.down("KeyD");
   await page.waitForTimeout(700);
@@ -627,6 +628,10 @@ try {
   await touchFlowContext.close();
 
   assert(title === "Echo Shift", `Unexpected title: ${title}`);
+  assert(
+    desktopBackgroundKey === "level-1-time-lab-no-portals",
+    `Expected Level 1 no-portal background key, got ${desktopBackgroundKey}`
+  );
   assert(echoesText === "1", `Expected one echo after rewind, got ${echoesText}`);
   assert(retryCastPixels < 24, `Expected retry to clear rewind-cast sprite pixels, got ${retryCastPixels}`);
   assert(pauseVisible, "Pause modal did not become visible");
@@ -672,6 +677,7 @@ try {
         ok: true,
         url,
         title,
+        desktopBackgroundKey,
         echoesText,
         retryCastPixels,
         pauseVisible,

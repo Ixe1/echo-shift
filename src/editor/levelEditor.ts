@@ -153,17 +153,26 @@ const snapPoint = (point: Vec2): Vec2 => ({
   y: snap(point.y)
 });
 
-const snapRectToGrid = (rect: Rect, minimum = GRID): Rect => {
-  const left = snap(rect.x);
-  const top = snap(rect.y);
-  const right = Math.max(left + minimum, snap(rect.x + rect.w));
-  const bottom = Math.max(top + minimum, snap(rect.y + rect.h));
-  return {
-    x: left,
-    y: top,
-    w: right - left,
-    h: bottom - top
-  };
+const resizeRectOnGrid = (startRect: Rect, handle: ResizeHandle, dx: number, dy: number): Rect => {
+  let { x, y, w, h } = startRect;
+
+  if (handle.includes("w")) {
+    const right = startRect.x + startRect.w;
+    w = snapSize(right - (startRect.x + dx), MIN_RECT_SIZE);
+    x = right - w;
+  } else if (handle.includes("e")) {
+    w = snapSize(startRect.w + dx, MIN_RECT_SIZE);
+  }
+
+  if (handle.includes("n")) {
+    const bottom = startRect.y + startRect.h;
+    h = snapSize(bottom - (startRect.y + dy), MIN_RECT_SIZE);
+    y = bottom - h;
+  } else if (handle.includes("s")) {
+    h = snapSize(startRect.h + dy, MIN_RECT_SIZE);
+  }
+
+  return { x, y, w, h };
 };
 
 const positiveNumber = (value: unknown, fallback: number): number => {
@@ -1159,25 +1168,7 @@ class LevelEditor {
     const rect = this.findObject(selection.kind, selection.id);
     if (!rect) return;
 
-    let left = startRect.x;
-    let right = startRect.x + startRect.w;
-    let top = startRect.y;
-    let bottom = startRect.y + startRect.h;
-
-    if (handle.includes("w")) left = Math.min(startRect.x + dx, right - MIN_RECT_SIZE);
-    if (handle.includes("e")) right = Math.max(startRect.x + MIN_RECT_SIZE, startRect.x + startRect.w + dx);
-    if (handle.includes("n")) top = Math.min(startRect.y + dy, bottom - MIN_RECT_SIZE);
-    if (handle.includes("s")) bottom = Math.max(startRect.y + MIN_RECT_SIZE, startRect.y + startRect.h + dy);
-
-    Object.assign(
-      rect,
-      snapRectToGrid({
-        x: left,
-        y: top,
-        w: right - left,
-        h: bottom - top
-      })
-    );
+    Object.assign(rect, resizeRectOnGrid(startRect, handle, dx, dy));
     this.snapToNearbySurface(selection.kind, rect);
   }
 
@@ -1186,12 +1177,14 @@ class LevelEditor {
     const rect = this.rectForSelection(this.selection);
     if (!rect) return null;
     const tolerance = Math.max(8 / this.view.w, 5);
+    let best: { selection: Selection; handle: ResizeHandle; rect: Rect; distance: number } | null = null;
     for (const { handle, point: handlePoint } of resizeHandlesForRect(rect)) {
       if (Math.abs(point.x - handlePoint.x) <= tolerance && Math.abs(point.y - handlePoint.y) <= tolerance) {
-        return { selection: this.selection, handle, rect };
+        const distance = (point.x - handlePoint.x) ** 2 + (point.y - handlePoint.y) ** 2;
+        if (!best || distance < best.distance) best = { selection: this.selection, handle, rect, distance };
       }
     }
-    return null;
+    return best ? { selection: best.selection, handle: best.handle, rect: best.rect } : null;
   }
 
   private hitMotionEndpoint(point: Vec2): { selection: { kind: MovingKind; id: string }; endpoint: PathEndpoint } | null {
