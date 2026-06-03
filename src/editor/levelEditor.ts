@@ -363,13 +363,14 @@ const defaultSizeFor = (kind: RectCollection, solidPreset: SolidPreset | null = 
 };
 
 const movingPath = (item: MovingPlatform | PatrolDrone | MovingLaser): { start: number; end: number; center: number; speed: number } => {
-  const center = item.axis === "x" ? item.x : item.y;
+  const start = item.axis === "x" ? item.x : item.y;
   const distance = nonNegativeNumber(item.distance, 0);
+  const end = start + distance;
   return {
-    start: center - distance,
-    end: center + distance,
-    center,
-    speed: item.period > 0 ? Math.round((240 * distance) / item.period) : 0
+    start,
+    end,
+    center: start,
+    speed: item.period > 0 ? Math.round((120 * distance) / item.period) : 0
   };
 };
 
@@ -378,8 +379,8 @@ const movingPathPoints = (item: MovingPlatform | PatrolDrone | MovingLaser): { s
   return {
     start:
       item.axis === "x"
-        ? { x: item.x - distance, y: item.y + item.h / 2 }
-        : { x: item.x + item.w / 2, y: item.y - distance },
+        ? { x: item.x, y: item.y + item.h / 2 }
+        : { x: item.x + item.w / 2, y: item.y },
     end:
       item.axis === "x"
         ? { x: item.x + distance, y: item.y + item.h / 2 }
@@ -396,10 +397,9 @@ const setMovingPath = (
   const snappedEnd = snap(nextEnd);
   const start = Math.min(snappedStart, snappedEnd);
   const end = Math.max(snappedStart, snappedEnd);
-  const center = (start + end) / 2;
-  item.distance = Math.max(0, (end - start) / 2);
-  if (item.axis === "x") item.x = center;
-  else item.y = center;
+  item.distance = Math.max(0, end - start);
+  if (item.axis === "x") item.x = start;
+  else item.y = start;
 };
 
 const resizeHandlesForRect = (rect: Rect): Array<{ handle: ResizeHandle; point: Vec2 }> => [
@@ -1047,7 +1047,7 @@ class LevelEditor {
     if (field === "speed") {
       const moving = target as MovingPlatform | PatrolDrone | MovingLaser;
       const speed = Math.max(1, Number(value));
-      moving.period = Math.max(1, Math.round((240 * Math.max(1, moving.distance)) / speed));
+      moving.period = Math.max(1, Math.round((120 * Math.max(1, moving.distance)) / speed));
       return;
     }
     if (field === "distance" || field === "period" || field === "phase") {
@@ -1165,7 +1165,8 @@ class LevelEditor {
 
     if (this.tool === "select") {
       const pathHit = this.hitMotionEndpoint(rawWorld);
-      if (pathHit) {
+      const resizeHit = this.hitResizeHandle(rawWorld);
+      if (pathHit && (!resizeHit || pathHit.distance <= resizeHit.distance)) {
         this.selection = pathHit.selection;
         this.drag = {
           mode: "path",
@@ -1177,7 +1178,6 @@ class LevelEditor {
         return;
       }
 
-      const resizeHit = this.hitResizeHandle(rawWorld);
       if (resizeHit) {
         this.drag = {
           mode: "resize",
@@ -1348,22 +1348,22 @@ class LevelEditor {
     this.snapToNearbySurface(selection.kind, rect);
   }
 
-  private hitResizeHandle(point: Vec2): { selection: Selection; handle: ResizeHandle; rect: Rect } | null {
+  private hitResizeHandle(point: Vec2): { selection: Selection; handle: ResizeHandle; rect: Rect; distance: number } | null {
     if (!this.selection || !this.canResizeSelection(this.selection)) return null;
     const rect = this.rectForSelection(this.selection);
     if (!rect) return null;
     const tolerance = Math.max(8 / this.view.w, 5);
     let best: { selection: Selection; handle: ResizeHandle; rect: Rect; distance: number } | null = null;
-    for (const { handle, point: handlePoint } of resizeHandlesForRect(rect)) {
+    for (const { handle, point: handlePoint } of this.resizeHandlesForSelection(this.selection, rect)) {
       if (Math.abs(point.x - handlePoint.x) <= tolerance && Math.abs(point.y - handlePoint.y) <= tolerance) {
-        const distance = (point.x - handlePoint.x) ** 2 + (point.y - handlePoint.y) ** 2;
+        const distance = pointDistance(point, handlePoint);
         if (!best || distance < best.distance) best = { selection: this.selection, handle, rect, distance };
       }
     }
-    return best ? { selection: best.selection, handle: best.handle, rect: best.rect } : null;
+    return best ? { selection: best.selection, handle: best.handle, rect: best.rect, distance: best.distance } : null;
   }
 
-  private hitMotionEndpoint(point: Vec2): { selection: { kind: MovingKind; id: string }; endpoint: PathEndpoint } | null {
+  private hitMotionEndpoint(point: Vec2): { selection: { kind: MovingKind; id: string }; endpoint: PathEndpoint; distance: number } | null {
     const tolerance = Math.max(HIT_TOLERANCE_PX / this.view.w, 6);
     const candidates: Array<{ kind: MovingKind; object: MovingPlatform | PatrolDrone | MovingLaser }> = [];
     const selected = this.selection;
@@ -1379,19 +1379,31 @@ class LevelEditor {
     }
 
     const seen = new Set<string>();
+    let best: { selection: { kind: MovingKind; id: string }; endpoint: PathEndpoint; distance: number } | null = null;
     for (const candidate of candidates) {
       const key = `${candidate.kind}:${candidate.object.id}`;
       if (seen.has(key)) continue;
       seen.add(key);
       const points = movingPathPoints(candidate.object);
-      if (pointDistance(point, points.start) <= tolerance) {
-        return { selection: { kind: candidate.kind, id: candidate.object.id }, endpoint: "start" };
+      const startDistance = pointDistance(point, points.start);
+      if (startDistance <= tolerance && (!best || startDistance < best.distance)) {
+        best = { selection: { kind: candidate.kind, id: candidate.object.id }, endpoint: "start", distance: startDistance };
       }
-      if (pointDistance(point, points.end) <= tolerance) {
-        return { selection: { kind: candidate.kind, id: candidate.object.id }, endpoint: "end" };
+      const endDistance = pointDistance(point, points.end);
+      if (endDistance <= tolerance && (!best || endDistance < best.distance)) {
+        best = { selection: { kind: candidate.kind, id: candidate.object.id }, endpoint: "end", distance: endDistance };
       }
     }
-    return null;
+    return best;
+  }
+
+  private resizeHandlesForSelection(selection: Selection, rect: Rect): Array<{ handle: ResizeHandle; point: Vec2 }> {
+    const handles = resizeHandlesForRect(rect);
+    if (selection.kind !== "platforms" && selection.kind !== "movingLasers") return handles;
+    const object = this.findObject(selection.kind, selection.id) as MovingPlatform | MovingLaser | null;
+    if (!object) return handles;
+    if (object.axis === "x") return handles.filter(({ handle }) => !handle.includes("w"));
+    return handles.filter(({ handle }) => !handle.includes("n"));
   }
 
   private canResizeSelection(selection: Selection): boolean {
@@ -2141,42 +2153,50 @@ class LevelEditor {
     const ctx = this.context;
     const style = styleForKind(kind, object);
     const selected = this.selectionMatches({ kind, id: object.id });
-
-    if (kind === "platforms" || kind === "drones" || kind === "movingLasers") {
-      const moving = object as MovingPlatform | PatrolDrone | MovingLaser;
-      this.drawMotionPath(kind, moving, selected);
-    }
+    const drawMotionPath = (): void => {
+      if (kind === "platforms" || kind === "drones" || kind === "movingLasers") {
+        this.drawMotionPath(kind, object as MovingPlatform | PatrolDrone | MovingLaser, selected);
+      }
+    };
 
     if (kind === "oneWays") {
       this.drawOneWay(object, style, selected);
+      drawMotionPath();
       return;
     }
     if (kind === "conveyors") {
       this.drawConveyor(object as Conveyor, style, selected);
+      drawMotionPath();
       return;
     }
     if (kind === "cores") {
       this.drawDiamond(object, style, selected);
+      drawMotionPath();
       return;
     }
     if (kind === "launchPads") {
       this.drawLaunchPad(object, style, selected);
+      drawMotionPath();
       return;
     }
     if (kind === "echoSensors") {
       this.drawEchoSensor(object, style, selected);
+      drawMotionPath();
       return;
     }
     if (kind === "hazards") {
       this.drawHazard(object, style, selected);
+      drawMotionPath();
       return;
     }
     if (kind === "movingLasers") {
       this.drawMovingLaser(object, style, selected);
+      drawMotionPath();
       return;
     }
     if (kind === "drones") {
       this.drawDrone(object, style, selected);
+      drawMotionPath();
       return;
     }
 
@@ -2186,6 +2206,7 @@ class LevelEditor {
     ctx.fillRect(object.x, object.y, object.w, object.h);
     ctx.strokeRect(object.x, object.y, object.w, object.h);
     this.drawObjectLabel(object, object.id, style.text);
+    drawMotionPath();
   }
 
   private drawOneWay(object: RectObject, style: { fill: string; stroke: string; text: string }, selected: boolean): void {
@@ -2377,7 +2398,7 @@ class LevelEditor {
     ctx.fillStyle = "#fff8bf";
     ctx.strokeStyle = "#05070d";
     ctx.lineWidth = 1.5 / this.view.w;
-    for (const { point } of resizeHandlesForRect(rect)) {
+    for (const { point } of this.resizeHandlesForSelection(this.selection, rect)) {
       ctx.fillRect(point.x - size / 2, point.y - size / 2, size, size);
       ctx.strokeRect(point.x - size / 2, point.y - size / 2, size, size);
     }

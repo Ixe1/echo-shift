@@ -1,4 +1,5 @@
 import { rectsOverlap } from "./geometry";
+import { oscillatingOffsetAt } from "./motion";
 import type {
   ActorBody,
   EchoSensor,
@@ -115,9 +116,7 @@ export const playerTouchesHazard = (
 };
 
 export const droneRectAt = (drone: PatrolDrone, tick: number): Rect => {
-  const phase = drone.phase || 0;
-  const wave = Math.sin(((tick / drone.period) * Math.PI * 2) + phase);
-  const offset = wave * drone.distance;
+  const offset = oscillatingOffsetAt(drone.distance, drone.period, drone.phase || 0, tick);
   return {
     x: drone.x + (drone.axis === "x" ? offset : 0),
     y: drone.y + (drone.axis === "y" ? offset : 0),
@@ -133,9 +132,7 @@ export const laserIsActive = (laser: Laser, activePlates: Set<string>): boolean 
 };
 
 export const movingLaserRectAt = (laser: MovingLaser, tick: number): Rect => {
-  const phase = laser.phase || 0;
-  const wave = Math.sin(((tick / laser.period) * Math.PI * 2) + phase);
-  const offset = wave * laser.distance;
+  const offset = oscillatingOffsetAt(laser.distance, laser.period, laser.phase || 0, tick);
   return {
     x: laser.x + (laser.axis === "x" ? offset : 0),
     y: laser.y + (laser.axis === "y" ? offset : 0),

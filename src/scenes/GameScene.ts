@@ -384,9 +384,9 @@ export class GameScene extends Phaser.Scene {
       this.drawNeonRect(rect, 0x1f2e46, 0xffe35a, 0.72);
       this.world.lineStyle(1, 0xffe35a, 0.28);
       if (platform.axis === "y") {
-        this.world.lineBetween(platform.x + platform.w / 2, platform.y - platform.distance, platform.x + platform.w / 2, platform.y + platform.distance);
+        this.world.lineBetween(platform.x + platform.w / 2, platform.y, platform.x + platform.w / 2, platform.y + platform.distance);
       } else {
-        this.world.lineBetween(platform.x - platform.distance, platform.y + platform.h / 2, platform.x + platform.distance, platform.y + platform.h / 2);
+        this.world.lineBetween(platform.x, platform.y + platform.h / 2, platform.x + platform.distance, platform.y + platform.h / 2);
       }
     }
   }
@@ -542,12 +542,11 @@ export class GameScene extends Phaser.Scene {
     for (const laser of this.level.movingLasers || []) {
       const rect = movingLaserRectAt(laser, tick);
       const active = laserIsActive(laser, activePlates);
-      const center = rectCenter(rect);
       this.world.lineStyle(1, 0xff4f8b, 0.22);
       if (laser.axis === "x") {
-        this.world.lineBetween(laser.x - laser.distance, center.y, laser.x + laser.w + laser.distance, center.y);
+        this.world.lineBetween(laser.x, laser.y + laser.h / 2, laser.x + laser.distance, laser.y + laser.h / 2);
       } else {
-        this.world.lineBetween(center.x, laser.y - laser.distance, center.x, laser.y + laser.h + laser.distance);
+        this.world.lineBetween(laser.x + laser.w / 2, laser.y, laser.x + laser.w / 2, laser.y + laser.distance);
       }
       if (!active) {
         this.world.lineStyle(2, 0x43f7ff, 0.18);
@@ -583,9 +582,9 @@ export class GameScene extends Phaser.Scene {
       const center = rectCenter(rect);
       this.world.lineStyle(1, 0xff4f8b, 0.2);
       if (drone.axis === "x") {
-        this.world.lineBetween(drone.x - drone.distance, center.y, drone.x + drone.w + drone.distance, center.y);
+        this.world.lineBetween(drone.x, drone.y + drone.h / 2, drone.x + drone.distance, drone.y + drone.h / 2);
       } else {
-        this.world.lineBetween(center.x, drone.y - drone.distance, center.x, drone.y + drone.h + drone.distance);
+        this.world.lineBetween(drone.x + drone.w / 2, drone.y, drone.x + drone.w / 2, drone.y + drone.distance);
       }
       this.world.fillStyle(0xff4f8b, 0.16);
       this.world.fillCircle(center.x, center.y, 24);

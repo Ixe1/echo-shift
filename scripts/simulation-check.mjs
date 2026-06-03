@@ -44,8 +44,9 @@ const rectsOverlap = (a, b) =>
 
 const oscillatingRectAt = (item, tick) => {
   const phase = item.phase || 0;
-  const wave = Math.sin(((tick / item.period) * Math.PI * 2) + phase);
-  const offset = wave * item.distance;
+  const travel = Number.isFinite(item.distance) ? Math.max(0, item.distance) : 0;
+  const cycle = Number.isFinite(item.period) ? Math.max(1, item.period) : 1;
+  const offset = ((1 - Math.cos(((tick / cycle) * Math.PI * 2) + phase)) / 2) * travel;
   return {
     x: item.x + (item.axis === "x" ? offset : 0),
     y: item.y + (item.axis === "y" ? offset : 0),

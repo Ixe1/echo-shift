@@ -1,4 +1,4 @@
-import type { Level, PatrolDrone, Rect, Solid } from "../game/types";
+import type { Level, MovingPlatform, PatrolDrone, Rect, Solid } from "../game/types";
 
 const r = (x: number, y: number, w: number, h: number): Rect => ({ x, y, w, h });
 const s = (id: string, x: number, y: number, w: number, h: number, tone: Solid["tone"] = "steel"): Solid => ({
@@ -11,6 +11,22 @@ const s = (id: string, x: number, y: number, w: number, h: number, tone: Solid["
 });
 const p = (id: string, x: number, y: number, w: number, h: number) => ({ id, x, y, w, h });
 const h = (id: string, x: number, y: number, w: number, h: number) => ({ id, x, y, w, h });
+const anchoredMotionRect = (
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  axis: PatrolDrone["axis"],
+  centeredDistance: number
+): Rect => ({
+  x: axis === "x" ? x - centeredDistance : x,
+  y: axis === "y" ? y - centeredDistance : y,
+  w,
+  h
+});
+
+const anchoredPhase = (phase = 0): number => phase + Math.PI / 2;
+
 const d = (
   id: string,
   x: number,
@@ -21,7 +37,19 @@ const d = (
   distance: number,
   period: number,
   phase = 0
-): PatrolDrone => ({ id, x, y, w, h, axis, distance, period, phase });
+): PatrolDrone => ({ id, ...anchoredMotionRect(x, y, w, h, axis, distance), axis, distance: distance * 2, period, phase: anchoredPhase(phase) });
+
+const m = (
+  id: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  axis: MovingPlatform["axis"],
+  distance: number,
+  period: number,
+  phase = 0
+): MovingPlatform => ({ id, ...anchoredMotionRect(x, y, w, h, axis, distance), axis, distance: distance * 2, period, phase: anchoredPhase(phase) });
 
 const bounds = (width: number): Rect => r(0, 0, width, 540);
 const frame = (width: number, floorY = 500, gaps: Array<[number, number]> = []): Solid[] => {
@@ -161,8 +189,8 @@ const sourceLevels: Level[] = [
       s("landing-run", 2730, 430, 210, 18)
     ],
     platforms: [
-      { id: "lift-a", ...r(514, 430, 120, 18), axis: "y", distance: 92, period: 210 },
-      { id: "lift-a2", ...r(1830, 438, 120, 18), axis: "y", distance: 72, period: 180, phase: 1.4 }
+      m("lift-a", 514, 430, 120, 18, "y", 92, 210),
+      m("lift-a2", 1830, 438, 120, 18, "y", 72, 180, 1.4)
     ],
     drones: [d("drone-i", 1340, 472, 30, 24, "x", 100, 170), d("drone-j", 2960, 444, 30, 24, "y", 38, 160, 0.8)],
     perfectEchoes: 0,
@@ -235,8 +263,8 @@ const sourceLevels: Level[] = [
       s("final-ledge", 3340, 438, 220, 18)
     ],
     platforms: [
-      { id: "lift-b", ...r(1210, 442, 104, 18), axis: "y", distance: 86, period: 180, phase: 1.5 },
-      { id: "shuttle-b", ...r(2840, 438, 112, 18), axis: "x", distance: 110, period: 210, phase: 0.4 }
+      m("lift-b", 1210, 442, 104, 18, "y", 86, 180, 1.5),
+      m("shuttle-b", 2840, 438, 112, 18, "x", 110, 210, 0.4)
     ],
     plates: [p("plate-e", 196, 492, 68, 8)],
     doors: [{ id: "gate-e", ...r(1860, 200, 28, 300), opensWith: ["plate-e"], requiresCore: "core-e" }],
@@ -263,7 +291,7 @@ const sourceLevels: Level[] = [
       s("braid-ledge", 2160, 430, 190, 18),
       s("gate-approach", 3300, 438, 220, 18)
     ],
-    platforms: [{ id: "lift-c", ...r(1220, 438, 98, 18), axis: "x", distance: 110, period: 190 }],
+    platforms: [m("lift-c", 1220, 438, 98, 18, "x", 110, 190)],
     plates: [p("plate-f1", 222, 492, 66, 8), p("plate-f2", 1460, 492, 66, 8)],
     doors: [{ id: "gate-f", ...r(3600, 200, 28, 300), opensWith: ["plate-f1", "plate-f2"], requiresCore: "core-f" }],
     cores: [{ id: "core-f", ...r(876, 466, 24, 24), label: "F" }],
@@ -292,9 +320,9 @@ const sourceLevels: Level[] = [
       s("final-approach", 4300, 438, 260, 18)
     ],
     platforms: [
-      { id: "lift-d", ...r(1180, 438, 110, 18), axis: "y", distance: 92, period: 170 },
-      { id: "shuttle-d", ...r(680, 430, 92, 18), axis: "x", distance: 96, period: 150, phase: 0.9 },
-      { id: "lift-d2", ...r(3780, 438, 120, 18), axis: "y", distance: 82, period: 210, phase: 1.6 }
+      m("lift-d", 1180, 438, 110, 18, "y", 92, 170),
+      m("shuttle-d", 680, 430, 92, 18, "x", 96, 150, 0.9),
+      m("lift-d2", 3780, 438, 120, 18, "y", 82, 210, 1.6)
     ],
     plates: [p("plate-g1", 210, 492, 68, 8), p("plate-g2", 892, 492, 68, 8), p("plate-g3", 1600, 492, 68, 8)],
     doors: [{ id: "final-gate", ...r(4680, 200, 28, 300), opensWith: ["plate-g1", "plate-g2", "plate-g3"], requiresCore: "core-g" }],

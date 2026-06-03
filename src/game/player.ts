@@ -1,4 +1,5 @@
 import { clamp, rectsOverlap } from "./geometry";
+import { oscillatingOffsetAt } from "./motion";
 import type { ActorBody, Conveyor, InputFrame, MovingPlatform, OneWayPlatform, Rect, Solid } from "./types";
 
 const PLAYER_WIDTH = 24;
@@ -68,9 +69,7 @@ export type MoveResult = {
 };
 
 export const platformRectAt = (platform: MovingPlatform, tick: number): Rect => {
-  const phase = platform.phase || 0;
-  const wave = Math.sin(((tick / platform.period) * Math.PI * 2) + phase);
-  const offset = wave * platform.distance;
+  const offset = oscillatingOffsetAt(platform.distance, platform.period, platform.phase || 0, tick);
   return {
     x: platform.x + (platform.axis === "x" ? offset : 0),
     y: platform.y + (platform.axis === "y" ? offset : 0),

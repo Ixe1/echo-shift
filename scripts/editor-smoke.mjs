@@ -682,6 +682,45 @@ try {
   await page.locator("[data-object-field='disabledBy']").fill("smoke-timer");
   await dispatchChange(page.locator("[data-object-field='disabledBy']"));
 
+  await dragToolToWorld(page, "movingLasers", { x: 1500, y: 360 });
+  await page.locator("[data-object-field='id']").fill("smoke-resize-sweeper");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await page.locator("[data-object-field='axis']").selectOption("y");
+  const movingLaserResizeX = await objectNumber(page, "x");
+  const movingLaserResizeY = await objectNumber(page, "y");
+  const movingLaserResizeWidth = await objectNumber(page, "w");
+  await setObjectField(page, "pathStart", movingLaserResizeY);
+  await setObjectField(page, "pathEnd", movingLaserResizeY + 80);
+  const movingLaserPathWidthBeforeDrag = await objectNumber(page, "w");
+  const movingLaserPathHeightBeforeDrag = await objectNumber(page, "h");
+  const movingLaserPathStartBeforeDrag = await objectNumber(page, "pathStart");
+  const movingLaserPathEndBeforeDrag = await objectNumber(page, "pathEnd");
+  await page.locator("[data-tool='select']").click();
+  await dragWorld(
+    page,
+    { x: movingLaserResizeX + movingLaserResizeWidth / 2, y: movingLaserResizeY },
+    { x: movingLaserResizeX + movingLaserResizeWidth / 2, y: movingLaserResizeY - 40 }
+  );
+  const movingLaserPathWidthAfterDrag = await objectNumber(page, "w");
+  const movingLaserPathHeightAfterDrag = await objectNumber(page, "h");
+  const movingLaserPathStartAfterDrag = await objectNumber(page, "pathStart");
+  const movingLaserPathEndAfterDrag = await objectNumber(page, "pathEnd");
+  const movingLaserResizeHeightBefore = await objectNumber(page, "h");
+  const movingLaserPathStartBeforeResize = await objectNumber(page, "pathStart");
+  const movingLaserPathEndBeforeResize = await objectNumber(page, "pathEnd");
+  const movingLaserResizeBottomY = (await objectNumber(page, "y")) + movingLaserResizeHeightBefore;
+  await page.locator("[data-tool='select']").click();
+  await dragWorld(
+    page,
+    { x: movingLaserResizeX + movingLaserResizeWidth / 2, y: movingLaserResizeBottomY },
+    { x: movingLaserResizeX + movingLaserResizeWidth / 2, y: movingLaserResizeBottomY + 40 }
+  );
+  const movingLaserResizeHeightAfter = await objectNumber(page, "h");
+  const movingLaserPathStartAfterResize = await objectNumber(page, "pathStart");
+  const movingLaserPathEndAfterResize = await objectNumber(page, "pathEnd");
+  await page.locator("[data-delete-object]").click();
+  const movingLaserHandleCleanupValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+
   await dragToolToWorld(page, "crates", { x: 1220, y: 500 });
   await page.locator("[data-object-field='id']").fill("smoke-crate");
   await dispatchChange(page.locator("[data-object-field='id']"));
@@ -838,11 +877,14 @@ try {
 
   await openTab(page, "objects");
   await page.locator("[data-object-list] [data-id='drone-a']").click();
+  const droneLockX = await objectNumber(page, "x");
+  const droneLockY = await objectNumber(page, "y");
   const droneWidthBefore = await objectNumber(page, "w");
+  const droneHeightBefore = await objectNumber(page, "h");
   await page.locator("[data-tool='select']").click();
-  await dragWorld(page, { x: 1460, y: 484 }, { x: 1530, y: 484 });
+  await dragWorld(page, { x: droneLockX, y: droneLockY + droneHeightBefore / 2 }, { x: droneLockX - 40, y: droneLockY + droneHeightBefore / 2 });
   const droneWidthAfter = await objectNumber(page, "w");
-  await setObjectField(page, "x", 1430);
+  await setObjectField(page, "x", 1338);
   await setObjectField(page, "y", 472);
 
   const exportJson = await page.locator("[data-export-json]").inputValue();
@@ -881,6 +923,15 @@ try {
   await page.locator("[data-tool='select']").click();
   await dragWorld(page, { x: platformHandleX, y: 338 }, { x: platformHandleX, y: 320 });
   const platformPathStartAfterDrag = Number(await page.locator("[data-object-field='pathStart']").inputValue());
+  const platformResizeHeightBefore = await objectNumber(page, "h");
+  const platformPathStartBeforeResize = await objectNumber(page, "pathStart");
+  const platformPathEndBeforeResize = await objectNumber(page, "pathEnd");
+  const platformResizeBottomY = (await objectNumber(page, "y")) + platformResizeHeightBefore;
+  await page.locator("[data-tool='select']").click();
+  await dragWorld(page, { x: platformHandleX, y: platformResizeBottomY }, { x: platformHandleX, y: platformResizeBottomY + 40 });
+  const platformResizeHeightAfter = await objectNumber(page, "h");
+  const platformPathStartAfterResize = await objectNumber(page, "pathStart");
+  const platformPathEndAfterResize = await objectNumber(page, "pathEnd");
   const platformEndpointValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   const platformExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[4].platforms.find(
     (platform) => platform.id === "lift-a"
@@ -1094,9 +1145,26 @@ try {
   assert(toolkitTimer?.duration === 150, `Expected timed switch duration to export, got ${JSON.stringify(toolkitTimer)}`);
   assert(toolkitSensor?.actors === "both", `Expected echo sensor actor mode to export, got ${JSON.stringify(toolkitSensor)}`);
   assert(
-    toolkitSweeper?.axis === "y" && toolkitSweeper?.distance === 60 && toolkitSweeper?.disabledBy?.includes("smoke-timer"),
+    toolkitSweeper?.axis === "y" && toolkitSweeper?.distance === 120 && toolkitSweeper?.disabledBy?.includes("smoke-timer"),
     `Expected moving laser path/link settings to export, got ${JSON.stringify(toolkitSweeper)}`
   );
+  assert(
+    movingLaserPathWidthAfterDrag === movingLaserPathWidthBeforeDrag && movingLaserPathHeightAfterDrag === movingLaserPathHeightBeforeDrag,
+    `Expected moving-laser endpoint drag to preserve size ${movingLaserPathWidthBeforeDrag}x${movingLaserPathHeightBeforeDrag}, got ${movingLaserPathWidthAfterDrag}x${movingLaserPathHeightAfterDrag}`
+  );
+  assert(
+    movingLaserPathStartAfterDrag === movingLaserPathStartBeforeDrag - 40 && movingLaserPathEndAfterDrag === movingLaserPathEndBeforeDrag,
+    `Expected moving-laser start endpoint drag to move start path only, got ${movingLaserPathStartAfterDrag}-${movingLaserPathEndAfterDrag}`
+  );
+  assert(
+    movingLaserResizeHeightAfter > movingLaserResizeHeightBefore,
+    `Expected bottom moving-laser handle drag to resize height, got ${movingLaserResizeHeightBefore} -> ${movingLaserResizeHeightAfter}`
+  );
+  assert(
+    movingLaserPathStartAfterResize === movingLaserPathStartBeforeResize && movingLaserPathEndAfterResize === movingLaserPathEndBeforeResize,
+    `Expected moving-laser resize to preserve path ${movingLaserPathStartBeforeResize}-${movingLaserPathEndBeforeResize}, got ${movingLaserPathStartAfterResize}-${movingLaserPathEndAfterResize}`
+  );
+  assert(movingLaserHandleCleanupValidation === "clean", `Expected clean validation after moving laser handle cleanup, got ${movingLaserHandleCleanupValidation}`);
   assert(toolkitCrate && toolkitCrateBottom === 500, `Expected crate to export and snap flush to floor, got ${JSON.stringify(toolkitCrate)} bottom ${toolkitCrateBottom}`);
   assert(renamedTimerExists, "Expected timed switch rename to export");
   assert(
@@ -1193,14 +1261,22 @@ try {
   assert(doorYValue !== "200", `Expected single-click door placement to use clicked world y instead of hardcoded 200, got ${doorYValue}`);
   assert(doorPlacementValidation === "clean", `Expected clean validation after door placement, got ${doorPlacementValidation}`);
   assert(afterDoorDeleteValidation === "clean", `Expected clean validation after deleting smoke door, got ${afterDoorDeleteValidation}`);
-  assert(dronePeriod === 100, `Expected speed 120 over 50px drone distance to produce period 100, got ${dronePeriod}`);
+  assert(dronePeriod === 100, `Expected speed 120 over 100px drone travel to produce period 100, got ${dronePeriod}`);
   assert(dronePathStartAfterDrag === 340, `Expected draggable drone path endpoint to set start to 340, got ${dronePathStartAfterDrag}`);
   assert(droneExportJson.includes('"axis": "y"'), "Expected drone export JSON to include vertical axis");
-  assert(droneExport.y === 400, `Expected exported drone origin y to match snapped gameplay midpoint 400, got ${droneExport.y}`);
-  assert(droneExport.distance === 60, `Expected exported drone distance 60 after snapped endpoint edit, got ${droneExport.distance}`);
+  assert(droneExport.y === 340, `Expected exported drone origin y to match anchored path start 340, got ${droneExport.y}`);
+  assert(droneExport.distance === 120, `Expected exported drone travel distance 120 after snapped endpoint edit, got ${droneExport.distance}`);
   assert(platformPathStartAfterDrag === 320, `Expected draggable platform endpoint to set start to 320, got ${platformPathStartAfterDrag}`);
-  assert(platformExport.y === 420, `Expected exported platform origin y to align to grid midpoint 420, got ${platformExport.y}`);
-  assert(platformExport.distance === 100, `Expected exported platform distance 100 after endpoint edit, got ${platformExport.distance}`);
+  assert(platformExport.y === 320, `Expected exported platform origin y to match anchored path start 320, got ${platformExport.y}`);
+  assert(platformExport.distance === 200, `Expected exported platform travel distance 200 after endpoint edit, got ${platformExport.distance}`);
+  assert(
+    platformResizeHeightAfter > platformResizeHeightBefore,
+    `Expected moving platform bottom handle to resize height, got ${platformResizeHeightBefore} -> ${platformResizeHeightAfter}`
+  );
+  assert(
+    platformPathStartAfterResize === platformPathStartBeforeResize && platformPathEndAfterResize === platformPathEndBeforeResize,
+    `Expected moving platform resize to preserve path ${platformPathStartBeforeResize}-${platformPathEndBeforeResize}, got ${platformPathStartAfterResize}-${platformPathEndAfterResize}`
+  );
   assert(platformEndpointValidation === "clean", `Expected clean validation after platform endpoint drag, got ${platformEndpointValidation}`);
   assert(fallbackImportHazardIds.length === 2, `Expected two fallback-imported hazards, got ${fallbackImportHazardIds.join(", ")}`);
   assert(
