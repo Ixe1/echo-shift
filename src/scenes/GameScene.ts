@@ -68,6 +68,7 @@ export class GameScene extends Phaser.Scene {
   private activeObjectAssetIds = new Set<string>();
   private solidAssetFrames: string[] = [];
   private tileAssetPhases: string[] = [];
+  private tileAssetOrigins: string[] = [];
   private exitSprite?: Phaser.GameObjects.Image;
   private backgroundImages: Phaser.GameObjects.Image[] = [];
   private cameraTarget?: Phaser.GameObjects.Zone;
@@ -93,6 +94,7 @@ export class GameScene extends Phaser.Scene {
     this.activeObjectAssetIds.clear();
     this.solidAssetFrames = [];
     this.tileAssetPhases = [];
+    this.tileAssetOrigins = [];
     this.exitSprite = undefined;
     this.backgroundImages = [];
     this.cameraTarget = undefined;
@@ -769,6 +771,7 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftObjectAssetCount = String(this.activeObjectAssetIds.size);
     document.documentElement.dataset.echoShiftSolidAssetFrames = this.solidAssetFrames.join(",");
     document.documentElement.dataset.echoShiftTileAssetPhases = this.tileAssetPhases.join(",");
+    document.documentElement.dataset.echoShiftTileAssetOrigins = this.tileAssetOrigins.join("|");
   }
 
   private drawActor(actor: ActorBody, color: number, alpha: number): void {
@@ -916,6 +919,7 @@ export class GameScene extends Phaser.Scene {
     this.activeObjectAssetIds.clear();
     this.solidAssetFrames = [];
     this.tileAssetPhases = [];
+    this.tileAssetOrigins = [];
   }
 
   private finishObjectAssetSync(): void {
@@ -951,6 +955,7 @@ export class GameScene extends Phaser.Scene {
     this.activeObjectAssetIds.add(id);
     if (id.startsWith("platform:") || id.startsWith("moving-laser:")) {
       this.tileAssetPhases.push(`${id}:${Math.round(asset.tilePositionX)},${Math.round(asset.tilePositionY)}`);
+      this.tileAssetOrigins.push(`${id}:${Math.round(tileOrigin.x)}:${Math.round(tileOrigin.y)}`);
     }
   }
 

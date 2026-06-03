@@ -22,6 +22,7 @@ const artifacts = {
   desktopLiftPhaseComplete: `${outDir}/lift-phase-complete-desktop.png`,
   draftDisabledDrone: `${outDir}/draft-disabled-drone.png`,
   draftLegacySolidSprites: `${outDir}/draft-legacy-solid-sprites.png`,
+  draftMovingLaserOrigin: `${outDir}/draft-moving-laser-origin.png`,
   draftEchoTintBefore: `${outDir}/draft-echo-tint-before.png`,
   draftEchoTintAfter: `${outDir}/draft-echo-tint-after.png`,
   mobileMenu: `${outDir}/menu-mobile.png`,
@@ -642,6 +643,18 @@ try {
   const legacySolidSpriteFrames = await page.evaluate(() => document.documentElement.dataset.echoShiftSolidAssetFrames || "");
   await page.screenshot({ path: artifacts.draftLegacySolidSprites });
 
+  const movingLaserOriginLevel = draftLevel({
+    name: "Moving Laser Origin",
+    movingLasers: [
+      { id: "phase-laser", x: 260, y: 32, w: 20, h: 80, startsOn: true, axis: "x", distance: 120, period: 120, phase: 0 }
+    ]
+  });
+  await loadDraftPlaytest(page, movingLaserOriginLevel);
+  const movingLaserOriginsBefore = await page.evaluate(() => document.documentElement.dataset.echoShiftTileAssetOrigins || "");
+  await page.waitForTimeout(1200);
+  const movingLaserOriginsAfter = await page.evaluate(() => document.documentElement.dataset.echoShiftTileAssetOrigins || "");
+  await page.screenshot({ path: artifacts.draftMovingLaserOrigin });
+
   const echoTintLevel = draftLevel({
     name: "Echo Tint Stability",
     hazards: [{ id: "echo-vaporizer", x: 260, y: 86, w: 36, h: 34 }]
@@ -805,11 +818,16 @@ try {
     `Expected inactive drone render to be cyan instead of red: ${JSON.stringify(disabledDronePixels)}`
   );
   assert(
-      legacySolidSpriteFrames.includes("floorpiece-1:0") &&
+    legacySolidSpriteFrames.includes("floorpiece-1:0") &&
       legacySolidSpriteFrames.includes("wall-1:1") &&
       legacySolidSpriteFrames.includes("block-1:2") &&
       legacySolidSpriteFrames.includes("floorpiece-2:2"),
     `Expected legacy editor solid stems to map to floor/wall/block sprites, got ${legacySolidSpriteFrames}`
+  );
+  assert(
+    movingLaserOriginsBefore.includes("moving-laser:phase-laser:260:32") &&
+      movingLaserOriginsAfter.includes("moving-laser:phase-laser:260:32"),
+    `Expected moving laser tile origin to stay anchored to its base rect, got ${movingLaserOriginsBefore} -> ${movingLaserOriginsAfter}`
   );
   assert(
     echoTintBefore.includes("echo-1:bd5cff") && echoTintBefore.includes("echo-2:50ffc2"),
@@ -868,6 +886,8 @@ try {
         disabledDroneStates,
         disabledDronePixels,
         legacySolidSpriteFrames,
+        movingLaserOriginsBefore,
+        movingLaserOriginsAfter,
         echoTintBefore,
         echoTintAfter,
         levelButtons,
