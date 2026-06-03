@@ -71,10 +71,13 @@ export class BootScene extends Phaser.Scene {
 
     const startButton = root.querySelector<HTMLButtonElement>("[data-start-game]");
     let started = false;
+    const cleanup = () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
     const start = () => {
       if (started) return;
       started = true;
-      window.removeEventListener("keydown", handleKeyDown);
+      cleanup();
       audio.unlock();
       const target = this.nextScene();
       audio.playMusic(target.musicKey);
@@ -87,7 +90,8 @@ export class BootScene extends Phaser.Scene {
 
     startButton?.addEventListener("click", start, { once: true });
     window.addEventListener("keydown", handleKeyDown);
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => window.removeEventListener("keydown", handleKeyDown));
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup);
+    this.events.once(Phaser.Scenes.Events.DESTROY, cleanup);
     startButton?.focus();
   }
 
