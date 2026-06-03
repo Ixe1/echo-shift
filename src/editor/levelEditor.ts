@@ -1438,7 +1438,7 @@ class LevelEditor {
   private snapToNearbySurface(kind: RectCollection, rect: Rect): void {
     if (!this.isSurfaceMounted(kind)) return;
     const snapDistance = kind === "crates" ? Math.max(SURFACE_SNAP_DISTANCE, rect.h + 4) : SURFACE_SNAP_DISTANCE;
-    const surface = this.nearestSurfaceTop(rect, snapDistance);
+    const surface = this.nearestSurfaceTop(kind, rect, snapDistance);
     if (surface === null) return;
     rect.y = surface - rect.h;
   }
@@ -1455,8 +1455,13 @@ class LevelEditor {
     );
   }
 
-  private nearestSurfaceTop(rect: Rect, snapDistance = SURFACE_SNAP_DISTANCE): number | null {
-    const candidates = [...this.level.solids, ...readCollection(this.level, "platforms"), ...readCollection(this.level, "oneWays"), ...readCollection(this.level, "conveyors")]
+  private isStaticToolkitSurface(kind: RectCollection): boolean {
+    return kind === "conveyors" || kind === "launchPads" || kind === "timedSwitches" || kind === "crates";
+  }
+
+  private nearestSurfaceTop(kind: RectCollection, rect: Rect, snapDistance = SURFACE_SNAP_DISTANCE): number | null {
+    const movingSurfaces = this.isStaticToolkitSurface(kind) ? [] : readCollection(this.level, "platforms");
+    const candidates = [...this.level.solids, ...movingSurfaces, ...readCollection(this.level, "oneWays"), ...readCollection(this.level, "conveyors")]
       .filter((surface) => rectsOverlapX(rect, surface))
       .map((surface) => surface.y)
       .filter((surfaceY) => {
@@ -2001,6 +2006,15 @@ class LevelEditor {
             messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid sensor actor mode.` });
           }
         }
+        if (this.isStaticToolkitSurface(kind)) {
+          const movingSurface = this.movingPlatformMount(level, object);
+          if (movingSurface) {
+            messages.push({
+              severity: "error",
+              text: `${level.name}:${object.id} cannot ride moving platform ${movingSurface.id}; place it on a static surface.`
+            });
+          }
+        }
         const structuralSolid =
           kind === "solids" &&
           (object.id === "left-wall" || object.id === "right-wall" || object.id === "floor" || object.id.startsWith("floor-"));
@@ -2038,6 +2052,14 @@ class LevelEditor {
       }
     }
     return messages;
+  }
+
+  private movingPlatformMount(level: Level, rect: Rect): MovingPlatform | null {
+    return (
+      (level.platforms || []).find(
+        (platform) => rectsOverlapX(rect, platform) && Math.abs(rect.y + rect.h - platform.y) <= 2
+      ) || null
+    );
   }
 
   private renderExport(): void {

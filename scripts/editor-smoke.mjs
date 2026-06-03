@@ -697,6 +697,24 @@ try {
   const toolkitSweeper = toolkitLevel.movingLasers.find((item) => item.id === "smoke-sweeper");
   const toolkitCrate = toolkitLevel.crates.find((item) => item.id === "smoke-crate");
 
+  await dragToolToWorld(page, "platforms", { x: 1320, y: 420 });
+  await page.locator("[data-object-field='id']").fill("smoke-moving-surface");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await dragToolToWorld(page, "crates", { x: 1340, y: 400 });
+  await page.locator("[data-object-field='id']").fill("smoke-moving-crate");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  const movingSurfaceCrateY = await objectNumber(page, "y");
+  await setObjectField(page, "y", 380);
+  const movingSurfaceMountValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const movingSurfaceMountText = await page.locator("[data-validation]").textContent();
+  await page.locator("[data-delete-object]").click();
+  await openTab(page, "objects");
+  const movingSurfaceRow = page.locator("[data-object-list] [data-kind='platforms'][data-id='smoke-moving-surface']");
+  await movingSurfaceRow.scrollIntoViewIfNeeded();
+  await movingSurfaceRow.click();
+  await page.locator("[data-delete-object]").click();
+  const movingSurfaceCleanupValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+
   await openTab(page, "objects");
   await page.locator("[data-object-list] [data-kind='timedSwitches'][data-id='smoke-timer']").click();
   await page.locator("[data-object-field='id']").fill("smoke-timer-renamed");
@@ -1086,6 +1104,12 @@ try {
     `Expected moving laser disabledBy reference to follow timed switch rename, got ${JSON.stringify(renamedSweeper)}`
   );
   assert(renameReferenceValidation === "clean", `Expected clean validation after trigger rename, got ${renameReferenceValidation}`);
+  assert(movingSurfaceCrateY === 400, `Expected crate to stay at y=400 instead of snapping onto moving platform y=420, got y=${movingSurfaceCrateY}`);
+  assert(
+    movingSurfaceMountValidation === "issues" && movingSurfaceMountText?.includes("cannot ride moving platform smoke-moving-surface"),
+    `Expected moving-platform crate mount validation, got ${movingSurfaceMountValidation}: ${movingSurfaceMountText}`
+  );
+  assert(movingSurfaceCleanupValidation === "clean", `Expected clean validation after moving-platform mount cleanup, got ${movingSurfaceCleanupValidation}`);
   assert(narrowPlateBottom === 420, `Expected dropped plate bottom to snap flush to narrow support y=420, got ${narrowPlateY}+h=${narrowPlateBottom}`);
   assert(underSupportLaserY === 440, `Expected laser placed below support to stay at y=440 instead of snapping upward, got ${underSupportLaserY}`);
   assert(surfaceSnapValidation === "clean", `Expected clean validation after surface snap checks, got ${surfaceSnapValidation}`);
