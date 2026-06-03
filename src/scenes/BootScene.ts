@@ -75,6 +75,7 @@ export class BootScene extends Phaser.Scene {
       window.removeEventListener("keydown", handleKeyDown);
       this.events.off(Phaser.Scenes.Events.SHUTDOWN, cleanup);
       this.events.off(Phaser.Scenes.Events.DESTROY, cleanup);
+      if (!started) clearUi();
     };
     const start = () => {
       if (started) return;
