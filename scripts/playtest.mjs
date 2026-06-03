@@ -597,6 +597,7 @@ try {
   await page.locator("[data-level='2']").click();
   await page.waitForTimeout(600);
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  const heldOpenSolidFrames = await page.evaluate(() => document.documentElement.dataset.echoShiftSolidAssetFrames || "");
   await runKeyboardRouteWithHudFrames(page, heldOpenEchoRoute);
   await pressRewind(page, 80);
   await runKeyboardRouteWithHudFrames(page, heldOpenClearRoute);
@@ -760,6 +761,10 @@ try {
   assert(storedProgress?.scores?.["portal-primer"], "Expected first room score to persist");
   assert(nextLevelLabel?.includes("2. First Afterimage"), `Expected Next Room to load level 2, got ${nextLevelLabel}`);
   assert(corePixels > 60, `Expected generated core/effect sprite pixels in Relay Key, got ${corePixels}`);
+  assert(
+    heldOpenSolidFrames.includes("low-block:0") && heldOpenSolidFrames.includes("mid-ledge:0"),
+    `Expected legacy Held Open ledges to use floor sprite frames, got ${heldOpenSolidFrames}`
+  );
   assert(heldOpenCompletionTitle === "Room Clear", `Expected Held Open completion modal, got ${heldOpenCompletionTitle}`);
   assert(
     liftPhaseRouteResult.status !== "Signal lost" && liftPhaseRouteResult.endFrame >= liftPhaseRouteResult.startFrame + 320,
@@ -821,6 +826,7 @@ try {
         completionTitle,
         nextLevelLabel,
         corePixels,
+        heldOpenSolidFrames,
         heldOpenCompletionTitle,
         liftPhaseRouteResult,
         liftPhaseCompletionTitle,

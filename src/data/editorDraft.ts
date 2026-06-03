@@ -51,7 +51,10 @@ const movingObjectLike = (value: unknown): boolean =>
   value.period > 0 &&
   (value.phase === undefined || finiteValue(value.phase));
 
-const solidLike = (value: unknown): boolean => objectRectLike(value) && optionalString(value.tone);
+const solidSpriteValue = (value: unknown): boolean =>
+  value === undefined || value === "floor" || value === "wall" || value === "block" || value === "warning";
+
+const solidLike = (value: unknown): boolean => objectRectLike(value) && optionalString(value.tone) && solidSpriteValue(value.sprite);
 const oneWayLike = (value: unknown): boolean => objectRectLike(value);
 const conveyorLike = (value: unknown): boolean =>
   objectRectLike(value) && (value.direction === -1 || value.direction === 1) && finiteValue(value.speed) && value.speed >= 0;

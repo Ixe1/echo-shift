@@ -30,9 +30,12 @@ export type ActorBody = Rect & {
   alive: boolean;
 };
 
+export type SolidSprite = "floor" | "wall" | "block" | "warning";
+
 export type Solid = Rect & {
   id: string;
   tone?: "steel" | "glass" | "warning" | "dark";
+  sprite?: SolidSprite;
 };
 
 export type MovingPlatform = Rect & {

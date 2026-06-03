@@ -9,7 +9,7 @@ import { platformRectAt } from "../game/player";
 import { recordLevelScore } from "../game/progress";
 import { soundtrackForLevel } from "../game/soundtracks";
 import { RoomSimulation } from "../game/state";
-import type { ActorBody, InputFrame, Level, LevelScore, Rect, SimulationSnapshot } from "../game/types";
+import type { ActorBody, InputFrame, Level, LevelScore, Rect, SimulationSnapshot, Solid } from "../game/types";
 import { Hud } from "../ui/hud";
 
 const STEP_MS = 1000 / 60;
@@ -65,6 +65,7 @@ export class GameScene extends Phaser.Scene {
   private coreSprites = new Map<string, Phaser.GameObjects.Image>();
   private objectAssets = new Map<string, ObjectAsset>();
   private activeObjectAssetIds = new Set<string>();
+  private solidAssetFrames: string[] = [];
   private exitSprite?: Phaser.GameObjects.Image;
   private backgroundImages: Phaser.GameObjects.Image[] = [];
   private cameraTarget?: Phaser.GameObjects.Zone;
@@ -88,6 +89,7 @@ export class GameScene extends Phaser.Scene {
     this.coreSprites.clear();
     this.objectAssets.clear();
     this.activeObjectAssetIds.clear();
+    this.solidAssetFrames = [];
     this.exitSprite = undefined;
     this.backgroundImages = [];
     this.cameraTarget = undefined;
@@ -400,17 +402,11 @@ export class GameScene extends Phaser.Scene {
   private drawSolids(): void {
     for (const solid of this.level.solids) {
       const color = solid.tone === "dark" ? 0x111827 : solid.tone === "warning" ? 0x473b18 : 0x17243a;
+      const frame = this.solidFrame(solid);
+      this.solidAssetFrames.push(`${solid.id}:${frame}`);
       this.syncTileAsset(
         `solid:${solid.id}`,
-        solid.id.includes("wall")
-          ? OBJECT_FRAME.wall
-          : solid.tone === "dark" || solid.id.startsWith("floor")
-          ? OBJECT_FRAME.floor
-          : solid.tone === "glass"
-            ? OBJECT_FRAME.block
-            : solid.tone === "warning"
-              ? OBJECT_FRAME.warning
-              : OBJECT_FRAME.wall,
+        frame,
         solid,
         1,
         0.96,
@@ -759,6 +755,7 @@ export class GameScene extends Phaser.Scene {
       .map((drone) => `${drone.id}:${droneIsActive(drone, snapshot.activePlates) ? "active" : "inactive"}`)
       .join(",");
     document.documentElement.dataset.echoShiftObjectAssetCount = String(this.activeObjectAssetIds.size);
+    document.documentElement.dataset.echoShiftSolidAssetFrames = this.solidAssetFrames.join(",");
   }
 
   private drawActor(actor: ActorBody, color: number, alpha: number): void {
@@ -904,6 +901,7 @@ export class GameScene extends Phaser.Scene {
 
   private beginObjectAssetSync(): void {
     this.activeObjectAssetIds.clear();
+    this.solidAssetFrames = [];
   }
 
   private finishObjectAssetSync(): void {
@@ -936,6 +934,22 @@ export class GameScene extends Phaser.Scene {
     asset.tilePositionX = rect.x / Math.max(tileScale, 0.01) + tileOffsetX;
     asset.tilePositionY = rect.y / Math.max(tileScale, 0.01);
     this.activeObjectAssetIds.add(id);
+  }
+
+  private solidFrame(solid: Solid): number {
+    if (solid.sprite === "floor") return OBJECT_FRAME.floor;
+    if (solid.sprite === "wall") return OBJECT_FRAME.wall;
+    if (solid.sprite === "block") return OBJECT_FRAME.block;
+    if (solid.sprite === "warning") return OBJECT_FRAME.warning;
+    if (solid.tone === "warning") return OBJECT_FRAME.warning;
+
+    const width = Math.max(1, solid.w);
+    const height = Math.max(1, solid.h);
+    if (height >= width * 1.35) return OBJECT_FRAME.wall;
+    if (width >= height * 2) return OBJECT_FRAME.floor;
+    if (solid.tone === "glass") return OBJECT_FRAME.block;
+    if (solid.tone === "dark") return OBJECT_FRAME.wall;
+    return OBJECT_FRAME.block;
   }
 
   private syncImageAsset(

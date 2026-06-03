@@ -20,6 +20,7 @@ import type {
   PushableCrate,
   Rect,
   Solid,
+  SolidSprite,
   TimedSwitch,
   Vec2
 } from "../game/types";
@@ -205,6 +206,11 @@ const solidPresetIdStems: Record<SolidPreset, string> = {
   block: "block"
 };
 
+const solidSpriteValues = ["floor", "wall", "block", "warning"] as const satisfies readonly SolidSprite[];
+
+const normalizedSolidSpriteValue = (value: unknown): SolidSprite | undefined =>
+  solidSpriteValues.includes(value as SolidSprite) ? (value as SolidSprite) : undefined;
+
 const cloneLevels = (items: Level[]): Level[] => JSON.parse(JSON.stringify(items)) as Level[];
 
 const exportableLevels = (items: Level[]): Level[] => cloneLevels(items).map((level) => markAnchoredMotionModel(level));
@@ -306,7 +312,12 @@ const styleForKind = (kind: SelectableKind, item?: RectObject): { fill: string; 
   if (kind === "start") return { fill: "rgba(67, 247, 255, 0.82)", stroke: "#ecfbff", text: "#041018" };
   if (kind === "exit") return { fill: "rgba(189, 92, 255, 0.34)", stroke: "#43f7ff", text: "#ecfbff" };
   if (kind === "solids") {
-    const tone = (item as Solid | undefined)?.tone;
+    const solid = item as Solid | undefined;
+    const sprite = solid?.sprite;
+    if (sprite === "wall") return { fill: "#111827", stroke: "#4b607c", text: "#ecfbff" };
+    if (sprite === "block") return { fill: "#143447", stroke: "#43f7ff", text: "#ecfbff" };
+    if (sprite === "warning") return { fill: "#473b18", stroke: "#ffe35a", text: "#fff8bf" };
+    const tone = solid?.tone;
     if (tone === "dark") return { fill: "#111827", stroke: "#4b607c", text: "#ecfbff" };
     if (tone === "warning") return { fill: "#473b18", stroke: "#ffe35a", text: "#fff8bf" };
     if (tone === "glass") return { fill: "#143447", stroke: "#43f7ff", text: "#ecfbff" };
@@ -537,7 +548,7 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
   const explicitId = normalizedObjectIdValue(record.id);
   const id = explicitId || nextImportedObjectId(kind, usedIds);
 
-  if (kind === "solids") return { ...base, id, tone: record.tone as Solid["tone"] };
+  if (kind === "solids") return { ...base, id, tone: record.tone as Solid["tone"], sprite: normalizedSolidSpriteValue(record.sprite) };
   if (kind === "conveyors") {
     return {
       ...base,
@@ -1020,6 +1031,12 @@ class LevelEditor {
       const text = String(value).trim();
       if (text) record[field] = text;
       else delete record[field];
+      return;
+    }
+    if (field === "sprite") {
+      const sprite = normalizedSolidSpriteValue(String(value).trim());
+      if (sprite) record.sprite = sprite;
+      else delete record.sprite;
       return;
     }
     if (field === "axis") {
@@ -1599,7 +1616,7 @@ class LevelEditor {
     const base = { id, x: point.x, y: point.y, w: size.w, h: size.h };
     if (kind === "solids") {
       const tone: Solid["tone"] = solidPreset === "wall" ? "dark" : solidPreset === "block" ? "glass" : "steel";
-      return { ...base, tone };
+      return { ...base, tone, sprite: solidPreset || undefined };
     }
     if (kind === "oneWays") return base as OneWayPlatform;
     if (kind === "conveyors") return { ...base, direction: 1, speed: 1.4 } as Conveyor;
@@ -1781,7 +1798,12 @@ class LevelEditor {
   private kindSpecificFields(kind: RectCollection, object: RectObject): string {
     const record = object as unknown as Record<string, unknown>;
     if (kind === "solids") {
-      return this.selectField("Tone", "tone", String(record.tone || ""), ["", "steel", "glass", "warning", "dark"]);
+      return `
+        <div class="inspector-grid two">
+          ${this.selectField("Sprite", "sprite", String(record.sprite || ""), ["", "floor", "wall", "block", "warning"])}
+          ${this.selectField("Tone", "tone", String(record.tone || ""), ["", "steel", "glass", "warning", "dark"])}
+        </div>
+      `;
     }
     if (kind === "conveyors") {
       return `
