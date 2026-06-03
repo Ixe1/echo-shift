@@ -140,6 +140,7 @@ export type Level = {
   index: number;
   name: string;
   subtitle: string;
+  motionModel?: "anchored";
   soundtrackKey?: LevelSoundtrackKey;
   backgroundKey?: LevelBackgroundKey;
   start: Vec2;

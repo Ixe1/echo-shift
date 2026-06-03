@@ -170,6 +170,7 @@ try {
   const { RoomSimulation } = await server.ssrLoadModule("/src/game/state.ts");
   const { makeActor } = await server.ssrLoadModule("/src/game/player.ts");
   const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
+  const { EDITOR_DRAFT_STORAGE_KEY, readEditorDraftSnapshot } = await server.ssrLoadModule("/src/data/editorDraft.ts");
   const { isBetterLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
   const { soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
   const { backgroundForLevel, levelBackgrounds } = await server.ssrLoadModule("/src/game/backgrounds.ts");
@@ -195,6 +196,41 @@ try {
   assert(soundtrackForLevel({ ...levels[5], soundtrackKey: "missing-track" }, 5).key === "level-6", "Expected unknown soundtrack key to fall back to level slot");
   assert(soundtrackForLevel({ ...levels[5], soundtrackKey: "menu" }, 5).key === "level-6", "Expected menu soundtrack key to be ignored for levels");
   assert(soundtrackForLevel({ ...levels[0], index: 9, soundtrackKey: undefined }, 1).key === "level-2", "Expected auto soundtrack fallback to use runtime level slot, not authored index");
+
+  const previousWindow = globalThis.window;
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      localStorage: {
+        getItem: (key) =>
+          key === EDITOR_DRAFT_STORAGE_KEY
+            ? JSON.stringify({
+                currentIndex: 0,
+                levels: [
+                  {
+                    ...baseLevel,
+                    id: "legacy-draft-motion",
+                    name: "Legacy Draft Motion",
+                    drones: [{ id: "legacy-draft-drone", x: 160, y: 86, w: 28, h: 34, axis: "x", distance: 30, period: 120, phase: 0.25 }]
+                  }
+                ]
+              })
+            : null
+      }
+    }
+  });
+  const migratedDraft = readEditorDraftSnapshot();
+  if (previousWindow === undefined) delete globalThis.window;
+  else Object.defineProperty(globalThis, "window", { configurable: true, value: previousWindow });
+  const migratedDraftDrone = migratedDraft?.levels[0]?.drones?.find((drone) => drone.id === "legacy-draft-drone");
+  assert(migratedDraft?.motionModel === "anchored", "Expected legacy runtime draft snapshot to be marked anchored after migration");
+  assert(migratedDraft?.levels[0]?.motionModel === "anchored", "Expected legacy runtime draft level to be marked anchored after migration");
+  assert(
+    migratedDraftDrone?.x === 130 &&
+      migratedDraftDrone?.distance === 60 &&
+      Math.abs((migratedDraftDrone?.phase || 0) - (0.25 + Math.PI / 2)) < 0.000001,
+    `Expected runtime draft reader to migrate legacy center/radius drone motion, got ${JSON.stringify(migratedDraftDrone)}`
+  );
 
   const handcraftedRoutes = [
     {
@@ -735,6 +771,7 @@ try {
           "fall-death-freeze",
           "deterministic-replay",
           "soundtrack-manifest",
+          "draft-motion-migration",
           "side-scrolling-bounds",
           "closed-gate-top-contract",
           "closed-floor-gate-bypass",

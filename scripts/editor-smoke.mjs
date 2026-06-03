@@ -191,6 +191,7 @@ try {
             exit: { x: 850, y: 438, w: 48, h: 62 },
             bounds: { x: 0, y: 0, w: 960, h: 540 },
             solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
+            drones: [{ id: "legacy-draft-drone", x: 140, y: 420, w: 30, h: 24, axis: "x", distance: 40, period: 120, phase: 0 }],
             perfectEchoes: 0,
             medalFrames: { gold: 1800, silver: 2400 },
             hint: ""
@@ -203,6 +204,12 @@ try {
   await stalePage.locator("[data-level-editor]").waitFor({ state: "visible" });
   const fractionalDraftLevelName = await stalePage.locator("[data-level-field='name']").inputValue();
   const fractionalDraftValidation = await stalePage.locator("[data-validation]").getAttribute("data-editor-validation");
+  await openTab(stalePage, "objects");
+  await stalePage.locator("[data-object-list] [data-kind='drones'][data-id='legacy-draft-drone']").click();
+  const legacyDraftDronePathStart = await objectNumber(stalePage, "pathStart");
+  const legacyDraftDronePathEnd = await objectNumber(stalePage, "pathEnd");
+  const legacyDraftLevelExport = JSON.parse(await stalePage.locator("[data-export-json]").inputValue())[1];
+  const legacyDraftDroneExport = legacyDraftLevelExport.drones.find((drone) => drone.id === "legacy-draft-drone");
   await staleDraft.close();
 
   const draftPlaytest = await browser.newContext({ viewport: { width: 960, height: 540 } });
@@ -957,6 +964,7 @@ try {
     bounds: { x: 0, y: 0, w: 960, h: 540 },
     solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
     platforms: [{ id: "bad-lift", x: 420, y: 450, w: 120, h: 18, axis: "x", distance: -80, period: -12 }],
+    drones: [{ id: "legacy-import-drone", x: 260, y: 420, w: 30, h: 24, axis: "y", distance: 50, period: 150, phase: 0.2 }],
     hazards: [
       { x: 200, y: 496, w: 58, h: 4 },
       { id: "", x: 300, y: 496, w: 58, h: 4 }
@@ -971,6 +979,7 @@ try {
   const fallbackImportExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
   const fallbackImportHazardIds = fallbackImportExport.hazards.map((hazard) => hazard.id);
   const fallbackImportPlatform = fallbackImportExport.platforms.find((platform) => platform.id === "bad-lift");
+  const fallbackImportDrone = fallbackImportExport.drones.find((drone) => drone.id === "legacy-import-drone");
   const fallbackImportObjectIds = objectKinds.flatMap((kind) => (fallbackImportExport[kind] || []).map((object) => object.id));
   const fallbackImportValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   const fallbackImportValidationText = await page.locator("[data-validation]").textContent();
@@ -1017,6 +1026,14 @@ try {
     `Expected fractional draft currentIndex to normalize to second level, got ${fractionalDraftLevelName}`
   );
   assert(fractionalDraftValidation === "clean", `Expected clean validation after fractional draft boot, got ${fractionalDraftValidation}`);
+  assert(
+    legacyDraftDronePathStart === 100 && legacyDraftDronePathEnd === 180,
+    `Expected legacy draft drone path to migrate from center/radius 140±40 to anchored 100-180, got ${legacyDraftDronePathStart}-${legacyDraftDronePathEnd}`
+  );
+  assert(
+    legacyDraftLevelExport.motionModel === "anchored" && legacyDraftDroneExport?.x === 100 && legacyDraftDroneExport?.distance === 80,
+    `Expected legacy draft export to be marked anchored with migrated x/distance values, got ${JSON.stringify(legacyDraftLevelExport)}`
+  );
   assert(draftPlaytestUrl.includes("playtestDraft=1"), `Expected Playtest button to navigate to playtestDraft=1, got ${draftPlaytestUrl}`);
   assert(draftPlaytestUrl.includes("level=1"), `Expected Playtest button to preserve selected level=1, got ${draftPlaytestUrl}`);
   assert(
@@ -1299,6 +1316,13 @@ try {
   assert(
     fallbackImportPlatform?.period === 1,
     `Expected imported negative platform period to normalize to 1, got ${fallbackImportPlatform?.period}`
+  );
+  assert(
+    fallbackImportExport.motionModel === "anchored" &&
+      fallbackImportDrone?.y === 370 &&
+      fallbackImportDrone?.distance === 100 &&
+      Math.abs((fallbackImportDrone?.phase || 0) - (0.2 + Math.PI / 2)) < 0.000001,
+    `Expected legacy imported drone to migrate to anchored motion, got ${JSON.stringify(fallbackImportDrone)}`
   );
   assert(fallbackImportExport.medalFrames.gold === 1800, `Expected imported gold medal frames to round to 1800, got ${fallbackImportExport.medalFrames.gold}`);
   assert(

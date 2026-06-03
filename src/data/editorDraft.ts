@@ -1,10 +1,12 @@
 import type { Level } from "../game/types";
 import { isLevelBackgroundKey } from "../game/backgrounds";
 import { isLevelSoundtrackKey } from "../game/soundtracks";
+import { ANCHORED_MOTION_MODEL, normalizeLevelMotionModel, usesAnchoredMotionModel } from "./motionModel";
 
 export const EDITOR_DRAFT_STORAGE_KEY = "echo-shift-level-editor-draft-v1";
 
 export type EditorDraftSnapshot = {
+  motionModel: typeof ANCHORED_MOTION_MODEL;
   levels: Level[];
   currentIndex: number;
 };
@@ -121,8 +123,10 @@ export const readEditorDraftSnapshot = (): EditorDraftSnapshot | null => {
     const parsed = JSON.parse(raw) as unknown;
     if (!isRecord(parsed) || !Array.isArray(parsed.levels)) return null;
     if (parsed.levels.length === 0 || !parsed.levels.every(levelLike)) return null;
-    const levels = parsed.levels;
+    const draftAnchored = usesAnchoredMotionModel(parsed);
+    const levels = parsed.levels.map((level) => normalizeLevelMotionModel(level, draftAnchored || usesAnchoredMotionModel(level)));
     return {
+      motionModel: ANCHORED_MOTION_MODEL,
       levels,
       currentIndex: levelIndex(parsed.currentIndex, levels.length - 1)
     };

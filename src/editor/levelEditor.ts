@@ -1,5 +1,6 @@
 import { levels as sourceLevels } from "../data/levels";
 import { EDITOR_DRAFT_STORAGE_KEY } from "../data/editorDraft";
+import { ANCHORED_MOTION_MODEL, markAnchoredMotionModel, normalizeLevelMotionModel, usesAnchoredMotionModel } from "../data/motionModel";
 import { backgroundForLevel, isLevelBackgroundKey, levelBackgroundKeys, levelBackgrounds } from "../game/backgrounds";
 import { defaultSoundtrackKeyForLevel, isLevelSoundtrackKey, levelSoundtrackKeys, soundtracks } from "../game/soundtracks";
 import type {
@@ -123,6 +124,7 @@ type ValidationMessage = {
 };
 
 type EditorDraft = {
+  motionModel: typeof ANCHORED_MOTION_MODEL;
   levels: Level[];
   currentIndex: number;
 };
@@ -204,6 +206,8 @@ const solidPresetIdStems: Record<SolidPreset, string> = {
 };
 
 const cloneLevels = (items: Level[]): Level[] => JSON.parse(JSON.stringify(items)) as Level[];
+
+const exportableLevels = (items: Level[]): Level[] => cloneLevels(items).map((level) => markAnchoredMotionModel(level));
 
 const escapeHtml = (value: unknown): string =>
   String(value ?? "")
@@ -458,7 +462,7 @@ const nextImportedObjectId = (kind: RectCollection, usedIds: Set<string>): strin
   return id;
 };
 
-const normalizeImportedLevel = (value: unknown, fallbackIndex: number): Level | null => {
+const normalizeImportedLevel = (value: unknown, fallbackIndex: number, draftAnchored = false): Level | null => {
   if (!isRecord(value)) return null;
   const boundsRecord = isRecord(value.bounds) ? value.bounds : {};
   const exitRecord = isRecord(value.exit) ? value.exit : {};
@@ -467,12 +471,14 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number): Level | 
   const usedObjectIds = explicitImportedObjectIds(value);
   const importedSoundtrackKey = isLevelSoundtrackKey(value.soundtrackKey) ? value.soundtrackKey : undefined;
   const importedBackgroundKey = isLevelBackgroundKey(value.backgroundKey) ? value.backgroundKey : undefined;
+  const anchoredMotion = draftAnchored || usesAnchoredMotionModel(value);
 
   const level: Level = {
     id: String(value.id || `level-${fallbackIndex + 1}`),
     index: nonNegativeInteger(value.index, fallbackIndex),
     name: String(value.name || `Level ${fallbackIndex + 1}`),
     subtitle: String(value.subtitle || ""),
+    motionModel: ANCHORED_MOTION_MODEL,
     ...(importedSoundtrackKey ? { soundtrackKey: importedSoundtrackKey } : {}),
     ...(importedBackgroundKey ? { backgroundKey: importedBackgroundKey } : {}),
     start: {
@@ -514,7 +520,7 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number): Level | 
     hint: String(value.hint || "")
   };
 
-  return level;
+  return normalizeLevelMotionModel(level, anchoredMotion);
 };
 
 const normalizeOptionalCollection = (value: unknown, kind: RectCollection, usedIds: Set<string>): RectObject[] | undefined =>
@@ -2075,7 +2081,7 @@ class LevelEditor {
   }
 
   private renderExport(): void {
-    this.exportArea.value = `${JSON.stringify(this.levels, null, 2)}\n`;
+    this.exportArea.value = `${JSON.stringify(exportableLevels(this.levels), null, 2)}\n`;
   }
 
   private renderCanvas(): void {
@@ -2532,7 +2538,8 @@ class LevelEditor {
 
   private persistDraft(status: string): boolean {
     const draft: EditorDraft = {
-      levels: this.levels,
+      motionModel: ANCHORED_MOTION_MODEL,
+      levels: exportableLevels(this.levels),
       currentIndex: this.currentIndex
     };
     try {
@@ -2560,11 +2567,13 @@ class LevelEditor {
       if (!raw) return null;
       const parsed = JSON.parse(raw) as unknown;
       if (!isRecord(parsed) || !Array.isArray(parsed.levels)) return null;
+      const draftAnchored = usesAnchoredMotionModel(parsed);
       const levels = parsed.levels
-        .map((level, index) => normalizeImportedLevel(level, index))
+        .map((level, index) => normalizeImportedLevel(level, index, draftAnchored))
         .filter((level): level is Level => Boolean(level));
       if (levels.length === 0) return null;
       return {
+        motionModel: ANCHORED_MOTION_MODEL,
         levels,
         currentIndex: levelIndex(parsed.currentIndex, levels.length - 1)
       };
