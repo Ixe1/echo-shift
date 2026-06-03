@@ -503,6 +503,12 @@ const centerOf = (box) => ({
   y: box.y + box.height / 2
 });
 
+const diagnosticPosition = (items, id) => {
+  const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = items.match(new RegExp(`${escapedId}:(-?\\d+):(-?\\d+)`));
+  return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+};
+
 const multiTouchPress = async (context, page, points, duration = 320) => {
   const client = await context.newCDPSession(page);
   await client.send("Input.dispatchTouchEvent", {
@@ -652,8 +658,12 @@ try {
   });
   await loadDraftPlaytest(page, movingLaserOriginLevel);
   const laserSpriteTransformsBefore = await page.evaluate(() => document.documentElement.dataset.echoShiftLaserAssetTransforms || "");
+  const laserSpritePositionsBefore = await page.evaluate(() => document.documentElement.dataset.echoShiftLaserAssetPositions || "");
   await page.waitForTimeout(1200);
   const laserSpriteTransformsAfter = await page.evaluate(() => document.documentElement.dataset.echoShiftLaserAssetTransforms || "");
+  const laserSpritePositionsAfter = await page.evaluate(() => document.documentElement.dataset.echoShiftLaserAssetPositions || "");
+  const movingLaserPositionBefore = diagnosticPosition(laserSpritePositionsBefore, "moving-laser:phase-laser");
+  const movingLaserPositionAfter = diagnosticPosition(laserSpritePositionsAfter, "moving-laser:phase-laser");
   await page.screenshot({ path: artifacts.draftMovingLaserOrigin });
 
   const echoTintLevel = draftLevel({
@@ -834,6 +844,13 @@ try {
     `Expected static and moving lasers to use whole-beam sprite mapping, got ${laserSpriteTransformsBefore} -> ${laserSpriteTransformsAfter}`
   );
   assert(
+    movingLaserPositionBefore &&
+      movingLaserPositionAfter &&
+      movingLaserPositionBefore.y === movingLaserPositionAfter.y &&
+      Math.abs(movingLaserPositionBefore.x - movingLaserPositionAfter.x) >= 40,
+    `Expected moving laser sprite to follow the simulated beam center, got ${laserSpritePositionsBefore} -> ${laserSpritePositionsAfter}`
+  );
+  assert(
     echoTintBefore.includes("echo-1:bd5cff") && echoTintBefore.includes("echo-2:50ffc2"),
     `Expected both echo tints before vaporization, got ${echoTintBefore}`
   );
@@ -892,6 +909,8 @@ try {
         legacySolidSpriteFrames,
         laserSpriteTransformsBefore,
         laserSpriteTransformsAfter,
+        laserSpritePositionsBefore,
+        laserSpritePositionsAfter,
         echoTintBefore,
         echoTintAfter,
         levelButtons,
