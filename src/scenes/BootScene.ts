@@ -24,6 +24,10 @@ export class BootScene extends Phaser.Scene {
       frameWidth: 96,
       frameHeight: 96
     });
+    this.load.spritesheet("object-atlas", "/assets/sprites/object-atlas.png", {
+      frameWidth: 256,
+      frameHeight: 256
+    });
     for (const background of Object.values(levelBackgrounds)) {
       this.load.image(background.key, background.src);
     }

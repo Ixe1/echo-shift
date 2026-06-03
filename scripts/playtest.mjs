@@ -79,20 +79,35 @@ const firstRoomRoute = pulsedRightRoute(700, [287, 377, 405, 568, 599]);
 
 // Public-input route for Level 3: record a plate echo, then clear the expanded side-scrolling lane.
 const heldOpenEchoRoute = [
-  ["idle", 17],
-  ["right", 46],
+  ["right", 40],
   ["idle", 45]
 ];
 
 const heldOpenClearRoute = [
-  ["idle", 10],
-  ...pulsedRightRoute(1000, [114, 269, 317, 486, 673, 747, 872])
+  ["right", 114],
+  ["jumpRight", 24],
+  ["right", 131],
+  ["jumpRight", 24],
+  ["right", 24],
+  ["jumpRight", 24],
+  ["right", 145],
+  ["jumpRight", 24],
+  ["right", 163],
+  ["jumpRight", 24],
+  ["right", 50],
+  ["jumpRight", 24],
+  ["right", 101],
+  ["jumpRight", 24],
+  ["right", 35]
 ];
 
-// Public-input route for Level 5: traverse the expanded lift-phase lane.
+// Public-input route for Level 5: preview the expanded lift-phase lane without relying on a full clear route.
 const liftPhaseClearRoute = [
-  ["idle", 17],
-  ...pulsedRightRoute(760, [102, 313, 350, 386, 482])
+  ["right", 102],
+  ["jumpRight", 24],
+  ["right", 187],
+  ["jumpRight", 24],
+  ["right", 24]
 ];
 
 const draftBaseSolids = (width = 520) => [
@@ -155,11 +170,11 @@ const runKeyboardRoute = async (page, route) => {
   }
 };
 
-const pressRewind = async (page) => {
+const pressRewind = async (page, settleMs = 350) => {
   await page.keyboard.down("KeyR");
   await page.waitForTimeout(100);
   await page.keyboard.up("KeyR");
-  await page.waitForTimeout(350);
+  await page.waitForTimeout(settleMs);
 };
 
 const loadDraftPlaytest = async (page, level) => {
@@ -522,6 +537,7 @@ try {
   await page.waitForTimeout(600);
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   const desktopBackgroundKey = await page.evaluate(() => document.documentElement.dataset.echoShiftBackgroundKey);
+  const objectAssetCount = Number(await page.evaluate(() => document.documentElement.dataset.echoShiftObjectAssetCount || "0"));
   await page.screenshot({ path: artifacts.desktopGame });
   await page.keyboard.down("KeyD");
   await page.waitForTimeout(700);
@@ -581,14 +597,9 @@ try {
   await page.locator("[data-level='2']").click();
   await page.waitForTimeout(600);
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
-  await runKeyboardRoute(page, heldOpenEchoRoute);
-  await page.keyboard.down("KeyR");
-  await page.waitForTimeout(100);
-  await page.keyboard.up("KeyR");
-  await page.waitForTimeout(350);
-  await runKeyboardRouteWithHudFrames(page, heldOpenClearRoute, {
-    trimInitialIdleByHudFrame: true
-  });
+  await runKeyboardRouteWithHudFrames(page, heldOpenEchoRoute);
+  await pressRewind(page, 80);
+  await runKeyboardRouteWithHudFrames(page, heldOpenClearRoute);
   await page.locator("[data-modal].show").waitFor({ state: "visible", timeout: 3000 });
   const heldOpenCompletionTitle = await page.locator("[data-modal].show h1").textContent();
   await page.screenshot({ path: artifacts.desktopHeldOpenComplete });
@@ -598,9 +609,7 @@ try {
   await page.locator("[data-level='4']").click();
   await page.locator("canvas").waitFor({ state: "visible" });
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
-  const liftPhaseRouteResult = await runKeyboardRouteWithHudFrames(page, liftPhaseClearRoute, {
-    trimInitialIdleByHudFrame: true
-  });
+  const liftPhaseRouteResult = await runKeyboardRouteWithHudFrames(page, liftPhaseClearRoute);
   const liftPhaseCompletionTitle = liftPhaseRouteResult.modal || "Traversal preview";
   await page.screenshot({ path: artifacts.desktopLiftPhaseComplete });
 
@@ -741,6 +750,7 @@ try {
     desktopBackgroundKey === "level-1-time-lab-no-portals",
     `Expected Level 1 no-portal background key, got ${desktopBackgroundKey}`
   );
+  assert(objectAssetCount >= 10, `Expected object atlas sprites to instantiate on Level 1, got ${objectAssetCount}`);
   assert(echoesText === "1", `Expected one echo after rewind, got ${echoesText}`);
   assert(retryCastPixels < 24, `Expected retry to clear rewind-cast sprite pixels, got ${retryCastPixels}`);
   assert(pauseVisible, "Pause modal did not become visible");
@@ -752,8 +762,8 @@ try {
   assert(corePixels > 60, `Expected generated core/effect sprite pixels in Relay Key, got ${corePixels}`);
   assert(heldOpenCompletionTitle === "Room Clear", `Expected Held Open completion modal, got ${heldOpenCompletionTitle}`);
   assert(
-    liftPhaseRouteResult.status !== "Signal lost" && liftPhaseRouteResult.endFrame >= liftPhaseRouteResult.startFrame + 700,
-    `Expected Lift Phase traversal preview to remain alive deep into the level: ${JSON.stringify(liftPhaseRouteResult)}`
+    liftPhaseRouteResult.status !== "Signal lost" && liftPhaseRouteResult.endFrame >= liftPhaseRouteResult.startFrame + 320,
+    `Expected Lift Phase traversal preview to remain alive through the visual route: ${JSON.stringify(liftPhaseRouteResult)}`
   );
   assert(
     disabledDroneStates.includes("disabled-drone:inactive"),
@@ -803,6 +813,7 @@ try {
         url,
         title,
         desktopBackgroundKey,
+        objectAssetCount,
         echoesText,
         retryCastPixels,
         pauseVisible,

@@ -13,6 +13,27 @@ import type { ActorBody, InputFrame, Level, LevelScore, Rect, SimulationSnapshot
 import { Hud } from "../ui/hud";
 
 const STEP_MS = 1000 / 60;
+const OBJECT_ATLAS_KEY = "object-atlas";
+const OBJECT_FRAME = {
+  floor: 0,
+  wall: 1,
+  block: 2,
+  warning: 3,
+  platform: 4,
+  oneWay: 5,
+  conveyor: 6,
+  crate: 7,
+  doorClosed: 8,
+  doorOpen: 9,
+  plateIdle: 10,
+  plateActive: 11,
+  laserActive: 12,
+  laserInactive: 13,
+  droneActive: 14,
+  droneInactive: 15
+} as const;
+
+type ObjectAsset = Phaser.GameObjects.TileSprite | Phaser.GameObjects.Image;
 
 type KeyMap = {
   left: Phaser.Input.Keyboard.Key;
@@ -42,6 +63,8 @@ export class GameScene extends Phaser.Scene {
   private echoTrails = new Map<string, Array<{ x: number; y: number }>>();
   private actorSprites = new Map<string, Phaser.GameObjects.Image>();
   private coreSprites = new Map<string, Phaser.GameObjects.Image>();
+  private objectAssets = new Map<string, ObjectAsset>();
+  private activeObjectAssetIds = new Set<string>();
   private exitSprite?: Phaser.GameObjects.Image;
   private backgroundImages: Phaser.GameObjects.Image[] = [];
   private cameraTarget?: Phaser.GameObjects.Zone;
@@ -63,6 +86,8 @@ export class GameScene extends Phaser.Scene {
     this.echoTrails.clear();
     this.actorSprites.clear();
     this.coreSprites.clear();
+    this.objectAssets.clear();
+    this.activeObjectAssetIds.clear();
     this.exitSprite = undefined;
     this.backgroundImages = [];
     this.cameraTarget = undefined;
@@ -269,6 +294,7 @@ export class GameScene extends Phaser.Scene {
   private renderWorld(): void {
     const snapshot = this.simulation.snapshot();
     this.cameraTarget?.setPosition(snapshot.player.x + snapshot.player.w / 2, snapshot.player.y + snapshot.player.h / 2);
+    this.beginObjectAssetSync();
     this.world.clear();
     this.fx.clear();
     this.drawBackground();
@@ -291,6 +317,7 @@ export class GameScene extends Phaser.Scene {
     this.drawEchoes(snapshot.echoes);
     this.drawActor(snapshot.player, snapshot.dead ? 0xff4f8b : 0x43f7ff, 1);
     this.drawForegroundText(snapshot.tick);
+    this.finishObjectAssetSync();
     this.syncSpriteLayer(snapshot);
     this.exposeRenderDiagnostics(snapshot);
   }
@@ -373,6 +400,22 @@ export class GameScene extends Phaser.Scene {
   private drawSolids(): void {
     for (const solid of this.level.solids) {
       const color = solid.tone === "dark" ? 0x111827 : solid.tone === "warning" ? 0x473b18 : 0x17243a;
+      this.syncTileAsset(
+        `solid:${solid.id}`,
+        solid.id.includes("wall")
+          ? OBJECT_FRAME.wall
+          : solid.tone === "dark" || solid.id.startsWith("floor")
+          ? OBJECT_FRAME.floor
+          : solid.tone === "glass"
+            ? OBJECT_FRAME.block
+            : solid.tone === "warning"
+              ? OBJECT_FRAME.warning
+              : OBJECT_FRAME.wall,
+        solid,
+        1,
+        0.96,
+        0.42
+      );
       this.drawNeonRect(solid, color, 0x43f7ff, 0.34);
       this.world.lineStyle(1, 0xffffff, 0.06);
       this.world.lineBetween(solid.x, solid.y + 4, solid.x + solid.w, solid.y + 4);
@@ -382,6 +425,7 @@ export class GameScene extends Phaser.Scene {
   private drawPlatforms(tick: number): void {
     for (const platform of this.level.platforms || []) {
       const rect = platformRectAt(platform, tick);
+      this.syncTileAsset(`platform:${platform.id}`, OBJECT_FRAME.platform, rect, 3, 0.96, 0.44);
       this.drawNeonRect(rect, 0x1f2e46, 0xffe35a, 0.72);
       this.world.lineStyle(1, 0xffe35a, 0.28);
       if (platform.axis === "y") {
@@ -394,6 +438,7 @@ export class GameScene extends Phaser.Scene {
 
   private drawOneWayPlatforms(): void {
     for (const platform of this.level.oneWays || []) {
+      this.syncTileAsset(`one-way:${platform.id}`, OBJECT_FRAME.oneWay, platform, 3, 0.88, 0.42);
       this.world.fillStyle(0x123247, 0.58);
       this.world.fillRect(platform.x, platform.y, platform.w, platform.h);
       this.world.lineStyle(2, 0x50ffc2, 0.78);
@@ -407,8 +452,9 @@ export class GameScene extends Phaser.Scene {
 
   private drawConveyors(): void {
     for (const conveyor of this.level.conveyors || []) {
-      this.drawNeonRect(conveyor, 0x15263a, 0xffe35a, 0.62);
       const direction = conveyor.direction >= 0 ? 1 : -1;
+      this.syncTileAsset(`conveyor:${conveyor.id}`, OBJECT_FRAME.conveyor, conveyor, 3, 0.95, 0.42, this.simulation.tick * direction * -3);
+      this.drawNeonRect(conveyor, 0x15263a, 0xffe35a, 0.62);
       this.world.lineStyle(2, 0xffe35a, 0.72);
       for (let x = conveyor.x + 12; x < conveyor.x + conveyor.w - 8; x += 28) {
         const arrowX = x + ((this.simulation.tick * direction) % 28);
@@ -422,6 +468,16 @@ export class GameScene extends Phaser.Scene {
 
   private drawCrates(crates: Map<string, Rect>): void {
     for (const [id, crate] of crates) {
+      this.syncImageAsset(
+        `crate:${id}`,
+        OBJECT_FRAME.crate,
+        crate.x + crate.w / 2,
+        crate.y + crate.h / 2,
+        Math.max(48, crate.w * 1.08),
+        Math.max(48, crate.h * 1.08),
+        5,
+        0.97
+      );
       this.drawNeonRect(crate, 0x2c2438, 0xffe35a, 0.76);
       this.world.lineStyle(1, 0xffe35a, 0.36);
       this.world.lineBetween(crate.x + 6, crate.y + 6, crate.x + crate.w - 6, crate.y + crate.h - 6);
@@ -434,6 +490,7 @@ export class GameScene extends Phaser.Scene {
   private drawDoors(openDoors: Set<string>): void {
     for (const door of this.level.doors || []) {
       const open = openDoors.has(door.id);
+      this.syncTileAsset(`door:${door.id}`, open ? OBJECT_FRAME.doorOpen : OBJECT_FRAME.doorClosed, door, 4, open ? 0.54 : 0.98, 0.5);
       this.world.fillStyle(open ? 0x43f7ff : 0x29122d, open ? 0.09 : 0.92);
       this.world.fillRect(door.x, door.y, door.w, door.h);
       this.world.lineStyle(2, open ? 0x43f7ff : 0xff4f8b, open ? 0.38 : 0.9);
@@ -454,6 +511,16 @@ export class GameScene extends Phaser.Scene {
   private drawPlates(activePlates: Set<string>): void {
     for (const plate of this.level.plates || []) {
       const active = activePlates.has(plate.id);
+      this.syncImageAsset(
+        `plate:${plate.id}`,
+        active ? OBJECT_FRAME.plateActive : OBJECT_FRAME.plateIdle,
+        plate.x + plate.w / 2,
+        plate.y + plate.h - 14,
+        Math.max(48, plate.w),
+        36,
+        6,
+        0.96
+      );
       this.world.fillStyle(active ? 0xffe35a : 0x163247, active ? 0.9 : 0.78);
       this.world.fillRect(plate.x, plate.y, plate.w, plate.h);
       this.world.lineStyle(2, active ? 0xfff4a0 : 0x43f7ff, active ? 0.86 : 0.36);
@@ -464,6 +531,16 @@ export class GameScene extends Phaser.Scene {
   private drawTimedSwitches(activePlates: Set<string>): void {
     for (const timedSwitch of this.level.timedSwitches || []) {
       const active = activePlates.has(timedSwitch.id);
+      this.syncImageAsset(
+        `timed-switch:${timedSwitch.id}`,
+        active ? OBJECT_FRAME.plateActive : OBJECT_FRAME.plateIdle,
+        timedSwitch.x + timedSwitch.w / 2,
+        timedSwitch.y + timedSwitch.h - 14,
+        Math.max(50, timedSwitch.w),
+        38,
+        6,
+        active ? 1 : 0.86
+      );
       this.world.fillStyle(active ? 0xffe35a : 0x2b1d46, active ? 0.82 : 0.72);
       this.world.fillRoundedRect(timedSwitch.x, timedSwitch.y, timedSwitch.w, timedSwitch.h, 3);
       this.world.lineStyle(2, active ? 0xfff4a0 : 0xbd5cff, active ? 0.86 : 0.48);
@@ -476,6 +553,7 @@ export class GameScene extends Phaser.Scene {
   private drawEchoSensors(activePlates: Set<string>): void {
     for (const sensor of this.level.echoSensors || []) {
       const active = activePlates.has(sensor.id);
+      this.syncTileAsset(`echo-sensor:${sensor.id}`, active ? OBJECT_FRAME.doorOpen : OBJECT_FRAME.block, sensor, 3, active ? 0.62 : 0.42, 0.54);
       this.world.fillStyle(active ? 0x50ffc2 : 0x12283f, active ? 0.16 : 0.1);
       this.world.fillRect(sensor.x, sensor.y, sensor.w, sensor.h);
       this.world.lineStyle(2, active ? 0x50ffc2 : 0xbd5cff, active ? 0.82 : 0.48);
@@ -489,6 +567,16 @@ export class GameScene extends Phaser.Scene {
 
   private drawLaunchPads(): void {
     for (const pad of this.level.launchPads || []) {
+      this.syncImageAsset(
+        `launch-pad:${pad.id}`,
+        OBJECT_FRAME.plateActive,
+        pad.x + pad.w / 2,
+        pad.y + pad.h - 16,
+        Math.max(54, pad.w),
+        42,
+        4,
+        0.92
+      );
       this.world.fillStyle(0x143447, 0.84);
       this.world.fillRect(pad.x, pad.y, pad.w, pad.h);
       this.world.lineStyle(2, 0x50ffc2, 0.86);
@@ -520,6 +608,8 @@ export class GameScene extends Phaser.Scene {
   private drawLasers(activePlates: Set<string>, blockedLasers: Set<string>): void {
     for (const laser of this.level.lasers || []) {
       const active = laserIsActive(laser, activePlates);
+      const visual = this.expandedBeamRect(laser);
+      this.syncTileAsset(`laser:${laser.id}`, active ? OBJECT_FRAME.laserActive : OBJECT_FRAME.laserInactive, visual, 6, active ? 0.96 : 0.42, 0.38, this.simulation.tick * -2);
       if (!active) {
         this.world.lineStyle(2, 0x43f7ff, 0.16);
         this.world.strokeRect(laser.x, laser.y, laser.w, laser.h);
@@ -543,6 +633,7 @@ export class GameScene extends Phaser.Scene {
     for (const laser of this.level.movingLasers || []) {
       const rect = movingLaserRectAt(laser, tick);
       const active = laserIsActive(laser, activePlates);
+      this.syncTileAsset(`moving-laser:${laser.id}`, active ? OBJECT_FRAME.laserActive : OBJECT_FRAME.laserInactive, this.expandedBeamRect(rect), 6, active ? 0.94 : 0.42, 0.38, tick * -2);
       this.world.lineStyle(1, 0xff4f8b, 0.22);
       if (laser.axis === "x") {
         this.world.lineBetween(laser.x, laser.y + laser.h / 2, laser.x + laser.distance, laser.y + laser.h / 2);
@@ -566,6 +657,7 @@ export class GameScene extends Phaser.Scene {
 
   private drawHazards(): void {
     for (const hazard of this.level.hazards || []) {
+      this.syncTileAsset(`hazard:${hazard.id}`, OBJECT_FRAME.warning, { ...hazard, y: hazard.y - 4, h: hazard.h + 8 }, 2, 0.74, 0.38);
       this.world.fillStyle(0xff4f8b, 0.14);
       this.world.fillRect(hazard.x, hazard.y - 6, hazard.w, hazard.h + 10);
       this.world.fillStyle(0xff4f8b, 0.7);
@@ -582,6 +674,16 @@ export class GameScene extends Phaser.Scene {
       const rect = droneRectAt(drone, tick);
       const center = rectCenter(rect);
       const active = droneIsActive(drone, activePlates);
+      this.syncImageAsset(
+        `drone:${drone.id}`,
+        active ? OBJECT_FRAME.droneActive : OBJECT_FRAME.droneInactive,
+        center.x,
+        center.y + 1,
+        Math.max(52, rect.w * 1.86),
+        Math.max(52, rect.h * 2.12),
+        7,
+        active ? 0.98 : 0.72
+      );
       this.world.lineStyle(1, active ? 0xff4f8b : 0x43f7ff, active ? 0.2 : 0.16);
       if (drone.axis === "x") {
         this.world.lineBetween(drone.x, drone.y + drone.h / 2, drone.x + drone.distance, drone.y + drone.h / 2);
@@ -656,6 +758,7 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftDroneStates = (this.level.drones || [])
       .map((drone) => `${drone.id}:${droneIsActive(drone, snapshot.activePlates) ? "active" : "inactive"}`)
       .join(",");
+    document.documentElement.dataset.echoShiftObjectAssetCount = String(this.activeObjectAssetIds.size);
   }
 
   private drawActor(actor: ActorBody, color: number, alpha: number): void {
@@ -797,6 +900,87 @@ export class GameScene extends Phaser.Scene {
     this.world.strokeRect(rect.x, rect.y, rect.w, rect.h);
     this.world.fillStyle(0xffffff, 0.04);
     this.world.fillRect(rect.x + 3, rect.y + 3, Math.max(0, rect.w - 6), 3);
+  }
+
+  private beginObjectAssetSync(): void {
+    this.activeObjectAssetIds.clear();
+  }
+
+  private finishObjectAssetSync(): void {
+    for (const [id, asset] of this.objectAssets) {
+      if (!this.activeObjectAssetIds.has(id)) asset.setVisible(false);
+    }
+  }
+
+  private syncTileAsset(
+    id: string,
+    frame: number,
+    rect: Rect,
+    depth: number,
+    alpha: number,
+    tileScale: number,
+    tileOffsetX = 0
+  ): void {
+    if (!this.textures.exists(OBJECT_ATLAS_KEY) || rect.w <= 0 || rect.h <= 0) return;
+    const asset = this.assetFor(id, "tile", frame) as Phaser.GameObjects.TileSprite;
+    asset
+      .setVisible(true)
+      .setDepth(depth)
+      .setAlpha(alpha)
+      .setOrigin(0, 0)
+      .setPosition(rect.x, rect.y)
+      .setFrame(frame);
+    asset.setSize(Math.max(1, rect.w), Math.max(1, rect.h));
+    asset.tileScaleX = tileScale;
+    asset.tileScaleY = tileScale;
+    asset.tilePositionX = rect.x / Math.max(tileScale, 0.01) + tileOffsetX;
+    asset.tilePositionY = rect.y / Math.max(tileScale, 0.01);
+    this.activeObjectAssetIds.add(id);
+  }
+
+  private syncImageAsset(
+    id: string,
+    frame: number,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    depth: number,
+    alpha: number
+  ): void {
+    if (!this.textures.exists(OBJECT_ATLAS_KEY) || width <= 0 || height <= 0) return;
+    const asset = this.assetFor(id, "image", frame) as Phaser.GameObjects.Image;
+    asset
+      .setVisible(true)
+      .setDepth(depth)
+      .setAlpha(alpha)
+      .setOrigin(0.5, 0.5)
+      .setPosition(x, y)
+      .setFrame(frame)
+      .setDisplaySize(width, height);
+    this.activeObjectAssetIds.add(id);
+  }
+
+  private assetFor(id: string, kind: "tile" | "image", frame: number): ObjectAsset {
+    const existing = this.objectAssets.get(id);
+    if (existing) return existing;
+    const asset =
+      kind === "tile"
+        ? this.add.tileSprite(0, 0, 1, 1, OBJECT_ATLAS_KEY, frame)
+        : this.add.image(0, 0, OBJECT_ATLAS_KEY, frame);
+    asset.setVisible(false);
+    this.objectAssets.set(id, asset);
+    return asset;
+  }
+
+  private expandedBeamRect(rect: Rect): Rect {
+    const horizontal = rect.w >= rect.h;
+    if (horizontal) {
+      const h = Math.max(rect.h, 10);
+      return { x: rect.x, y: rect.y + rect.h / 2 - h / 2, w: rect.w, h };
+    }
+    const w = Math.max(rect.w, 10);
+    return { x: rect.x + rect.w / 2 - w / 2, y: rect.y, w, h: rect.h };
   }
 
   private drawDiamond(
