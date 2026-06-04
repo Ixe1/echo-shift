@@ -109,9 +109,12 @@ export type MovingLaser = Laser & {
   phase?: number;
 };
 
+export type CoreSize = "small" | "large";
+
 export type Core = Rect & {
   id: string;
   label?: string;
+  size?: CoreSize;
 };
 
 export type Hazard = Rect & {

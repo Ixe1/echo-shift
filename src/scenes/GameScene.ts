@@ -11,13 +11,14 @@ import { recordLevelScore } from "../game/progress";
 import { legacySolidSprite } from "../game/solidSprites";
 import { soundtrackForLevel } from "../game/soundtracks";
 import { RoomSimulation } from "../game/state";
-import type { ActorBody, Door, InputFrame, Level, LevelScore, MovingPlatform, Rect, Solid } from "../game/types";
+import type { ActorBody, Core, Door, InputFrame, Level, LevelScore, MovingPlatform, Rect, Solid } from "../game/types";
 import { Hud } from "../ui/hud";
 import { uiRoot } from "../ui/dom";
 
 const STEP_MS = 1000 / 60;
 const BACKGROUND_DRIFT_PADDING = 16;
 const BACKGROUND_AMBIENCE_REDRAW_FRAMES = 4;
+const CORE_MAJOR_KEY = "core-major";
 const OBJECT_ATLAS_KEY = "object-atlas";
 const OBJECT_FRAME = {
   floor: 0,
@@ -106,8 +107,10 @@ export class GameScene extends Phaser.Scene {
   private laserAssetTransforms: string[] = [];
   private laserAssetPositions: string[] = [];
   private doorAssetTransforms: string[] = [];
+  private coreSpriteFrames: string[] = [];
   private echoSensorAssetFrames: string[] = [];
   private staticSolidOutlineRects: string[] = [];
+  private lastCameraSnap = "";
   private diagnosticsEnabled = false;
   private lowChurnGraphics = false;
   private perfOverlayEnabled = false;
@@ -242,8 +245,10 @@ export class GameScene extends Phaser.Scene {
     this.laserAssetTransforms = [];
     this.laserAssetPositions = [];
     this.doorAssetTransforms = [];
+    this.coreSpriteFrames = [];
     this.echoSensorAssetFrames = [];
     this.staticSolidOutlineRects = [];
+    this.lastCameraSnap = "";
     this.diagnosticsEnabled = this.shouldExposeRenderDiagnostics();
     this.lowChurnGraphics = this.shouldUseLowChurnGraphics();
     this.perfOverlayEnabled = this.shouldShowPerfOverlay();
@@ -268,6 +273,7 @@ export class GameScene extends Phaser.Scene {
     this.createBackgroundImages();
     this.cameraTarget = this.add.zone(this.level.start.x, this.level.start.y, 1, 1);
     this.cameras.main.startFollow(this.cameraTarget, true, 0.12, 0.08);
+    this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.snapCameraToPixelGrid, this);
     this.backgroundFx = this.add.graphics().setDepth(-15);
     this.backgroundDetail = this.add.graphics().setDepth(-10);
     if (!this.lowChurnGraphics) this.drawBackgroundDetail();
@@ -497,10 +503,22 @@ export class GameScene extends Phaser.Scene {
     const camera = this.cameras.main;
     const zoom = Math.max(0.1, this.scale.height / this.level.bounds.h);
     camera.setZoom(zoom);
+    camera.setRoundPixels(true);
     camera.setDeadzone(
       Math.min(340, Math.max(190, this.scale.width * 0.24)),
       Math.min(170, Math.max(96, this.scale.height * 0.2))
     );
+    this.snapCameraToPixelGrid();
+  };
+
+  private snapCameraToPixelGrid = (): void => {
+    const camera = this.cameras.main;
+    const pixelStep = 1 / Math.max(camera.zoom, 0.0001);
+    camera.scrollX = Math.round(camera.scrollX / pixelStep) * pixelStep;
+    camera.scrollY = Math.round(camera.scrollY / pixelStep) * pixelStep;
+    if (this.diagnosticsEnabled) {
+      this.lastCameraSnap = `${camera.zoom.toFixed(4)}:${camera.scrollX.toFixed(2)},${camera.scrollY.toFixed(2)}`;
+    }
   };
 
   private registerSceneCleanup(): void {
@@ -513,6 +531,7 @@ export class GameScene extends Phaser.Scene {
   private shutdownScene = (): void => {
     this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.shutdownScene);
     this.events.off(Phaser.Scenes.Events.DESTROY, this.shutdownScene);
+    this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.snapCameraToPixelGrid, this);
     this.scale.off(Phaser.Scale.Events.RESIZE, this.configureCameraFrame, this);
     this.sceneCleanupRegistered = false;
     this.destroyTexturePrewarmSprites();
@@ -541,8 +560,10 @@ export class GameScene extends Phaser.Scene {
     this.laserAssetTransforms = [];
     this.laserAssetPositions = [];
     this.doorAssetTransforms = [];
+    this.coreSpriteFrames = [];
     this.echoSensorAssetFrames = [];
     this.staticSolidOutlineRects = [];
+    this.lastCameraSnap = "";
     this.perfSamples = [];
     this.perfLastUpdate = 0;
     this.renderEchoes.length = 0;
@@ -731,7 +752,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     for (const image of this.backgroundImages) {
-      image.setTilePosition(-driftX / Math.max(0.01, image.tileScaleX), -driftY / Math.max(0.01, image.tileScaleY));
+      image.setTilePosition(
+        Math.round(-driftX / Math.max(0.01, image.tileScaleX)),
+        Math.round(-driftY / Math.max(0.01, image.tileScaleY))
+      );
       image.setAlpha(alpha);
     }
   }
@@ -932,15 +956,20 @@ export class GameScene extends Phaser.Scene {
       if (collectedCores.has(core.id)) continue;
       const center = rectCenter(core);
       const pulse = 1 + Math.sin(this.time.now / 140) * 0.12;
-      this.world.fillStyle(0xffe35a, 0.18);
-      this.world.fillCircle(center.x, center.y, 22 * pulse);
-      if (!this.textures.exists("time-effects")) {
-        this.drawDiamond(center.x, center.y, 12 * pulse, 0xffe35a, 0.9, 0xffffff, 0.72);
+      const large = this.coreIsLarge(core);
+      const glowRadius = large ? 34 : 22;
+      const ringRadius = large ? 27 : 17;
+      const lineRadius = large ? 28 : 18;
+      this.world.fillStyle(large ? 0x43f7ff : 0xffe35a, large ? 0.14 : 0.18);
+      this.world.fillCircle(center.x, center.y, glowRadius * pulse);
+      if (!this.textures.exists(large ? CORE_MAJOR_KEY : "time-effects")) {
+        this.drawDiamond(center.x, center.y, (large ? 18 : 12) * pulse, large ? 0x43f7ff : 0xffe35a, 0.9, 0xffffff, 0.72);
       }
       this.world.lineStyle(2, 0xffffff, 0.7);
-      this.world.strokeCircle(center.x, center.y, 17 * pulse);
-      this.world.lineStyle(1, 0xffe35a, 0.5);
-      this.world.lineBetween(center.x - 18, center.y, center.x + 18, center.y);
+      this.world.strokeCircle(center.x, center.y, ringRadius * pulse);
+      this.world.lineStyle(1, large ? 0x43f7ff : 0xffe35a, large ? 0.42 : 0.5);
+      this.world.lineBetween(center.x - lineRadius, center.y, center.x + lineRadius, center.y);
+      if (large) this.world.lineBetween(center.x, center.y - lineRadius, center.x, center.y + lineRadius);
     }
   }
 
@@ -1136,7 +1165,8 @@ export class GameScene extends Phaser.Scene {
       { key: background.key },
       { key: OBJECT_ATLAS_KEY, frame: 0 },
       { key: "time-runner", frame: 0 },
-      { key: "time-effects", frame: 0 }
+      { key: "time-effects", frame: 0 },
+      { key: CORE_MAJOR_KEY, frame: 0 }
     ];
     for (const target of targets) {
       if (!this.textures.exists(target.key)) continue;
@@ -1175,8 +1205,10 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftLaserAssetTransforms = this.laserAssetTransforms.join("|");
     document.documentElement.dataset.echoShiftLaserAssetPositions = this.laserAssetPositions.join("|");
     document.documentElement.dataset.echoShiftDoorAssetTransforms = this.doorAssetTransforms.join("|");
+    document.documentElement.dataset.echoShiftCoreSpriteFrames = this.coreSpriteFrames.join("|");
     document.documentElement.dataset.echoShiftEchoSensorAssetFrames = this.echoSensorAssetFrames.join("|");
     document.documentElement.dataset.echoShiftSolidOutlineRects = this.staticSolidOutlineRects.join("|");
+    document.documentElement.dataset.echoShiftCameraSnap = this.lastCameraSnap;
   }
 
   private drawActor(actor: ActorBody, color: number, alpha: number): void {
@@ -1264,25 +1296,34 @@ export class GameScene extends Phaser.Scene {
     return 0;
   }
 
+  private coreIsLarge(core: Core): boolean {
+    return core.size === "large";
+  }
+
   private syncCoreSprites(snapshot: RenderView): void {
-    if (!this.textures.exists("time-effects")) return;
     const activeIds = this.activeCoreSpriteIds;
     activeIds.clear();
+    this.coreSpriteFrames = [];
 
     for (const core of this.level.cores || []) {
       if (snapshot.collectedCores.has(core.id)) continue;
+      const large = this.coreIsLarge(core);
+      const textureKey = large ? CORE_MAJOR_KEY : "time-effects";
+      if (!this.textures.exists(textureKey)) continue;
+      const frame = snapshot.tick % 44 < 22 ? 0 : 1;
       const center = rectCenter(core);
       let sprite = this.coreSprites.get(core.id);
       if (!sprite) {
-        sprite = this.add.image(0, 0, "time-effects", 0).setDepth(11);
+        sprite = this.add.image(0, 0, textureKey, 0).setDepth(11);
         this.coreSprites.set(core.id, sprite);
       }
       sprite
         .setVisible(true)
-        .setFrame(snapshot.tick % 44 < 22 ? 0 : 1)
+        .setTexture(textureKey, frame)
         .setPosition(Math.round(center.x), Math.round(center.y))
-        .setScale(0.34)
-        .setAlpha(0.94);
+        .setScale(large ? 0.58 : 0.34)
+        .setAlpha(large ? 0.98 : 0.94);
+      if (this.diagnosticsEnabled) this.coreSpriteFrames.push(`${core.id}:${textureKey}:${frame}:${large ? "large" : "small"}`);
       activeIds.add(core.id);
     }
 

@@ -399,6 +399,10 @@ try {
     levels.every((level) => level.bounds.w >= 2400 && level.exit.x > 2200),
     "Expected every level to use expanded side-scrolling bounds and a distant exit"
   );
+  const requiredCoreIds = new Set(levels.flatMap((level) => (level.doors || []).flatMap((door) => (door.requiresCore ? [door.requiresCore] : []))));
+  const requiredCores = levels.flatMap((level) => (level.cores || []).filter((core) => requiredCoreIds.has(core.id)));
+  assert(requiredCores.length > 0, "Expected handcrafted levels to contain door-required cores");
+  assert(requiredCores.every((core) => core.size === "large"), `Expected door-required cores to use large visuals: ${JSON.stringify(requiredCores)}`);
   assert(Boolean(soundtracks.menu), "Expected a main menu soundtrack");
   assert(Boolean(levelBackgrounds["time-lab-prototype"]), "Expected prototype level background");
   assert(Boolean(levelBackgrounds["level-1-time-lab-no-portals"]), "Expected Level 1 no-portal background");
@@ -436,6 +440,7 @@ try {
                     ...baseLevel,
                     id: "legacy-draft-motion",
                     name: "Legacy Draft Motion",
+                    cores: [{ id: "draft-core", x: 110, y: 96, w: 24, h: 24, label: "D", size: "large" }],
                     drones: [{ id: "legacy-draft-drone", x: 160, y: 86, w: 28, h: 34, axis: "x", distance: 30, period: 120, phase: 0.25 }]
                   }
                 ]
@@ -448,8 +453,10 @@ try {
   if (previousWindow === undefined) delete globalThis.window;
   else Object.defineProperty(globalThis, "window", { configurable: true, value: previousWindow });
   const migratedDraftDrone = migratedDraft?.levels[0]?.drones?.find((drone) => drone.id === "legacy-draft-drone");
+  const migratedDraftCore = migratedDraft?.levels[0]?.cores?.find((core) => core.id === "draft-core");
   assert(migratedDraft?.motionModel === "anchored", "Expected legacy runtime draft snapshot to be marked anchored after migration");
   assert(migratedDraft?.levels[0]?.motionModel === "anchored", "Expected legacy runtime draft level to be marked anchored after migration");
+  assert(migratedDraftCore?.size === "large", `Expected runtime draft reader to preserve large core size, got ${JSON.stringify(migratedDraftCore)}`);
   assert(
     migratedDraftDrone?.x === 130 &&
       migratedDraftDrone?.distance === 60 &&

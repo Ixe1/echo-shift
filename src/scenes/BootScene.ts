@@ -27,6 +27,10 @@ export class BootScene extends Phaser.Scene {
       frameWidth: 96,
       frameHeight: 96
     });
+    this.load.spritesheet("core-major", "/assets/sprites/core-major-sheet.png", {
+      frameWidth: 128,
+      frameHeight: 128
+    });
     this.load.spritesheet("object-atlas", "/assets/sprites/object-atlas.png", {
       frameWidth: 256,
       frameHeight: 256

@@ -644,6 +644,8 @@ try {
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await runKeyboardRoute(page, [["right", 245]]);
   const corePixels = await coreSpritePixels(page);
+  const coreSpriteFrames = await page.evaluate(() => document.documentElement.dataset.echoShiftCoreSpriteFrames || "");
+  const cameraSnap = await page.evaluate(() => document.documentElement.dataset.echoShiftCameraSnap || "");
   await page.screenshot({ path: artifacts.desktopCoreRoom });
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await startAudioGate(page);
@@ -893,6 +895,8 @@ try {
   );
   assert(nextLevelLabel?.includes("2. First Afterimage"), `Expected Next Room to load level 2, got ${nextLevelLabel}`);
   assert(corePixels > 60, `Expected generated core/effect sprite pixels in Relay Key, got ${corePixels}`);
+  assert(coreSpriteFrames.includes("core-c:core-major:"), `Expected Relay Key core to use major core sprite, got ${coreSpriteFrames}`);
+  assert(/^\d+\.\d{4}:-?\d/.test(cameraSnap), `Expected camera snap diagnostics after side-scroll route, got ${cameraSnap}`);
   assert(
     heldOpenSolidFrames.includes("left-wall:1") &&
       heldOpenSolidFrames.includes("right-wall:1") &&

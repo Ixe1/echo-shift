@@ -33,6 +33,7 @@ const nonNegativeIntegerValue = (value: unknown): value is number => integerValu
 const stringValue = (value: unknown): value is string => typeof value === "string";
 
 const optionalString = (value: unknown): boolean => value === undefined || stringValue(value);
+const optionalCoreSize = (value: unknown): boolean => value === undefined || value === "small" || value === "large";
 const optionalLevelSoundtrackKey = (value: unknown): boolean => value === undefined || isLevelSoundtrackKey(value);
 const optionalLevelBackgroundKey = (value: unknown): boolean => value === undefined || isLevelBackgroundKey(value);
 const optionalBackgroundAmbience = (value: unknown): boolean =>
@@ -94,7 +95,7 @@ const echoSensorLike = (value: unknown): boolean =>
   objectRectLike(value) &&
   (value.actors === undefined || value.actors === "echo" || value.actors === "player" || value.actors === "both") &&
   optionalString(value.label);
-const coreLike = (value: unknown): boolean => objectRectLike(value) && optionalString(value.label);
+const coreLike = (value: unknown): boolean => objectRectLike(value) && optionalString(value.label) && optionalCoreSize(value.size);
 const doorLike = (value: unknown): boolean =>
   objectRectLike(value) && optionalStringArray(value.opensWith) && optionalString(value.requiresCore) && optionalBoolean(value.inverted);
 const laserLike = (value: unknown): boolean =>

@@ -751,6 +751,11 @@ try {
   await page.locator("[data-object-field='disabledBy']").fill("smoke-timer");
   await dispatchChange(page.locator("[data-object-field='disabledBy']"));
 
+  await dragToolToWorld(page, "cores", { x: 1040, y: 360 });
+  await page.locator("[data-object-field='id']").fill("smoke-core");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  const toolkitCoreSize = await page.locator("[data-object-field='size']").inputValue();
+
   await dragToolToWorld(page, "movingLasers", { x: 1500, y: 360 });
   await page.locator("[data-object-field='id']").fill("smoke-resize-sweeper");
   await dispatchChange(page.locator("[data-object-field='id']"));
@@ -804,6 +809,7 @@ try {
   const toolkitSensor = toolkitLevel.echoSensors.find((item) => item.id === "smoke-sensor");
   const toolkitSweeper = toolkitLevel.movingLasers.find((item) => item.id === "smoke-sweeper");
   const toolkitDrone = toolkitLevel.drones.find((item) => item.id === "smoke-disabled-drone");
+  const toolkitCore = toolkitLevel.cores.find((item) => item.id === "smoke-core");
   const toolkitCrate = toolkitLevel.crates.find((item) => item.id === "smoke-crate");
 
   await dragToolToWorld(page, "platforms", { x: 1320, y: 420 });
@@ -1257,6 +1263,8 @@ try {
     toolkitDrone?.disabledBy?.includes("smoke-timer"),
     `Expected drone disabledBy setting to export, got ${JSON.stringify(toolkitDrone)}`
   );
+  assert(toolkitCoreSize === "large", `Expected new editor cores to default to large, got ${toolkitCoreSize}`);
+  assert(toolkitCore?.size === "large", `Expected core size to export, got ${JSON.stringify(toolkitCore)}`);
   assert(
     missingDroneTriggerValidation === "issues" && missingDroneTriggerText?.includes("smoke-disabled-drone references missing trigger missing-drone-trigger"),
     `Expected missing drone trigger validation, got ${missingDroneTriggerValidation}: ${missingDroneTriggerText}`

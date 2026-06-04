@@ -454,6 +454,9 @@ const normalizedObjectIdValue = (value: unknown): string => {
   return String(value).trim();
 };
 
+const normalizedCoreSize = (value: unknown): Core["size"] =>
+  value === "small" || value === "large" ? value : undefined;
+
 const explicitImportedObjectIds = (value: Record<string, unknown>): Set<string> => {
   const ids = new Set<string>();
   for (const kind of rectCollections) {
@@ -638,7 +641,8 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
     return {
       ...base,
       id,
-      label: typeof record.label === "string" ? record.label : undefined
+      label: typeof record.label === "string" ? record.label : undefined,
+      size: normalizedCoreSize(record.size)
     } as Core;
   }
   return { ...base, id } as Hazard | OneWayPlatform | PushableCrate;
@@ -1065,6 +1069,12 @@ class LevelEditor {
     }
     if (field === "sprite") {
       record.sprite = normalizeSolidSprite(String(value).trim()) || "auto";
+      return;
+    }
+    if (field === "size") {
+      const size = normalizedCoreSize(value);
+      if (size) record.size = size;
+      else delete record.size;
       return;
     }
     if (field === "axis") {
@@ -1657,7 +1667,7 @@ class LevelEditor {
     if (kind === "doors") return { ...base, opensWith: [] } as Door;
     if (kind === "lasers") return { ...base, startsOn: true } as Laser;
     if (kind === "movingLasers") return { ...base, startsOn: true, axis: "x", distance: 100, period: 180, phase: 0 } as MovingLaser;
-    if (kind === "cores") return { ...base, label: id.split("-").at(-1)?.toUpperCase() } as Core;
+    if (kind === "cores") return { ...base, label: id.split("-").at(-1)?.toUpperCase(), size: "large" } as Core;
     if (kind === "drones") return { ...base, axis: "x", distance: 120, period: 200, phase: 0 } as PatrolDrone;
     return base as PushableCrate;
   }
@@ -1918,7 +1928,15 @@ class LevelEditor {
         ${this.checkboxField("Starts On", "startsOn", record.startsOn !== false)}
       `;
     }
-    if (kind === "cores") return this.textField("Label", "label", String(record.label || ""), "object");
+    if (kind === "cores") {
+      return `
+        ${this.textField("Label", "label", String(record.label || ""), "object")}
+        ${this.selectField("Size", "size", String(record.size || "small"), [
+          { value: "small", label: "Small" },
+          { value: "large", label: "Large" }
+        ])}
+      `;
+    }
     return "";
   }
 
@@ -2463,6 +2481,19 @@ class LevelEditor {
     const ctx = this.context;
     const cx = object.x + object.w / 2;
     const cy = object.y + object.h / 2;
+    const large = (object as Core).size === "large";
+    if (large) {
+      const radius = Math.max(object.w, object.h) * 1.18;
+      ctx.fillStyle = "rgba(67, 247, 255, 0.16)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = selected ? "#fff8bf" : "#43f7ff";
+      ctx.lineWidth = selected ? 4 / this.view.w : 2 / this.view.w;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius * 0.74, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.fillStyle = style.fill;
     ctx.strokeStyle = selected ? "#fff8bf" : style.stroke;
     ctx.lineWidth = selected ? 4 / this.view.w : 2 / this.view.w;
@@ -2474,6 +2505,17 @@ class LevelEditor {
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    if (large) {
+      ctx.strokeStyle = "#43f7ff";
+      ctx.lineWidth = 1.5 / this.view.w;
+      ctx.beginPath();
+      ctx.moveTo(cx, object.y + object.h * 0.18);
+      ctx.lineTo(object.x + object.w * 0.82, cy);
+      ctx.lineTo(cx, object.y + object.h * 0.82);
+      ctx.lineTo(object.x + object.w * 0.18, cy);
+      ctx.closePath();
+      ctx.stroke();
+    }
     this.drawObjectLabel(object, object.id, style.text);
   }
 
