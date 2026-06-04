@@ -329,6 +329,7 @@ const styleForKind = (kind: SelectableKind, item?: RectObject): { fill: string; 
     const solid = item as Solid | undefined;
     if (solid) {
       const material = terrainMaterialForSolid(solid);
+      if (material === "metal-lab") return { fill: "#17243a", stroke: "#43f7ff", text: "#ecfbff" };
       if (material === "glass-energy") return { fill: "#143447", stroke: "#43f7ff", text: "#ecfbff" };
       if (material === "warning-industrial") return { fill: "#473b18", stroke: "#ffe35a", text: "#fff8bf" };
       if (material === "grass-organic") return { fill: "#214a2d", stroke: "#6eca70", text: "#f2ffd8" };
