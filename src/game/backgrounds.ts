@@ -46,6 +46,76 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     src: "/assets/backgrounds/level-4-time-lab-no-portals.png",
     sourceSize: { w: 1881, h: 836 },
     repeat: "x"
+  },
+  "level-1-readable-lab": {
+    key: "level-1-readable-lab",
+    title: "Level 1 Calibration Atrium",
+    src: "/assets/backgrounds/level-1-readable-lab.webp",
+    sourceSize: { w: 1881, h: 836 },
+    repeat: "x"
+  },
+  "level-2-readable-lab": {
+    key: "level-2-readable-lab",
+    title: "Level 2 Relay Chamber",
+    src: "/assets/backgrounds/level-2-readable-lab.webp",
+    sourceSize: { w: 1920, h: 819 },
+    repeat: "x"
+  },
+  "level-3-readable-lab": {
+    key: "level-3-readable-lab",
+    title: "Level 3 Maintenance Wing",
+    src: "/assets/backgrounds/level-3-readable-lab.webp",
+    sourceSize: { w: 1915, h: 821 },
+    repeat: "x"
+  },
+  "level-4-readable-lab": {
+    key: "level-4-readable-lab",
+    title: "Level 4 Relay Vault",
+    src: "/assets/backgrounds/level-4-readable-lab.webp",
+    sourceSize: { w: 1881, h: 836 },
+    repeat: "x"
+  },
+  "level-5-readable-lab": {
+    key: "level-5-readable-lab",
+    title: "Level 5 Lift Machinery Bay",
+    src: "/assets/backgrounds/level-5-readable-lab.webp",
+    sourceSize: { w: 1983, h: 793 },
+    repeat: "x"
+  },
+  "level-6-readable-lab": {
+    key: "level-6-readable-lab",
+    title: "Level 6 Security Corridor",
+    src: "/assets/backgrounds/level-6-readable-lab.webp",
+    sourceSize: { w: 1881, h: 836 },
+    repeat: "x"
+  },
+  "level-7-readable-lab": {
+    key: "level-7-readable-lab",
+    title: "Level 7 Dual Reactor Hall",
+    src: "/assets/backgrounds/level-7-readable-lab.webp",
+    sourceSize: { w: 1838, h: 856 },
+    repeat: "x"
+  },
+  "level-8-readable-lab": {
+    key: "level-8-readable-lab",
+    title: "Level 8 Cross Current Conduit",
+    src: "/assets/backgrounds/level-8-readable-lab.webp",
+    sourceSize: { w: 1838, h: 856 },
+    repeat: "x"
+  },
+  "level-9-readable-lab": {
+    key: "level-9-readable-lab",
+    title: "Level 9 Phase Braid Loom",
+    src: "/assets/backgrounds/level-9-readable-lab.webp",
+    sourceSize: { w: 1983, h: 793 },
+    repeat: "x"
+  },
+  "level-10-readable-lab": {
+    key: "level-10-readable-lab",
+    title: "Level 10 Synchronization Chamber",
+    src: "/assets/backgrounds/level-10-readable-lab.webp",
+    sourceSize: { w: 1939, h: 811 },
+    repeat: "x"
   }
 };
 

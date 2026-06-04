@@ -426,6 +426,24 @@
   font: inherit;
 }
 
+.editor-field input[type="range"] {
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  accent-color: #43f7ff;
+}
+
+.editor-field input[type="color"] {
+  height: 38px;
+  padding: 4px;
+}
+
+.range-field span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .editor-field textarea {
   min-height: 58px;
   resize: vertical;

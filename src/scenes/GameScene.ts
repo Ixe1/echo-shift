@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { updateEditorDraftCurrentIndex } from "../data/editorDraft";
 import { getLevel, isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
+import { backgroundAmbienceForLevel, backgroundAmbienceIsActive, type NormalizedBackgroundAmbience } from "../game/backgroundAmbience";
 import { backgroundForLevel } from "../game/backgrounds";
 import { rectCenter } from "../game/geometry";
 import { droneIsActive, droneRectAt, laserIsActive, movingLaserRectAt } from "../game/objects";
@@ -12,8 +13,11 @@ import { soundtrackForLevel } from "../game/soundtracks";
 import { RoomSimulation } from "../game/state";
 import type { ActorBody, Door, InputFrame, Level, LevelScore, MovingPlatform, Rect, Solid } from "../game/types";
 import { Hud } from "../ui/hud";
+import { uiRoot } from "../ui/dom";
 
 const STEP_MS = 1000 / 60;
+const BACKGROUND_DRIFT_PADDING = 16;
+const BACKGROUND_AMBIENCE_REDRAW_FRAMES = 4;
 const OBJECT_ATLAS_KEY = "object-atlas";
 const OBJECT_FRAME = {
   floor: 0,
@@ -78,7 +82,9 @@ export class GameScene extends Phaser.Scene {
   private _simulation: RoomSimulation | null = null;
   private _keys: KeyMap | null = null;
   private _hud: Hud | null = null;
+  private _backgroundDetail: Phaser.GameObjects.Graphics | null = null;
   private _world: Phaser.GameObjects.Graphics | null = null;
+  private _backgroundFx: Phaser.GameObjects.Graphics | null = null;
   private _structureOutlines: Phaser.GameObjects.Graphics | null = null;
   private _fx: Phaser.GameObjects.Graphics | null = null;
   private accumulator = 0;
@@ -91,18 +97,23 @@ export class GameScene extends Phaser.Scene {
   private coreSprites = new Map<string, Phaser.GameObjects.Image>();
   private objectAssets = new Map<string, ObjectAsset>();
   private activeObjectAssetIds = new Set<string>();
+  private staticObjectAssetIds = new Set<string>();
   private readonly activeActorSpriteIds = new Set<string>();
   private readonly activeCoreSpriteIds = new Set<string>();
-  private solidAssetFrames: string[] = [];
+  private staticSolidAssetFrames: string[] = [];
   private tileAssetPhases: string[] = [];
   private tileAssetOrigins: string[] = [];
   private laserAssetTransforms: string[] = [];
   private laserAssetPositions: string[] = [];
   private doorAssetTransforms: string[] = [];
   private echoSensorAssetFrames: string[] = [];
-  private solidOutlineRects: string[] = [];
+  private staticSolidOutlineRects: string[] = [];
   private diagnosticsEnabled = false;
   private lowChurnGraphics = false;
+  private perfOverlayEnabled = false;
+  private perfOverlay: HTMLElement | null = null;
+  private perfSamples: Array<{ delta: number; update: number; render: number }> = [];
+  private perfLastUpdate = 0;
   private readonly renderEchoes: ActorBody[] = [];
   private readonly renderView: RenderView = {
     player: null as unknown as ActorBody,
@@ -123,7 +134,10 @@ export class GameScene extends Phaser.Scene {
   private readonly beamRenderRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   private readonly hazardRenderRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   private exitSprite?: Phaser.GameObjects.Image;
-  private backgroundImages: Phaser.GameObjects.Image[] = [];
+  private backgroundImages: Phaser.GameObjects.TileSprite[] = [];
+  private backgroundImageTint: number | null = null;
+  private backgroundAmbienceRenderTick = -1;
+  private texturePrewarmSprites: Phaser.GameObjects.Image[] = [];
   private cameraTarget?: Phaser.GameObjects.Zone;
   private playerCastUntil = 0;
   private sceneCleanupRegistered = false;
@@ -159,6 +173,15 @@ export class GameScene extends Phaser.Scene {
     this._hud = hud;
   }
 
+  private get backgroundDetail(): Phaser.GameObjects.Graphics {
+    if (!this._backgroundDetail) throw new Error("GameScene background detail graphics unavailable");
+    return this._backgroundDetail;
+  }
+
+  private set backgroundDetail(backgroundDetail: Phaser.GameObjects.Graphics) {
+    this._backgroundDetail = backgroundDetail;
+  }
+
   private get world(): Phaser.GameObjects.Graphics {
     if (!this._world) throw new Error("GameScene world graphics unavailable");
     return this._world;
@@ -166,6 +189,15 @@ export class GameScene extends Phaser.Scene {
 
   private set world(world: Phaser.GameObjects.Graphics) {
     this._world = world;
+  }
+
+  private get backgroundFx(): Phaser.GameObjects.Graphics {
+    if (!this._backgroundFx) throw new Error("GameScene background FX graphics unavailable");
+    return this._backgroundFx;
+  }
+
+  private set backgroundFx(backgroundFx: Phaser.GameObjects.Graphics) {
+    this._backgroundFx = backgroundFx;
   }
 
   private get structureOutlines(): Phaser.GameObjects.Graphics {
@@ -201,21 +233,28 @@ export class GameScene extends Phaser.Scene {
     this.coreSprites.clear();
     this.objectAssets.clear();
     this.activeObjectAssetIds.clear();
+    this.staticObjectAssetIds.clear();
     this.activeActorSpriteIds.clear();
     this.activeCoreSpriteIds.clear();
-    this.solidAssetFrames = [];
+    this.staticSolidAssetFrames = [];
     this.tileAssetPhases = [];
     this.tileAssetOrigins = [];
     this.laserAssetTransforms = [];
     this.laserAssetPositions = [];
     this.doorAssetTransforms = [];
     this.echoSensorAssetFrames = [];
-    this.solidOutlineRects = [];
+    this.staticSolidOutlineRects = [];
     this.diagnosticsEnabled = this.shouldExposeRenderDiagnostics();
     this.lowChurnGraphics = this.shouldUseLowChurnGraphics();
+    this.perfOverlayEnabled = this.shouldShowPerfOverlay();
+    this.perfSamples = [];
+    this.perfLastUpdate = 0;
     this.renderEchoes.length = 0;
     this.exitSprite = undefined;
     this.backgroundImages = [];
+    this.backgroundImageTint = null;
+    this.backgroundAmbienceRenderTick = -1;
+    this.texturePrewarmSprites = [];
     this.cameraTarget = undefined;
   }
 
@@ -229,9 +268,13 @@ export class GameScene extends Phaser.Scene {
     this.createBackgroundImages();
     this.cameraTarget = this.add.zone(this.level.start.x, this.level.start.y, 1, 1);
     this.cameras.main.startFollow(this.cameraTarget, true, 0.12, 0.08);
+    this.backgroundFx = this.add.graphics().setDepth(-15);
+    this.backgroundDetail = this.add.graphics().setDepth(-10);
+    if (!this.lowChurnGraphics) this.drawBackgroundDetail();
     this.world = this.add.graphics().setDepth(0);
     this.structureOutlines = this.add.graphics().setDepth(2);
     this.fx = this.add.graphics().setDepth(30);
+    this.syncStaticLevelAssets();
     this.keys = this.createKeys();
     this.hud = new Hud({
       onRewind: () => this.rewind(),
@@ -248,15 +291,21 @@ export class GameScene extends Phaser.Scene {
       },
       draftPlaytest: isDraftPlaytestActive()
     });
+    this.mountPerfOverlay();
     this.hud.toast(`${isDraftPlaytestActive() ? "Draft playtest · " : ""}${this.level.index + 1}: ${this.level.name}`);
     this.registerSceneCleanup();
+    this.prewarmLevelTextures();
     this.renderWorld();
   }
 
   update(_time: number, delta: number): void {
+    const updateStart = performance.now();
     this.handleHotkeys();
     if (this.pausedByHud || this.completeHandled) {
+      const updateMs = performance.now() - updateStart;
+      const renderStart = performance.now();
       this.renderWorld();
+      this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
       return;
     }
 
@@ -268,6 +317,8 @@ export class GameScene extends Phaser.Scene {
       if (this.completeHandled) break;
     }
 
+    const updateMs = performance.now() - updateStart;
+    const renderStart = performance.now();
     this.renderWorld();
     this.hud.update({
       levelNumber: this.level.index + 1,
@@ -277,6 +328,7 @@ export class GameScene extends Phaser.Scene {
       lives: this.simulation.livesRemaining(),
       dead: this.simulation.dead
     });
+    this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
   }
 
   private createKeys(): KeyMap {
@@ -463,11 +515,16 @@ export class GameScene extends Phaser.Scene {
     this.events.off(Phaser.Scenes.Events.DESTROY, this.shutdownScene);
     this.scale.off(Phaser.Scale.Events.RESIZE, this.configureCameraFrame, this);
     this.sceneCleanupRegistered = false;
+    this.destroyTexturePrewarmSprites();
+    this.perfOverlay?.remove();
+    this.perfOverlay = null;
     this._hud?.destroy();
     this._hud = null;
     this._simulation = null;
     this._keys = null;
+    this._backgroundDetail = null;
     this._world = null;
+    this._backgroundFx = null;
     this._structureOutlines = null;
     this._fx = null;
     this.echoTrails.clear();
@@ -475,19 +532,25 @@ export class GameScene extends Phaser.Scene {
     this.coreSprites.clear();
     this.objectAssets.clear();
     this.activeObjectAssetIds.clear();
+    this.staticObjectAssetIds.clear();
     this.activeActorSpriteIds.clear();
     this.activeCoreSpriteIds.clear();
-    this.solidAssetFrames = [];
+    this.staticSolidAssetFrames = [];
     this.tileAssetPhases = [];
     this.tileAssetOrigins = [];
     this.laserAssetTransforms = [];
     this.laserAssetPositions = [];
     this.doorAssetTransforms = [];
     this.echoSensorAssetFrames = [];
-    this.solidOutlineRects = [];
+    this.staticSolidOutlineRects = [];
+    this.perfSamples = [];
+    this.perfLastUpdate = 0;
     this.renderEchoes.length = 0;
     this.exitSprite = undefined;
     this.backgroundImages = [];
+    this.backgroundImageTint = null;
+    this.backgroundAmbienceRenderTick = -1;
+    this.texturePrewarmSprites = [];
     this.cameraTarget = undefined;
   };
 
@@ -498,9 +561,7 @@ export class GameScene extends Phaser.Scene {
     this.world.clear();
     this.structureOutlines.clear();
     this.fx.clear();
-    if (!this.lowChurnGraphics) this.drawBackground();
-    this.drawSolids();
-    this.drawOneWayPlatforms();
+    if (!this.lowChurnGraphics) this.syncBackgroundAmbience(snapshot.tick);
     this.drawConveyors();
     this.drawPlatforms(snapshot.tick);
     this.drawCrates(snapshot.crates);
@@ -508,11 +569,9 @@ export class GameScene extends Phaser.Scene {
     this.drawPlates(snapshot.activePlates);
     this.drawTimedSwitches(snapshot.activePlates);
     this.drawEchoSensors(snapshot.activePlates);
-    this.drawLaunchPads();
     this.drawCores(snapshot.collectedCores);
     this.drawLasers(snapshot.activePlates, snapshot.blockedLasers);
     this.drawMovingLasers(snapshot.tick, snapshot.activePlates, snapshot.blockedLasers);
-    this.drawHazards();
     this.drawDrones(snapshot.tick, snapshot.activePlates);
     this.drawExit(this.level.exit, snapshot.won);
     this.drawEchoes(snapshot.echoes);
@@ -548,54 +607,132 @@ export class GameScene extends Phaser.Scene {
     return view;
   }
 
-  private drawBackground(): void {
+  private drawBackgroundDetail(): void {
+    const layer = this.backgroundDetail;
     const bounds = this.level.bounds;
     const floorTop = bounds.y + bounds.h - 40;
-    const pulse = 0.5 + Math.sin(this.time.now / 900) * 0.5;
     const hasImageBackground = this.backgroundImages.length > 0;
-    this.world.fillStyle(0x05070d, hasImageBackground ? 0.26 : 1);
-    this.world.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
+    layer.clear();
+    layer.fillStyle(0x05070d, hasImageBackground ? 0.26 : 1);
+    layer.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
     if (!hasImageBackground) {
-      this.world.fillStyle(0x081322, 0.92);
-      this.world.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
+      layer.fillStyle(0x081322, 0.92);
+      layer.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
 
       for (let x = bounds.x + 42; x < bounds.x + bounds.w; x += 660) {
-        this.world.fillStyle(0x0f1830, 0.64);
-        this.world.fillRect(x, bounds.y + 90, 188, 300);
-        this.world.fillRect(x + 410, bounds.y + 70, 174, 330);
+        layer.fillStyle(0x0f1830, 0.64);
+        layer.fillRect(x, bounds.y + 90, 188, 300);
+        layer.fillRect(x + 410, bounds.y + 70, 174, 330);
       }
     }
 
-    this.world.lineStyle(1, 0x43f7ff, 0.16 + pulse * 0.06);
+    layer.lineStyle(1, 0x43f7ff, 0.2);
     for (let x = bounds.x + 56; x < bounds.x + bounds.w; x += 660) {
       for (let y = bounds.y + 112; y <= bounds.y + 360; y += 38) {
-        this.world.lineBetween(x, y, x + 160, y + 10);
-        this.world.lineBetween(x + 662, y + 8, x + 810, y - 8);
+        layer.lineBetween(x, y, x + 160, y + 10);
+        layer.lineBetween(x + 662, y + 8, x + 810, y - 8);
       }
     }
 
-    this.world.lineStyle(1, 0x123246, 0.36);
+    layer.lineStyle(1, 0x123246, 0.36);
     for (let x = bounds.x; x <= bounds.x + bounds.w; x += 40) {
-      this.world.lineBetween(x, bounds.y, x, bounds.y + bounds.h);
+      layer.lineBetween(x, bounds.y, x, bounds.y + bounds.h);
     }
     for (let y = bounds.y + 20; y <= bounds.y + bounds.h; y += 40) {
-      this.world.lineBetween(bounds.x, y, bounds.x + bounds.w, y);
+      layer.lineBetween(bounds.x, y, bounds.x + bounds.w, y);
     }
 
-    this.world.lineStyle(1, 0x5d2f83, 0.22);
+    layer.lineStyle(1, 0x5d2f83, 0.22);
     for (let x = bounds.x - 120; x < bounds.x + bounds.w; x += 120) {
-      this.world.lineBetween(x, bounds.y + bounds.h, x + 300, bounds.y);
+      layer.lineBetween(x, bounds.y + bounds.h, x + 300, bounds.y);
     }
 
-    this.world.fillStyle(0x09111d, 0.86);
-    this.world.fillRect(bounds.x, floorTop, bounds.w, 40);
-    this.world.fillStyle(0x43f7ff, 0.1 + pulse * 0.08);
+    layer.fillStyle(0x09111d, 0.86);
+    layer.fillRect(bounds.x, floorTop, bounds.w, 40);
+    layer.fillStyle(0x43f7ff, 0.14);
     for (let x = bounds.x + 330; x < bounds.x + bounds.w; x += 720) {
-      this.world.fillRect(x, floorTop + 7, 310, 4);
+      layer.fillRect(x, floorTop + 7, 310, 4);
     }
-    this.world.fillStyle(0xbd5cff, 0.12);
+    layer.fillStyle(0xbd5cff, 0.12);
     for (let x = bounds.x + 76; x < bounds.x + bounds.w; x += 560) {
-      this.world.fillRect(x, floorTop + 8, 150, 3);
+      layer.fillRect(x, floorTop + 8, 150, 3);
+    }
+  }
+
+  private syncBackgroundAmbience(tick: number): void {
+    const ambience = backgroundAmbienceForLevel(this.level);
+    this.syncBackgroundImageAmbience(tick, ambience);
+    if (!backgroundAmbienceIsActive(ambience)) {
+      if (this.backgroundAmbienceRenderTick !== -1) this.backgroundFx.clear();
+      this.backgroundAmbienceRenderTick = -1;
+      return;
+    }
+    if (this.backgroundAmbienceRenderTick === tick) return;
+    if (tick !== 0 && tick % BACKGROUND_AMBIENCE_REDRAW_FRAMES !== 0) return;
+    this.drawBackgroundAmbience(this.level.bounds, tick, ambience);
+    this.backgroundAmbienceRenderTick = tick;
+  }
+
+  private drawBackgroundAmbience(bounds: Rect, tick: number, ambience: NormalizedBackgroundAmbience): void {
+    if (!backgroundAmbienceIsActive(ambience)) return;
+    const layer = this.backgroundFx;
+    layer.clear();
+    const color = Number.parseInt(ambience.color.slice(1), 16);
+    const intensity = ambience.intensity;
+    const drift = ambience.drift;
+    const flicker = ambience.flicker;
+    const particles = ambience.particles;
+    const upperY = bounds.y + bounds.h * 0.08;
+    const lowerY = bounds.y + bounds.h * 0.66;
+    const activeHeight = lowerY - upperY;
+    const shimmer = 0.55 + Math.sin(this.time.now / (520 - flicker * 260)) * 0.45;
+    const scanOffset = ((tick * (0.22 + drift * 1.2)) % 360) - 360;
+
+    layer.fillStyle(color, 0.04 + intensity * 0.11);
+    for (let x = bounds.x + scanOffset; x < bounds.x + bounds.w + 360; x += 360) {
+      layer.fillRect(x, upperY, 18 + drift * 30, activeHeight);
+      layer.fillRect(x + 130, upperY + activeHeight * 0.12, 3 + drift * 12, activeHeight * 0.64);
+    }
+
+    layer.lineStyle(1, color, (0.14 + shimmer * 0.2) * intensity);
+    for (let x = bounds.x + 96 + scanOffset * 0.35; x < bounds.x + bounds.w + 240; x += 520) {
+      const y = upperY + 32 + ((x - bounds.x) % 170);
+      layer.lineBetween(x, y, x + 190, y + 8);
+      layer.lineBetween(x + 260, y + 76, x + 420, y + 62);
+    }
+
+    const particleCount = Math.round((bounds.w / 280) * particles * intensity);
+    layer.fillStyle(color, 0.22 * intensity);
+    for (let index = 0; index < particleCount; index += 1) {
+      const seed = index * 97;
+      const x = bounds.x + ((seed * 53 + tick * (0.32 + drift)) % Math.max(1, bounds.w));
+      const y = upperY + ((seed * 29 + tick * 0.12) % Math.max(1, activeHeight * 0.9));
+      const alpha = (0.08 + 0.24 * (0.5 + Math.sin((tick + seed) / 38) * 0.5)) * intensity;
+      layer.fillStyle(color, alpha);
+      layer.fillCircle(x, y, 1.7 + ((seed % 3) * 0.55));
+    }
+  }
+
+  private syncBackgroundImageAmbience(tick: number, ambience: NormalizedBackgroundAmbience): void {
+    const active = backgroundAmbienceIsActive(ambience);
+    const flickerPeriod = 80 - ambience.flicker * 46;
+    const shimmer = active ? 0.5 + Math.sin(tick / Math.max(18, flickerPeriod)) * 0.5 : 0;
+    const driftX = active ? Math.sin(tick / 180) * 7 * ambience.drift * ambience.intensity : 0;
+    const driftY = active ? Math.sin(tick / 260 + 1.4) * 2.5 * ambience.drift * ambience.intensity : 0;
+    const alpha = active ? 0.78 + shimmer * 0.09 * ambience.intensity : 0.78;
+    const tint = active && ambience.intensity >= 0.28 ? Number.parseInt(ambience.color.slice(1), 16) : null;
+
+    if (this.backgroundImageTint !== tint) {
+      for (const image of this.backgroundImages) {
+        if (tint === null) image.clearTint();
+        else image.setTint(tint);
+      }
+      this.backgroundImageTint = tint;
+    }
+
+    for (const image of this.backgroundImages) {
+      image.setTilePosition(-driftX / Math.max(0.01, image.tileScaleX), -driftY / Math.max(0.01, image.tileScaleY));
+      image.setAlpha(alpha);
     }
   }
 
@@ -603,30 +740,37 @@ export class GameScene extends Phaser.Scene {
     const background = backgroundForLevel(this.level, this.levelIndex);
     const bounds = this.level.bounds;
     const scale = Math.max(bounds.h / background.sourceSize.h, 0.01);
-    const scaledWidth = background.sourceSize.w * scale;
-    const startX = bounds.x;
-    const endX = bounds.x + bounds.w;
-
-    for (let x = startX; x < endX; x += scaledWidth) {
-      const image = this.add
-        .image(x, bounds.y, background.key)
-        .setOrigin(0, 0)
-        .setScale(scale)
-        .setDepth(-20)
-        .setAlpha(0.78);
-      this.backgroundImages.push(image);
-    }
+    const startX = bounds.x - BACKGROUND_DRIFT_PADDING;
+    const image = this.add
+      .tileSprite(startX, bounds.y, bounds.w + BACKGROUND_DRIFT_PADDING * 2, bounds.h, background.key)
+      .setOrigin(0, 0)
+      .setDepth(-20)
+      .setAlpha(0.78)
+      .setTileScale(scale, scale);
+    this.backgroundImages.push(image);
 
     if (import.meta.env.DEV) {
       document.documentElement.dataset.echoShiftBackgroundKey = background.key;
       document.documentElement.dataset.echoShiftBackgroundPieces = String(this.backgroundImages.length);
+      document.documentElement.dataset.echoShiftBackgroundAmbience = JSON.stringify(backgroundAmbienceForLevel(this.level));
     }
   }
 
-  private drawSolids(): void {
+  private syncStaticLevelAssets(): void {
+    this.staticObjectAssetIds.clear();
+    this.staticSolidAssetFrames = [];
+    this.staticSolidOutlineRects = [];
+    this.structureOutlines.clear();
+    this.syncStaticSolids();
+    this.syncStaticOneWayPlatforms();
+    this.syncStaticHazards();
+    this.syncStaticLaunchPads();
+  }
+
+  private syncStaticSolids(): void {
     for (const solid of this.level.solids) {
       const frame = this.solidFrame(solid);
-      if (this.diagnosticsEnabled) this.solidAssetFrames.push(`${solid.id}:${frame}`);
+      this.staticSolidAssetFrames.push(`${solid.id}:${frame}`);
       this.syncTileAsset(
         `solid:${solid.id}`,
         frame,
@@ -635,8 +779,47 @@ export class GameScene extends Phaser.Scene {
         0.96,
         0.42
       );
+      this.markStaticObjectAsset(`solid:${solid.id}`);
       this.drawSolidReadabilityOutline(solid);
     }
+  }
+
+  private syncStaticOneWayPlatforms(): void {
+    for (const platform of this.level.oneWays || []) {
+      this.syncTileAsset(`one-way:${platform.id}`, OBJECT_FRAME.oneWay, platform, 3, 0.88, 0.42);
+      this.markStaticObjectAsset(`one-way:${platform.id}`);
+    }
+  }
+
+  private syncStaticHazards(): void {
+    for (const hazard of this.level.hazards || []) {
+      this.hazardRenderRect.x = hazard.x;
+      this.hazardRenderRect.y = hazard.y - 4;
+      this.hazardRenderRect.w = hazard.w;
+      this.hazardRenderRect.h = hazard.h + 8;
+      this.syncTileAsset(`hazard:${hazard.id}`, OBJECT_FRAME.warning, this.hazardRenderRect, 2, 0.74, 0.38);
+      this.markStaticObjectAsset(`hazard:${hazard.id}`);
+    }
+  }
+
+  private syncStaticLaunchPads(): void {
+    for (const pad of this.level.launchPads || []) {
+      this.syncImageAsset(
+        `launch-pad:${pad.id}`,
+        OBJECT_FRAME.plateActive,
+        pad.x + pad.w / 2,
+        pad.y + pad.h - 16,
+        Math.max(54, pad.w),
+        42,
+        4,
+        0.92
+      );
+      this.markStaticObjectAsset(`launch-pad:${pad.id}`);
+    }
+  }
+
+  private markStaticObjectAsset(id: string): void {
+    this.staticObjectAssetIds.add(id);
   }
 
   private drawPlatforms(tick: number): void {
@@ -649,21 +832,6 @@ export class GameScene extends Phaser.Scene {
         this.world.lineBetween(platform.x + platform.w / 2, platform.y, platform.x + platform.w / 2, platform.y + platform.distance);
       } else {
         this.world.lineBetween(platform.x, platform.y + platform.h / 2, platform.x + platform.distance, platform.y + platform.h / 2);
-      }
-    }
-  }
-
-  private drawOneWayPlatforms(): void {
-    for (const platform of this.level.oneWays || []) {
-      this.syncTileAsset(`one-way:${platform.id}`, OBJECT_FRAME.oneWay, platform, 3, 0.88, 0.42);
-      if (this.lowChurnGraphics) continue;
-      this.world.fillStyle(0x123247, 0.58);
-      this.world.fillRect(platform.x, platform.y, platform.w, platform.h);
-      this.world.lineStyle(2, 0x50ffc2, 0.78);
-      this.world.lineBetween(platform.x, platform.y, platform.x + platform.w, platform.y);
-      this.world.lineStyle(1, 0x50ffc2, 0.28);
-      for (let x = platform.x + 8; x < platform.x + platform.w; x += 18) {
-        this.world.lineBetween(x, platform.y + platform.h - 3, x + 7, platform.y + 4);
       }
     }
   }
@@ -759,21 +927,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private drawLaunchPads(): void {
-    for (const pad of this.level.launchPads || []) {
-      this.syncImageAsset(
-        `launch-pad:${pad.id}`,
-        OBJECT_FRAME.plateActive,
-        pad.x + pad.w / 2,
-        pad.y + pad.h - 16,
-        Math.max(54, pad.w),
-        42,
-        4,
-        0.92
-      );
-    }
-  }
-
   private drawCores(collectedCores: Set<string>): void {
     for (const core of this.level.cores || []) {
       if (collectedCores.has(core.id)) continue;
@@ -822,16 +975,6 @@ export class GameScene extends Phaser.Scene {
         this.world.lineBetween(laser.x + laser.w / 2, laser.y, laser.x + laser.w / 2, laser.y + laser.distance);
       }
       if (active) this.drawLaserCore(rect, blockedLasers.has(laser.id));
-    }
-  }
-
-  private drawHazards(): void {
-    for (const hazard of this.level.hazards || []) {
-      this.hazardRenderRect.x = hazard.x;
-      this.hazardRenderRect.y = hazard.y - 4;
-      this.hazardRenderRect.w = hazard.w;
-      this.hazardRenderRect.h = hazard.h + 8;
-      this.syncTileAsset(`hazard:${hazard.id}`, OBJECT_FRAME.warning, this.hazardRenderRect, 2, 0.74, 0.38);
     }
   }
 
@@ -922,6 +1065,101 @@ export class GameScene extends Phaser.Scene {
     return false;
   }
 
+  private shouldShowPerfOverlay(): boolean {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("perf") === "1" || params.get("frameStats") === "1";
+  }
+
+  private mountPerfOverlay(): void {
+    if (!this.perfOverlayEnabled) return;
+    const overlay = document.createElement("div");
+    overlay.dataset.perfOverlay = "1";
+    overlay.style.position = "absolute";
+    overlay.style.top = "112px";
+    overlay.style.left = "28px";
+    overlay.style.zIndex = "30";
+    overlay.style.padding = "8px 10px";
+    overlay.style.border = "1px solid rgba(80, 255, 194, 0.42)";
+    overlay.style.background = "rgba(5, 7, 13, 0.78)";
+    overlay.style.color = "#dffcff";
+    overlay.style.font = "12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+    overlay.style.whiteSpace = "pre";
+    overlay.style.pointerEvents = "none";
+    overlay.textContent = "Perf warmup...";
+    uiRoot().append(overlay);
+    this.perfOverlay = overlay;
+  }
+
+  private recordPerfSample(delta: number, updateMs: number, renderMs: number): void {
+    if (!this.perfOverlayEnabled && !this.diagnosticsEnabled) return;
+    const samples = this.perfSamples;
+    samples.push({ delta, update: updateMs, render: renderMs });
+    if (samples.length > 180) samples.shift();
+
+    const now = performance.now();
+    if (now - this.perfLastUpdate < 250) return;
+    this.perfLastUpdate = now;
+
+    const sortedDeltas = samples.map((sample) => sample.delta).sort((a, b) => a - b);
+    const avgDelta = samples.reduce((sum, sample) => sum + sample.delta, 0) / Math.max(1, samples.length);
+    const avgUpdate = samples.reduce((sum, sample) => sum + sample.update, 0) / Math.max(1, samples.length);
+    const avgRender = samples.reduce((sum, sample) => sum + sample.render, 0) / Math.max(1, samples.length);
+    const maxDelta = sortedDeltas[sortedDeltas.length - 1] || 0;
+    const p95Delta = sortedDeltas[Math.min(sortedDeltas.length - 1, Math.floor(sortedDeltas.length * 0.95))] || 0;
+    const spikes = samples.filter((sample) => sample.delta > 33).length;
+    const stats = {
+      fps: Math.round(1000 / Math.max(1, avgDelta)),
+      avgDelta: Number(avgDelta.toFixed(2)),
+      p95Delta: Number(p95Delta.toFixed(2)),
+      maxDelta: Number(maxDelta.toFixed(2)),
+      avgUpdate: Number(avgUpdate.toFixed(2)),
+      avgRender: Number(avgRender.toFixed(2)),
+      spikes
+    };
+    if (this.diagnosticsEnabled) document.documentElement.dataset.echoShiftPerfStats = JSON.stringify(stats);
+    if (!this.perfOverlay) return;
+    this.perfOverlay.textContent = [
+      `FPS ${stats.fps}`,
+      `Frame avg ${stats.avgDelta}ms`,
+      `Frame p95 ${stats.p95Delta}ms`,
+      `Frame max ${stats.maxDelta}ms`,
+      `Update avg ${stats.avgUpdate}ms`,
+      `Render avg ${stats.avgRender}ms`,
+      `Spikes >33ms ${stats.spikes}`
+    ].join("\n");
+  }
+
+  private prewarmLevelTextures(): void {
+    const center = { x: this.level.start.x, y: this.level.start.y };
+    const background = backgroundForLevel(this.level, this.levelIndex);
+    const targets: Array<{ key: string; frame?: number }> = [
+      { key: background.key },
+      { key: OBJECT_ATLAS_KEY, frame: 0 },
+      { key: "time-runner", frame: 0 },
+      { key: "time-effects", frame: 0 }
+    ];
+    for (const target of targets) {
+      if (!this.textures.exists(target.key)) continue;
+      const sprite = this.add
+        .image(center.x, center.y, target.key, target.frame)
+        .setDepth(40)
+        .setAlpha(0.001)
+        .setScale(0.01);
+      this.texturePrewarmSprites.push(sprite);
+    }
+    if (this.texturePrewarmSprites.length > 0) {
+      this.time.delayedCall(180, () => this.destroyTexturePrewarmSprites());
+    }
+  }
+
+  private destroyTexturePrewarmSprites(): void {
+    for (const sprite of this.texturePrewarmSprites) {
+      if (!sprite.scene) continue;
+      sprite.destroy();
+    }
+    this.texturePrewarmSprites = [];
+  }
+
   private exposeRenderDiagnostics(snapshot: RenderView): void {
     if (!this.diagnosticsEnabled) return;
     document.documentElement.dataset.echoShiftVisibleEchoTints = snapshot.echoes
@@ -930,15 +1168,15 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftDroneStates = (this.level.drones || [])
       .map((drone) => `${drone.id}:${droneIsActive(drone, snapshot.activePlates) ? "active" : "inactive"}`)
       .join(",");
-    document.documentElement.dataset.echoShiftObjectAssetCount = String(this.activeObjectAssetIds.size);
-    document.documentElement.dataset.echoShiftSolidAssetFrames = this.solidAssetFrames.join(",");
+    document.documentElement.dataset.echoShiftObjectAssetCount = String(this.activeObjectAssetIds.size + this.staticObjectAssetIds.size);
+    document.documentElement.dataset.echoShiftSolidAssetFrames = this.staticSolidAssetFrames.join(",");
     document.documentElement.dataset.echoShiftTileAssetPhases = this.tileAssetPhases.join("|");
     document.documentElement.dataset.echoShiftTileAssetOrigins = this.tileAssetOrigins.join("|");
     document.documentElement.dataset.echoShiftLaserAssetTransforms = this.laserAssetTransforms.join("|");
     document.documentElement.dataset.echoShiftLaserAssetPositions = this.laserAssetPositions.join("|");
     document.documentElement.dataset.echoShiftDoorAssetTransforms = this.doorAssetTransforms.join("|");
     document.documentElement.dataset.echoShiftEchoSensorAssetFrames = this.echoSensorAssetFrames.join("|");
-    document.documentElement.dataset.echoShiftSolidOutlineRects = this.solidOutlineRects.join("|");
+    document.documentElement.dataset.echoShiftSolidOutlineRects = this.staticSolidOutlineRects.join("|");
   }
 
   private drawActor(actor: ActorBody, color: number, alpha: number): void {
@@ -1099,7 +1337,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (this.diagnosticsEnabled) {
       const sides = segments.map((segment) => `${segment.side}:${Math.round(segment.from)}-${Math.round(segment.to)}`).join(";");
-      this.solidOutlineRects.push(`${solid.id}:${Math.round(solid.x)},${Math.round(solid.y)}:${Math.round(solid.w)}x${Math.round(solid.h)}:43f7ff:${Math.round(outlines.depth)}:${sides}`);
+      this.staticSolidOutlineRects.push(`${solid.id}:${Math.round(solid.x)},${Math.round(solid.y)}:${Math.round(solid.w)}x${Math.round(solid.h)}:43f7ff:${Math.round(outlines.depth)}:${sides}`);
     }
   }
 
@@ -1187,19 +1425,17 @@ export class GameScene extends Phaser.Scene {
   private beginObjectAssetSync(): void {
     this.activeObjectAssetIds.clear();
     if (!this.diagnosticsEnabled) return;
-    this.solidAssetFrames.length = 0;
     this.tileAssetPhases.length = 0;
     this.tileAssetOrigins.length = 0;
     this.laserAssetTransforms.length = 0;
     this.laserAssetPositions.length = 0;
     this.doorAssetTransforms.length = 0;
     this.echoSensorAssetFrames.length = 0;
-    this.solidOutlineRects.length = 0;
   }
 
   private finishObjectAssetSync(): void {
     for (const [id, asset] of this.objectAssets) {
-      if (!this.activeObjectAssetIds.has(id)) asset.setVisible(false);
+      if (!this.activeObjectAssetIds.has(id) && !this.staticObjectAssetIds.has(id)) asset.setVisible(false);
     }
   }
 

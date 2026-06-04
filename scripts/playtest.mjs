@@ -871,8 +871,8 @@ try {
   assert(menuAudioState === "playing", `Expected menu audio to start after the audio gate, got ${menuAudioState}`);
   assert(levelAudioState === "playing", `Expected level audio to continue after Play, got ${levelAudioState}`);
   assert(
-    desktopBackgroundKey === "level-1-time-lab-no-portals",
-    `Expected Level 1 no-portal background key, got ${desktopBackgroundKey}`
+    desktopBackgroundKey === "level-1-readable-lab",
+    `Expected Level 1 readable background key, got ${desktopBackgroundKey}`
   );
   assert(objectAssetCount >= 10, `Expected object atlas sprites to instantiate on Level 1, got ${objectAssetCount}`);
   assert(scoreText === "000000", `Expected score HUD to start at zero after a rewind, got ${scoreText}`);

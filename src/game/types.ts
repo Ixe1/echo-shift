@@ -142,7 +142,28 @@ export type LevelBackgroundKey =
   | "level-1-time-lab-no-portals"
   | "level-2-time-lab-no-portals"
   | "level-3-time-lab-no-portals"
-  | "level-4-time-lab-no-portals";
+  | "level-4-time-lab-no-portals"
+  | "level-1-readable-lab"
+  | "level-2-readable-lab"
+  | "level-3-readable-lab"
+  | "level-4-readable-lab"
+  | "level-5-readable-lab"
+  | "level-6-readable-lab"
+  | "level-7-readable-lab"
+  | "level-8-readable-lab"
+  | "level-9-readable-lab"
+  | "level-10-readable-lab";
+
+export type LevelBackgroundAmbiencePreset = "none" | "lab" | "security" | "reactor" | "data" | "maintenance";
+
+export type LevelBackgroundAmbience = {
+  preset?: LevelBackgroundAmbiencePreset;
+  intensity?: number;
+  color?: string;
+  drift?: number;
+  flicker?: number;
+  particles?: number;
+};
 
 export type LevelScoreSettings = {
   lives: number;
@@ -160,6 +181,7 @@ export type Level = {
   motionModel?: "anchored";
   soundtrackKey?: LevelSoundtrackKey;
   backgroundKey?: LevelBackgroundKey;
+  backgroundAmbience?: LevelBackgroundAmbience;
   start: Vec2;
   exit: Rect;
   bounds: Rect;

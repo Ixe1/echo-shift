@@ -5,6 +5,10 @@ export default defineConfig({
     port: 5173,
     strictPort: true
   },
+  preview: {
+    port: 5173,
+    strictPort: true
+  },
   build: {
     target: "es2022",
     outDir: "dist"

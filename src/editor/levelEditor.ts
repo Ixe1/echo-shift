@@ -1,6 +1,14 @@
 import { levels as sourceLevels } from "../data/levels";
 import { EDITOR_DRAFT_STORAGE_KEY } from "../data/editorDraft";
 import { ANCHORED_MOTION_MODEL, markAnchoredMotionModel, normalizeLevelMotionModel, usesAnchoredMotionModel } from "../data/motionModel";
+import {
+  backgroundAmbiencePresetLabels,
+  backgroundAmbiencePresets,
+  defaultBackgroundAmbienceForPreset,
+  isBackgroundAmbienceColor,
+  isBackgroundAmbiencePreset,
+  normalizeBackgroundAmbience
+} from "../game/backgroundAmbience";
 import { backgroundForLevel, isLevelBackgroundKey, levelBackgroundKeys, levelBackgrounds } from "../game/backgrounds";
 import { normalizeScoreSettings } from "../game/scoring";
 import { normalizeSolid, normalizeSolidSprite, solidSpriteValues } from "../game/solidSprites";
@@ -14,6 +22,8 @@ import type {
   LaunchPad,
   Laser,
   Level,
+  LevelBackgroundAmbience,
+  LevelBackgroundAmbiencePreset,
   MovingLaser,
   MovingPlatform,
   OneWayPlatform,
@@ -480,6 +490,9 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number, draftAnch
   const usedObjectIds = explicitImportedObjectIds(value);
   const importedSoundtrackKey = isLevelSoundtrackKey(value.soundtrackKey) ? value.soundtrackKey : undefined;
   const importedBackgroundKey = isLevelBackgroundKey(value.backgroundKey) ? value.backgroundKey : undefined;
+  const importedBackgroundAmbience = isRecord(value.backgroundAmbience)
+    ? normalizeBackgroundAmbience(value.backgroundAmbience as LevelBackgroundAmbience)
+    : undefined;
   const anchoredMotion = draftAnchored || usesAnchoredMotionModel(value);
 
   const level: Level = {
@@ -490,6 +503,7 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number, draftAnch
     motionModel: ANCHORED_MOTION_MODEL,
     ...(importedSoundtrackKey ? { soundtrackKey: importedSoundtrackKey } : {}),
     ...(importedBackgroundKey ? { backgroundKey: importedBackgroundKey } : {}),
+    ...(importedBackgroundAmbience ? { backgroundAmbience: importedBackgroundAmbience } : {}),
     start: {
       x: positiveNumber(startRecord.x, 60),
       y: positiveNumber(startRecord.y, 450)
@@ -962,6 +976,8 @@ class LevelEditor {
     } else if (field === "backgroundKey") {
       if (isLevelBackgroundKey(value)) level.backgroundKey = value;
       else delete level.backgroundKey;
+    } else if (field.startsWith("backgroundAmbience.")) {
+      this.updateBackgroundAmbienceField(field.split(".")[1], value);
     } else if (field === "bounds.x" || field === "bounds.y" || field === "bounds.w" || field === "bounds.h") {
       const key = field.split(".")[1] as keyof Rect;
       level.bounds[key] = Number(value);
@@ -977,6 +993,24 @@ class LevelEditor {
       }
     }
     this.afterMutation("Level updated");
+  }
+
+  private updateBackgroundAmbienceField(field: string, value: string | number | boolean): void {
+    const level = this.level;
+    if (field === "preset") {
+      const preset: LevelBackgroundAmbiencePreset = isBackgroundAmbiencePreset(value) ? value : "none";
+      level.backgroundAmbience = defaultBackgroundAmbienceForPreset(preset);
+      return;
+    }
+
+    const ambience = normalizeBackgroundAmbience(level.backgroundAmbience);
+    const next: LevelBackgroundAmbience = { ...ambience };
+    if (field === "color") {
+      next.color = isBackgroundAmbienceColor(value) ? String(value).toLowerCase() : ambience.color;
+    } else if (field === "intensity" || field === "drift" || field === "flicker" || field === "particles") {
+      next[field] = Math.max(0, Math.min(1, Number(value)));
+    }
+    level.backgroundAmbience = normalizeBackgroundAmbience(next);
   }
 
   private updateObjectField(field: string, value: string | number | boolean): void {
@@ -1736,6 +1770,7 @@ class LevelEditor {
         </div>
         ${this.soundtrackField(level)}
         ${this.backgroundField(level)}
+        ${this.backgroundAmbienceField(level)}
         ${this.textAreaField("Hint", "hint", level.hint)}
       </div>
       <div class="inspector-section" data-score-settings>
@@ -1920,9 +1955,37 @@ class LevelEditor {
     return this.selectField("Background", "backgroundKey", level.backgroundKey || "", options, "level");
   }
 
+  private backgroundAmbienceField(level: Level): string {
+    const ambience = normalizeBackgroundAmbience(level.backgroundAmbience);
+    const options: SelectOption[] = backgroundAmbiencePresets.map((preset) => ({
+      value: preset,
+      label: backgroundAmbiencePresetLabels[preset]
+    }));
+    return `
+      ${this.selectField("Ambience", "backgroundAmbience.preset", ambience.preset, options, "level")}
+      <div class="inspector-grid two">
+        ${this.colorField("Glow Color", "backgroundAmbience.color", ambience.color)}
+        ${this.rangeField("Intensity", "backgroundAmbience.intensity", ambience.intensity)}
+        ${this.rangeField("Drift", "backgroundAmbience.drift", ambience.drift)}
+        ${this.rangeField("Flicker", "backgroundAmbience.flicker", ambience.flicker)}
+        ${this.rangeField("Particles", "backgroundAmbience.particles", ambience.particles)}
+      </div>
+      <p class="editor-field-note">Ambience renders behind gameplay. Keep values subtle so floors, platforms, and hazards stay readable.</p>
+    `;
+  }
+
   private numberField(label: string, field: string, value: number, scope: "level" | "object", step = GRID): string {
     const attr = scope === "level" ? "data-level-field" : "data-object-field";
     return `<label class="editor-field"><span>${label}</span><input ${attr}="${field}" data-field-type="number" type="number" step="${step}" value="${Number(value.toFixed(2))}" /></label>`;
+  }
+
+  private rangeField(label: string, field: string, value: number): string {
+    const percent = Math.round(value * 100);
+    return `<label class="editor-field range-field"><span>${label} ${percent}%</span><input data-level-field="${field}" data-field-type="number" type="range" min="0" max="1" step="0.05" value="${Number(value.toFixed(2))}" /></label>`;
+  }
+
+  private colorField(label: string, field: string, value: string): string {
+    return `<label class="editor-field color-field"><span>${label}</span><input data-level-field="${field}" type="color" value="${escapeHtml(value)}" /></label>`;
   }
 
   private checkboxField(label: string, field: string, checked: boolean): string {
@@ -2000,6 +2063,21 @@ class LevelEditor {
     }
     if (level.backgroundKey && !isLevelBackgroundKey(level.backgroundKey)) {
       messages.push({ severity: "error", text: `${level.name} references an unknown level background ${level.backgroundKey}.` });
+    }
+    if (level.backgroundAmbience) {
+      const ambience = level.backgroundAmbience;
+      if (ambience.preset && !isBackgroundAmbiencePreset(ambience.preset)) {
+        messages.push({ severity: "error", text: `${level.name} ambience preset ${ambience.preset} is unknown.` });
+      }
+      if (ambience.color && !isBackgroundAmbienceColor(ambience.color)) {
+        messages.push({ severity: "error", text: `${level.name} ambience color must be a #rrggbb hex value.` });
+      }
+      for (const key of ["intensity", "drift", "flicker", "particles"] as const) {
+        const value = ambience[key];
+        if (value !== undefined && (!Number.isFinite(value) || value < 0 || value > 1)) {
+          messages.push({ severity: "error", text: `${level.name} ambience ${key} must be between 0 and 1.` });
+        }
+      }
     }
     if (level.bounds.w <= 0 || level.bounds.h <= 0) {
       messages.push({ severity: "error", text: `${level.name} bounds must have positive size.` });

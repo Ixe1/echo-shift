@@ -41,6 +41,11 @@ const objectKinds = [
 ];
 
 const messages = [];
+const isAllowedBrowserMessage = (msg) =>
+  msg.type === "warning" &&
+  msg.text.includes("GL Driver Message") &&
+  msg.text.includes("GPU stall due to ReadPixels");
+
 const collectConsole = (page) => {
   page.on("console", (msg) => {
     if (["error", "warning"].includes(msg.type())) {
@@ -506,9 +511,23 @@ try {
   const backgroundSelect = page.locator("[data-level-field='backgroundKey']");
   const backgroundOptions = await backgroundSelect.locator("option").allTextContents();
   await backgroundSelect.selectOption("time-lab-prototype");
+  const ambiencePresetSelect = page.locator("[data-level-field='backgroundAmbience.preset']");
+  const ambiencePresetOptions = await ambiencePresetSelect.locator("option").allTextContents();
+  await ambiencePresetSelect.selectOption("security");
+  const ambienceColorField = page.locator("[data-level-field='backgroundAmbience.color']");
+  await ambienceColorField.evaluate((element) => {
+    element.value = "#ff4f6d";
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const ambienceIntensityField = page.locator("[data-level-field='backgroundAmbience.intensity']");
+  await ambienceIntensityField.evaluate((element) => {
+    element.value = "0.65";
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  });
   const metadataExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
   const soundtrackExportKey = metadataExport.soundtrackKey;
   const backgroundExportKey = metadataExport.backgroundKey;
+  const ambienceExport = metadataExport.backgroundAmbience;
 
   const levelIdField = page.locator("[data-level-field='id']");
   await levelIdField.fill("first-afterimage");
@@ -1099,7 +1118,7 @@ try {
   );
   assert(draftPlaytestMusicKey === "level-6", `Expected draft playtest GameScene to request explicit level-6 soundtrack, got ${draftPlaytestMusicKey}`);
   assert(draftPlaytestAudioState === "playing", `Expected draft playtest audio to start after gate, got ${draftPlaytestAudioState}`);
-  assert(draftPlaytestBackgroundKey === "time-lab-prototype", `Expected draft playtest to render prototype background, got ${draftPlaytestBackgroundKey}`);
+  assert(draftPlaytestBackgroundKey === "level-2-readable-lab", `Expected draft playtest to render selected readable background, got ${draftPlaytestBackgroundKey}`);
   assert(draftPlaytestBackgroundPieces >= 1, `Expected draft playtest to create repeated background pieces, got ${draftPlaytestBackgroundPieces}`);
   assert(draftReturnUrl.includes("editor=1"), `Expected draft Editor button to return to editor=1, got ${draftReturnUrl}`);
   assert(!draftReturnUrl.includes("playtestDraft=1"), `Expected draft Editor button to clean playtest flag, got ${draftReturnUrl}`);
@@ -1166,10 +1185,18 @@ try {
   assert(soundtrackOptions.some((option) => option.includes("Auto: Echo Shift - Level 1")), `Expected auto soundtrack option, got ${soundtrackOptions.join(", ")}`);
   assert(soundtrackOptions.some((option) => option.includes("Echo Shift - Level 6")), `Expected selectable level MP3 options, got ${soundtrackOptions.join(", ")}`);
   assert(soundtrackExportKey === "level-6", `Expected selected soundtrack key to export as level-6, got ${soundtrackExportKey}`);
-  assert(backgroundOptions.some((option) => option.includes("Auto: Level 1 Time Lab")), `Expected auto background option, got ${backgroundOptions.join(", ")}`);
+  assert(backgroundOptions.some((option) => option.includes("Auto: Level 1 Calibration Atrium")), `Expected auto background option, got ${backgroundOptions.join(", ")}`);
   assert(backgroundOptions.some((option) => option.includes("1672x941")), `Expected background dimensions in options, got ${backgroundOptions.join(", ")}`);
   assert(backgroundOptions.some((option) => option.includes("1881x836")), `Expected Level 1 background dimensions in options, got ${backgroundOptions.join(", ")}`);
   assert(backgroundExportKey === "time-lab-prototype", `Expected selected background key to export as time-lab-prototype, got ${backgroundExportKey}`);
+  assert(
+    ambiencePresetOptions.some((option) => option.includes("Security Scanner")),
+    `Expected ambience preset options, got ${ambiencePresetOptions.join(", ")}`
+  );
+  assert(
+    ambienceExport?.preset === "security" && ambienceExport.color === "#ff4f6d" && ambienceExport.intensity === 0.65,
+    `Expected ambience settings to export, got ${JSON.stringify(ambienceExport)}`
+  );
   assert(scoreSettingsText?.includes("Lives"), `Expected score settings to label Lives, got ${scoreSettingsText}`);
   assert(scoreSettingsText?.includes("Core Score"), `Expected score settings to label Core Score, got ${scoreSettingsText}`);
   assert(scoreSettingsText?.includes("Death Penalty"), `Expected score settings to label Death Penalty, got ${scoreSettingsText}`);
@@ -1421,7 +1448,8 @@ try {
   assert(importedName?.includes("Smoke Edited"), `Import did not update the level name: ${importedName}`);
   assert(importedValidation === "clean", `Expected clean validation after import, got ${importedValidation}`);
   assert(mobileValidation === "clean", `Expected clean mobile validation, got ${mobileValidation}`);
-  assert(messages.length === 0, `Editor console issues: ${JSON.stringify(messages)}`);
+  const unexpectedMessages = messages.filter((msg) => !isAllowedBrowserMessage(msg));
+  assert(unexpectedMessages.length === 0, `Editor console issues: ${JSON.stringify(unexpectedMessages)}`);
 
   console.log(
     JSON.stringify(

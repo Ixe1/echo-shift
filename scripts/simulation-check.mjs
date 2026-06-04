@@ -372,6 +372,7 @@ try {
   const { getBestScores, isBetterLevelScore, recordLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
   const { soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
   const { backgroundForLevel, levelBackgrounds } = await server.ssrLoadModule("/src/game/backgrounds.ts");
+  const { backgroundAmbienceForLevel, backgroundAmbienceIsActive } = await server.ssrLoadModule("/src/game/backgroundAmbience.ts");
   const { SynthAudio } = await server.ssrLoadModule("/src/game/audio.ts");
 
   assert(levels.length === 10, `Expected 10 handcrafted levels, found ${levels.length}`);
@@ -401,8 +402,18 @@ try {
   assert(Boolean(soundtracks.menu), "Expected a main menu soundtrack");
   assert(Boolean(levelBackgrounds["time-lab-prototype"]), "Expected prototype level background");
   assert(Boolean(levelBackgrounds["level-1-time-lab-no-portals"]), "Expected Level 1 no-portal background");
-  assert(backgroundForLevel(levels[0], 0).key === "level-1-time-lab-no-portals", "Expected Level 1 to use no-portal background");
-  assert(backgroundForLevel(levels[1], 1).key === "time-lab-prototype", "Expected levels without explicit backgrounds to use prototype fallback");
+  assert(Boolean(levelBackgrounds["level-10-readable-lab"]), "Expected final readable level background");
+  assert(backgroundForLevel(levels[0], 0).key === "level-1-readable-lab", "Expected Level 1 to use readable background");
+  assert(backgroundForLevel(levels[9], 9).key === "level-10-readable-lab", "Expected Level 10 to use readable background");
+  assert(
+    backgroundForLevel({ ...levels[1], backgroundKey: undefined }, 1).key === "time-lab-prototype",
+    "Expected levels without explicit backgrounds to use prototype fallback"
+  );
+  assert(
+    levels.every((level) => backgroundAmbienceIsActive(backgroundAmbienceForLevel(level))),
+    "Expected every handcrafted level to use active background ambience"
+  );
+  assert(backgroundAmbienceForLevel({ ...levels[0], backgroundAmbience: undefined }).preset === "none", "Expected missing ambience to normalize to none");
   assert(soundtrackForLevel({ ...levels[0], soundtrackKey: "level-6" }).key === "level-6", "Expected explicit level soundtrack key to override index fallback");
   assert(soundtrackForLevel({ ...levels[5], soundtrackKey: undefined }, 5).key === "level-6", "Expected missing soundtrack key to fall back to level slot");
   assert(soundtrackForLevel({ ...levels[5], soundtrackKey: "missing-track" }, 5).key === "level-6", "Expected unknown soundtrack key to fall back to level slot");

@@ -1,4 +1,5 @@
 import type { Level } from "../game/types";
+import { isBackgroundAmbienceColor, isBackgroundAmbiencePreset, normalizeBackgroundAmbience } from "../game/backgroundAmbience";
 import { isLevelBackgroundKey } from "../game/backgrounds";
 import { normalizeScoreSettings } from "../game/scoring";
 import { normalizeSolid, solidSpriteValues } from "../game/solidSprites";
@@ -34,6 +35,15 @@ const stringValue = (value: unknown): value is string => typeof value === "strin
 const optionalString = (value: unknown): boolean => value === undefined || stringValue(value);
 const optionalLevelSoundtrackKey = (value: unknown): boolean => value === undefined || isLevelSoundtrackKey(value);
 const optionalLevelBackgroundKey = (value: unknown): boolean => value === undefined || isLevelBackgroundKey(value);
+const optionalBackgroundAmbience = (value: unknown): boolean =>
+  value === undefined ||
+  (isRecord(value) &&
+    (value.preset === undefined || isBackgroundAmbiencePreset(value.preset)) &&
+    (value.color === undefined || isBackgroundAmbienceColor(value.color)) &&
+    (value.intensity === undefined || (finiteValue(value.intensity) && value.intensity >= 0 && value.intensity <= 1)) &&
+    (value.drift === undefined || (finiteValue(value.drift) && value.drift >= 0 && value.drift <= 1)) &&
+    (value.flicker === undefined || (finiteValue(value.flicker) && value.flicker >= 0 && value.flicker <= 1)) &&
+    (value.particles === undefined || (finiteValue(value.particles) && value.particles >= 0 && value.particles <= 1)));
 
 const optionalBoolean = (value: unknown): boolean => value === undefined || typeof value === "boolean";
 
@@ -106,6 +116,7 @@ const levelLike = (value: unknown): value is Level => {
     stringValue(value.subtitle) &&
     optionalLevelSoundtrackKey(value.soundtrackKey) &&
     optionalLevelBackgroundKey(value.backgroundKey) &&
+    optionalBackgroundAmbience(value.backgroundAmbience) &&
     isRecord(value.start) &&
     finiteValue(value.start.x) &&
     finiteValue(value.start.y) &&
@@ -143,6 +154,7 @@ const normalizedDraftLevel = (level: Level, draftAnchored: boolean): Level => {
   return {
     ...levelWithoutLegacy,
     score: normalizeScoreSettings(legacyLevel.score, legacyLevel.medalFrames?.gold),
+    ...(level.backgroundAmbience ? { backgroundAmbience: normalizeBackgroundAmbience(level.backgroundAmbience) } : {}),
     solids: normalized.solids.map(normalizeSolid)
   };
 };
