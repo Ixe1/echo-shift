@@ -754,6 +754,8 @@ try {
   await dragToolToWorld(page, "cores", { x: 1040, y: 360 });
   await page.locator("[data-object-field='id']").fill("smoke-core");
   await dispatchChange(page.locator("[data-object-field='id']"));
+  const toolkitCoreDefaultSize = await page.locator("[data-object-field='size']").inputValue();
+  await page.locator("[data-object-field='size']").selectOption("large");
   const toolkitCoreSize = await page.locator("[data-object-field='size']").inputValue();
 
   await dragToolToWorld(page, "movingLasers", { x: 1500, y: 360 });
@@ -1263,7 +1265,8 @@ try {
     toolkitDrone?.disabledBy?.includes("smoke-timer"),
     `Expected drone disabledBy setting to export, got ${JSON.stringify(toolkitDrone)}`
   );
-  assert(toolkitCoreSize === "large", `Expected new editor cores to default to large, got ${toolkitCoreSize}`);
+  assert(toolkitCoreDefaultSize === "small", `Expected new editor cores to default to small, got ${toolkitCoreDefaultSize}`);
+  assert(toolkitCoreSize === "large", `Expected core size selector to switch to large, got ${toolkitCoreSize}`);
   assert(toolkitCore?.size === "large", `Expected core size to export, got ${JSON.stringify(toolkitCore)}`);
   assert(
     missingDroneTriggerValidation === "issues" && missingDroneTriggerText?.includes("smoke-disabled-drone references missing trigger missing-drone-trigger"),

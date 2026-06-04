@@ -1667,7 +1667,7 @@ class LevelEditor {
     if (kind === "doors") return { ...base, opensWith: [] } as Door;
     if (kind === "lasers") return { ...base, startsOn: true } as Laser;
     if (kind === "movingLasers") return { ...base, startsOn: true, axis: "x", distance: 100, period: 180, phase: 0 } as MovingLaser;
-    if (kind === "cores") return { ...base, label: id.split("-").at(-1)?.toUpperCase(), size: "large" } as Core;
+    if (kind === "cores") return { ...base, label: id.split("-").at(-1)?.toUpperCase() } as Core;
     if (kind === "drones") return { ...base, axis: "x", distance: 120, period: 200, phase: 0 } as PatrolDrone;
     return base as PushableCrate;
   }
