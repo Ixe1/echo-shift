@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test:sim": "node scripts/simulation-check.mjs",
+    "qa:door-solid": "node scripts/door-solid-render-check.mjs",
     "qa:editor": "node scripts/editor-smoke.mjs",
     "qa:smoke": "node scripts/playtest.mjs"
   },

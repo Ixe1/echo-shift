@@ -137,7 +137,12 @@ export type SoundtrackKey =
 
 export type LevelSoundtrackKey = Exclude<SoundtrackKey, "menu">;
 
-export type LevelBackgroundKey = "time-lab-prototype" | "level-1-time-lab-no-portals";
+export type LevelBackgroundKey =
+  | "time-lab-prototype"
+  | "level-1-time-lab-no-portals"
+  | "level-2-time-lab-no-portals"
+  | "level-3-time-lab-no-portals"
+  | "level-4-time-lab-no-portals";
 
 export type LevelScoreSettings = {
   lives: number;

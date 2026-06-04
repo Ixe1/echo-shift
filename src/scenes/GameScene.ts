@@ -10,7 +10,7 @@ import { recordLevelScore } from "../game/progress";
 import { legacySolidSprite } from "../game/solidSprites";
 import { soundtrackForLevel } from "../game/soundtracks";
 import { RoomSimulation } from "../game/state";
-import type { ActorBody, InputFrame, Level, LevelScore, MovingPlatform, Rect, SimulationSnapshot, Solid } from "../game/types";
+import type { ActorBody, Door, InputFrame, Level, LevelScore, MovingPlatform, Rect, Solid } from "../game/types";
 import { Hud } from "../ui/hud";
 
 const STEP_MS = 1000 / 60;
@@ -35,6 +35,29 @@ const OBJECT_FRAME = {
 } as const;
 
 type ObjectAsset = Phaser.GameObjects.TileSprite | Phaser.GameObjects.Image;
+type SolidOutlineSide = "top" | "bottom" | "left" | "right";
+type SolidOutlineSegment = {
+  side: SolidOutlineSide;
+  from: number;
+  to: number;
+};
+
+type RenderView = {
+  player: ActorBody;
+  echoes: ActorBody[];
+  activePlates: Set<string>;
+  openDoors: Set<string>;
+  collectedCores: Set<string>;
+  blockedLasers: Set<string>;
+  crates: Map<string, Rect>;
+  tick: number;
+  totalFrames: number;
+  score: number;
+  deaths: number;
+  livesRemaining: number;
+  dead: boolean;
+  won: boolean;
+};
 
 type KeyMap = {
   left: Phaser.Input.Keyboard.Key;
@@ -56,6 +79,7 @@ export class GameScene extends Phaser.Scene {
   private _keys: KeyMap | null = null;
   private _hud: Hud | null = null;
   private _world: Phaser.GameObjects.Graphics | null = null;
+  private _structureOutlines: Phaser.GameObjects.Graphics | null = null;
   private _fx: Phaser.GameObjects.Graphics | null = null;
   private accumulator = 0;
   private pausedByHud = false;
@@ -67,11 +91,37 @@ export class GameScene extends Phaser.Scene {
   private coreSprites = new Map<string, Phaser.GameObjects.Image>();
   private objectAssets = new Map<string, ObjectAsset>();
   private activeObjectAssetIds = new Set<string>();
+  private readonly activeActorSpriteIds = new Set<string>();
+  private readonly activeCoreSpriteIds = new Set<string>();
   private solidAssetFrames: string[] = [];
   private tileAssetPhases: string[] = [];
   private tileAssetOrigins: string[] = [];
   private laserAssetTransforms: string[] = [];
   private laserAssetPositions: string[] = [];
+  private doorAssetTransforms: string[] = [];
+  private echoSensorAssetFrames: string[] = [];
+  private solidOutlineRects: string[] = [];
+  private diagnosticsEnabled = false;
+  private lowChurnGraphics = false;
+  private readonly renderEchoes: ActorBody[] = [];
+  private readonly renderView: RenderView = {
+    player: null as unknown as ActorBody,
+    echoes: this.renderEchoes,
+    activePlates: new Set(),
+    openDoors: new Set(),
+    collectedCores: new Set(),
+    blockedLasers: new Set(),
+    crates: new Map(),
+    tick: 0,
+    totalFrames: 0,
+    score: 0,
+    deaths: 0,
+    livesRemaining: 0,
+    dead: false,
+    won: false
+  };
+  private readonly beamRenderRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  private readonly hazardRenderRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   private exitSprite?: Phaser.GameObjects.Image;
   private backgroundImages: Phaser.GameObjects.Image[] = [];
   private cameraTarget?: Phaser.GameObjects.Zone;
@@ -118,6 +168,15 @@ export class GameScene extends Phaser.Scene {
     this._world = world;
   }
 
+  private get structureOutlines(): Phaser.GameObjects.Graphics {
+    if (!this._structureOutlines) throw new Error("GameScene structure outline graphics unavailable");
+    return this._structureOutlines;
+  }
+
+  private set structureOutlines(structureOutlines: Phaser.GameObjects.Graphics) {
+    this._structureOutlines = structureOutlines;
+  }
+
   private get fx(): Phaser.GameObjects.Graphics {
     if (!this._fx) throw new Error("GameScene FX graphics unavailable");
     return this._fx;
@@ -142,11 +201,19 @@ export class GameScene extends Phaser.Scene {
     this.coreSprites.clear();
     this.objectAssets.clear();
     this.activeObjectAssetIds.clear();
+    this.activeActorSpriteIds.clear();
+    this.activeCoreSpriteIds.clear();
     this.solidAssetFrames = [];
     this.tileAssetPhases = [];
     this.tileAssetOrigins = [];
     this.laserAssetTransforms = [];
     this.laserAssetPositions = [];
+    this.doorAssetTransforms = [];
+    this.echoSensorAssetFrames = [];
+    this.solidOutlineRects = [];
+    this.diagnosticsEnabled = this.shouldExposeRenderDiagnostics();
+    this.lowChurnGraphics = this.shouldUseLowChurnGraphics();
+    this.renderEchoes.length = 0;
     this.exitSprite = undefined;
     this.backgroundImages = [];
     this.cameraTarget = undefined;
@@ -162,6 +229,7 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.cameraTarget, true, 0.12, 0.08);
     this.cameras.main.setDeadzone(250, 130);
     this.world = this.add.graphics().setDepth(0);
+    this.structureOutlines = this.add.graphics().setDepth(2);
     this.fx = this.add.graphics().setDepth(30);
     this.keys = this.createKeys();
     this.hud = new Hud({
@@ -382,29 +450,37 @@ export class GameScene extends Phaser.Scene {
     this._simulation = null;
     this._keys = null;
     this._world = null;
+    this._structureOutlines = null;
     this._fx = null;
     this.echoTrails.clear();
     this.actorSprites.clear();
     this.coreSprites.clear();
     this.objectAssets.clear();
     this.activeObjectAssetIds.clear();
+    this.activeActorSpriteIds.clear();
+    this.activeCoreSpriteIds.clear();
     this.solidAssetFrames = [];
     this.tileAssetPhases = [];
     this.tileAssetOrigins = [];
     this.laserAssetTransforms = [];
     this.laserAssetPositions = [];
+    this.doorAssetTransforms = [];
+    this.echoSensorAssetFrames = [];
+    this.solidOutlineRects = [];
+    this.renderEchoes.length = 0;
     this.exitSprite = undefined;
     this.backgroundImages = [];
     this.cameraTarget = undefined;
   };
 
   private renderWorld(): void {
-    const snapshot = this.simulation.snapshot();
+    const snapshot = this.liveRenderView();
     this.cameraTarget?.setPosition(snapshot.player.x + snapshot.player.w / 2, snapshot.player.y + snapshot.player.h / 2);
     this.beginObjectAssetSync();
     this.world.clear();
+    this.structureOutlines.clear();
     this.fx.clear();
-    this.drawBackground();
+    if (!this.lowChurnGraphics) this.drawBackground();
     this.drawSolids();
     this.drawOneWayPlatforms();
     this.drawConveyors();
@@ -423,10 +499,35 @@ export class GameScene extends Phaser.Scene {
     this.drawExit(this.level.exit, snapshot.won);
     this.drawEchoes(snapshot.echoes);
     this.drawActor(snapshot.player, snapshot.dead ? 0xff4f8b : 0x43f7ff, 1);
-    this.drawForegroundText(snapshot.tick);
+    if (!this.lowChurnGraphics) this.drawForegroundText(snapshot.tick);
     this.finishObjectAssetSync();
     this.syncSpriteLayer(snapshot);
     this.exposeRenderDiagnostics(snapshot);
+  }
+
+  private liveRenderView(): RenderView {
+    const simulation = this.simulation;
+    const objectState = simulation.objectState;
+    this.renderEchoes.length = 0;
+    for (const echo of simulation.echoes) {
+      if (echo.alive) this.renderEchoes.push(echo);
+    }
+
+    const view = this.renderView;
+    view.player = simulation.player;
+    view.activePlates = objectState.activePlates;
+    view.openDoors = objectState.openDoors;
+    view.collectedCores = objectState.collectedCores;
+    view.blockedLasers = objectState.blockedLasers;
+    view.crates = objectState.crates;
+    view.tick = simulation.tick;
+    view.totalFrames = simulation.totalFrames;
+    view.score = simulation.score;
+    view.deaths = simulation.deaths;
+    view.livesRemaining = simulation.livesRemaining();
+    view.dead = simulation.dead;
+    view.won = simulation.won;
+    return view;
   }
 
   private drawBackground(): void {
@@ -506,9 +607,8 @@ export class GameScene extends Phaser.Scene {
 
   private drawSolids(): void {
     for (const solid of this.level.solids) {
-      const color = solid.tone === "dark" ? 0x111827 : solid.tone === "warning" ? 0x473b18 : 0x17243a;
       const frame = this.solidFrame(solid);
-      this.solidAssetFrames.push(`${solid.id}:${frame}`);
+      if (this.diagnosticsEnabled) this.solidAssetFrames.push(`${solid.id}:${frame}`);
       this.syncTileAsset(
         `solid:${solid.id}`,
         frame,
@@ -517,9 +617,7 @@ export class GameScene extends Phaser.Scene {
         0.96,
         0.42
       );
-      this.drawNeonRect(solid, color, 0x43f7ff, 0.34);
-      this.world.lineStyle(1, 0xffffff, 0.06);
-      this.world.lineBetween(solid.x, solid.y + 4, solid.x + solid.w, solid.y + 4);
+      this.drawSolidReadabilityOutline(solid);
     }
   }
 
@@ -527,6 +625,7 @@ export class GameScene extends Phaser.Scene {
     for (const platform of this.level.platforms || []) {
       const rect = platformRectAt(platform, tick);
       this.syncPlatformAsset(platform, rect);
+      if (this.lowChurnGraphics) continue;
       this.world.lineStyle(1, 0xffe35a, 0.18);
       if (platform.axis === "y") {
         this.world.lineBetween(platform.x + platform.w / 2, platform.y, platform.x + platform.w / 2, platform.y + platform.distance);
@@ -539,6 +638,7 @@ export class GameScene extends Phaser.Scene {
   private drawOneWayPlatforms(): void {
     for (const platform of this.level.oneWays || []) {
       this.syncTileAsset(`one-way:${platform.id}`, OBJECT_FRAME.oneWay, platform, 3, 0.88, 0.42);
+      if (this.lowChurnGraphics) continue;
       this.world.fillStyle(0x123247, 0.58);
       this.world.fillRect(platform.x, platform.y, platform.w, platform.h);
       this.world.lineStyle(2, 0x50ffc2, 0.78);
@@ -554,6 +654,7 @@ export class GameScene extends Phaser.Scene {
     for (const conveyor of this.level.conveyors || []) {
       const direction = conveyor.direction >= 0 ? 1 : -1;
       this.syncTileAsset(`conveyor:${conveyor.id}`, OBJECT_FRAME.conveyor, conveyor, 3, 0.95, 0.42, this.simulation.tick * direction * -3);
+      if (this.lowChurnGraphics) continue;
       this.drawNeonRect(conveyor, 0x15263a, 0xffe35a, 0.62);
       this.world.lineStyle(2, 0xffe35a, 0.72);
       for (let x = conveyor.x + 12; x < conveyor.x + conveyor.w - 8; x += 28) {
@@ -584,7 +685,7 @@ export class GameScene extends Phaser.Scene {
   private drawDoors(openDoors: Set<string>): void {
     for (const door of this.level.doors || []) {
       const open = openDoors.has(door.id);
-      this.syncTileAsset(`door:${door.id}`, open ? OBJECT_FRAME.doorOpen : OBJECT_FRAME.doorClosed, door, 4, open ? 0.54 : 0.98, 0.5);
+      this.syncDoorAsset(door, open);
     }
   }
 
@@ -623,7 +724,20 @@ export class GameScene extends Phaser.Scene {
   private drawEchoSensors(activePlates: Set<string>): void {
     for (const sensor of this.level.echoSensors || []) {
       const active = activePlates.has(sensor.id);
-      this.syncTileAsset(`echo-sensor:${sensor.id}`, active ? OBJECT_FRAME.doorOpen : OBJECT_FRAME.block, sensor, 3, active ? 0.62 : 0.42, 0.54);
+      const frame = active ? OBJECT_FRAME.plateActive : OBJECT_FRAME.block;
+      this.syncImageAsset(
+        `echo-sensor:${sensor.id}`,
+        frame,
+        sensor.x + sensor.w / 2,
+        sensor.y + sensor.h / 2,
+        Math.max(42, sensor.w),
+        Math.max(42, sensor.h),
+        3,
+        active ? 0.9 : 0.48
+      );
+      if (this.diagnosticsEnabled) {
+        this.echoSensorAssetFrames.push(`echo-sensor:${sensor.id}:${frame}:${active ? "active" : "inactive"}`);
+      }
     }
   }
 
@@ -679,6 +793,10 @@ export class GameScene extends Phaser.Scene {
         6,
         active ? 0.94 : 0.42
       );
+      if (this.lowChurnGraphics) {
+        if (active) this.drawLaserCore(rect, blockedLasers.has(laser.id));
+        continue;
+      }
       this.world.lineStyle(1, 0xff4f8b, 0.22);
       if (laser.axis === "x") {
         this.world.lineBetween(laser.x, laser.y + laser.h / 2, laser.x + laser.distance, laser.y + laser.h / 2);
@@ -691,7 +809,11 @@ export class GameScene extends Phaser.Scene {
 
   private drawHazards(): void {
     for (const hazard of this.level.hazards || []) {
-      this.syncTileAsset(`hazard:${hazard.id}`, OBJECT_FRAME.warning, { ...hazard, y: hazard.y - 4, h: hazard.h + 8 }, 2, 0.74, 0.38);
+      this.hazardRenderRect.x = hazard.x;
+      this.hazardRenderRect.y = hazard.y - 4;
+      this.hazardRenderRect.w = hazard.w;
+      this.hazardRenderRect.h = hazard.h + 8;
+      this.syncTileAsset(`hazard:${hazard.id}`, OBJECT_FRAME.warning, this.hazardRenderRect, 2, 0.74, 0.38);
     }
   }
 
@@ -710,6 +832,7 @@ export class GameScene extends Phaser.Scene {
         7,
         active ? 0.98 : 0.72
       );
+      if (this.lowChurnGraphics) continue;
       this.world.lineStyle(1, active ? 0xff4f8b : 0x43f7ff, active ? 0.2 : 0.16);
       if (drone.axis === "x") {
         this.world.lineBetween(drone.x, drone.y + drone.h / 2, drone.x + drone.distance, drone.y + drone.h / 2);
@@ -765,8 +888,24 @@ export class GameScene extends Phaser.Scene {
     return index % 2 === 0 ? 0xbd5cff : 0x50ffc2;
   }
 
-  private exposeRenderDiagnostics(snapshot: SimulationSnapshot): void {
-    if (!import.meta.env.DEV) return;
+  private shouldExposeRenderDiagnostics(): boolean {
+    if (!import.meta.env.DEV) return false;
+    const diagnostics = new URLSearchParams(window.location.search).get("diagnostics");
+    if (diagnostics === "0") return false;
+    if (diagnostics === "1") return true;
+    return typeof navigator !== "undefined" && navigator.webdriver;
+  }
+
+  private shouldUseLowChurnGraphics(): boolean {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("fullGraphics") === "1") return false;
+    if (params.get("lowChurnGraphics") === "1") return true;
+    if (this.diagnosticsEnabled) return false;
+    return false;
+  }
+
+  private exposeRenderDiagnostics(snapshot: RenderView): void {
+    if (!this.diagnosticsEnabled) return;
     document.documentElement.dataset.echoShiftVisibleEchoTints = snapshot.echoes
       .map((echo) => `${echo.id}:${this.echoTint(echo).toString(16)}`)
       .join(",");
@@ -779,6 +918,9 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftTileAssetOrigins = this.tileAssetOrigins.join("|");
     document.documentElement.dataset.echoShiftLaserAssetTransforms = this.laserAssetTransforms.join("|");
     document.documentElement.dataset.echoShiftLaserAssetPositions = this.laserAssetPositions.join("|");
+    document.documentElement.dataset.echoShiftDoorAssetTransforms = this.doorAssetTransforms.join("|");
+    document.documentElement.dataset.echoShiftEchoSensorAssetFrames = this.echoSensorAssetFrames.join("|");
+    document.documentElement.dataset.echoShiftSolidOutlineRects = this.solidOutlineRects.join("|");
   }
 
   private drawActor(actor: ActorBody, color: number, alpha: number): void {
@@ -810,16 +952,17 @@ export class GameScene extends Phaser.Scene {
     this.drawDiamond(centerX, actor.y + 24, 4, color, alpha * 0.9, 0xffffff, alpha * 0.3);
   }
 
-  private syncSpriteLayer(snapshot: SimulationSnapshot): void {
+  private syncSpriteLayer(snapshot: RenderView): void {
     this.syncActorSprites(snapshot);
     this.syncCoreSprites(snapshot);
     this.syncExitSprite(snapshot);
   }
 
-  private syncActorSprites(snapshot: SimulationSnapshot): void {
+  private syncActorSprites(snapshot: RenderView): void {
     if (!this.textures.exists("time-runner")) return;
 
-    const activeIds = new Set<string>();
+    const activeIds = this.activeActorSpriteIds;
+    activeIds.clear();
     this.syncActorSprite(snapshot.player, snapshot.dead, 0x43f7ff, 1, snapshot.tick);
     activeIds.add(snapshot.player.id);
 
@@ -865,9 +1008,10 @@ export class GameScene extends Phaser.Scene {
     return 0;
   }
 
-  private syncCoreSprites(snapshot: SimulationSnapshot): void {
+  private syncCoreSprites(snapshot: RenderView): void {
     if (!this.textures.exists("time-effects")) return;
-    const activeIds = new Set<string>();
+    const activeIds = this.activeCoreSpriteIds;
+    activeIds.clear();
 
     for (const core of this.level.cores || []) {
       if (snapshot.collectedCores.has(core.id)) continue;
@@ -891,7 +1035,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private syncExitSprite(snapshot: SimulationSnapshot): void {
+  private syncExitSprite(snapshot: RenderView): void {
     if (!this.textures.exists("time-effects")) return;
     const center = rectCenter(this.level.exit);
     if (!this.exitSprite) {
@@ -922,13 +1066,117 @@ export class GameScene extends Phaser.Scene {
     this.world.fillRect(rect.x + 3, rect.y + 3, Math.max(0, rect.w - 6), 3);
   }
 
+  private drawSolidReadabilityOutline(solid: Solid): void {
+    const segments = this.solidOutlineSegments(solid);
+    if (segments.length === 0) return;
+    const outlines = this.structureOutlines;
+    outlines.lineStyle(1, 0x43f7ff, solid.tone === "glass" ? 0.52 : 0.4);
+    for (const segment of segments) {
+      this.drawSolidOutlineSegment(solid, segment);
+    }
+    outlines.lineStyle(1, 0x9cfbff, 0.2);
+    for (const segment of segments) {
+      if (segment.side !== "top" || segment.to - segment.from <= 4) continue;
+      outlines.lineBetween(segment.from + 2, solid.y + 3, segment.to - 2, solid.y + 3);
+    }
+    if (this.diagnosticsEnabled) {
+      const sides = segments.map((segment) => `${segment.side}:${Math.round(segment.from)}-${Math.round(segment.to)}`).join(";");
+      this.solidOutlineRects.push(`${solid.id}:${Math.round(solid.x)},${Math.round(solid.y)}:${Math.round(solid.w)}x${Math.round(solid.h)}:43f7ff:${Math.round(outlines.depth)}:${sides}`);
+    }
+  }
+
+  private solidOutlineSegments(solid: Solid): SolidOutlineSegment[] {
+    const width = Math.max(0, solid.w);
+    const height = Math.max(0, solid.h);
+    if (width <= 0 || height <= 0) return [];
+    const frame = this.solidFrame(solid);
+    const segments: Record<SolidOutlineSide, Array<{ from: number; to: number }>> = {
+      top: [{ from: solid.x, to: solid.x + solid.w }],
+      bottom: [{ from: solid.x, to: solid.x + solid.w }],
+      left: [{ from: solid.y, to: solid.y + solid.h }],
+      right: [{ from: solid.y, to: solid.y + solid.h }]
+    };
+
+    for (const neighbor of this.level.solids) {
+      if (neighbor === solid || this.solidFrame(neighbor) !== frame) continue;
+      const horizontalOverlap = this.overlapSpan(solid.x, solid.x + solid.w, neighbor.x, neighbor.x + neighbor.w);
+      const verticalOverlap = this.overlapSpan(solid.y, solid.y + solid.h, neighbor.y, neighbor.y + neighbor.h);
+      if (horizontalOverlap && this.sameCoordinate(neighbor.y + neighbor.h, solid.y)) {
+        segments.top = this.subtractSolidOutlineSpan(segments.top, horizontalOverlap.from, horizontalOverlap.to);
+      }
+      if (horizontalOverlap && this.sameCoordinate(neighbor.y, solid.y + solid.h)) {
+        segments.bottom = this.subtractSolidOutlineSpan(segments.bottom, horizontalOverlap.from, horizontalOverlap.to);
+      }
+      if (verticalOverlap && this.sameCoordinate(neighbor.x + neighbor.w, solid.x)) {
+        segments.left = this.subtractSolidOutlineSpan(segments.left, verticalOverlap.from, verticalOverlap.to);
+      }
+      if (verticalOverlap && this.sameCoordinate(neighbor.x, solid.x + solid.w)) {
+        segments.right = this.subtractSolidOutlineSpan(segments.right, verticalOverlap.from, verticalOverlap.to);
+      }
+    }
+
+    return (["top", "bottom", "left", "right"] as SolidOutlineSide[]).flatMap((side) =>
+      segments[side].map((segment) => ({ side, ...segment }))
+    );
+  }
+
+  private drawSolidOutlineSegment(solid: Solid, segment: SolidOutlineSegment): void {
+    const outlines = this.structureOutlines;
+    if (segment.side === "top") {
+      outlines.lineBetween(segment.from + 0.5, solid.y + 0.5, segment.to - 0.5, solid.y + 0.5);
+      return;
+    }
+    if (segment.side === "bottom") {
+      outlines.lineBetween(segment.from + 0.5, solid.y + solid.h - 0.5, segment.to - 0.5, solid.y + solid.h - 0.5);
+      return;
+    }
+    if (segment.side === "left") {
+      outlines.lineBetween(solid.x + 0.5, segment.from + 0.5, solid.x + 0.5, segment.to - 0.5);
+      return;
+    }
+    outlines.lineBetween(solid.x + solid.w - 0.5, segment.from + 0.5, solid.x + solid.w - 0.5, segment.to - 0.5);
+  }
+
+  private overlapSpan(aFrom: number, aTo: number, bFrom: number, bTo: number): { from: number; to: number } | null {
+    const from = Math.max(aFrom, bFrom);
+    const to = Math.min(aTo, bTo);
+    return to - from > 0.01 ? { from, to } : null;
+  }
+
+  private subtractSolidOutlineSpan(
+    segments: Array<{ from: number; to: number }>,
+    from: number,
+    to: number
+  ): Array<{ from: number; to: number }> {
+    const next: Array<{ from: number; to: number }> = [];
+    for (const segment of segments) {
+      const overlapFrom = Math.max(segment.from, from);
+      const overlapTo = Math.min(segment.to, to);
+      if (overlapTo - overlapFrom <= 0.01) {
+        next.push(segment);
+        continue;
+      }
+      if (overlapFrom - segment.from > 0.01) next.push({ from: segment.from, to: overlapFrom });
+      if (segment.to - overlapTo > 0.01) next.push({ from: overlapTo, to: segment.to });
+    }
+    return next;
+  }
+
+  private sameCoordinate(a: number, b: number): boolean {
+    return Math.abs(a - b) <= 0.01;
+  }
+
   private beginObjectAssetSync(): void {
     this.activeObjectAssetIds.clear();
-    this.solidAssetFrames = [];
-    this.tileAssetPhases = [];
-    this.tileAssetOrigins = [];
-    this.laserAssetTransforms = [];
-    this.laserAssetPositions = [];
+    if (!this.diagnosticsEnabled) return;
+    this.solidAssetFrames.length = 0;
+    this.tileAssetPhases.length = 0;
+    this.tileAssetOrigins.length = 0;
+    this.laserAssetTransforms.length = 0;
+    this.laserAssetPositions.length = 0;
+    this.doorAssetTransforms.length = 0;
+    this.echoSensorAssetFrames.length = 0;
+    this.solidOutlineRects.length = 0;
   }
 
   private finishObjectAssetSync(): void {
@@ -962,9 +1210,34 @@ export class GameScene extends Phaser.Scene {
     asset.tilePositionX = tileOrigin.x / Math.max(tileScale, 0.01) + tileOffsetX;
     asset.tilePositionY = tileOrigin.y / Math.max(tileScale, 0.01);
     this.activeObjectAssetIds.add(id);
-    if (id.startsWith("platform:") || id.startsWith("moving-laser:")) {
+    if (this.diagnosticsEnabled && (id.startsWith("platform:") || id.startsWith("moving-laser:"))) {
       this.tileAssetPhases.push(`${id}:${Math.round(asset.tilePositionX)},${Math.round(asset.tilePositionY)}`);
       this.tileAssetOrigins.push(`${id}:${Math.round(tileOrigin.x)}:${Math.round(tileOrigin.y)}`);
+    }
+  }
+
+  private syncDoorAsset(door: Door, open: boolean): void {
+    if (!this.textures.exists(OBJECT_ATLAS_KEY) || door.w <= 0 || door.h <= 0) return;
+    const frame = open ? OBJECT_FRAME.doorOpen : OBJECT_FRAME.doorClosed;
+    const asset = this.assetFor(`door:${door.id}`, "image", frame) as Phaser.GameObjects.Image;
+    const width = Math.max(34, door.w * 1.72);
+    const height = Math.max(44, door.h);
+    asset
+      .setVisible(true)
+      .setDepth(4)
+      .setAlpha(open ? 0.76 : 0.98)
+      .setOrigin(0.5, 0)
+      .setPosition(door.x + door.w / 2, door.y)
+      .setRotation(0)
+      .setFrame(frame)
+      .setDisplaySize(width, height);
+    this.activeObjectAssetIds.add(`door:${door.id}`);
+    if (this.diagnosticsEnabled) {
+      const left = asset.x - asset.displayWidth * asset.originX;
+      const top = asset.y - asset.displayHeight * asset.originY;
+      this.doorAssetTransforms.push(
+        `door:${door.id}:${frame}:logic:${Math.round(door.x)},${Math.round(door.y)},${Math.round(door.w)},${Math.round(door.h)}:pos:${Math.round(asset.x)},${Math.round(asset.y)}:origin:${asset.originX},${asset.originY}:box:${Math.round(left)},${Math.round(top)},${Math.round(asset.displayWidth)},${Math.round(asset.displayHeight)}`
+      );
     }
   }
 
@@ -1028,8 +1301,10 @@ export class GameScene extends Phaser.Scene {
     this.activeObjectAssetIds.add(id);
 
     const tileScale = 0.44;
-    this.tileAssetPhases.push(`${id}:${Math.round(platform.x / tileScale)},${Math.round(platform.y / tileScale)}`);
-    this.tileAssetOrigins.push(`${id}:${Math.round(platform.x)}:${Math.round(platform.y)}`);
+    if (this.diagnosticsEnabled) {
+      this.tileAssetPhases.push(`${id}:${Math.round(platform.x / tileScale)},${Math.round(platform.y / tileScale)}`);
+      this.tileAssetOrigins.push(`${id}:${Math.round(platform.x)}:${Math.round(platform.y)}`);
+    }
   }
 
   private syncLaserAsset(id: string, frame: number, rect: Rect, depth: number, alpha: number): void {
@@ -1046,8 +1321,10 @@ export class GameScene extends Phaser.Scene {
       .setFrame(frame)
       .setDisplaySize(horizontal ? rect.w : rect.h, horizontal ? rect.h : rect.w);
     this.activeObjectAssetIds.add(id);
-    this.laserAssetTransforms.push(`${id}:${horizontal ? "h" : "v"}:${Math.round(rect.w)}x${Math.round(rect.h)}`);
-    this.laserAssetPositions.push(`${id}:${Math.round(rect.x + rect.w / 2)}:${Math.round(rect.y + rect.h / 2)}`);
+    if (this.diagnosticsEnabled) {
+      this.laserAssetTransforms.push(`${id}:${horizontal ? "h" : "v"}:${Math.round(rect.w)}x${Math.round(rect.h)}`);
+      this.laserAssetPositions.push(`${id}:${Math.round(rect.x + rect.w / 2)}:${Math.round(rect.y + rect.h / 2)}`);
+    }
   }
 
   private assetFor(id: string, kind: "tile" | "image", frame: number): ObjectAsset {
@@ -1070,10 +1347,18 @@ export class GameScene extends Phaser.Scene {
     const horizontal = rect.w >= rect.h;
     if (horizontal) {
       const h = Math.max(rect.h, 10);
-      return { x: rect.x, y: rect.y + rect.h / 2 - h / 2, w: rect.w, h };
+      this.beamRenderRect.x = rect.x;
+      this.beamRenderRect.y = rect.y + rect.h / 2 - h / 2;
+      this.beamRenderRect.w = rect.w;
+      this.beamRenderRect.h = h;
+      return this.beamRenderRect;
     }
     const w = Math.max(rect.w, 10);
-    return { x: rect.x + rect.w / 2 - w / 2, y: rect.y, w, h: rect.h };
+    this.beamRenderRect.x = rect.x + rect.w / 2 - w / 2;
+    this.beamRenderRect.y = rect.y;
+    this.beamRenderRect.w = w;
+    this.beamRenderRect.h = rect.h;
+    return this.beamRenderRect;
   }
 
   private drawLaserCore(rect: Rect, blocked: boolean): void {
@@ -1131,10 +1416,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateTrail(actor: ActorBody): void {
-    const trail = this.echoTrails.get(actor.id) || [];
-    trail.push({ x: actor.x, y: actor.y });
-    while (trail.length > 16) trail.shift();
-    this.echoTrails.set(actor.id, trail);
+    let trail = this.echoTrails.get(actor.id);
+    if (!trail) {
+      trail = [];
+      this.echoTrails.set(actor.id, trail);
+    }
+    if (trail.length < 16) {
+      trail.push({ x: actor.x, y: actor.y });
+      return;
+    }
+    const point = trail.shift();
+    if (!point) return;
+    point.x = actor.x;
+    point.y = actor.y;
+    trail.push(point);
   }
 
   private spawnBurst(origin: { x: number; y: number }, color: number): void {

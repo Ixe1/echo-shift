@@ -8,8 +8,10 @@ import { LevelSelectScene } from "./scenes/LevelSelectScene";
 import { MenuScene } from "./scenes/MenuScene";
 import { audio } from "./game/audio";
 
+const params = new URLSearchParams(window.location.search);
+
 const config: Phaser.Types.Core.GameConfig = {
-  type: Phaser.CANVAS,
+  type: Phaser.WEBGL,
   parent: "game-root",
   backgroundColor: "#05070d",
   pixelArt: true,
@@ -27,7 +29,6 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [BootScene, MenuScene, LevelSelectScene, GameScene]
 };
 
-const params = new URLSearchParams(window.location.search);
 let game: Phaser.Game | null = null;
 
 if (params.get("editor") === "1") {
