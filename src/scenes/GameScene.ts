@@ -224,10 +224,11 @@ export class GameScene extends Phaser.Scene {
     audio.playMusic(soundtrackForLevel(this.level, this.levelIndex).key);
     this.cameras.main.setBounds(this.level.bounds.x, this.level.bounds.y, this.level.bounds.w, this.level.bounds.h);
     this.cameras.main.setBackgroundColor("#05070d");
+    this.configureCameraFrame();
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.configureCameraFrame, this);
     this.createBackgroundImages();
     this.cameraTarget = this.add.zone(this.level.start.x, this.level.start.y, 1, 1);
     this.cameras.main.startFollow(this.cameraTarget, true, 0.12, 0.08);
-    this.cameras.main.setDeadzone(250, 130);
     this.world = this.add.graphics().setDepth(0);
     this.structureOutlines = this.add.graphics().setDepth(2);
     this.fx = this.add.graphics().setDepth(30);
@@ -363,6 +364,7 @@ export class GameScene extends Phaser.Scene {
     this.pausedByHud = false;
     this.retryRequired = false;
     this.virtualInput = { left: false, right: false, jump: false };
+    audio.resumeMusic();
     this.simulation.resetLevel();
     this.playerCastUntil = 0;
     this.echoTrails.clear();
@@ -373,8 +375,13 @@ export class GameScene extends Phaser.Scene {
   private togglePause(force?: boolean): void {
     if (this.completeHandled || this.retryRequired) return;
     this.pausedByHud = force ?? !this.pausedByHud;
-    if (this.pausedByHud) this.hud.showPause(this.level.name);
-    else this.hud.hideModal();
+    if (this.pausedByHud) {
+      this.hud.showPause(this.level.name);
+      audio.pauseMusic();
+    } else {
+      this.hud.hideModal();
+      audio.resumeMusic();
+    }
     audio.play("select");
   }
 
@@ -434,6 +441,16 @@ export class GameScene extends Phaser.Scene {
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   }
 
+  private configureCameraFrame = (): void => {
+    const camera = this.cameras.main;
+    const zoom = Math.max(0.1, this.scale.height / this.level.bounds.h);
+    camera.setZoom(zoom);
+    camera.setDeadzone(
+      Math.min(340, Math.max(190, this.scale.width * 0.24)),
+      Math.min(170, Math.max(96, this.scale.height * 0.2))
+    );
+  };
+
   private registerSceneCleanup(): void {
     if (this.sceneCleanupRegistered) return;
     this.sceneCleanupRegistered = true;
@@ -444,6 +461,7 @@ export class GameScene extends Phaser.Scene {
   private shutdownScene = (): void => {
     this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.shutdownScene);
     this.events.off(Phaser.Scenes.Events.DESTROY, this.shutdownScene);
+    this.scale.off(Phaser.Scale.Events.RESIZE, this.configureCameraFrame, this);
     this.sceneCleanupRegistered = false;
     this._hud?.destroy();
     this._hud = null;

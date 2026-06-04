@@ -37,20 +37,16 @@ export class Hud {
     this.root.innerHTML = `
       <div class="hud">
         <div class="hud-top">
-          <div class="hud-scoreboard">
+          <div class="hud-readout">
             <span class="hud-level" data-level></span>
-            <div class="hud-metrics">
-              <div class="hud-metric">
-                <span class="hud-label">Score</span>
-                <span class="hud-value accent" data-score></span>
-              </div>
-              <div class="hud-metric">
+            <div class="hud-stat-stack">
+              <div class="hud-stat">
                 <span class="hud-label">Time</span>
                 <span class="hud-value" data-time></span>
               </div>
-              <div class="hud-metric">
-                <span class="hud-label">Lives</span>
-                <span class="hud-value" data-lives></span>
+              <div class="hud-stat">
+                <span class="hud-label">Score</span>
+                <span class="hud-value accent" data-score></span>
               </div>
             </div>
           </div>
@@ -68,6 +64,10 @@ export class Hud {
           <div class="command-row">
             <span class="command-chip" data-status>Timeline stable</span>
           </div>
+        </div>
+        <div class="hud-lives" aria-label="Lives">
+          <span class="hud-lives-label">Lives</span>
+          <span class="hud-lives-value" data-lives></span>
         </div>
         <div class="touch-controls" aria-label="Touch controls">
           <div class="touch-cluster">

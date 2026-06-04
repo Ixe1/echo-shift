@@ -24,6 +24,7 @@ export class SynthAudio {
   private musicPlayAttempt = 0;
   private fadeToken = 0;
   private musicMuted = false;
+  private musicPaused = false;
   private unlockListenersInstalled = false;
   private readonly musicVolume = 0.28;
   private readonly maxCachedMusicElements = 3;
@@ -39,10 +40,10 @@ export class SynthAudio {
     if (context) {
       void context
         .resume()
-        .then(() => this.markAudioState(context.state))
+        .then(() => this.markContextState(context.state))
         .catch(() => this.markAudioState("blocked"));
     }
-    this.retryMusic();
+    if (!this.musicPaused) this.retryMusic();
   }
 
   play(name: ToneName): void {
@@ -114,10 +115,11 @@ export class SynthAudio {
 
   playMusic(key: SoundtrackKey, options: { restart?: boolean } = {}): void {
     this.installUnlockListeners();
+    this.musicPaused = false;
     if (this.context) {
       void this.context
         .resume()
-        .then(() => this.markAudioState(this.context?.state || "running"))
+        .then(() => this.markContextState(this.context?.state || "running"))
         .catch(() => this.markAudioState("blocked"));
     }
     this.markMusicKey(key);
@@ -149,9 +151,24 @@ export class SynthAudio {
     if (this.music) this.applyMusicVolume(this.music);
   }
 
+  pauseMusic(): void {
+    if (!this.music) return;
+    this.musicPaused = true;
+    this.musicPlayAttempt += 1;
+    this.music.pause();
+    this.markAudioState("paused");
+  }
+
+  resumeMusic(): void {
+    if (!this.musicPaused) return;
+    this.musicPaused = false;
+    this.resume();
+  }
+
   stopMusic(): void {
     this.fadeToken += 1;
     this.musicPlayAttempt += 1;
+    this.musicPaused = false;
     const currentKey = this.musicKey;
     if (this.music) this.unloadMusicElement(this.music);
     if (currentKey) this.musicCache.delete(currentKey);
@@ -165,6 +182,7 @@ export class SynthAudio {
   dispose(): void {
     this.fadeToken += 1;
     this.musicPlayAttempt += 1;
+    this.musicPaused = false;
     this.music = null;
     this.musicKey = null;
     for (const element of this.musicCache.values()) {
@@ -215,7 +233,7 @@ export class SynthAudio {
   }
 
   private retryMusic(): void {
-    if (this.music) this.playMusicElement(this.music);
+    if (this.music && !this.musicPaused) this.playMusicElement(this.music);
   }
 
   private playMusicElement(element: HTMLAudioElement): void {
@@ -252,6 +270,10 @@ export class SynthAudio {
 
   private markMusicKey(key: SoundtrackKey): void {
     if (import.meta.env.DEV && typeof document !== "undefined") document.documentElement.dataset.echoShiftMusicKey = key;
+  }
+
+  private markContextState(state: string): void {
+    this.markAudioState(this.musicPaused && state === "running" ? "paused" : state);
   }
 
   private markAudioState(state: string): void {
