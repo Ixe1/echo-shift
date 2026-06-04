@@ -368,6 +368,7 @@ try {
   const { RoomSimulation } = await server.ssrLoadModule("/src/game/state.ts");
   const { makeActor } = await server.ssrLoadModule("/src/game/player.ts");
   const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
+  const { doorRequiredCoreIds, isMajorCore } = await server.ssrLoadModule("/src/game/objects.ts");
   const { EDITOR_DRAFT_STORAGE_KEY, readEditorDraftSnapshot } = await server.ssrLoadModule("/src/data/editorDraft.ts");
   const { getBestScores, isBetterLevelScore, recordLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
   const { soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
@@ -403,6 +404,9 @@ try {
   const requiredCores = levels.flatMap((level) => (level.cores || []).filter((core) => requiredCoreIds.has(core.id)));
   assert(requiredCores.length > 0, "Expected handcrafted levels to contain door-required cores");
   assert(requiredCores.every((core) => core.size === "large"), `Expected door-required cores to use large visuals: ${JSON.stringify(requiredCores)}`);
+  const draftRequiredCoreIds = doorRequiredCoreIds([{ id: "draft-door", x: 0, y: 0, w: 10, h: 10, requiresCore: "draft-core" }]);
+  assert(isMajorCore({ id: "draft-core", x: 0, y: 0, w: 10, h: 10 }, draftRequiredCoreIds), "Door-required draft cores should use major visuals");
+  assert(!isMajorCore({ id: "loose-core", x: 0, y: 0, w: 10, h: 10 }, draftRequiredCoreIds), "Unlinked draft cores should stay small by default");
   assert(Boolean(soundtracks.menu), "Expected a main menu soundtrack");
   assert(Boolean(levelBackgrounds["time-lab-prototype"]), "Expected prototype level background");
   assert(Boolean(levelBackgrounds["level-1-time-lab-no-portals"]), "Expected Level 1 no-portal background");
@@ -1268,6 +1272,7 @@ try {
           "legacy-progress-replacement",
           "echo-plate-door",
           "core-door",
+          "core-visual-contract",
           "multi-core-score",
           "echo-core-origin",
           "laser-disable-vaporization",

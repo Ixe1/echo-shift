@@ -233,6 +233,16 @@ const collectBlockedLasers = (lasers: Laser[], crates: Rect[], activePlates: Set
   return blocked;
 };
 
+export const doorRequiredCoreIds = (doors: Door[] = []): Set<string> => {
+  const ids = new Set<string>();
+  for (const door of doors) {
+    if (door.requiresCore) ids.add(door.requiresCore);
+  }
+  return ids;
+};
+
+export const isMajorCore = (core: Core, requiredCoreIds: Set<string> = new Set()): boolean => core.size === "large" || requiredCoreIds.has(core.id);
+
 const setChanged = (a: Set<string>, b: Set<string>): boolean => {
   if (a.size !== b.size) return true;
   for (const item of a) {

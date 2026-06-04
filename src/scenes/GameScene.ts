@@ -5,7 +5,7 @@ import { audio } from "../game/audio";
 import { backgroundAmbienceForLevel, backgroundAmbienceIsActive, type NormalizedBackgroundAmbience } from "../game/backgroundAmbience";
 import { backgroundForLevel } from "../game/backgrounds";
 import { rectCenter } from "../game/geometry";
-import { droneIsActive, droneRectAt, laserIsActive, movingLaserRectAt } from "../game/objects";
+import { doorRequiredCoreIds, droneIsActive, droneRectAt, isMajorCore, laserIsActive, movingLaserRectAt } from "../game/objects";
 import { platformRectAt } from "../game/player";
 import { recordLevelScore } from "../game/progress";
 import { legacySolidSprite } from "../game/solidSprites";
@@ -111,8 +111,10 @@ export class GameScene extends Phaser.Scene {
   private echoSensorAssetFrames: string[] = [];
   private staticSolidOutlineRects: string[] = [];
   private lastCameraSample = "";
+  private lastCameraWorldView = "";
   private backgroundTextureFilter = "";
   private objectAtlasTextureFilter = "";
+  private requiredCoreIds = new Set<string>();
   private diagnosticsEnabled = false;
   private lowChurnGraphics = false;
   private perfOverlayEnabled = false;
@@ -251,8 +253,10 @@ export class GameScene extends Phaser.Scene {
     this.echoSensorAssetFrames = [];
     this.staticSolidOutlineRects = [];
     this.lastCameraSample = "";
+    this.lastCameraWorldView = "";
     this.backgroundTextureFilter = "";
     this.objectAtlasTextureFilter = "";
+    this.requiredCoreIds = doorRequiredCoreIds(this.level.doors || []);
     this.diagnosticsEnabled = this.shouldExposeRenderDiagnostics();
     this.lowChurnGraphics = this.shouldUseLowChurnGraphics();
     this.perfOverlayEnabled = this.shouldShowPerfOverlay();
@@ -520,6 +524,8 @@ export class GameScene extends Phaser.Scene {
     const camera = this.cameras.main;
     if (this.diagnosticsEnabled) {
       this.lastCameraSample = `${camera.zoom.toFixed(4)}:${camera.scrollX.toFixed(2)},${camera.scrollY.toFixed(2)}`;
+      const { x, y, width, height } = camera.worldView;
+      this.lastCameraWorldView = `${x.toFixed(2)},${y.toFixed(2)},${width.toFixed(2)},${height.toFixed(2)}`;
     }
   };
 
@@ -566,8 +572,10 @@ export class GameScene extends Phaser.Scene {
     this.echoSensorAssetFrames = [];
     this.staticSolidOutlineRects = [];
     this.lastCameraSample = "";
+    this.lastCameraWorldView = "";
     this.backgroundTextureFilter = "";
     this.objectAtlasTextureFilter = "";
+    this.requiredCoreIds = new Set();
     this.perfSamples = [];
     this.perfLastUpdate = 0;
     this.renderEchoes.length = 0;
@@ -808,17 +816,33 @@ export class GameScene extends Phaser.Scene {
     for (const solid of this.level.solids) {
       const frame = this.solidFrame(solid);
       this.staticSolidAssetFrames.push(`${solid.id}:${frame}`);
-      this.syncTileAsset(
-        `solid:${solid.id}`,
-        frame,
-        solid,
-        1,
-        0.96,
-        0.42
-      );
+      this.syncStaticSolidAsset(solid, frame);
       this.markStaticObjectAsset(`solid:${solid.id}`);
       this.drawSolidReadabilityOutline(solid);
     }
+  }
+
+  private syncStaticSolidAsset(solid: Solid, frame: number): void {
+    if (!this.textures.exists(OBJECT_ATLAS_KEY) || solid.w <= 0 || solid.h <= 0) return;
+    const asset = this.assetFor(`solid:${solid.id}`, "image", frame) as Phaser.GameObjects.Image;
+    asset
+      .setVisible(true)
+      .setDepth(1)
+      .setAlpha(1)
+      .setOrigin(0.5, 0.5)
+      .setPosition(solid.x + solid.w / 2, solid.y + solid.h / 2)
+      .setRotation(0)
+      .setFrame(frame)
+      .setDisplaySize(solid.w, solid.h)
+      .setTintFill(this.staticSolidTint(frame));
+    this.activeObjectAssetIds.add(`solid:${solid.id}`);
+  }
+
+  private staticSolidTint(frame: number): number {
+    if (frame === OBJECT_FRAME.floor) return 0x1b3441;
+    if (frame === OBJECT_FRAME.wall) return 0x163344;
+    if (frame === OBJECT_FRAME.warning) return 0x5b2e48;
+    return 0x1a2733;
   }
 
   private syncStaticOneWayPlatforms(): void {
@@ -1223,6 +1247,7 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftSolidOutlineRects = this.staticSolidOutlineRects.join("|");
     document.documentElement.dataset.echoShiftCameraSample = this.lastCameraSample;
     document.documentElement.dataset.echoShiftCameraSnap = this.lastCameraSample;
+    document.documentElement.dataset.echoShiftCameraWorldView = this.lastCameraWorldView;
     document.documentElement.dataset.echoShiftBackgroundFilter = this.backgroundTextureFilter;
     document.documentElement.dataset.echoShiftObjectAtlasFilter = this.objectAtlasTextureFilter;
   }
@@ -1313,7 +1338,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private coreIsLarge(core: Core): boolean {
-    return core.size === "large";
+    return isMajorCore(core, this.requiredCoreIds);
   }
 
   private syncCoreSprites(snapshot: RenderView): void {

@@ -10,6 +10,7 @@ import {
   normalizeBackgroundAmbience
 } from "../game/backgroundAmbience";
 import { backgroundForLevel, isLevelBackgroundKey, levelBackgroundKeys, levelBackgrounds } from "../game/backgrounds";
+import { doorRequiredCoreIds, isMajorCore } from "../game/objects";
 import { normalizeScoreSettings } from "../game/scoring";
 import { normalizeSolid, normalizeSolidSprite, solidSpriteValues } from "../game/solidSprites";
 import { defaultSoundtrackKeyForLevel, isLevelSoundtrackKey, levelSoundtrackKeys, soundtracks } from "../game/soundtracks";
@@ -2481,7 +2482,7 @@ class LevelEditor {
     const ctx = this.context;
     const cx = object.x + object.w / 2;
     const cy = object.y + object.h / 2;
-    const large = (object as Core).size === "large";
+    const large = isMajorCore(object as Core, doorRequiredCoreIds(this.level.doors || []));
     if (large) {
       const radius = Math.max(object.w, object.h) * 1.18;
       ctx.fillStyle = "rgba(67, 247, 255, 0.16)";

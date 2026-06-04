@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { inflateSync } from "node:zlib";
 import { chromium } from "playwright";
 
 const url = process.env.PLAYTEST_URL || "http://localhost:5173/";
@@ -106,6 +107,176 @@ const runInputRouteAtHudFrames = async (page, route) =>
     return readFrame();
   }, route);
 
+const shimmerSamplePoints = [
+  { id: "floor-520", x: 520, y: 486 },
+  { id: "floor-640", x: 640, y: 486 },
+  { id: "floor-760", x: 760, y: 486 },
+  { id: "floor-880", x: 880, y: 486 },
+  { id: "wall-520", x: 520, y: 220 },
+  { id: "wall-640", x: 640, y: 220 },
+  { id: "wall-760", x: 760, y: 220 },
+  { id: "wall-880", x: 880, y: 220 }
+];
+
+const cameraSample = async (page) => {
+  const raw = await page.evaluate(() => document.documentElement.dataset.echoShiftCameraSample || document.documentElement.dataset.echoShiftCameraSnap || "");
+  const [zoom = "1", coords = "0,0"] = raw.split(":");
+  const [x = "0", y = "0"] = coords.split(",");
+  return { raw, zoom: Number(zoom), x: Number(x), y: Number(y) };
+};
+
+const paethPredictor = (left, up, upLeft) => {
+  const estimate = left + up - upLeft;
+  const leftDistance = Math.abs(estimate - left);
+  const upDistance = Math.abs(estimate - up);
+  const upLeftDistance = Math.abs(estimate - upLeft);
+  if (leftDistance <= upDistance && leftDistance <= upLeftDistance) return left;
+  if (upDistance <= upLeftDistance) return up;
+  return upLeft;
+};
+
+const decodePng = (buffer) => {
+  const signature = "89504e470d0a1a0a";
+  assert(buffer.subarray(0, 8).toString("hex") === signature, "Screenshot is not a PNG");
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  const idat = [];
+  while (offset < buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.subarray(offset + 4, offset + 8).toString("ascii");
+    const data = buffer.subarray(offset + 8, offset + 8 + length);
+    offset += 12 + length;
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colorType = data[9];
+      assert(data[10] === 0 && data[11] === 0 && data[12] === 0, "Unsupported PNG compression/filter/interlace mode");
+    } else if (type === "IDAT") {
+      idat.push(data);
+    } else if (type === "IEND") {
+      break;
+    }
+  }
+  assert(width > 0 && height > 0 && bitDepth === 8 && (colorType === 2 || colorType === 6), `Unsupported PNG format ${width}x${height} depth ${bitDepth} type ${colorType}`);
+  const bytesPerPixel = colorType === 6 ? 4 : 3;
+  const stride = width * bytesPerPixel;
+  const inflated = inflateSync(Buffer.concat(idat));
+  const raw = new Uint8Array(height * stride);
+  let sourceOffset = 0;
+  for (let y = 0; y < height; y += 1) {
+    const filter = inflated[sourceOffset];
+    sourceOffset += 1;
+    const rowOffset = y * stride;
+    const previousRowOffset = rowOffset - stride;
+    for (let x = 0; x < stride; x += 1) {
+      const value = inflated[sourceOffset + x];
+      const left = x >= bytesPerPixel ? raw[rowOffset + x - bytesPerPixel] : 0;
+      const up = y > 0 ? raw[previousRowOffset + x] : 0;
+      const upLeft = y > 0 && x >= bytesPerPixel ? raw[previousRowOffset + x - bytesPerPixel] : 0;
+      if (filter === 0) raw[rowOffset + x] = value;
+      else if (filter === 1) raw[rowOffset + x] = (value + left) & 0xff;
+      else if (filter === 2) raw[rowOffset + x] = (value + up) & 0xff;
+      else if (filter === 3) raw[rowOffset + x] = (value + Math.floor((left + up) / 2)) & 0xff;
+      else if (filter === 4) raw[rowOffset + x] = (value + paethPredictor(left, up, upLeft)) & 0xff;
+      else throw new Error(`Unsupported PNG filter ${filter}`);
+    }
+    sourceOffset += stride;
+  }
+  const rgba = new Uint8Array(width * height * 4);
+  for (let source = 0, target = 0; source < raw.length; source += bytesPerPixel, target += 4) {
+    rgba[target] = raw[source];
+    rgba[target + 1] = raw[source + 1];
+    rgba[target + 2] = raw[source + 2];
+    rgba[target + 3] = colorType === 6 ? raw[source + 3] : 255;
+  }
+  return { width, height, data: rgba };
+};
+
+const sampleWorldColors = async (page, points) => {
+  const projection = await page.evaluate(() => {
+    const canvas = document.querySelector("canvas");
+    if (!(canvas instanceof HTMLCanvasElement)) throw new Error("Missing game canvas");
+    const rawView = document.documentElement.dataset.echoShiftCameraWorldView || "";
+    const [x = "0", y = "0", w = "1", h = "1"] = rawView.split(",");
+    const rect = canvas.getBoundingClientRect();
+    return {
+      rawView,
+      view: { x: Number(x), y: Number(y), w: Number(w), h: Number(h) },
+      rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height },
+      viewport: { w: window.innerWidth, h: window.innerHeight }
+    };
+  });
+  const image = decodePng(await page.screenshot({ fullPage: false }));
+  const scaleX = image.width / Math.max(1, projection.viewport.w);
+  const scaleY = image.height / Math.max(1, projection.viewport.h);
+  const patchSize = 5;
+  const halfPatch = Math.floor(patchSize / 2);
+  const readPatch = (x, y) => {
+    const left = Math.round(x) - halfPatch;
+    const top = Math.round(y) - halfPatch;
+    if (left < 0 || top < 0 || left + patchSize > image.width || top + patchSize > image.height) {
+      return { visible: false, r: 0, g: 0, b: 0, a: 0 };
+    }
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    let a = 0;
+    const count = patchSize * patchSize;
+    for (let yOffset = 0; yOffset < patchSize; yOffset += 1) {
+      for (let xOffset = 0; xOffset < patchSize; xOffset += 1) {
+        const index = ((top + yOffset) * image.width + left + xOffset) * 4;
+        r += image.data[index];
+        g += image.data[index + 1];
+        b += image.data[index + 2];
+        a += image.data[index + 3];
+      }
+    }
+    return {
+      visible: true,
+      r: r / count,
+      g: g / count,
+      b: b / count,
+      a: a / count
+    };
+  };
+  return {
+    camera: projection.view,
+    samples: Object.fromEntries(
+      points.map((point) => {
+        const x = (projection.rect.x + ((point.x - projection.view.x) / projection.view.w) * projection.rect.w) * scaleX;
+        const y = (projection.rect.y + ((point.y - projection.view.y) / projection.view.h) * projection.rect.h) * scaleY;
+        return [point.id, readPatch(x, y)];
+      })
+    )
+  };
+};
+
+const colorDelta = (a, b) => Math.max(Math.abs(a.r - b.r), Math.abs(a.g - b.g), Math.abs(a.b - b.b), Math.abs(a.a - b.a));
+
+const assertStableWorldSamples = (label, before, after) => {
+  const comparable = shimmerSamplePoints.flatMap((point) => {
+    const a = before.samples[point.id];
+    const b = after.samples[point.id];
+    if (!a?.visible || !b?.visible || a.a < 80 || b.a < 80) return [];
+    return [{ id: point.id, delta: colorDelta(a, b), before: a, after: b }];
+  });
+  const floor = comparable.filter((sample) => sample.id.startsWith("floor-"));
+  const wall = comparable.filter((sample) => sample.id.startsWith("wall-"));
+  assert(floor.length > 0, `${label} did not sample any visible floor pixels: ${JSON.stringify({ before, after })}`);
+  assert(wall.length > 0, `${label} did not sample any visible wall pixels: ${JSON.stringify({ before, after })}`);
+  for (const sample of comparable) {
+    assert(
+      sample.delta <= 42,
+      `${label} ${sample.id} shifted by ${sample.delta.toFixed(1)} while camera moved: ${JSON.stringify(sample)}`
+    );
+  }
+  return comparable.map((sample) => ({ id: sample.id, delta: Number(sample.delta.toFixed(1)) }));
+};
+
 const level = {
   id: "door-solid-render-qa",
   index: 0,
@@ -173,15 +344,17 @@ const cameraLevel = {
   id: "camera-scroll-qa",
   name: "Camera Scroll QA",
   subtitle: "Right-left reversal coverage",
-  start: { x: 80, y: 466 },
-  exit: { x: 2320, y: 438, w: 48, h: 62 },
+  start: { x: 80, y: 426 },
+  exit: { x: 2320, y: 398, w: 48, h: 62 },
   bounds: { x: 0, y: 0, w: 2400, h: 540 },
   solids: [
-    { id: "floor", x: 0, y: 500, w: 2400, h: 60, sprite: "floor", tone: "steel" },
+    { id: "floor", x: 0, y: 460, w: 2400, h: 60, sprite: "floor", tone: "steel" },
+    { id: "sample-wall", x: 460, y: 150, w: 520, h: 160, sprite: "wall", tone: "glass" },
     { id: "left-wall", x: -26, y: 0, w: 26, h: 560, sprite: "wall", tone: "glass" },
     { id: "right-wall", x: 2400, y: 0, w: 26, h: 560, sprite: "wall", tone: "glass" }
   ],
-  doors: [],
+  doors: [{ id: "camera-core-gate", x: 2180, y: 360, w: 28, h: 100, opensWith: [], requiresCore: "camera-core" }],
+  cores: [{ id: "camera-core", x: 1900, y: 340, w: 24, h: 24, label: "C" }],
   echoSensors: []
 };
 
@@ -362,6 +535,7 @@ try {
   await page.screenshot({ path: lowChurnScreenshot, fullPage: true });
   assertNoUnexpectedBrowserMessages("Low-churn render", lowChurnMessageStart);
 
+  const cameraMessageStart = messages.length;
   await page.evaluate((snapshot) => {
     window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
   }, { motionModel: "anchored", currentIndex: 0, levels: [cameraLevel] });
@@ -371,22 +545,55 @@ try {
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await page.waitForFunction(() => document.querySelector("[data-level]")?.textContent?.includes("Camera Scroll QA"));
   await page.waitForTimeout(300);
-  const cameraSample = async () => {
-    const raw = await page.evaluate(() => document.documentElement.dataset.echoShiftCameraSample || document.documentElement.dataset.echoShiftCameraSnap || "");
-    const [, coords = "0,0"] = raw.split(":");
-    const [x = "0", y = "0"] = coords.split(",");
-    return { raw, x: Number(x), y: Number(y) };
-  };
-  const cameraStart = await cameraSample();
+  const doorRequiredCoreFrames = await page.evaluate(() => document.documentElement.dataset.echoShiftCoreSpriteFrames || "");
+  assert(
+    doorRequiredCoreFrames.includes("camera-core:core-major:") && doorRequiredCoreFrames.includes(":large"),
+    `Expected door-required draft core to use major core sprite, got ${doorRequiredCoreFrames}`
+  );
+  const cameraStart = await cameraSample(page);
+  const pixelStart = await sampleWorldColors(page, shimmerSamplePoints);
   await runInputRouteAtHudFrames(page, [["right", 360]]);
-  const cameraAfterRight = await cameraSample();
+  const cameraAfterRight = await cameraSample(page);
+  const pixelAfterRight = await sampleWorldColors(page, shimmerSamplePoints);
   await runInputRouteAtHudFrames(page, [["left", 240]]);
-  const cameraAfterLeft = await cameraSample();
+  const cameraAfterLeft = await cameraSample(page);
+  const pixelAfterLeft = await sampleWorldColors(page, shimmerSamplePoints);
   const cameraScroll = { start: cameraStart, afterRight: cameraAfterRight, afterLeft: cameraAfterLeft };
   assert(cameraAfterRight.x > cameraStart.x + 50, `Expected camera to scroll right on flat QA route, got ${JSON.stringify(cameraScroll)}`);
   assert(cameraAfterLeft.x < cameraAfterRight.x - 20, `Expected camera to scroll left after reversal, got ${JSON.stringify(cameraScroll)}`);
+  const shimmerSamples = {
+    right: assertStableWorldSamples("Desktop floor/wall shimmer probe after right scroll", pixelStart, pixelAfterRight),
+    left: assertStableWorldSamples("Desktop floor/wall shimmer probe after left reversal", pixelAfterRight, pixelAfterLeft)
+  };
 
-  console.log(JSON.stringify({ ok: true, screenshot: fullGraphicsScreenshot, lowChurnScreenshot, diagnostics, cameraScroll }, null, 2));
+  await page.setViewportSize({ width: 640, height: 480 });
+  await page.evaluate((snapshot) => {
+    window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
+  }, { motionModel: "anchored", currentIndex: 0, levels: [cameraLevel] });
+  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+  await startAudioGate(page);
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await page.locator("canvas").click({ position: { x: 320, y: 240 } });
+  await page.waitForFunction(() => document.querySelector("[data-level]")?.textContent?.includes("Camera Scroll QA"));
+  await page.waitForTimeout(300);
+  const narrowStart = await cameraSample(page);
+  const narrowPixelStart = await sampleWorldColors(page, shimmerSamplePoints);
+  await runInputRouteAtHudFrames(page, [["right", 240]]);
+  const narrowAfterRight = await cameraSample(page);
+  const narrowPixelAfterRight = await sampleWorldColors(page, shimmerSamplePoints);
+  await runInputRouteAtHudFrames(page, [["left", 180]]);
+  const narrowAfterLeft = await cameraSample(page);
+  const narrowPixelAfterLeft = await sampleWorldColors(page, shimmerSamplePoints);
+  const narrowCameraScroll = { start: narrowStart, afterRight: narrowAfterRight, afterLeft: narrowAfterLeft };
+  assert(narrowAfterRight.x > narrowStart.x + 50, `Expected narrow camera to scroll right on flat QA route, got ${JSON.stringify(narrowCameraScroll)}`);
+  assert(narrowAfterLeft.x < narrowAfterRight.x - 20, `Expected narrow camera to scroll left after reversal, got ${JSON.stringify(narrowCameraScroll)}`);
+  const narrowShimmerSamples = {
+    right: assertStableWorldSamples("Narrow floor/wall shimmer probe after right scroll", narrowPixelStart, narrowPixelAfterRight),
+    left: assertStableWorldSamples("Narrow floor/wall shimmer probe after left reversal", narrowPixelAfterRight, narrowPixelAfterLeft)
+  };
+  assertNoUnexpectedBrowserMessages("Camera scroll render", cameraMessageStart);
+
+  console.log(JSON.stringify({ ok: true, screenshot: fullGraphicsScreenshot, lowChurnScreenshot, diagnostics, cameraScroll, shimmerSamples, narrowCameraScroll, narrowShimmerSamples }, null, 2));
 } finally {
   await browser.close();
 }
