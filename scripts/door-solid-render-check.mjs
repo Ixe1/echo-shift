@@ -24,6 +24,10 @@ const startAudioGate = async (page) => {
   await page.locator("[data-start-game]").click();
 };
 
+const waitForToastClear = async (page) => {
+  await page.waitForFunction(() => !document.querySelector("[data-toast]")?.classList.contains("show"));
+};
+
 const runInputRouteAtHudFrames = async (page, route) =>
   page.evaluate(async (routeToRun) => {
     const actionKeys = {
@@ -416,6 +420,7 @@ try {
     background: document.documentElement.dataset.echoShiftBackgroundKey || "",
     backgroundFilter: document.documentElement.dataset.echoShiftBackgroundFilter || "",
     objectAtlasFilter: document.documentElement.dataset.echoShiftObjectAtlasFilter || "",
+    terrainTileFilter: document.documentElement.dataset.echoShiftTerrainTileFilter || "",
     canvas: {
       width: document.querySelector("canvas")?.clientWidth || 0,
       height: document.querySelector("canvas")?.clientHeight || 0
@@ -493,7 +498,9 @@ try {
   };
 
   assert(diagnostics.solids.includes("floor-a:0"), `Expected floor atlas frame diagnostic, got ${diagnostics.solids}`);
+  assert(diagnostics.solids.includes("floor-a:0:metal-lab"), `Expected legacy steel floor to map to metal-lab terrain, got ${diagnostics.solids}`);
   assert(diagnostics.solids.includes("thin-wall:1"), `Expected wall atlas frame diagnostic, got ${diagnostics.solids}`);
+  assert(diagnostics.solids.includes("left-wall-upper:1:glass-energy"), `Expected legacy glass wall to map to glass-energy terrain, got ${diagnostics.solids}`);
   assert(diagnostics.solids.includes("enclosed-center:2"), `Expected enclosed center block frame diagnostic, got ${diagnostics.solids}`);
   assertOutline("floor-a", {
     segments: ["top:0-300", "bottom:0-300", "left:480-520"]
@@ -526,6 +533,7 @@ try {
   assert(diagnostics.objectCount >= 25, `Expected synced object sprites, got ${diagnostics.objectCount}`);
   assert(diagnostics.backgroundFilter === "time-lab-prototype:0", `Expected background texture to use linear filtering, got ${diagnostics.backgroundFilter}`);
   assert(diagnostics.objectAtlasFilter === "object-atlas:0", `Expected object atlas texture to use linear filtering, got ${diagnostics.objectAtlasFilter}`);
+  assert(diagnostics.terrainTileFilter === "terrain-tiles:0", `Expected terrain tile texture to use linear filtering, got ${diagnostics.terrainTileFilter}`);
   assertNoUnexpectedBrowserMessages("Full graphics render");
 
   const fullGraphicsScreenshot = `${outDir}/door-solid-render-qa.png`;
@@ -560,7 +568,7 @@ try {
   await page.locator("canvas").waitFor({ state: "visible" });
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await page.waitForFunction(() => document.querySelector("[data-level]")?.textContent?.includes("Camera Scroll QA"));
-  await page.waitForTimeout(300);
+  await waitForToastClear(page);
   const doorRequiredCoreFrames = await page.evaluate(() => document.documentElement.dataset.echoShiftCoreSpriteFrames || "");
   assert(
     doorRequiredCoreFrames.includes("camera-core:core-major:") && doorRequiredCoreFrames.includes(":large"),
@@ -591,7 +599,7 @@ try {
   await page.locator("canvas").waitFor({ state: "visible" });
   await page.locator("canvas").click({ position: { x: 320, y: 240 } });
   await page.waitForFunction(() => document.querySelector("[data-level]")?.textContent?.includes("Camera Scroll QA"));
-  await page.waitForTimeout(300);
+  await waitForToastClear(page);
   const narrowStart = await cameraSample(page);
   const narrowPixelStart = await sampleWorldColors(page, shimmerSamplePoints);
   await runInputRouteAtHudFrames(page, [["right", 240]]);

@@ -636,8 +636,12 @@ try {
   const floorPresetId = await page.locator("[data-object-field='id']").inputValue();
   const floorPresetWidth = await objectNumber(page, "w");
   const floorPresetHeight = await objectNumber(page, "h");
+  const floorMaterialOptions = await page.locator("[data-object-field='material'] option").allTextContents();
+  const floorPresetMaterialDefault = await page.locator("[data-object-field='material']").inputValue();
+  await page.locator("[data-object-field='material']").selectOption("sand-ruin");
   const floorPresetExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
   const floorPresetSprite = floorPresetExport.solids.find((solid) => solid.id === floorPresetId)?.sprite;
+  const floorPresetMaterial = floorPresetExport.solids.find((solid) => solid.id === floorPresetId)?.material;
   await page.locator("[data-delete-object]").click();
   await page.locator("[data-tool='floor']").click();
   await dragWorld(page, { x: 1180, y: 420 }, { x: 1200, y: 440 });
@@ -1236,6 +1240,9 @@ try {
   assert(floorPresetId.startsWith("floorpiece-"), `Expected floor preset id to use non-reserved floorpiece stem, got ${floorPresetId}`);
   assert(floorPresetWidth === 320 && floorPresetHeight === 20, `Expected floor preset 320x20, got ${floorPresetWidth}x${floorPresetHeight}`);
   assert(floorPresetSprite === "floor", `Expected floor preset to export sprite floor, got ${floorPresetSprite}`);
+  assert(floorMaterialOptions.some((option) => option.includes("Glass Energy")), `Expected terrain material options, got ${floorMaterialOptions.join(", ")}`);
+  assert(floorPresetMaterialDefault === "", `Expected new floor material to start in legacy/default mode, got ${floorPresetMaterialDefault}`);
+  assert(floorPresetMaterial === "sand-ruin", `Expected selected floor material to export as sand-ruin, got ${floorPresetMaterial}`);
   assert(clickDragFloorWidth === 320 && clickDragFloorHeight === 20, `Expected click-drag floor preset 320x20, got ${clickDragFloorWidth}x${clickDragFloorHeight}`);
   assert(userFloorId.startsWith("floorpiece-"), `Expected user floor id to avoid structural floor-* exemption, got ${userFloorId}`);
   assert(

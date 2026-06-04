@@ -11,7 +11,14 @@ import { recordLevelScore } from "../game/progress";
 import { legacySolidSprite } from "../game/solidSprites";
 import { soundtrackForLevel } from "../game/soundtracks";
 import { RoomSimulation } from "../game/state";
-import type { ActorBody, Core, Door, InputFrame, Level, LevelScore, MovingPlatform, Rect, Solid } from "../game/types";
+import {
+  terrainMaterialForSolid,
+  terrainTileFrame,
+  TERRAIN_TILE_KEY,
+  TERRAIN_TILE_SIZE,
+  type TerrainTileRole
+} from "../game/terrainMaterials";
+import type { ActorBody, Core, Door, InputFrame, Level, LevelScore, MovingPlatform, Rect, Solid, TerrainMaterial } from "../game/types";
 import { Hud } from "../ui/hud";
 import { uiRoot } from "../ui/dom";
 
@@ -114,6 +121,7 @@ export class GameScene extends Phaser.Scene {
   private lastCameraWorldView = "";
   private backgroundTextureFilter = "";
   private objectAtlasTextureFilter = "";
+  private terrainTextureFilter = "";
   private requiredCoreIds = new Set<string>();
   private diagnosticsEnabled = false;
   private lowChurnGraphics = false;
@@ -256,6 +264,7 @@ export class GameScene extends Phaser.Scene {
     this.lastCameraWorldView = "";
     this.backgroundTextureFilter = "";
     this.objectAtlasTextureFilter = "";
+    this.terrainTextureFilter = "";
     this.requiredCoreIds = doorRequiredCoreIds(this.level.doors || []);
     this.diagnosticsEnabled = this.shouldExposeRenderDiagnostics();
     this.lowChurnGraphics = this.shouldUseLowChurnGraphics();
@@ -524,7 +533,10 @@ export class GameScene extends Phaser.Scene {
     const camera = this.cameras.main;
     if (this.diagnosticsEnabled) {
       this.lastCameraSample = `${camera.zoom.toFixed(4)}:${camera.scrollX.toFixed(2)},${camera.scrollY.toFixed(2)}`;
-      const { x, y, width, height } = camera.worldView;
+      const width = Math.floor(camera.width / Math.max(0.01, camera.zoomX) + 0.5);
+      const height = Math.floor(camera.height / Math.max(0.01, camera.zoomY) + 0.5);
+      const x = Math.floor(camera.scrollX + camera.width * camera.originX - width / 2 + 0.5);
+      const y = Math.floor(camera.scrollY + camera.height * camera.originY - height / 2 + 0.5);
       this.lastCameraWorldView = `${x.toFixed(2)},${y.toFixed(2)},${width.toFixed(2)},${height.toFixed(2)}`;
       this.writeCameraDiagnostics();
     }
@@ -804,9 +816,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private configureWorldTextureFilters(): void {
-    if (!this.textures.exists(OBJECT_ATLAS_KEY)) return;
-    this.textures.get(OBJECT_ATLAS_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
-    this.objectAtlasTextureFilter = `${OBJECT_ATLAS_KEY}:${Phaser.Textures.FilterMode.LINEAR}`;
+    if (this.textures.exists(OBJECT_ATLAS_KEY)) {
+      this.textures.get(OBJECT_ATLAS_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
+      this.objectAtlasTextureFilter = `${OBJECT_ATLAS_KEY}:${Phaser.Textures.FilterMode.LINEAR}`;
+    }
+    if (this.textures.exists(TERRAIN_TILE_KEY)) {
+      this.textures.get(TERRAIN_TILE_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
+      this.terrainTextureFilter = `${TERRAIN_TILE_KEY}:${Phaser.Textures.FilterMode.LINEAR}`;
+    }
   }
 
   private syncStaticLevelAssets(): void {
@@ -823,15 +840,44 @@ export class GameScene extends Phaser.Scene {
   private syncStaticSolids(): void {
     for (const solid of this.level.solids) {
       const frame = this.solidFrame(solid);
-      this.staticSolidAssetFrames.push(`${solid.id}:${frame}`);
-      this.syncStaticSolidAsset(solid, frame);
-      this.markStaticObjectAsset(`solid:${solid.id}`);
+      const material = terrainMaterialForSolid(solid);
+      const tileIds = this.syncStaticSolidAsset(solid, frame, material);
+      this.staticSolidAssetFrames.push(`${solid.id}:${frame}:${material}:${tileIds.length}`);
+      for (const tileId of tileIds) this.markStaticObjectAsset(tileId);
       this.drawSolidReadabilityOutline(solid);
     }
   }
 
-  private syncStaticSolidAsset(solid: Solid, frame: number): void {
-    if (!this.textures.exists(OBJECT_ATLAS_KEY) || solid.w <= 0 || solid.h <= 0) return;
+  private syncStaticSolidAsset(solid: Solid, frame: number, material: TerrainMaterial): string[] {
+    if (solid.w <= 0 || solid.h <= 0) return [];
+    if (!this.textures.exists(TERRAIN_TILE_KEY)) {
+      this.syncFallbackSolidAsset(solid, frame);
+      return [`solid:${solid.id}`];
+    }
+
+    const ids: string[] = [];
+    const columns = Math.max(1, Math.ceil(solid.w / TERRAIN_TILE_SIZE));
+    const rows = Math.max(1, Math.ceil(solid.h / TERRAIN_TILE_SIZE));
+    for (let row = 0; row < rows; row += 1) {
+      const tileY = solid.y + row * TERRAIN_TILE_SIZE;
+      const tileH = Math.min(TERRAIN_TILE_SIZE, solid.y + solid.h - tileY);
+      if (tileH <= 0) continue;
+      for (let column = 0; column < columns; column += 1) {
+        const tileX = solid.x + column * TERRAIN_TILE_SIZE;
+        const tileW = Math.min(TERRAIN_TILE_SIZE, solid.x + solid.w - tileX);
+        if (tileW <= 0) continue;
+        const role = this.terrainTileRole(frame, row);
+        const tileFrame = terrainTileFrame(material, role);
+        const id = `solid:${solid.id}:tile:${row}:${column}`;
+        this.syncTerrainTileAsset(id, tileFrame, tileX, tileY, tileW, tileH);
+        ids.push(id);
+      }
+    }
+    return ids;
+  }
+
+  private syncFallbackSolidAsset(solid: Solid, frame: number): void {
+    if (!this.textures.exists(OBJECT_ATLAS_KEY)) return;
     const asset = this.assetFor(`solid:${solid.id}`, "image", frame) as Phaser.GameObjects.Image;
     asset
       .setVisible(true)
@@ -842,15 +888,30 @@ export class GameScene extends Phaser.Scene {
       .setRotation(0)
       .setFrame(frame)
       .setDisplaySize(solid.w, solid.h)
-      .setTintFill(this.staticSolidTint(frame));
+      .clearTint();
     this.activeObjectAssetIds.add(`solid:${solid.id}`);
   }
 
-  private staticSolidTint(frame: number): number {
-    if (frame === OBJECT_FRAME.floor) return 0x1b3441;
-    if (frame === OBJECT_FRAME.wall) return 0x163344;
-    if (frame === OBJECT_FRAME.warning) return 0x5b2e48;
-    return 0x1a2733;
+  private terrainTileRole(frame: number, row: number): TerrainTileRole {
+    if (frame === OBJECT_FRAME.wall) return "wallFace";
+    if (row === 0) return "floorTop";
+    if (frame === OBJECT_FRAME.floor || frame === OBJECT_FRAME.warning) return "floorFace";
+    return "blockFace";
+  }
+
+  private syncTerrainTileAsset(id: string, frame: number, x: number, y: number, width: number, height: number): void {
+    const asset = this.assetFor(id, "image", frame, TERRAIN_TILE_KEY) as Phaser.GameObjects.Image;
+    asset
+      .setVisible(true)
+      .setDepth(1)
+      .setAlpha(1)
+      .setOrigin(0, 0)
+      .setPosition(Math.round(x), Math.round(y))
+      .setRotation(0)
+      .setFrame(frame)
+      .setDisplaySize(width, height)
+      .clearTint();
+    this.activeObjectAssetIds.add(id);
   }
 
   private syncStaticOneWayPlatforms(): void {
@@ -1209,6 +1270,7 @@ export class GameScene extends Phaser.Scene {
     const targets: Array<{ key: string; frame?: number }> = [
       { key: background.key },
       { key: OBJECT_ATLAS_KEY, frame: 0 },
+      { key: TERRAIN_TILE_KEY, frame: 0 },
       { key: "time-runner", frame: 0 },
       { key: "time-effects", frame: 0 },
       { key: CORE_MAJOR_KEY, frame: 0 }
@@ -1256,6 +1318,7 @@ export class GameScene extends Phaser.Scene {
     this.writeCameraDiagnostics();
     document.documentElement.dataset.echoShiftBackgroundFilter = this.backgroundTextureFilter;
     document.documentElement.dataset.echoShiftObjectAtlasFilter = this.objectAtlasTextureFilter;
+    document.documentElement.dataset.echoShiftTerrainTileFilter = this.terrainTextureFilter;
   }
 
   private drawActor(actor: ActorBody, color: number, alpha: number): void {
@@ -1414,7 +1477,7 @@ export class GameScene extends Phaser.Scene {
     const segments = this.solidOutlineSegments(solid);
     if (segments.length === 0) return;
     const outlines = this.structureOutlines;
-    outlines.lineStyle(1, 0x43f7ff, solid.tone === "glass" ? 0.52 : 0.4);
+    outlines.lineStyle(1, 0x43f7ff, terrainMaterialForSolid(solid) === "glass-energy" ? 0.52 : 0.4);
     for (const segment of segments) {
       this.drawSolidOutlineSegment(solid, segment);
     }
@@ -1434,6 +1497,7 @@ export class GameScene extends Phaser.Scene {
     const height = Math.max(0, solid.h);
     if (width <= 0 || height <= 0) return [];
     const frame = this.solidFrame(solid);
+    const material = terrainMaterialForSolid(solid);
     const segments: Record<SolidOutlineSide, Array<{ from: number; to: number }>> = {
       top: [{ from: solid.x, to: solid.x + solid.w }],
       bottom: [{ from: solid.x, to: solid.x + solid.w }],
@@ -1442,7 +1506,7 @@ export class GameScene extends Phaser.Scene {
     };
 
     for (const neighbor of this.level.solids) {
-      if (neighbor === solid || this.solidFrame(neighbor) !== frame) continue;
+      if (neighbor === solid || this.solidFrame(neighbor) !== frame || terrainMaterialForSolid(neighbor) !== material) continue;
       const horizontalOverlap = this.overlapSpan(solid.x, solid.x + solid.w, neighbor.x, neighbor.x + neighbor.w);
       const verticalOverlap = this.overlapSpan(solid.y, solid.y + solid.h, neighbor.y, neighbor.y + neighbor.h);
       if (horizontalOverlap && this.sameCoordinate(neighbor.y + neighbor.h, solid.y)) {
@@ -1669,7 +1733,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private assetFor(id: string, kind: "tile" | "image", frame: number): ObjectAsset {
+  private assetFor(id: string, kind: "tile" | "image", frame: number, textureKey = OBJECT_ATLAS_KEY): ObjectAsset {
     const existing = this.objectAssets.get(id);
     if (existing) {
       if ((kind === "tile" && existing.type === "TileSprite") || (kind === "image" && existing.type === "Image")) return existing;
@@ -1678,8 +1742,8 @@ export class GameScene extends Phaser.Scene {
     }
     const asset =
       kind === "tile"
-        ? this.add.tileSprite(0, 0, 1, 1, OBJECT_ATLAS_KEY, frame)
-        : this.add.image(0, 0, OBJECT_ATLAS_KEY, frame);
+        ? this.add.tileSprite(0, 0, 1, 1, textureKey, frame)
+        : this.add.image(0, 0, textureKey, frame);
     asset.setVisible(false);
     this.objectAssets.set(id, asset);
     return asset;

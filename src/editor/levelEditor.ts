@@ -14,6 +14,7 @@ import { doorRequiredCoreIds, isMajorCore } from "../game/objects";
 import { normalizeScoreSettings } from "../game/scoring";
 import { normalizeSolid, normalizeSolidSprite, solidSpriteValues } from "../game/solidSprites";
 import { defaultSoundtrackKeyForLevel, isLevelSoundtrackKey, levelSoundtrackKeys, soundtracks } from "../game/soundtracks";
+import { normalizeTerrainMaterial, terrainMaterialForSolid, terrainMaterialLabels, terrainMaterialValues } from "../game/terrainMaterials";
 import type {
   Conveyor,
   Core,
@@ -218,6 +219,11 @@ const solidPresetIdStems: Record<SolidPreset, string> = {
   block: "block"
 };
 
+const terrainMaterialOptions: SelectOption[] = [
+  { value: "", label: "legacy/default" },
+  ...terrainMaterialValues.map((value) => ({ value, label: terrainMaterialLabels[value] }))
+];
+
 const cloneLevels = (items: Level[]): Level[] => JSON.parse(JSON.stringify(items)) as Level[];
 
 const exportableLevels = (items: Level[]): Level[] => cloneLevels(items).map((level) => markAnchoredMotionModel(level));
@@ -321,6 +327,16 @@ const styleForKind = (kind: SelectableKind, item?: RectObject): { fill: string; 
   if (kind === "exit") return { fill: "rgba(189, 92, 255, 0.34)", stroke: "#43f7ff", text: "#ecfbff" };
   if (kind === "solids") {
     const solid = item as Solid | undefined;
+    if (solid) {
+      const material = terrainMaterialForSolid(solid);
+      if (material === "glass-energy") return { fill: "#143447", stroke: "#43f7ff", text: "#ecfbff" };
+      if (material === "warning-industrial") return { fill: "#473b18", stroke: "#ffe35a", text: "#fff8bf" };
+      if (material === "grass-organic") return { fill: "#214a2d", stroke: "#6eca70", text: "#f2ffd8" };
+      if (material === "sand-ruin") return { fill: "#5d4d31", stroke: "#d8bd76", text: "#fff1b5" };
+      if (material === "ice-cryo") return { fill: "#244b62", stroke: "#b8f2ff", text: "#f2fdff" };
+      if (material === "wood-archive") return { fill: "#4f2f1b", stroke: "#e0af67", text: "#fff1d0" };
+      if (material === "copper-corrode") return { fill: "#4d3127", stroke: "#50ffc2", text: "#eafff8" };
+    }
     const sprite = solid?.sprite;
     if (sprite === "wall") return { fill: "#111827", stroke: "#4b607c", text: "#ecfbff" };
     if (sprite === "block") return { fill: "#143447", stroke: "#43f7ff", text: "#ecfbff" };
@@ -560,7 +576,15 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
   const explicitId = normalizedObjectIdValue(record.id);
   const id = explicitId || nextImportedObjectId(kind, usedIds);
 
-  if (kind === "solids") return normalizeSolid({ ...base, id, tone: record.tone as Solid["tone"], sprite: normalizeSolidSprite(record.sprite) });
+  if (kind === "solids") {
+    return normalizeSolid({
+      ...base,
+      id,
+      tone: record.tone as Solid["tone"],
+      sprite: normalizeSolidSprite(record.sprite),
+      material: normalizeTerrainMaterial(record.material)
+    });
+  }
   if (kind === "conveyors") {
     return {
       ...base,
@@ -1070,6 +1094,12 @@ class LevelEditor {
     }
     if (field === "sprite") {
       record.sprite = normalizeSolidSprite(String(value).trim()) || "auto";
+      return;
+    }
+    if (field === "material") {
+      const material = normalizeTerrainMaterial(String(value).trim());
+      if (material) record.material = material;
+      else delete record.material;
       return;
     }
     if (field === "size") {
@@ -1841,12 +1871,13 @@ class LevelEditor {
     const record = object as unknown as Record<string, unknown>;
     if (kind === "solids") {
       return `
-        <div class="inspector-grid two">
+        <div class="inspector-grid three">
           ${this.selectField("Sprite", "sprite", String(record.sprite || ""), [
             { value: "", label: "legacy/auto" },
             { value: "auto", label: "auto" },
             ...solidSpriteValues.filter((value) => value !== "auto")
           ])}
+          ${this.selectField("Material", "material", String(record.material || ""), terrainMaterialOptions)}
           ${this.selectField("Tone", "tone", String(record.tone || ""), ["", "steel", "glass", "warning", "dark"])}
         </div>
       `;

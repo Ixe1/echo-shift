@@ -31,11 +31,21 @@ export type ActorBody = Rect & {
 };
 
 export type SolidSprite = "auto" | "floor" | "wall" | "block" | "warning";
+export type TerrainMaterial =
+  | "metal-lab"
+  | "glass-energy"
+  | "warning-industrial"
+  | "grass-organic"
+  | "sand-ruin"
+  | "ice-cryo"
+  | "wood-archive"
+  | "copper-corrode";
 
 export type Solid = Rect & {
   id: string;
   tone?: "steel" | "glass" | "warning" | "dark";
   sprite?: SolidSprite;
+  material?: TerrainMaterial;
 };
 
 export type MovingPlatform = Rect & {

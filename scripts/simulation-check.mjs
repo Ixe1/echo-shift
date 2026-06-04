@@ -374,6 +374,7 @@ try {
   const { soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
   const { backgroundForLevel, levelBackgrounds } = await server.ssrLoadModule("/src/game/backgrounds.ts");
   const { backgroundAmbienceForLevel, backgroundAmbienceIsActive } = await server.ssrLoadModule("/src/game/backgroundAmbience.ts");
+  const { terrainMaterialForSolid } = await server.ssrLoadModule("/src/game/terrainMaterials.ts");
   const { SynthAudio } = await server.ssrLoadModule("/src/game/audio.ts");
 
   assert(levels.length === 10, `Expected 10 handcrafted levels, found ${levels.length}`);
@@ -427,6 +428,18 @@ try {
   assert(soundtrackForLevel({ ...levels[5], soundtrackKey: "missing-track" }, 5).key === "level-6", "Expected unknown soundtrack key to fall back to level slot");
   assert(soundtrackForLevel({ ...levels[5], soundtrackKey: "menu" }, 5).key === "level-6", "Expected menu soundtrack key to be ignored for levels");
   assert(soundtrackForLevel({ ...levels[0], index: 9, soundtrackKey: undefined }, 1).key === "level-2", "Expected auto soundtrack fallback to use runtime level slot, not authored index");
+  assert(
+    terrainMaterialForSolid({ id: "legacy-floor", tone: "steel", sprite: "floor" }) === "metal-lab",
+    "Expected legacy steel solids to fall back to metal-lab terrain"
+  );
+  assert(
+    terrainMaterialForSolid({ id: "legacy-glass", tone: "glass", sprite: "wall" }) === "glass-energy",
+    "Expected legacy glass tone to map to glass-energy terrain"
+  );
+  assert(
+    terrainMaterialForSolid({ id: "explicit-sand", tone: "steel", sprite: "floor", material: "sand-ruin" }) === "sand-ruin",
+    "Expected explicit terrain material to override legacy tone"
+  );
 
   await verifyAudioUnlockRetry(SynthAudio, soundtracks);
 

@@ -3,6 +3,7 @@ import { isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
 import { levelBackgrounds } from "../game/backgrounds";
 import { soundtrackForLevel } from "../game/soundtracks";
+import { TERRAIN_TILE_KEY, TERRAIN_TILE_SIZE } from "../game/terrainMaterials";
 import { clearUi, icon, uiRoot } from "../ui/dom";
 
 const playtestLevelIndex = (): number => {
@@ -34,6 +35,12 @@ export class BootScene extends Phaser.Scene {
     this.load.spritesheet("object-atlas", "/assets/sprites/object-atlas.png", {
       frameWidth: 256,
       frameHeight: 256
+    });
+    this.load.spritesheet(TERRAIN_TILE_KEY, "/assets/sprites/terrain-tiles.png", {
+      frameWidth: TERRAIN_TILE_SIZE,
+      frameHeight: TERRAIN_TILE_SIZE,
+      margin: 1,
+      spacing: 2
     });
     for (const background of Object.values(levelBackgrounds)) {
       this.load.image(background.key, background.src);
