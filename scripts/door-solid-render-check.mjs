@@ -13,6 +13,11 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
+const isAllowedBrowserMessage = (msg) =>
+  msg.type === "warning" &&
+  msg.text.includes("GL Driver Message") &&
+  msg.text.includes("GPU stall due to ReadPixels");
+
 const startAudioGate = async (page) => {
   await page.locator("[data-start-game]").waitFor({ state: "visible" });
   await page.locator("[data-start-game]").click();
@@ -96,6 +101,11 @@ try {
     if (["error", "warning"].includes(msg.type())) messages.push({ type: msg.type(), text: msg.text() });
   });
   page.on("pageerror", (error) => messages.push({ type: "pageerror", text: error.message }));
+  const assertNoUnexpectedBrowserMessages = (label, startIndex = 0) => {
+    const relevantMessages = messages.slice(startIndex);
+    const unexpectedMessages = relevantMessages.filter((msg) => !isAllowedBrowserMessage(msg));
+    assert(unexpectedMessages.length === 0, `${label} console/page messages: ${JSON.stringify(unexpectedMessages)}`);
+  };
 
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.evaluate((snapshot) => {
@@ -223,13 +233,14 @@ try {
   assert(diagnostics.sensors.includes("echo-sensor:inactive-sensor:2:inactive"), `Expected inactive echo sensor to use block frame, got ${diagnostics.sensors}`);
   assert(!diagnostics.sensors.includes(":9:"), `Echo sensor diagnostics should not use door-open frame 9, got ${diagnostics.sensors}`);
   assert(diagnostics.objectCount >= 25, `Expected synced object sprites, got ${diagnostics.objectCount}`);
-  assert(messages.every((msg) => !msg.text.includes("Error")), `Console/page errors: ${JSON.stringify(messages)}`);
+  assertNoUnexpectedBrowserMessages("Full graphics render");
 
   const fullGraphicsScreenshot = `${outDir}/door-solid-render-qa.png`;
   const lowChurnScreenshot = `${outDir}/door-solid-render-low-churn-qa.png`;
   await page.screenshot({ path: fullGraphicsScreenshot, fullPage: true });
   writeFileSync(`${outDir}/door-solid-render-qa.json`, JSON.stringify({ diagnostics, messages }, null, 2));
 
+  const lowChurnMessageStart = messages.length;
   await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&lowChurnGraphics=1`, { waitUntil: "networkidle" });
   await startAudioGate(page);
   await page.locator("canvas").waitFor({ state: "visible" });
@@ -245,6 +256,7 @@ try {
   assert(lowChurnDiagnostics.sensors.includes("echo-sensor:active-sensor:11:active"), `Expected low-churn sensor diagnostics, got ${lowChurnDiagnostics.sensors}`);
   assert(!lowChurnDiagnostics.sensors.includes(":9:"), `Low-churn echo sensor diagnostics should not use door-open frame 9, got ${lowChurnDiagnostics.sensors}`);
   await page.screenshot({ path: lowChurnScreenshot, fullPage: true });
+  assertNoUnexpectedBrowserMessages("Low-churn render", lowChurnMessageStart);
 
   console.log(JSON.stringify({ ok: true, screenshot: fullGraphicsScreenshot, lowChurnScreenshot, diagnostics }, null, 2));
 } finally {
