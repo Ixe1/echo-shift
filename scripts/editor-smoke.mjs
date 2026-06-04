@@ -769,6 +769,8 @@ try {
   await openTab(page, "objects");
   await page.locator("[data-object-list] [data-kind='cores'][data-id='smoke-required-core']").click();
   const inferredRequiredCoreSize = await page.locator("[data-object-field='size']").inputValue();
+  await page.locator("[data-object-field='size']").selectOption("small");
+  const inferredRequiredCoreAfterSmall = await page.locator("[data-object-field='size']").inputValue();
 
   await dragToolToWorld(page, "movingLasers", { x: 1500, y: 360 });
   await page.locator("[data-object-field='id']").fill("smoke-resize-sweeper");
@@ -1284,6 +1286,7 @@ try {
   assert(toolkitCore?.size === "large", `Expected core size to export, got ${JSON.stringify(toolkitCore)}`);
   assert(requiredCoreDefaultSize === "small", `Expected unlinked required-core candidate to default to small, got ${requiredCoreDefaultSize}`);
   assert(inferredRequiredCoreSize === "large", `Expected door-required core inspector to show inferred large size, got ${inferredRequiredCoreSize}`);
+  assert(inferredRequiredCoreAfterSmall === "large", `Expected door-required core inspector to keep showing inferred large after selecting small, got ${inferredRequiredCoreAfterSmall}`);
   assert(toolkitRequiredCore && toolkitRequiredCore.size === undefined, `Expected inferred large core to omit explicit size, got ${JSON.stringify(toolkitRequiredCore)}`);
   assert(toolkitRequiredDoor?.requiresCore === "smoke-required-core", `Expected door to export required core link, got ${JSON.stringify(toolkitRequiredDoor)}`);
   assert(

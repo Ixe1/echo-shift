@@ -1074,7 +1074,7 @@ class LevelEditor {
     }
     if (field === "size") {
       const size = normalizedCoreSize(value);
-      if (size) record.size = size;
+      if (size === "large") record.size = size;
       else delete record.size;
       return;
     }
