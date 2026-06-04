@@ -37,7 +37,12 @@ const level = {
     { id: "thin-wall", x: 92, y: 404, w: 20, h: 76, sprite: "wall", tone: "steel" },
     { id: "short-floor", x: 410, y: 450, w: 128, h: 30, sprite: "floor", tone: "steel" },
     { id: "block-a", x: 560, y: 420, w: 32, h: 60, sprite: "block", tone: "dark" },
-    { id: "block-b", x: 592, y: 420, w: 32, h: 60, sprite: "block", tone: "dark" }
+    { id: "block-b", x: 592, y: 420, w: 32, h: 60, sprite: "block", tone: "dark" },
+    { id: "enclosed-top", x: 800, y: 400, w: 20, h: 20, sprite: "block", tone: "dark" },
+    { id: "enclosed-left", x: 780, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
+    { id: "enclosed-center", x: 800, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
+    { id: "enclosed-right", x: 820, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
+    { id: "enclosed-bottom", x: 800, y: 440, w: 20, h: 20, sprite: "block", tone: "dark" }
   ],
   doors: [
     { id: "closed-a", x: 145, y: 400, w: 20, h: 80, opensWith: ["missing-a"] },
@@ -173,52 +178,51 @@ try {
     assert(outline, `Missing outline diagnostic for ${id}: ${diagnostics.outlines}`);
     assert(outline.color === "43f7ff", `Expected ${id} cyan outline color, got ${outline.color}`);
     assert(outline.depth === 2, `Expected ${id} outline depth 2, got ${outline.depth}`);
-    for (const segment of expected.present || []) {
+    const expectedSegments = new Set(expected.segments);
+    assert(
+      outline.segments.size === expectedSegments.size,
+      `Expected ${id} exact outline segments ${[...expectedSegments].join(";")}, got ${[...outline.segments].join(";")}`
+    );
+    for (const segment of expectedSegments) {
       assert(outline.segments.has(segment), `Expected ${id} outline segment ${segment}, got ${[...outline.segments].join(";")}`);
     }
-    for (const segment of expected.absent || []) {
-      assert(!outline.segments.has(segment), `Expected ${id} to omit internal outline segment ${segment}, got ${[...outline.segments].join(";")}`);
-    }
+  };
+  const assertNoOutline = (id) => {
+    assert(!outlinesById.has(id), `Expected ${id} to omit all outline segments, got ${diagnostics.outlines}`);
   };
 
   assert(diagnostics.solids.includes("floor-a:0"), `Expected floor atlas frame diagnostic, got ${diagnostics.solids}`);
   assert(diagnostics.solids.includes("thin-wall:1"), `Expected wall atlas frame diagnostic, got ${diagnostics.solids}`);
+  assert(diagnostics.solids.includes("enclosed-center:2"), `Expected enclosed center block frame diagnostic, got ${diagnostics.solids}`);
   assertOutline("floor-a", {
-    present: ["top:0-300", "bottom:0-300", "left:480-520"],
-    absent: ["right:480-520"]
+    segments: ["top:0-300", "bottom:0-300", "left:480-520"]
   });
   assertOutline("floor-b", {
-    present: ["top:300-410", "top:538-600", "bottom:300-600"],
-    absent: ["left:480-520", "right:480-520", "top:410-538"]
+    segments: ["top:300-410", "top:538-600", "bottom:300-600"]
   });
   assertOutline("floor-c", {
-    present: ["top:600-900", "bottom:600-900", "right:480-520"],
-    absent: ["left:480-520"]
+    segments: ["top:600-900", "bottom:600-900", "right:480-520"]
   });
   assertOutline("short-floor", {
-    present: ["top:410-538", "left:450-480", "right:450-480"],
-    absent: ["bottom:410-538"]
+    segments: ["top:410-538", "left:450-480", "right:450-480"]
   });
   assertOutline("left-wall-upper", {
-    present: ["top:-20-0", "left:0-260", "right:0-260"],
-    absent: ["bottom:-20-0"]
+    segments: ["top:-20-0", "left:0-260", "right:0-260"]
   });
   assertOutline("left-wall-lower", {
-    present: ["bottom:-20-0", "left:260-540", "right:260-540"],
-    absent: ["top:-20-0"]
+    segments: ["bottom:-20-0", "left:260-540", "right:260-540"]
   });
   assertOutline("block-a", {
-    present: ["top:560-592", "bottom:560-592", "left:420-480"],
-    absent: ["right:420-480"]
+    segments: ["top:560-592", "bottom:560-592", "left:420-480"]
   });
   assertOutline("block-b", {
-    present: ["top:592-624", "bottom:592-624", "right:420-480"],
-    absent: ["left:420-480"]
+    segments: ["top:592-624", "bottom:592-624", "right:420-480"]
   });
+  assertNoOutline("enclosed-center");
   assert(diagnostics.sensors.includes("echo-sensor:active-sensor:11:active"), `Expected active echo sensor to use active plate frame, got ${diagnostics.sensors}`);
   assert(diagnostics.sensors.includes("echo-sensor:inactive-sensor:2:inactive"), `Expected inactive echo sensor to use block frame, got ${diagnostics.sensors}`);
   assert(!diagnostics.sensors.includes(":9:"), `Echo sensor diagnostics should not use door-open frame 9, got ${diagnostics.sensors}`);
-  assert(diagnostics.objectCount >= 20, `Expected synced object sprites, got ${diagnostics.objectCount}`);
+  assert(diagnostics.objectCount >= 25, `Expected synced object sprites, got ${diagnostics.objectCount}`);
   assert(messages.every((msg) => !msg.text.includes("Error")), `Console/page errors: ${JSON.stringify(messages)}`);
 
   const fullGraphicsScreenshot = `${outDir}/door-solid-render-qa.png`;
