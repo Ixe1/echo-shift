@@ -23,6 +23,89 @@ const startAudioGate = async (page) => {
   await page.locator("[data-start-game]").click();
 };
 
+const runInputRouteAtHudFrames = async (page, route) =>
+  page.evaluate(async (routeToRun) => {
+    const actionKeys = {
+      idle: [],
+      right: ["KeyD"],
+      left: ["KeyA"]
+    };
+    const keyInfo = {
+      KeyA: { key: "a", code: "KeyA", keyCode: 65 },
+      KeyD: { key: "d", code: "KeyD", keyCode: 68 }
+    };
+    const active = new Set();
+    const readFrame = () => {
+      const text = document.querySelector("[data-time]")?.textContent || "0:00.00";
+      const [minutes, seconds] = text.split(":");
+      return Math.round((Number(minutes) * 60 + Number(seconds)) * 60);
+    };
+    const dispatchKey = (type, code) => {
+      const info = keyInfo[code];
+      const event = new KeyboardEvent(type, {
+        key: info.key,
+        code: info.code,
+        bubbles: true,
+        cancelable: true,
+        composed: true
+      });
+      Object.defineProperty(event, "keyCode", { get: () => info.keyCode });
+      Object.defineProperty(event, "which", { get: () => info.keyCode });
+      window.dispatchEvent(event);
+      document.dispatchEvent(event);
+    };
+    const setKeys = (codes) => {
+      const next = new Set(codes);
+      for (const code of [...active]) {
+        if (!next.has(code)) {
+          dispatchKey("keyup", code);
+          active.delete(code);
+        }
+      }
+      for (const code of next) {
+        if (!active.has(code)) {
+          dispatchKey("keydown", code);
+          active.add(code);
+        }
+      }
+    };
+    const waitUntilFrame = (target) =>
+      new Promise((resolve, reject) => {
+        const started = performance.now();
+        const check = () => {
+          const frame = readFrame();
+          const status = document.querySelector("[data-status]")?.textContent || "";
+          if (frame >= target) {
+            resolve(frame);
+            return;
+          }
+          if (status === "Signal lost") {
+            reject(new Error(`Route failed at frame ${frame}`));
+            return;
+          }
+          if (performance.now() - started > 36000) {
+            reject(new Error(`Timed out waiting for frame ${target}; current frame ${frame}`));
+            return;
+          }
+          requestAnimationFrame(check);
+        };
+        check();
+      });
+
+    const startFrame = readFrame();
+    let elapsed = 0;
+    try {
+      for (const [action, frames] of routeToRun) {
+        setKeys(actionKeys[action] || []);
+        elapsed += frames;
+        await waitUntilFrame(startFrame + elapsed);
+      }
+    } finally {
+      setKeys([]);
+    }
+    return readFrame();
+  }, route);
+
 const level = {
   id: "door-solid-render-qa",
   index: 0,
@@ -85,6 +168,23 @@ const level = {
   hint: "QA"
 };
 
+const cameraLevel = {
+  ...level,
+  id: "camera-scroll-qa",
+  name: "Camera Scroll QA",
+  subtitle: "Right-left reversal coverage",
+  start: { x: 80, y: 466 },
+  exit: { x: 2320, y: 438, w: 48, h: 62 },
+  bounds: { x: 0, y: 0, w: 2400, h: 540 },
+  solids: [
+    { id: "floor", x: 0, y: 500, w: 2400, h: 60, sprite: "floor", tone: "steel" },
+    { id: "left-wall", x: -26, y: 0, w: 26, h: 560, sprite: "wall", tone: "glass" },
+    { id: "right-wall", x: 2400, y: 0, w: 26, h: 560, sprite: "wall", tone: "glass" }
+  ],
+  doors: [],
+  echoSensors: []
+};
+
 const launchOptions = {
   headless: true,
   args: ["--no-sandbox", "--disable-dev-shm-usage"]
@@ -126,6 +226,7 @@ try {
     objectCount: Number(document.documentElement.dataset.echoShiftObjectAssetCount || "0"),
     background: document.documentElement.dataset.echoShiftBackgroundKey || "",
     backgroundFilter: document.documentElement.dataset.echoShiftBackgroundFilter || "",
+    objectAtlasFilter: document.documentElement.dataset.echoShiftObjectAtlasFilter || "",
     canvas: {
       width: document.querySelector("canvas")?.clientWidth || 0,
       height: document.querySelector("canvas")?.clientHeight || 0
@@ -235,6 +336,7 @@ try {
   assert(!diagnostics.sensors.includes(":9:"), `Echo sensor diagnostics should not use door-open frame 9, got ${diagnostics.sensors}`);
   assert(diagnostics.objectCount >= 25, `Expected synced object sprites, got ${diagnostics.objectCount}`);
   assert(diagnostics.backgroundFilter === "time-lab-prototype:0", `Expected background texture to use linear filtering, got ${diagnostics.backgroundFilter}`);
+  assert(diagnostics.objectAtlasFilter === "object-atlas:0", `Expected object atlas texture to use linear filtering, got ${diagnostics.objectAtlasFilter}`);
   assertNoUnexpectedBrowserMessages("Full graphics render");
 
   const fullGraphicsScreenshot = `${outDir}/door-solid-render-qa.png`;
@@ -260,7 +362,31 @@ try {
   await page.screenshot({ path: lowChurnScreenshot, fullPage: true });
   assertNoUnexpectedBrowserMessages("Low-churn render", lowChurnMessageStart);
 
-  console.log(JSON.stringify({ ok: true, screenshot: fullGraphicsScreenshot, lowChurnScreenshot, diagnostics }, null, 2));
+  await page.evaluate((snapshot) => {
+    window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
+  }, { motionModel: "anchored", currentIndex: 0, levels: [cameraLevel] });
+  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+  await startAudioGate(page);
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  await page.waitForFunction(() => document.querySelector("[data-level]")?.textContent?.includes("Camera Scroll QA"));
+  await page.waitForTimeout(300);
+  const cameraSample = async () => {
+    const raw = await page.evaluate(() => document.documentElement.dataset.echoShiftCameraSample || document.documentElement.dataset.echoShiftCameraSnap || "");
+    const [, coords = "0,0"] = raw.split(":");
+    const [x = "0", y = "0"] = coords.split(",");
+    return { raw, x: Number(x), y: Number(y) };
+  };
+  const cameraStart = await cameraSample();
+  await runInputRouteAtHudFrames(page, [["right", 360]]);
+  const cameraAfterRight = await cameraSample();
+  await runInputRouteAtHudFrames(page, [["left", 240]]);
+  const cameraAfterLeft = await cameraSample();
+  const cameraScroll = { start: cameraStart, afterRight: cameraAfterRight, afterLeft: cameraAfterLeft };
+  assert(cameraAfterRight.x > cameraStart.x + 50, `Expected camera to scroll right on flat QA route, got ${JSON.stringify(cameraScroll)}`);
+  assert(cameraAfterLeft.x < cameraAfterRight.x - 20, `Expected camera to scroll left after reversal, got ${JSON.stringify(cameraScroll)}`);
+
+  console.log(JSON.stringify({ ok: true, screenshot: fullGraphicsScreenshot, lowChurnScreenshot, diagnostics, cameraScroll }, null, 2));
 } finally {
   await browser.close();
 }

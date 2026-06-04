@@ -110,8 +110,9 @@ export class GameScene extends Phaser.Scene {
   private coreSpriteFrames: string[] = [];
   private echoSensorAssetFrames: string[] = [];
   private staticSolidOutlineRects: string[] = [];
-  private lastCameraSnap = "";
+  private lastCameraSample = "";
   private backgroundTextureFilter = "";
+  private objectAtlasTextureFilter = "";
   private diagnosticsEnabled = false;
   private lowChurnGraphics = false;
   private perfOverlayEnabled = false;
@@ -249,8 +250,9 @@ export class GameScene extends Phaser.Scene {
     this.coreSpriteFrames = [];
     this.echoSensorAssetFrames = [];
     this.staticSolidOutlineRects = [];
-    this.lastCameraSnap = "";
+    this.lastCameraSample = "";
     this.backgroundTextureFilter = "";
+    this.objectAtlasTextureFilter = "";
     this.diagnosticsEnabled = this.shouldExposeRenderDiagnostics();
     this.lowChurnGraphics = this.shouldUseLowChurnGraphics();
     this.perfOverlayEnabled = this.shouldShowPerfOverlay();
@@ -273,9 +275,10 @@ export class GameScene extends Phaser.Scene {
     this.configureCameraFrame();
     this.scale.on(Phaser.Scale.Events.RESIZE, this.configureCameraFrame, this);
     this.createBackgroundImages();
+    this.configureWorldTextureFilters();
     this.cameraTarget = this.add.zone(this.level.start.x, this.level.start.y, 1, 1);
     this.cameras.main.startFollow(this.cameraTarget, true, 0.12, 0.08);
-    this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.snapCameraToPixelGrid, this);
+    this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.recordCameraDiagnostics, this);
     this.backgroundFx = this.add.graphics().setDepth(-15);
     this.backgroundDetail = this.add.graphics().setDepth(-10);
     if (!this.lowChurnGraphics) this.drawBackgroundDetail();
@@ -510,16 +513,13 @@ export class GameScene extends Phaser.Scene {
       Math.min(340, Math.max(190, this.scale.width * 0.24)),
       Math.min(170, Math.max(96, this.scale.height * 0.2))
     );
-    this.snapCameraToPixelGrid();
+    this.recordCameraDiagnostics();
   };
 
-  private snapCameraToPixelGrid = (): void => {
+  private recordCameraDiagnostics = (): void => {
     const camera = this.cameras.main;
-    const pixelStep = 1 / Math.max(camera.zoom, 0.0001);
-    camera.scrollX = Math.round(camera.scrollX / pixelStep) * pixelStep;
-    camera.scrollY = Math.round(camera.scrollY / pixelStep) * pixelStep;
     if (this.diagnosticsEnabled) {
-      this.lastCameraSnap = `${camera.zoom.toFixed(4)}:${camera.scrollX.toFixed(2)},${camera.scrollY.toFixed(2)}`;
+      this.lastCameraSample = `${camera.zoom.toFixed(4)}:${camera.scrollX.toFixed(2)},${camera.scrollY.toFixed(2)}`;
     }
   };
 
@@ -533,7 +533,7 @@ export class GameScene extends Phaser.Scene {
   private shutdownScene = (): void => {
     this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.shutdownScene);
     this.events.off(Phaser.Scenes.Events.DESTROY, this.shutdownScene);
-    this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.snapCameraToPixelGrid, this);
+    this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.recordCameraDiagnostics, this);
     this.scale.off(Phaser.Scale.Events.RESIZE, this.configureCameraFrame, this);
     this.sceneCleanupRegistered = false;
     this.destroyTexturePrewarmSprites();
@@ -565,8 +565,9 @@ export class GameScene extends Phaser.Scene {
     this.coreSpriteFrames = [];
     this.echoSensorAssetFrames = [];
     this.staticSolidOutlineRects = [];
-    this.lastCameraSnap = "";
+    this.lastCameraSample = "";
     this.backgroundTextureFilter = "";
+    this.objectAtlasTextureFilter = "";
     this.perfSamples = [];
     this.perfLastUpdate = 0;
     this.renderEchoes.length = 0;
@@ -784,6 +785,12 @@ export class GameScene extends Phaser.Scene {
       document.documentElement.dataset.echoShiftBackgroundPieces = String(this.backgroundImages.length);
       document.documentElement.dataset.echoShiftBackgroundAmbience = JSON.stringify(backgroundAmbienceForLevel(this.level));
     }
+  }
+
+  private configureWorldTextureFilters(): void {
+    if (!this.textures.exists(OBJECT_ATLAS_KEY)) return;
+    this.textures.get(OBJECT_ATLAS_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
+    this.objectAtlasTextureFilter = `${OBJECT_ATLAS_KEY}:${Phaser.Textures.FilterMode.LINEAR}`;
   }
 
   private syncStaticLevelAssets(): void {
@@ -1214,8 +1221,10 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftCoreSpriteFrames = this.coreSpriteFrames.join("|");
     document.documentElement.dataset.echoShiftEchoSensorAssetFrames = this.echoSensorAssetFrames.join("|");
     document.documentElement.dataset.echoShiftSolidOutlineRects = this.staticSolidOutlineRects.join("|");
-    document.documentElement.dataset.echoShiftCameraSnap = this.lastCameraSnap;
+    document.documentElement.dataset.echoShiftCameraSample = this.lastCameraSample;
+    document.documentElement.dataset.echoShiftCameraSnap = this.lastCameraSample;
     document.documentElement.dataset.echoShiftBackgroundFilter = this.backgroundTextureFilter;
+    document.documentElement.dataset.echoShiftObjectAtlasFilter = this.objectAtlasTextureFilter;
   }
 
   private drawActor(actor: ActorBody, color: number, alpha: number): void {
