@@ -638,10 +638,14 @@ try {
   const floorPresetHeight = await objectNumber(page, "h");
   const floorMaterialOptions = await page.locator("[data-object-field='material'] option").allTextContents();
   const floorPresetMaterialDefault = await page.locator("[data-object-field='material']").inputValue();
+  const floorCollisionOptions = await page.locator("[data-object-field='collision'] option").allTextContents();
+  const floorPresetCollisionDefault = await page.locator("[data-object-field='collision']").inputValue();
   await page.locator("[data-object-field='material']").selectOption("sand-ruin");
+  await page.locator("[data-object-field='collision']").selectOption("top-only");
   const floorPresetExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
   const floorPresetSprite = floorPresetExport.solids.find((solid) => solid.id === floorPresetId)?.sprite;
   const floorPresetMaterial = floorPresetExport.solids.find((solid) => solid.id === floorPresetId)?.material;
+  const floorPresetCollision = floorPresetExport.solids.find((solid) => solid.id === floorPresetId)?.collision;
   await page.locator("[data-delete-object]").click();
   await page.locator("[data-tool='floor']").click();
   await dragWorld(page, { x: 1180, y: 420 }, { x: 1200, y: 440 });
@@ -1243,6 +1247,9 @@ try {
   assert(floorMaterialOptions.some((option) => option.includes("Glass Energy")), `Expected terrain material options, got ${floorMaterialOptions.join(", ")}`);
   assert(floorPresetMaterialDefault === "", `Expected new floor material to start in legacy/default mode, got ${floorPresetMaterialDefault}`);
   assert(floorPresetMaterial === "sand-ruin", `Expected selected floor material to export as sand-ruin, got ${floorPresetMaterial}`);
+  assert(floorCollisionOptions.some((option) => option.includes("top-only")), `Expected solid collision options, got ${floorCollisionOptions.join(", ")}`);
+  assert(floorPresetCollisionDefault === "", `Expected new floor collision to start in default/solid mode, got ${floorPresetCollisionDefault}`);
+  assert(floorPresetCollision === "top-only", `Expected selected floor collision to export as top-only, got ${floorPresetCollision}`);
   assert(clickDragFloorWidth === 320 && clickDragFloorHeight === 20, `Expected click-drag floor preset 320x20, got ${clickDragFloorWidth}x${clickDragFloorHeight}`);
   assert(userFloorId.startsWith("floorpiece-"), `Expected user floor id to avoid structural floor-* exemption, got ${userFloorId}`);
   assert(

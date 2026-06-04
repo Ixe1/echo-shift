@@ -31,6 +31,7 @@ export type ActorBody = Rect & {
 };
 
 export type SolidSprite = "auto" | "floor" | "wall" | "block" | "warning";
+export type SolidCollision = "solid" | "top-only" | "decorative";
 export type TerrainMaterial =
   | "metal-lab"
   | "glass-energy"
@@ -46,6 +47,7 @@ export type Solid = Rect & {
   tone?: "steel" | "glass" | "warning" | "dark";
   sprite?: SolidSprite;
   material?: TerrainMaterial;
+  collision?: SolidCollision;
 };
 
 export type MovingPlatform = Rect & {

@@ -47,6 +47,8 @@ const runFrames = (simulation, frames, input) => {
 const rectsOverlap = (a, b) =>
   a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
+const solidSupportsGameplay = (solid) => solid.collision !== "decorative";
+
 const oscillatingRectAt = (item, tick) => {
   const phase = item.phase || 0;
   const travel = Number.isFinite(item.distance) ? Math.max(0, item.distance) : 0;
@@ -91,6 +93,7 @@ const routeObstacleRects = (simulation) => {
     .filter((drone) => drone.y < footY && drone.y + drone.h > actor.y + 2);
   const lowSolids = simulation.level.solids.filter(
     (solid) =>
+      solidSupportsGameplay(solid) &&
       !["floor", "left-wall", "right-wall"].includes(solid.id) &&
       solid.h <= 58 &&
       solid.y < footY &&
@@ -100,7 +103,7 @@ const routeObstacleRects = (simulation) => {
 };
 
 const supportRects = (simulation) => [
-  ...simulation.level.solids,
+  ...simulation.level.solids.filter(solidSupportsGameplay),
   ...(simulation.level.oneWays || []),
   ...(simulation.level.conveyors || []),
   ...(simulation.level.platforms || []).map((platform) => oscillatingRectAt(platform, simulation.tick)),
@@ -924,6 +927,50 @@ try {
   oneWayPassSim.player.coyote = 7;
   runFrames(oneWayPassSim, 18, jump);
   assert(oneWayPassSim.player.y < 112, `Player should jump up through one-way from below, got y=${oneWayPassSim.player.y}`);
+
+  const topOnlySolidLevel = {
+    ...baseLevel,
+    start: { x: 82, y: 72 },
+    solids: [
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 220 },
+      { id: "right-wall", x: 320, y: 0, w: 20, h: 220 },
+      { id: "top-only-floor", x: 60, y: 120, w: 120, h: 12, collision: "top-only" }
+    ],
+    oneWays: []
+  };
+  const topOnlyLandingSim = new RoomSimulation(topOnlySolidLevel);
+  runFrames(topOnlyLandingSim, 45, idle);
+  assert(topOnlyLandingSim.player.onGround, "Player did not land on top-only solid from above");
+  assert(
+    Math.abs(topOnlyLandingSim.player.y + topOnlyLandingSim.player.h - 120) < 0.01,
+    `Player landed at wrong top-only solid height: ${topOnlyLandingSim.player.y + topOnlyLandingSim.player.h}`
+  );
+  const topOnlyPassSim = new RoomSimulation(topOnlySolidLevel);
+  topOnlyPassSim.player.x = 82;
+  topOnlyPassSim.player.y = 132;
+  topOnlyPassSim.player.onGround = true;
+  topOnlyPassSim.player.coyote = 7;
+  runFrames(topOnlyPassSim, 18, jump);
+  assert(topOnlyPassSim.player.y < 112, `Player should jump up through top-only solid from below, got y=${topOnlyPassSim.player.y}`);
+
+  const decorativeSolidLevel = {
+    ...baseLevel,
+    start: { x: 82, y: 72 },
+    solids: [
+      { id: "decorative-band", x: 60, y: 120, w: 120, h: 12, collision: "decorative" },
+      { id: "catch-floor", x: 0, y: 164, w: 320, h: 36 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 220 },
+      { id: "right-wall", x: 320, y: 0, w: 20, h: 220 }
+    ],
+    oneWays: []
+  };
+  const decorativeFallSim = new RoomSimulation(decorativeSolidLevel);
+  runFrames(decorativeFallSim, 45, idle);
+  assert(decorativeFallSim.player.onGround, "Player should land on catch floor after passing decorative solid");
+  assert(
+    Math.abs(decorativeFallSim.player.y + decorativeFallSim.player.h - 164) < 0.01,
+    `Decorative solid should not stop player; landed at ${decorativeFallSim.player.y + decorativeFallSim.player.h}`
+  );
 
   const movingPlatformLandingLevel = {
     ...baseLevel,

@@ -12,6 +12,7 @@ import {
 import { backgroundForLevel, isLevelBackgroundKey, levelBackgroundKeys, levelBackgrounds } from "../game/backgrounds";
 import { doorRequiredCoreIds, isMajorCore } from "../game/objects";
 import { normalizeScoreSettings } from "../game/scoring";
+import { normalizeSolidCollision, solidCollisionFor, solidCollisionValues, solidHasGameplayCollision } from "../game/solidCollision";
 import { normalizeSolid, normalizeSolidSprite, solidSpriteValues } from "../game/solidSprites";
 import { defaultSoundtrackKeyForLevel, isLevelSoundtrackKey, levelSoundtrackKeys, soundtracks } from "../game/soundtracks";
 import { normalizeTerrainMaterial, terrainMaterialForSolid, terrainMaterialLabels, terrainMaterialValues } from "../game/terrainMaterials";
@@ -222,6 +223,11 @@ const solidPresetIdStems: Record<SolidPreset, string> = {
 const terrainMaterialOptions: SelectOption[] = [
   { value: "", label: "legacy/default" },
   ...terrainMaterialValues.map((value) => ({ value, label: terrainMaterialLabels[value] }))
+];
+
+const solidCollisionOptions: SelectOption[] = [
+  { value: "", label: "default/solid" },
+  ...solidCollisionValues.map((value) => ({ value, label: value }))
 ];
 
 const cloneLevels = (items: Level[]): Level[] => JSON.parse(JSON.stringify(items)) as Level[];
@@ -583,7 +589,8 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
       id,
       tone: record.tone as Solid["tone"],
       sprite: normalizeSolidSprite(record.sprite),
-      material: normalizeTerrainMaterial(record.material)
+      material: normalizeTerrainMaterial(record.material),
+      collision: normalizeSolidCollision(record.collision)
     });
   }
   if (kind === "conveyors") {
@@ -1103,6 +1110,12 @@ class LevelEditor {
       else delete record.material;
       return;
     }
+    if (field === "collision") {
+      const collision = normalizeSolidCollision(String(value).trim());
+      if (collision) record.collision = collision;
+      else delete record.collision;
+      return;
+    }
     if (field === "size") {
       const size = normalizedCoreSize(value);
       if (size === "large") record.size = size;
@@ -1570,7 +1583,8 @@ class LevelEditor {
 
   private nearestSurfaceTop(kind: RectCollection, rect: Rect, snapDistance = SURFACE_SNAP_DISTANCE): number | null {
     const movingSurfaces = this.isStaticToolkitSurface(kind) ? [] : readCollection(this.level, "platforms");
-    const candidates = [...this.level.solids, ...movingSurfaces, ...readCollection(this.level, "oneWays"), ...readCollection(this.level, "conveyors")]
+    const gameplaySolids = this.level.solids.filter(solidHasGameplayCollision);
+    const candidates = [...gameplaySolids, ...movingSurfaces, ...readCollection(this.level, "oneWays"), ...readCollection(this.level, "conveyors")]
       .filter((surface) => rectsOverlapX(rect, surface))
       .map((surface) => surface.y)
       .filter((surfaceY) => {
@@ -1872,13 +1886,14 @@ class LevelEditor {
     const record = object as unknown as Record<string, unknown>;
     if (kind === "solids") {
       return `
-        <div class="inspector-grid three">
+        <div class="inspector-grid two">
           ${this.selectField("Sprite", "sprite", String(record.sprite || ""), [
             { value: "", label: "legacy/auto" },
             { value: "auto", label: "auto" },
             ...solidSpriteValues.filter((value) => value !== "auto")
           ])}
           ${this.selectField("Material", "material", String(record.material || ""), terrainMaterialOptions)}
+          ${this.selectField("Collision", "collision", String(record.collision || ""), solidCollisionOptions)}
           ${this.selectField("Tone", "tone", String(record.tone || ""), ["", "steel", "glass", "warning", "dark"])}
         </div>
       `;
@@ -2390,6 +2405,11 @@ class LevelEditor {
       drawMotionPath();
       return;
     }
+    if (kind === "solids") {
+      this.drawSolid(object as Solid, style, selected);
+      drawMotionPath();
+      return;
+    }
 
     ctx.fillStyle = style.fill;
     ctx.strokeStyle = selected ? "#fff8bf" : style.stroke;
@@ -2398,6 +2418,36 @@ class LevelEditor {
     ctx.strokeRect(object.x, object.y, object.w, object.h);
     this.drawObjectLabel(object, object.id, style.text);
     drawMotionPath();
+  }
+
+  private drawSolid(object: Solid, style: { fill: string; stroke: string; text: string }, selected: boolean): void {
+    const ctx = this.context;
+    const collision = solidCollisionFor(object);
+    ctx.fillStyle = style.fill;
+    ctx.strokeStyle = selected ? "#fff8bf" : style.stroke;
+    ctx.lineWidth = selected ? 4 / this.view.w : 2 / this.view.w;
+    ctx.fillRect(object.x, object.y, object.w, object.h);
+    ctx.strokeRect(object.x, object.y, object.w, object.h);
+
+    if (collision === "top-only") {
+      ctx.strokeStyle = "#fff8bf";
+      ctx.lineWidth = 3 / this.view.w;
+      ctx.beginPath();
+      ctx.moveTo(object.x, object.y);
+      ctx.lineTo(object.x + object.w, object.y);
+      ctx.stroke();
+    } else if (collision === "decorative") {
+      ctx.strokeStyle = "rgba(236, 251, 255, 0.5)";
+      ctx.lineWidth = 1.5 / this.view.w;
+      for (let x = object.x + 8; x < object.x + object.w; x += 18) {
+        ctx.beginPath();
+        ctx.moveTo(x, object.y + object.h - 4);
+        ctx.lineTo(x + 8, object.y + 4);
+        ctx.stroke();
+      }
+    }
+
+    this.drawObjectLabel(object, object.id, style.text);
   }
 
   private drawOneWay(object: RectObject, style: { fill: string; stroke: string; text: string }, selected: boolean): void {

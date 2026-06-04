@@ -1,4 +1,5 @@
 import type { Solid, SolidSprite } from "./types";
+import { normalizeSolidCollision } from "./solidCollision";
 
 export const solidSpriteValues = ["auto", "floor", "wall", "block", "warning"] as const satisfies readonly SolidSprite[];
 
@@ -14,5 +15,6 @@ export const legacySolidSprite = (solid: Pick<Solid, "id">): SolidSprite | undef
 
 export const normalizeSolid = (solid: Solid): Solid => ({
   ...solid,
-  sprite: solid.sprite === undefined ? legacySolidSprite(solid) : solid.sprite
+  sprite: solid.sprite === undefined ? legacySolidSprite(solid) : solid.sprite,
+  collision: normalizeSolidCollision(solid.collision)
 });

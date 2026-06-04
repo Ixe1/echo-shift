@@ -2,6 +2,7 @@ import type { Level } from "../game/types";
 import { isBackgroundAmbienceColor, isBackgroundAmbiencePreset, normalizeBackgroundAmbience } from "../game/backgroundAmbience";
 import { isLevelBackgroundKey } from "../game/backgrounds";
 import { normalizeScoreSettings } from "../game/scoring";
+import { solidCollisionValues } from "../game/solidCollision";
 import { normalizeSolid, solidSpriteValues } from "../game/solidSprites";
 import { isLevelSoundtrackKey } from "../game/soundtracks";
 import { ANCHORED_MOTION_MODEL, normalizeLevelMotionModel, usesAnchoredMotionModel } from "./motionModel";
@@ -81,7 +82,11 @@ const movingObjectLike = (value: unknown): boolean =>
 const solidSpriteValue = (value: unknown): boolean =>
   value === undefined || solidSpriteValues.includes(value as (typeof solidSpriteValues)[number]);
 
-const solidLike = (value: unknown): boolean => objectRectLike(value) && optionalString(value.tone) && solidSpriteValue(value.sprite);
+const solidCollisionValue = (value: unknown): boolean =>
+  value === undefined || solidCollisionValues.includes(value as (typeof solidCollisionValues)[number]);
+
+const solidLike = (value: unknown): boolean =>
+  objectRectLike(value) && optionalString(value.tone) && solidSpriteValue(value.sprite) && solidCollisionValue(value.collision);
 const oneWayLike = (value: unknown): boolean => objectRectLike(value);
 const conveyorLike = (value: unknown): boolean =>
   objectRectLike(value) && (value.direction === -1 || value.direction === 1) && finiteValue(value.speed) && value.speed >= 0;

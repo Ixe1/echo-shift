@@ -1,5 +1,6 @@
 import { clamp, rectsOverlap } from "./geometry";
 import { oscillatingOffsetAt } from "./motion";
+import { solidHasFullCollision, solidHasTopOnlyCollision } from "./solidCollision";
 import type { ActorBody, Conveyor, InputFrame, MovingPlatform, OneWayPlatform, Rect, Solid } from "./types";
 
 const PLAYER_WIDTH = 24;
@@ -147,11 +148,12 @@ export const moveActor = (
   actor.standingOn = null;
 
   const collisionRects: CollisionRect[] = [
-    ...solids,
+    ...solids.filter(solidHasFullCollision),
     ...doors,
     ...(dynamic.conveyors || []).map((conveyor) => ({ ...conveyor, conveyor }))
   ];
   const oneWayRects: CollisionRect[] = [
+    ...solids.filter(solidHasTopOnlyCollision).map((solid) => ({ ...solid, oneWay: true })),
     ...(dynamic.oneWays || []).map((oneWay) => ({ ...oneWay, oneWay: true })),
     ...platforms.map((platform) => ({
       ...platform.current,
