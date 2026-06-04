@@ -125,6 +125,7 @@ try {
     sensors: document.documentElement.dataset.echoShiftEchoSensorAssetFrames || "",
     objectCount: Number(document.documentElement.dataset.echoShiftObjectAssetCount || "0"),
     background: document.documentElement.dataset.echoShiftBackgroundKey || "",
+    backgroundFilter: document.documentElement.dataset.echoShiftBackgroundFilter || "",
     canvas: {
       width: document.querySelector("canvas")?.clientWidth || 0,
       height: document.querySelector("canvas")?.clientHeight || 0
@@ -233,6 +234,7 @@ try {
   assert(diagnostics.sensors.includes("echo-sensor:inactive-sensor:2:inactive"), `Expected inactive echo sensor to use block frame, got ${diagnostics.sensors}`);
   assert(!diagnostics.sensors.includes(":9:"), `Echo sensor diagnostics should not use door-open frame 9, got ${diagnostics.sensors}`);
   assert(diagnostics.objectCount >= 25, `Expected synced object sprites, got ${diagnostics.objectCount}`);
+  assert(diagnostics.backgroundFilter === "time-lab-prototype:0", `Expected background texture to use linear filtering, got ${diagnostics.backgroundFilter}`);
   assertNoUnexpectedBrowserMessages("Full graphics render");
 
   const fullGraphicsScreenshot = `${outDir}/door-solid-render-qa.png`;

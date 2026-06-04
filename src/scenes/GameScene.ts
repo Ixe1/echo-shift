@@ -111,6 +111,7 @@ export class GameScene extends Phaser.Scene {
   private echoSensorAssetFrames: string[] = [];
   private staticSolidOutlineRects: string[] = [];
   private lastCameraSnap = "";
+  private backgroundTextureFilter = "";
   private diagnosticsEnabled = false;
   private lowChurnGraphics = false;
   private perfOverlayEnabled = false;
@@ -249,6 +250,7 @@ export class GameScene extends Phaser.Scene {
     this.echoSensorAssetFrames = [];
     this.staticSolidOutlineRects = [];
     this.lastCameraSnap = "";
+    this.backgroundTextureFilter = "";
     this.diagnosticsEnabled = this.shouldExposeRenderDiagnostics();
     this.lowChurnGraphics = this.shouldUseLowChurnGraphics();
     this.perfOverlayEnabled = this.shouldShowPerfOverlay();
@@ -564,6 +566,7 @@ export class GameScene extends Phaser.Scene {
     this.echoSensorAssetFrames = [];
     this.staticSolidOutlineRects = [];
     this.lastCameraSnap = "";
+    this.backgroundTextureFilter = "";
     this.perfSamples = [];
     this.perfLastUpdate = 0;
     this.renderEchoes.length = 0;
@@ -707,7 +710,7 @@ export class GameScene extends Phaser.Scene {
     const lowerY = bounds.y + bounds.h * 0.66;
     const activeHeight = lowerY - upperY;
     const shimmer = 0.55 + Math.sin(this.time.now / (520 - flicker * 260)) * 0.45;
-    const scanOffset = ((tick * (0.22 + drift * 1.2)) % 360) - 360;
+    const scanOffset = Math.round(((tick * (0.22 + drift * 1.2)) % 360) - 360);
 
     layer.fillStyle(color, 0.04 + intensity * 0.11);
     for (let x = bounds.x + scanOffset; x < bounds.x + bounds.w + 360; x += 360) {
@@ -716,8 +719,8 @@ export class GameScene extends Phaser.Scene {
     }
 
     layer.lineStyle(1, color, (0.14 + shimmer * 0.2) * intensity);
-    for (let x = bounds.x + 96 + scanOffset * 0.35; x < bounds.x + bounds.w + 240; x += 520) {
-      const y = upperY + 32 + ((x - bounds.x) % 170);
+    for (let x = bounds.x + 96 + Math.round(scanOffset * 0.35); x < bounds.x + bounds.w + 240; x += 520) {
+      const y = Math.round(upperY + 32 + ((x - bounds.x) % 170));
       layer.lineBetween(x, y, x + 190, y + 8);
       layer.lineBetween(x + 260, y + 76, x + 420, y + 62);
     }
@@ -726,8 +729,8 @@ export class GameScene extends Phaser.Scene {
     layer.fillStyle(color, 0.22 * intensity);
     for (let index = 0; index < particleCount; index += 1) {
       const seed = index * 97;
-      const x = bounds.x + ((seed * 53 + tick * (0.32 + drift)) % Math.max(1, bounds.w));
-      const y = upperY + ((seed * 29 + tick * 0.12) % Math.max(1, activeHeight * 0.9));
+      const x = Math.round(bounds.x + ((seed * 53 + tick * (0.32 + drift)) % Math.max(1, bounds.w)));
+      const y = Math.round(upperY + ((seed * 29 + tick * 0.12) % Math.max(1, activeHeight * 0.9)));
       const alpha = (0.08 + 0.24 * (0.5 + Math.sin((tick + seed) / 38) * 0.5)) * intensity;
       layer.fillStyle(color, alpha);
       layer.fillCircle(x, y, 1.7 + ((seed % 3) * 0.55));
@@ -765,6 +768,9 @@ export class GameScene extends Phaser.Scene {
     const bounds = this.level.bounds;
     const scale = Math.max(bounds.h / background.sourceSize.h, 0.01);
     const startX = bounds.x - BACKGROUND_DRIFT_PADDING;
+    const texture = this.textures.get(background.key);
+    texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
+    this.backgroundTextureFilter = `${background.key}:${Phaser.Textures.FilterMode.LINEAR}`;
     const image = this.add
       .tileSprite(startX, bounds.y, bounds.w + BACKGROUND_DRIFT_PADDING * 2, bounds.h, background.key)
       .setOrigin(0, 0)
@@ -1209,6 +1215,7 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftEchoSensorAssetFrames = this.echoSensorAssetFrames.join("|");
     document.documentElement.dataset.echoShiftSolidOutlineRects = this.staticSolidOutlineRects.join("|");
     document.documentElement.dataset.echoShiftCameraSnap = this.lastCameraSnap;
+    document.documentElement.dataset.echoShiftBackgroundFilter = this.backgroundTextureFilter;
   }
 
   private drawActor(actor: ActorBody, color: number, alpha: number): void {
