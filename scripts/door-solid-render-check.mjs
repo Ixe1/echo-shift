@@ -196,8 +196,8 @@ const decodePng = (buffer) => {
   return { width, height, data: rgba };
 };
 
-const sampleWorldColors = async (page, points) => {
-  const projection = await page.evaluate(() => {
+const readCameraProjection = async (page) =>
+  page.evaluate(() => {
     const canvas = document.querySelector("canvas");
     if (!(canvas instanceof HTMLCanvasElement)) throw new Error("Missing game canvas");
     const rawView = document.documentElement.dataset.echoShiftCameraWorldView || "";
@@ -210,7 +210,23 @@ const sampleWorldColors = async (page, points) => {
       viewport: { w: window.innerWidth, h: window.innerHeight }
     };
   });
-  const image = decodePng(await page.screenshot({ fullPage: false }));
+
+const projectionKey = (projection) =>
+  `${projection.rawView}:${projection.rect.x},${projection.rect.y},${projection.rect.w},${projection.rect.h}:${projection.viewport.w},${projection.viewport.h}`;
+
+const screenshotWithStableProjection = async (page) => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const before = await readCameraProjection(page);
+    const image = decodePng(await page.screenshot({ fullPage: false }));
+    const after = await readCameraProjection(page);
+    if (projectionKey(before) === projectionKey(after)) return { image, projection: after };
+    await page.waitForTimeout(50);
+  }
+  throw new Error("Camera projection changed during screenshot capture; shimmer probe could not sample an atomic frame");
+};
+
+const sampleWorldColors = async (page, points) => {
+  const { image, projection } = await screenshotWithStableProjection(page);
   const scaleX = image.width / Math.max(1, projection.viewport.w);
   const scaleY = image.height / Math.max(1, projection.viewport.h);
   const patchSize = 5;

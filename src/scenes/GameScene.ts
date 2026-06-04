@@ -526,8 +526,16 @@ export class GameScene extends Phaser.Scene {
       this.lastCameraSample = `${camera.zoom.toFixed(4)}:${camera.scrollX.toFixed(2)},${camera.scrollY.toFixed(2)}`;
       const { x, y, width, height } = camera.worldView;
       this.lastCameraWorldView = `${x.toFixed(2)},${y.toFixed(2)},${width.toFixed(2)},${height.toFixed(2)}`;
+      this.writeCameraDiagnostics();
     }
   };
+
+  private writeCameraDiagnostics(): void {
+    if (!this.diagnosticsEnabled) return;
+    document.documentElement.dataset.echoShiftCameraSample = this.lastCameraSample;
+    document.documentElement.dataset.echoShiftCameraSnap = this.lastCameraSample;
+    document.documentElement.dataset.echoShiftCameraWorldView = this.lastCameraWorldView;
+  }
 
   private registerSceneCleanup(): void {
     if (this.sceneCleanupRegistered) return;
@@ -1245,9 +1253,7 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftCoreSpriteFrames = this.coreSpriteFrames.join("|");
     document.documentElement.dataset.echoShiftEchoSensorAssetFrames = this.echoSensorAssetFrames.join("|");
     document.documentElement.dataset.echoShiftSolidOutlineRects = this.staticSolidOutlineRects.join("|");
-    document.documentElement.dataset.echoShiftCameraSample = this.lastCameraSample;
-    document.documentElement.dataset.echoShiftCameraSnap = this.lastCameraSample;
-    document.documentElement.dataset.echoShiftCameraWorldView = this.lastCameraWorldView;
+    this.writeCameraDiagnostics();
     document.documentElement.dataset.echoShiftBackgroundFilter = this.backgroundTextureFilter;
     document.documentElement.dataset.echoShiftObjectAtlasFilter = this.objectAtlasTextureFilter;
   }

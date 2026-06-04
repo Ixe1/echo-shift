@@ -758,6 +758,18 @@ try {
   await page.locator("[data-object-field='size']").selectOption("large");
   const toolkitCoreSize = await page.locator("[data-object-field='size']").inputValue();
 
+  await dragToolToWorld(page, "cores", { x: 1080, y: 360 });
+  await page.locator("[data-object-field='id']").fill("smoke-required-core");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  const requiredCoreDefaultSize = await page.locator("[data-object-field='size']").inputValue();
+  await dragToolToWorld(page, "doors", { x: 1120, y: 180 });
+  await page.locator("[data-object-field='id']").fill("smoke-required-door");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await setObjectField(page, "requiresCore", "smoke-required-core");
+  await openTab(page, "objects");
+  await page.locator("[data-object-list] [data-kind='cores'][data-id='smoke-required-core']").click();
+  const inferredRequiredCoreSize = await page.locator("[data-object-field='size']").inputValue();
+
   await dragToolToWorld(page, "movingLasers", { x: 1500, y: 360 });
   await page.locator("[data-object-field='id']").fill("smoke-resize-sweeper");
   await dispatchChange(page.locator("[data-object-field='id']"));
@@ -812,6 +824,8 @@ try {
   const toolkitSweeper = toolkitLevel.movingLasers.find((item) => item.id === "smoke-sweeper");
   const toolkitDrone = toolkitLevel.drones.find((item) => item.id === "smoke-disabled-drone");
   const toolkitCore = toolkitLevel.cores.find((item) => item.id === "smoke-core");
+  const toolkitRequiredCore = toolkitLevel.cores.find((item) => item.id === "smoke-required-core");
+  const toolkitRequiredDoor = toolkitLevel.doors.find((item) => item.id === "smoke-required-door");
   const toolkitCrate = toolkitLevel.crates.find((item) => item.id === "smoke-crate");
 
   await dragToolToWorld(page, "platforms", { x: 1320, y: 420 });
@@ -1268,6 +1282,10 @@ try {
   assert(toolkitCoreDefaultSize === "small", `Expected new editor cores to default to small, got ${toolkitCoreDefaultSize}`);
   assert(toolkitCoreSize === "large", `Expected core size selector to switch to large, got ${toolkitCoreSize}`);
   assert(toolkitCore?.size === "large", `Expected core size to export, got ${JSON.stringify(toolkitCore)}`);
+  assert(requiredCoreDefaultSize === "small", `Expected unlinked required-core candidate to default to small, got ${requiredCoreDefaultSize}`);
+  assert(inferredRequiredCoreSize === "large", `Expected door-required core inspector to show inferred large size, got ${inferredRequiredCoreSize}`);
+  assert(toolkitRequiredCore && toolkitRequiredCore.size === undefined, `Expected inferred large core to omit explicit size, got ${JSON.stringify(toolkitRequiredCore)}`);
+  assert(toolkitRequiredDoor?.requiresCore === "smoke-required-core", `Expected door to export required core link, got ${JSON.stringify(toolkitRequiredDoor)}`);
   assert(
     missingDroneTriggerValidation === "issues" && missingDroneTriggerText?.includes("smoke-disabled-drone references missing trigger missing-drone-trigger"),
     `Expected missing drone trigger validation, got ${missingDroneTriggerValidation}: ${missingDroneTriggerText}`

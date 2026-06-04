@@ -1930,9 +1930,11 @@ class LevelEditor {
       `;
     }
     if (kind === "cores") {
+      const requiredCoreIds = doorRequiredCoreIds(this.level.doors || []);
+      const displayedSize = isMajorCore(record as Core, requiredCoreIds) ? "large" : "small";
       return `
         ${this.textField("Label", "label", String(record.label || ""), "object")}
-        ${this.selectField("Size", "size", String(record.size || "small"), [
+        ${this.selectField("Size", "size", displayedSize, [
           { value: "small", label: "Small" },
           { value: "large", label: "Large" }
         ])}
