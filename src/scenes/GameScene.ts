@@ -37,6 +37,10 @@ const LAUNCH_PAD_KEY = "launch-pad";
 const LAUNCH_PAD_FRAME_WIDTH = 256;
 const LAUNCH_PAD_FRAME_HEIGHT = 192;
 const LAUNCH_PAD_ACTIVE_MS = 360;
+const HAZARD_VENT_KEY = "hazard-vent";
+const HAZARD_VENT_FRAME_WIDTH = 352;
+const HAZARD_VENT_FRAME_HEIGHT = 288;
+const HAZARD_VENT_FRAMES = 6;
 const LEVEL_INTRO_MS = 3000;
 const LEVEL_INTRO_OUTRO_MS = 820;
 const OBJECT_FRAME = {
@@ -156,6 +160,7 @@ export class GameScene extends Phaser.Scene {
   private coreSpriteFrames: string[] = [];
   private echoSensorAssetFrames: string[] = [];
   private launchPadSpriteFrames: string[] = [];
+  private hazardVentSpriteFrames: string[] = [];
   private staticSolidOutlineRects: string[] = [];
   private lastCameraSample = "";
   private lastCameraWorldView = "";
@@ -307,6 +312,7 @@ export class GameScene extends Phaser.Scene {
     this.coreSpriteFrames = [];
     this.echoSensorAssetFrames = [];
     this.launchPadSpriteFrames = [];
+    this.hazardVentSpriteFrames = [];
     this.staticSolidOutlineRects = [];
     this.lastCameraSample = "";
     this.lastCameraWorldView = "";
@@ -863,6 +869,7 @@ export class GameScene extends Phaser.Scene {
     this.coreSpriteFrames = [];
     this.echoSensorAssetFrames = [];
     this.launchPadSpriteFrames = [];
+    this.hazardVentSpriteFrames = [];
     this.staticSolidOutlineRects = [];
     this.lastCameraSample = "";
     this.lastCameraWorldView = "";
@@ -897,6 +904,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.lowChurnGraphics) this.syncBackgroundAmbience(snapshot.tick);
     this.drawConveyors();
     this.drawPlatforms(snapshot.tick);
+    this.drawHazards();
     this.drawCrates(snapshot.crates);
     this.drawDoors(snapshot.openDoors);
     this.drawPlates(snapshot.activePlates);
@@ -1105,6 +1113,9 @@ export class GameScene extends Phaser.Scene {
       this.textures.get(LAUNCH_PAD_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
       this.launchPadTextureFilter = `${LAUNCH_PAD_KEY}:${Phaser.Textures.FilterMode.LINEAR}`;
     }
+    if (this.textures.exists(HAZARD_VENT_KEY)) {
+      this.textures.get(HAZARD_VENT_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
+    }
     if (this.textures.exists(TERRAIN_TILE_KEY)) {
       this.textures.get(TERRAIN_TILE_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
       this.terrainTextureFilter = `${TERRAIN_TILE_KEY}:${Phaser.Textures.FilterMode.LINEAR}`;
@@ -1207,6 +1218,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncStaticHazards(): void {
+    if (this.textures.exists(HAZARD_VENT_KEY)) return;
     for (const hazard of this.level.hazards || []) {
       this.hazardRenderRect.x = hazard.x;
       this.hazardRenderRect.y = hazard.y - 4;
@@ -1215,6 +1227,58 @@ export class GameScene extends Phaser.Scene {
       this.syncTileAsset(`hazard:${hazard.id}`, OBJECT_FRAME.warning, this.hazardRenderRect, 2, 0.74, 0.38);
       this.markStaticObjectAsset(`hazard:${hazard.id}`);
     }
+  }
+
+  private drawHazards(): void {
+    if (!this.textures.exists(HAZARD_VENT_KEY)) return;
+    for (const hazard of this.level.hazards || []) {
+      const count = Math.max(1, Math.ceil(hazard.w / 96));
+      const sliceWidth = hazard.w / count;
+      const displayWidth = Math.max(84, sliceWidth + 18);
+      const displayHeight = displayWidth * (HAZARD_VENT_FRAME_HEIGHT / HAZARD_VENT_FRAME_WIDTH);
+      const baseFrame = Math.floor(this.time.now / 115);
+      const offset = this.hazardFrameOffset(hazard.id);
+      for (let index = 0; index < count; index += 1) {
+        const frame = (baseFrame + offset + index * 2) % HAZARD_VENT_FRAMES;
+        const x = hazard.x + sliceWidth * (index + 0.5);
+        const y = hazard.y + hazard.h + 8;
+        this.syncHazardVentAsset(hazard.id, index, frame, x, y, displayWidth, displayHeight);
+      }
+    }
+  }
+
+  private syncHazardVentAsset(
+    hazardId: string,
+    index: number,
+    frame: number,
+    x: number,
+    y: number,
+    width: number,
+    height: number
+  ): void {
+    if (!this.textures.exists(HAZARD_VENT_KEY) || width <= 0 || height <= 0) return;
+    const id = `hazard-vent:${hazardId}:${index}`;
+    const asset = this.assetFor(id, "image", frame, HAZARD_VENT_KEY) as Phaser.GameObjects.Image;
+    asset
+      .setVisible(true)
+      .setDepth(7)
+      .setAlpha(0.98)
+      .setOrigin(0.5, 1)
+      .setPosition(x, y)
+      .setRotation(0)
+      .setFrame(frame)
+      .setDisplaySize(width, height)
+      .clearTint();
+    this.activeObjectAssetIds.add(id);
+    if (this.diagnosticsEnabled) {
+      this.hazardVentSpriteFrames.push(`${id}:${frame}:${Math.round(x)},${Math.round(y)}:${Math.round(width)}x${Math.round(height)}`);
+    }
+  }
+
+  private hazardFrameOffset(id: string): number {
+    let offset = 0;
+    for (let index = 0; index < id.length; index += 1) offset = (offset + id.charCodeAt(index)) % HAZARD_VENT_FRAMES;
+    return offset;
   }
 
   private markStaticObjectAsset(id: string): void {
@@ -1353,19 +1417,8 @@ export class GameScene extends Phaser.Scene {
   private drawEchoSensors(activePlates: Set<string>): void {
     for (const sensor of this.level.echoSensors || []) {
       const active = activePlates.has(sensor.id);
-      const frame = active ? OBJECT_FRAME.plateActive : OBJECT_FRAME.block;
-      this.syncImageAsset(
-        `echo-sensor:${sensor.id}`,
-        frame,
-        sensor.x + sensor.w / 2,
-        sensor.y + sensor.h / 2,
-        Math.max(42, sensor.w),
-        Math.max(42, sensor.h),
-        3,
-        active ? 0.9 : 0.48
-      );
       if (this.diagnosticsEnabled) {
-        this.echoSensorAssetFrames.push(`echo-sensor:${sensor.id}:${frame}:${active ? "active" : "inactive"}`);
+        this.echoSensorAssetFrames.push(`echo-sensor:${sensor.id}:hidden:${active ? "active" : "inactive"}`);
       }
     }
   }
@@ -1574,6 +1627,7 @@ export class GameScene extends Phaser.Scene {
       { key: background.key },
       { key: OBJECT_ATLAS_KEY, frame: 0 },
       { key: LAUNCH_PAD_KEY, frame: 0 },
+      { key: HAZARD_VENT_KEY, frame: 0 },
       { key: TERRAIN_TILE_KEY, frame: 0 },
       { key: "time-runner", frame: 0 },
       { key: "time-effects", frame: 0 },
@@ -1619,6 +1673,7 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftCoreSpriteFrames = this.coreSpriteFrames.join("|");
     document.documentElement.dataset.echoShiftEchoSensorAssetFrames = this.echoSensorAssetFrames.join("|");
     document.documentElement.dataset.echoShiftLaunchPadSpriteFrames = this.launchPadSpriteFrames.join("|");
+    document.documentElement.dataset.echoShiftHazardVentSpriteFrames = this.hazardVentSpriteFrames.join("|");
     document.documentElement.dataset.echoShiftSolidOutlineRects = this.staticSolidOutlineRects.join("|");
     document.documentElement.dataset.echoShiftDeathPresentation = this.retryRequired
       ? "retry-required"
@@ -1899,6 +1954,7 @@ export class GameScene extends Phaser.Scene {
     this.doorAssetTransforms.length = 0;
     this.echoSensorAssetFrames.length = 0;
     this.launchPadSpriteFrames.length = 0;
+    this.hazardVentSpriteFrames.length = 0;
   }
 
   private finishObjectAssetSync(): void {

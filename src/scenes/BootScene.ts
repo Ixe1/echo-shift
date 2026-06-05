@@ -40,6 +40,10 @@ export class BootScene extends Phaser.Scene {
       frameWidth: 256,
       frameHeight: 192
     });
+    this.load.spritesheet("hazard-vent", "/assets/sprites/hazard-vent-sheet.png", {
+      frameWidth: 352,
+      frameHeight: 288
+    });
     this.load.spritesheet(TERRAIN_TILE_KEY, "/assets/sprites/terrain-tiles.png", {
       frameWidth: TERRAIN_TILE_SIZE,
       frameHeight: TERRAIN_TILE_SIZE,

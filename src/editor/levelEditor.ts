@@ -10,7 +10,7 @@ import {
   normalizeBackgroundAmbience
 } from "../game/backgroundAmbience";
 import { backgroundForLevel, isLevelBackgroundKey, levelBackgroundKeys, levelBackgrounds } from "../game/backgrounds";
-import { doorRequiredCoreIds, isMajorCore } from "../game/objects";
+import { doorRequiredCoreIds, isMajorCore, movingLaserBeamAxis } from "../game/objects";
 import { normalizeScoreSettings } from "../game/scoring";
 import { normalizeSolidCollision, solidCollisionFor, solidCollisionValues, solidHasGameplayCollision } from "../game/solidCollision";
 import { solidRenderDepth } from "../game/solidRenderOrder";
@@ -399,7 +399,7 @@ const defaultSizeFor = (kind: RectCollection, solidPreset: SolidPreset | null = 
     case "lasers":
       return { w: 140, h: 20 };
     case "movingLasers":
-      return { w: 140, h: 20 };
+      return { w: 20, h: 140 };
     case "cores":
       return { w: 20, h: 20 };
     case "drones":
@@ -433,6 +433,19 @@ const movingPathPoints = (item: MovingPlatform | PatrolDrone | MovingLaser): { s
         ? { x: item.x + distance, y: item.y + item.h / 2 }
         : { x: item.x + item.w / 2, y: item.y + distance }
   };
+};
+
+const alignMovingLaserRectToBeam = <T extends MovingLaser>(laser: T): T => {
+  const centerX = laser.x + laser.w / 2;
+  const centerY = laser.y + laser.h / 2;
+  const span = Math.max(laser.w, laser.h);
+  const cross = Math.min(laser.w, laser.h);
+  const beamAxis = movingLaserBeamAxis(laser);
+  laser.w = beamAxis === "x" ? span : cross;
+  laser.h = beamAxis === "x" ? cross : span;
+  laser.x = centerX - laser.w / 2;
+  laser.y = centerY - laser.h / 2;
+  return laser;
 };
 
 const setMovingPath = (
@@ -603,7 +616,7 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
     } as Conveyor;
   }
   if (kind === "platforms" || kind === "drones" || kind === "movingLasers") {
-    return {
+    const movingObject = {
       ...base,
       id,
       axis: record.axis === "y" ? "y" : "x",
@@ -617,10 +630,12 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
         : {}),
       ...(kind === "movingLasers"
         ? {
+            beamAxis: record.beamAxis === "x" || record.beamAxis === "y" ? record.beamAxis : undefined,
             startsOn: record.startsOn === false ? false : record.startsOn === true ? true : undefined
           }
         : {})
     } as MovingPlatform | PatrolDrone | MovingLaser;
+    return kind === "movingLasers" ? alignMovingLaserRectToBeam(movingObject as MovingLaser) : movingObject;
   }
   if (kind === "launchPads") {
     return {
@@ -1125,6 +1140,13 @@ class LevelEditor {
     }
     if (field === "axis") {
       record.axis = value === "y" ? "y" : "x";
+      if (this.selection?.kind === "movingLasers") this.alignMovingLaserRectToBeam(target as MovingLaser);
+      return;
+    }
+    if (field === "beamAxis") {
+      if (value === "x" || value === "y") record.beamAxis = value;
+      else delete record.beamAxis;
+      this.alignMovingLaserRectToBeam(target as MovingLaser);
       return;
     }
     if (field === "direction") {
@@ -1175,6 +1197,10 @@ class LevelEditor {
     if (field === "startsOn") {
       record.startsOn = value === true;
     }
+  }
+
+  private alignMovingLaserRectToBeam(laser: MovingLaser): void {
+    alignMovingLaserRectToBeam(laser);
   }
 
   private handleKeyDown(event: KeyboardEvent): void {
@@ -1940,6 +1966,11 @@ class LevelEditor {
       }
       if (kind !== "movingLasers") return movingFields;
       return `${movingFields}
+        ${this.selectField("Beam", "beamAxis", String(record.beamAxis || "auto"), [
+          { value: "auto", label: "Auto" },
+          { value: "x", label: "Horizontal" },
+          { value: "y", label: "Vertical" }
+        ])}
         ${this.textField("Disabled By", "disabledBy", listToCsv(record.disabledBy as string[] | undefined), "object")}
         ${this.checkboxField("Starts On", "startsOn", record.startsOn !== false)}
       `;
@@ -2540,16 +2571,38 @@ class LevelEditor {
 
   private drawMovingLaser(object: RectObject, style: { fill: string; stroke: string; text: string }, selected: boolean): void {
     const ctx = this.context;
+    const beam = this.movingLaserBeamRect(object as MovingLaser);
     ctx.fillStyle = style.fill;
     ctx.strokeStyle = selected ? "#fff8bf" : style.stroke;
     ctx.lineWidth = selected ? 4 / this.view.w : 2 / this.view.w;
-    ctx.fillRect(object.x, object.y, object.w, object.h);
-    ctx.strokeRect(object.x, object.y, object.w, object.h);
+    ctx.fillRect(beam.x, beam.y, beam.w, beam.h);
+    ctx.strokeRect(beam.x, beam.y, beam.w, beam.h);
     ctx.beginPath();
-    ctx.moveTo(object.x, object.y + object.h / 2);
-    ctx.lineTo(object.x + object.w, object.y + object.h / 2);
+    if (beam.w >= beam.h) {
+      ctx.moveTo(beam.x, beam.y + beam.h / 2);
+      ctx.lineTo(beam.x + beam.w, beam.y + beam.h / 2);
+    } else {
+      ctx.moveTo(beam.x + beam.w / 2, beam.y);
+      ctx.lineTo(beam.x + beam.w / 2, beam.y + beam.h);
+    }
     ctx.stroke();
-    this.drawObjectLabel(object, object.id, style.text);
+    this.drawObjectLabel(beam, object.id, style.text);
+  }
+
+  private movingLaserBeamRect(laser: MovingLaser): Rect {
+    const centerX = laser.x + laser.w / 2;
+    const centerY = laser.y + laser.h / 2;
+    const span = Math.max(laser.w, laser.h);
+    const cross = Math.min(laser.w, laser.h);
+    const beamAxis = movingLaserBeamAxis(laser);
+    const w = beamAxis === "x" ? span : cross;
+    const h = beamAxis === "x" ? cross : span;
+    return {
+      x: centerX - w / 2,
+      y: centerY - h / 2,
+      w,
+      h
+    };
   }
 
   private drawHazard(object: RectObject, style: { fill: string; stroke: string; text: string }, selected: boolean): void {

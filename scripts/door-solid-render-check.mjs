@@ -356,7 +356,7 @@ const level = {
   movingLasers: [],
   drones: [],
   cores: [],
-  hazards: [],
+  hazards: [{ id: "qa-vent", x: 760, y: 476, w: 72, h: 4 }],
   crates: [],
   platforms: [],
   oneWays: [],
@@ -434,6 +434,7 @@ try {
     solids: document.documentElement.dataset.echoShiftSolidAssetFrames || "",
     outlines: document.documentElement.dataset.echoShiftSolidOutlineRects || "",
     sensors: document.documentElement.dataset.echoShiftEchoSensorAssetFrames || "",
+    hazards: document.documentElement.dataset.echoShiftHazardVentSpriteFrames || "",
     objectCount: Number(document.documentElement.dataset.echoShiftObjectAssetCount || "0"),
     background: document.documentElement.dataset.echoShiftBackgroundKey || "",
     backgroundFilter: document.documentElement.dataset.echoShiftBackgroundFilter || "",
@@ -575,9 +576,11 @@ try {
     segments: ["top:592-624", "bottom:592-624", "right:420-480"]
   });
   assertNoOutline("enclosed-center");
-  assert(diagnostics.sensors.includes("echo-sensor:active-sensor:11:active"), `Expected active echo sensor to use active plate frame, got ${diagnostics.sensors}`);
-  assert(diagnostics.sensors.includes("echo-sensor:inactive-sensor:2:inactive"), `Expected inactive echo sensor to use block frame, got ${diagnostics.sensors}`);
-  assert(!diagnostics.sensors.includes(":9:"), `Echo sensor diagnostics should not use door-open frame 9, got ${diagnostics.sensors}`);
+  assert(diagnostics.sensors.includes("echo-sensor:active-sensor:hidden:active"), `Expected active echo sensor to be hidden and active, got ${diagnostics.sensors}`);
+  assert(diagnostics.sensors.includes("echo-sensor:inactive-sensor:hidden:inactive"), `Expected inactive echo sensor to be hidden and inactive, got ${diagnostics.sensors}`);
+  assert(!diagnostics.sensors.includes(":9:"), `Hidden echo sensor diagnostics should not use door-open frame 9, got ${diagnostics.sensors}`);
+  assert(diagnostics.hazards.includes("hazard-vent:qa-vent:0:"), `Expected hazard vent sprite diagnostics, got ${diagnostics.hazards}`);
+  assert(diagnostics.hazards.includes(":796,488:90x74"), `Expected hazard vent placement diagnostics, got ${diagnostics.hazards}`);
   assert(diagnostics.objectCount >= 25, `Expected synced object sprites, got ${diagnostics.objectCount}`);
   assert(diagnostics.backgroundFilter === "time-lab-prototype:0", `Expected background texture to use linear filtering, got ${diagnostics.backgroundFilter}`);
   assert(diagnostics.objectAtlasFilter === "object-atlas:0", `Expected object atlas texture to use linear filtering, got ${diagnostics.objectAtlasFilter}`);
@@ -599,12 +602,14 @@ try {
   const lowChurnDiagnostics = await page.evaluate(() => ({
     doors: document.documentElement.dataset.echoShiftDoorAssetTransforms || "",
     outlines: document.documentElement.dataset.echoShiftSolidOutlineRects || "",
-    sensors: document.documentElement.dataset.echoShiftEchoSensorAssetFrames || ""
+    sensors: document.documentElement.dataset.echoShiftEchoSensorAssetFrames || "",
+    hazards: document.documentElement.dataset.echoShiftHazardVentSpriteFrames || ""
   }));
   assert(lowChurnDiagnostics.doors.includes("door:tall-closed-26:8:logic:468,180,26,300:pos:481,180:origin:0.5,0:box:459,180,45,300"), `Expected low-churn door diagnostics, got ${lowChurnDiagnostics.doors}`);
   assert(lowChurnDiagnostics.outlines.includes("floor-b:300,480:300x40:43f7ff:2:top:300-410;top:538-600;bottom:300-600"), `Expected low-churn merged floor outline diagnostics, got ${lowChurnDiagnostics.outlines}`);
-  assert(lowChurnDiagnostics.sensors.includes("echo-sensor:active-sensor:11:active"), `Expected low-churn sensor diagnostics, got ${lowChurnDiagnostics.sensors}`);
-  assert(!lowChurnDiagnostics.sensors.includes(":9:"), `Low-churn echo sensor diagnostics should not use door-open frame 9, got ${lowChurnDiagnostics.sensors}`);
+  assert(lowChurnDiagnostics.sensors.includes("echo-sensor:active-sensor:hidden:active"), `Expected low-churn hidden sensor diagnostics, got ${lowChurnDiagnostics.sensors}`);
+  assert(lowChurnDiagnostics.hazards.includes("hazard-vent:qa-vent:0:"), `Expected low-churn hazard vent diagnostics, got ${lowChurnDiagnostics.hazards}`);
+  assert(!lowChurnDiagnostics.sensors.includes(":9:"), `Low-churn hidden echo sensor diagnostics should not use door-open frame 9, got ${lowChurnDiagnostics.sensors}`);
   await page.screenshot({ path: lowChurnScreenshot, fullPage: true });
   assertNoUnexpectedBrowserMessages("Low-churn render", lowChurnMessageStart);
 

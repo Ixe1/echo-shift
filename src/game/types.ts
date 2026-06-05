@@ -119,6 +119,7 @@ export type Laser = Rect & {
 
 export type MovingLaser = Laser & {
   axis: "x" | "y";
+  beamAxis?: "x" | "y";
   distance: number;
   period: number;
   phase?: number;

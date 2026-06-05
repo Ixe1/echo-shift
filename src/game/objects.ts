@@ -149,11 +149,32 @@ export const laserIsActive = (laser: Laser, activePlates: Set<string>): boolean 
 
 export const movingLaserRectAt = (laser: MovingLaser, tick: number): Rect => {
   const offset = oscillatingOffsetAt(laser.distance, laser.period, laser.phase || 0, tick);
+  return orientBeamRect(
+    {
+      x: laser.x + (laser.axis === "x" ? offset : 0),
+      y: laser.y + (laser.axis === "y" ? offset : 0),
+      w: laser.w,
+      h: laser.h
+    },
+    movingLaserBeamAxis(laser)
+  );
+};
+
+export const movingLaserBeamAxis = (laser: MovingLaser): "x" | "y" =>
+  laser.beamAxis === "x" || laser.beamAxis === "y" ? laser.beamAxis : laser.axis === "x" ? "y" : "x";
+
+const orientBeamRect = (rect: Rect, beamAxis: "x" | "y"): Rect => {
+  const centerX = rect.x + rect.w / 2;
+  const centerY = rect.y + rect.h / 2;
+  const span = Math.max(rect.w, rect.h);
+  const cross = Math.min(rect.w, rect.h);
+  const w = beamAxis === "x" ? span : cross;
+  const h = beamAxis === "x" ? cross : span;
   return {
-    x: laser.x + (laser.axis === "x" ? offset : 0),
-    y: laser.y + (laser.axis === "y" ? offset : 0),
-    w: laser.w,
-    h: laser.h
+    x: centerX - w / 2,
+    y: centerY - h / 2,
+    w,
+    h
   };
 };
 

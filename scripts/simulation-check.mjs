@@ -388,7 +388,7 @@ try {
   const { RoomSimulation } = await server.ssrLoadModule("/src/game/state.ts");
   const { makeActor } = await server.ssrLoadModule("/src/game/player.ts");
   const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
-  const { doorRequiredCoreIds, isMajorCore } = await server.ssrLoadModule("/src/game/objects.ts");
+  const { doorRequiredCoreIds, isMajorCore, movingLaserRectAt } = await server.ssrLoadModule("/src/game/objects.ts");
   const { EDITOR_DRAFT_STORAGE_KEY, readEditorDraftSnapshot } = await server.ssrLoadModule("/src/data/editorDraft.ts");
   const { getBestScores, isBetterLevelScore, recordLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
   const { soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
@@ -1240,6 +1240,26 @@ try {
   const movingLaserSim = new RoomSimulation(movingLaserLevel);
   movingLaserSim.step(idle);
   assert(movingLaserSim.dead, "Overlapping moving laser should kill the player");
+
+  const autoVerticalMovingLaser = { id: "auto-vertical-sweeper", x: -20, y: 40, w: 100, h: 20, axis: "x", distance: 80, period: 120, startsOn: true };
+  const autoVerticalMovingLaserRect = movingLaserRectAt(autoVerticalMovingLaser, 0);
+  assert(
+    autoVerticalMovingLaserRect.w === 20 && autoVerticalMovingLaserRect.h === 100,
+    `Expected horizontal-travel moving laser to default to a vertical beam, got ${JSON.stringify(autoVerticalMovingLaserRect)}`
+  );
+  const autoVerticalMovingLaserSim = new RoomSimulation({ ...baseLevel, movingLasers: [autoVerticalMovingLaser] });
+  autoVerticalMovingLaserSim.step(idle);
+  assert(autoVerticalMovingLaserSim.dead, "Default horizontal-travel moving laser should collide as a vertical sweeper");
+
+  const explicitHorizontalMovingLaser = { ...autoVerticalMovingLaser, id: "explicit-horizontal-sweeper", beamAxis: "x" };
+  const explicitHorizontalMovingLaserRect = movingLaserRectAt(explicitHorizontalMovingLaser, 0);
+  assert(
+    explicitHorizontalMovingLaserRect.w === 100 && explicitHorizontalMovingLaserRect.h === 20,
+    `Expected explicit horizontal moving laser beam to stay horizontal, got ${JSON.stringify(explicitHorizontalMovingLaserRect)}`
+  );
+  const explicitHorizontalMovingLaserSim = new RoomSimulation({ ...baseLevel, movingLasers: [explicitHorizontalMovingLaser] });
+  explicitHorizontalMovingLaserSim.step(idle);
+  assert(!explicitHorizontalMovingLaserSim.dead, "Explicit horizontal moving laser should not use the auto vertical collision shape");
 
   const crateLevel = {
     ...baseLevel,
