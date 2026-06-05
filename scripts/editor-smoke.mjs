@@ -681,11 +681,19 @@ try {
   await page.locator("[data-delete-object]").click();
 
   await dragToolToWorld(page, "plates", { x: 300, y: 500 });
+  const surfacePlateId = await page.locator("[data-object-field='id']").inputValue();
   const surfacePlateY = await objectNumber(page, "y");
   const surfacePlateBottom = surfacePlateY + (await objectNumber(page, "h"));
   await page.locator("[data-duplicate-object]").click();
   const duplicatedPlateY = await objectNumber(page, "y");
   const duplicatedPlateBottom = duplicatedPlateY + (await objectNumber(page, "h"));
+  await page.locator("[data-delete-object]").click();
+  await openTab(page, "objects");
+  await page.locator(`[data-object-list] [data-kind='plates'][data-id='${surfacePlateId}']`).click();
+  await page.keyboard.press("Control+C");
+  const keyboardDuplicatedPlateId = await page.locator("[data-object-field='id']").inputValue();
+  const keyboardDuplicatedPlateY = await objectNumber(page, "y");
+  const keyboardDuplicatedPlateBottom = keyboardDuplicatedPlateY + (await objectNumber(page, "h"));
   await page.locator("[data-delete-object]").click();
 
   await dragToolToWorld(page, "lasers", { x: 1280, y: 500 });
@@ -693,6 +701,30 @@ try {
   const surfaceLaserBottom = surfaceLaserY + (await objectNumber(page, "h"));
   await page.locator("[data-delete-object]").click();
   const surfaceSnapValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+
+  await dragToolToWorld(page, "floor", { x: 920, y: 430 });
+  await page.locator("[data-object-field='id']").fill("smoke-lower-solid-order");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await setObjectField(page, "x", 900);
+  await setObjectField(page, "y", 430);
+  await setObjectField(page, "w", 160);
+  await setObjectField(page, "h", 20);
+  await dragToolToWorld(page, "floor", { x: 960, y: 320 });
+  await page.locator("[data-object-field='id']").fill("smoke-upper-top-only-order");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await setObjectField(page, "x", 940);
+  await setObjectField(page, "y", 300);
+  await setObjectField(page, "w", 100);
+  await setObjectField(page, "h", 180);
+  await page.locator("[data-object-field='collision']").selectOption("top-only");
+  const editorSolidRenderOrder = (await page.locator("[data-editor-canvas]").getAttribute("data-editor-solid-render-order")) || "";
+  const editorSolidRenderOrderIds = editorSolidRenderOrder.split(",").filter(Boolean).map((entry) => entry.split(":")[0]);
+  const lowerSolidRenderOrderIndex = editorSolidRenderOrderIds.indexOf("smoke-lower-solid-order");
+  const upperTopOnlyRenderOrderIndex = editorSolidRenderOrderIds.indexOf("smoke-upper-top-only-order");
+  await page.locator("[data-delete-object]").click();
+  await openTab(page, "objects");
+  await page.locator("[data-object-list] [data-kind='solids'][data-id='smoke-lower-solid-order']").click();
+  await page.locator("[data-delete-object]").click();
 
   await dragToolToWorld(page, "plates", { x: 420, y: 500 });
   await page.locator("[data-object-field='id']").fill("laser-1");
@@ -1217,7 +1249,8 @@ try {
   assert(soundtrackOptions.some((option) => option.includes("Auto: Echo Shift - Level 1")), `Expected auto soundtrack option, got ${soundtrackOptions.join(", ")}`);
   assert(soundtrackOptions.some((option) => option.includes("Echo Shift - Level 6")), `Expected selectable level MP3 options, got ${soundtrackOptions.join(", ")}`);
   assert(soundtrackExportKey === "level-6", `Expected selected soundtrack key to export as level-6, got ${soundtrackExportKey}`);
-  assert(backgroundOptions.some((option) => option.includes("Auto: Level 1 Calibration Atrium")), `Expected auto background option, got ${backgroundOptions.join(", ")}`);
+  assert(backgroundOptions.some((option) => option.includes("Auto: Springtide Glassgrove")), `Expected auto background option, got ${backgroundOptions.join(", ")}`);
+  assert(backgroundOptions.some((option) => option.includes("1694x929")), `Expected Springtide background dimensions in options, got ${backgroundOptions.join(", ")}`);
   assert(backgroundOptions.some((option) => option.includes("1672x941")), `Expected background dimensions in options, got ${backgroundOptions.join(", ")}`);
   assert(backgroundOptions.some((option) => option.includes("1881x836")), `Expected Level 1 background dimensions in options, got ${backgroundOptions.join(", ")}`);
   assert(backgroundExportKey === "time-lab-prototype", `Expected selected background key to export as time-lab-prototype, got ${backgroundExportKey}`);
@@ -1266,7 +1299,20 @@ try {
   assert(clearedSpriteValue === "auto", `Expected cleared solid sprite to export auto sentinel, got ${clearedSpriteValue}`);
   assert(surfacePlateBottom === 500, `Expected dropped plate bottom to snap flush to floor y=500, got ${surfacePlateY}+h=${surfacePlateBottom}`);
   assert(duplicatedPlateBottom === 500, `Expected duplicated plate bottom to stay flush to floor y=500, got ${duplicatedPlateY}+h=${duplicatedPlateBottom}`);
+  assert(keyboardDuplicatedPlateId !== surfacePlateId, `Expected Ctrl+C duplicate to select a new plate id, got ${keyboardDuplicatedPlateId}`);
+  assert(
+    keyboardDuplicatedPlateBottom === 500,
+    `Expected Ctrl+C duplicated plate bottom to stay flush to floor y=500, got ${keyboardDuplicatedPlateY}+h=${keyboardDuplicatedPlateBottom}`
+  );
   assert(surfaceLaserBottom === 500, `Expected dropped laser bottom to snap flush to floor y=500, got ${surfaceLaserY}+h=${surfaceLaserBottom}`);
+  assert(
+    upperTopOnlyRenderOrderIndex >= 0 && lowerSolidRenderOrderIndex >= 0,
+    `Expected editor solid render order diagnostics to include overlap fixture, got ${editorSolidRenderOrder}`
+  );
+  assert(
+    lowerSolidRenderOrderIndex > upperTopOnlyRenderOrderIndex,
+    `Expected editor to draw lower solid floor after higher top-only floor, got ${editorSolidRenderOrder}`
+  );
   assert(generatedGlobalLaserId !== "laser-1", `Expected generated laser id to avoid cross-kind laser-1 collision, got ${generatedGlobalLaserId}`);
   assert(
     generatedGlobalObjectIds.length === new Set(generatedGlobalObjectIds).size,

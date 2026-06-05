@@ -47,6 +47,13 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     sourceSize: { w: 1881, h: 836 },
     repeat: "x"
   },
+  "level-1-springtide-glassgrove": {
+    key: "level-1-springtide-glassgrove",
+    title: "Springtide Glassgrove",
+    src: "/assets/backgrounds/level-1-springtide-glassgrove.png",
+    sourceSize: { w: 1694, h: 929 },
+    repeat: "x"
+  },
   "level-1-readable-lab": {
     key: "level-1-readable-lab",
     title: "Level 1 Calibration Atrium",

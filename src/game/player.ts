@@ -14,6 +14,7 @@ const MAX_FALL = 15;
 const JUMP_SPEED = -12.9;
 const COYOTE_FRAMES = 7;
 const JUMP_BUFFER_FRAMES = 7;
+const LAUNCH_CONTROL_ACCEL_SCALE = 0.35;
 
 export const makeActor = (
   id: string,
@@ -31,6 +32,8 @@ export const makeActor = (
   onGround: false,
   coyote: 0,
   jumpBuffer: 0,
+  launchCooldown: 0,
+  launchControlLock: 0,
   prevJump: false,
   facing: 1,
   standingOn: null,
@@ -108,7 +111,11 @@ export const moveActor = (
     actor.y += platformFrame.current.y - platformFrame.previous.y;
   }
 
-  const accel = actor.onGround ? GROUND_ACCEL : AIR_ACCEL;
+  const launchControlLocked = actor.launchControlLock > 0;
+  if (actor.launchControlLock > 0) actor.launchControlLock -= 1;
+
+  const launchAccelScale = launchControlLocked && !actor.onGround ? LAUNCH_CONTROL_ACCEL_SCALE : 1;
+  const accel = (actor.onGround ? GROUND_ACCEL : AIR_ACCEL) * launchAccelScale;
   if (input.left && !input.right) {
     actor.vx -= accel;
     actor.facing = -1;
@@ -139,7 +146,7 @@ export const moveActor = (
     jumped = true;
   }
 
-  if (!input.jump && actor.vy < -4.6) {
+  if (!launchControlLocked && !input.jump && actor.vy < -4.6) {
     actor.vy *= 0.78;
   }
 

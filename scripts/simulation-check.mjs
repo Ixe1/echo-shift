@@ -414,8 +414,9 @@ try {
   assert(Boolean(soundtracks.menu), "Expected a main menu soundtrack");
   assert(Boolean(levelBackgrounds["time-lab-prototype"]), "Expected prototype level background");
   assert(Boolean(levelBackgrounds["level-1-time-lab-no-portals"]), "Expected Level 1 no-portal background");
+  assert(Boolean(levelBackgrounds["level-1-springtide-glassgrove"]), "Expected Springtide Glassgrove level background");
   assert(Boolean(levelBackgrounds["level-10-readable-lab"]), "Expected final readable level background");
-  assert(backgroundForLevel(levels[0], 0).key === "level-1-readable-lab", "Expected Level 1 to use readable background");
+  assert(backgroundForLevel(levels[0], 0).key === "level-1-springtide-glassgrove", "Expected Level 1 to use Springtide Glassgrove background");
   assert(backgroundForLevel(levels[9], 9).key === "level-10-readable-lab", "Expected Level 10 to use readable background");
   assert(
     backgroundForLevel({ ...levels[1], backgroundKey: undefined }, 1).key === "time-lab-prototype",
@@ -1099,7 +1100,20 @@ try {
   const launchSim = new RoomSimulation(launchLevel);
   const launchEvent = launchSim.step(idle);
   assert(launchEvent.launched, "Launch pad did not report a launch event");
-  assert(launchSim.player.vy < -12 && launchSim.player.vx > 0, `Launch pad did not apply impulse: vx=${launchSim.player.vx}, vy=${launchSim.player.vy}`);
+  assert(
+    Math.abs(launchSim.player.y + launchSim.player.h - 112) < 0.01,
+    `Launch pad did not spring from its top face: foot=${launchSim.player.y + launchSim.player.h}`
+  );
+  assert(
+    launchSim.player.vy < -13 && launchSim.player.vx === 1,
+    `Launch pad did not apply a deterministic spring velocity: vx=${launchSim.player.vx}, vy=${launchSim.player.vy}`
+  );
+  launchSim.step(idle);
+  assert(
+    launchSim.player.vy < -12,
+    `Launch pad spring velocity should not be jump-cut when jump is not held, got vy=${launchSim.player.vy}`
+  );
+  assert(!launchSim.step(idle).launched, "Launch pad re-fired while actor was still in spring launch cooldown");
 
   const sideLaunchLevel = {
     ...baseLevel,

@@ -24,6 +24,8 @@ export type ActorBody = Rect & {
   onGround: boolean;
   coyote: number;
   jumpBuffer: number;
+  launchCooldown: number;
+  launchControlLock: number;
   prevJump: boolean;
   facing: -1 | 1;
   standingOn: string | null;
@@ -158,6 +160,7 @@ export type LevelBackgroundKey =
   | "level-2-time-lab-no-portals"
   | "level-3-time-lab-no-portals"
   | "level-4-time-lab-no-portals"
+  | "level-1-springtide-glassgrove"
   | "level-1-readable-lab"
   | "level-2-readable-lab"
   | "level-3-readable-lab"

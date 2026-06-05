@@ -13,6 +13,7 @@ import { backgroundForLevel, isLevelBackgroundKey, levelBackgroundKeys, levelBac
 import { doorRequiredCoreIds, isMajorCore } from "../game/objects";
 import { normalizeScoreSettings } from "../game/scoring";
 import { normalizeSolidCollision, solidCollisionFor, solidCollisionValues, solidHasGameplayCollision } from "../game/solidCollision";
+import { solidRenderDepth } from "../game/solidRenderOrder";
 import { normalizeSolid, normalizeSolidSprite, solidSpriteValues } from "../game/solidSprites";
 import { defaultSoundtrackKeyForLevel, isLevelSoundtrackKey, levelSoundtrackKeys, soundtracks } from "../game/soundtracks";
 import { normalizeTerrainMaterial, terrainMaterialForSolid, terrainMaterialLabels, terrainMaterialValues } from "../game/terrainMaterials";
@@ -1177,7 +1178,14 @@ class LevelEditor {
   }
 
   private handleKeyDown(event: KeyboardEvent): void {
-    if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.defaultPrevented || event.altKey) return;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
+      if (this.isEditableTarget(event.target) || !this.canDuplicateSelection()) return;
+      event.preventDefault();
+      this.duplicateSelection();
+      return;
+    }
+    if (event.ctrlKey || event.metaKey) return;
     if (event.key !== "Delete" && event.key !== "Backspace") return;
     if (this.isEditableTarget(event.target)) return;
     if (!this.selection || this.selection.kind === "start" || this.selection.kind === "exit") return;
@@ -2348,11 +2356,22 @@ class LevelEditor {
   }
 
   private drawCollections(): void {
+    this.canvas.dataset.editorSolidRenderOrder = this.sortedSolidsForRender()
+      .map((solid) => `${solid.id}:${solidRenderDepth(solid).toFixed(3)}`)
+      .join(",");
     for (const kind of rectCollections) {
-      for (const object of readCollection(this.level, kind)) {
+      const objects = kind === "solids" ? this.sortedSolidsForRender() : readCollection(this.level, kind);
+      for (const object of objects) {
         this.drawObject(kind, object);
       }
     }
+  }
+
+  private sortedSolidsForRender(): Solid[] {
+    return this.level.solids
+      .map((solid, index) => ({ solid, index }))
+      .sort((a, b) => solidRenderDepth(a.solid) - solidRenderDepth(b.solid) || a.index - b.index)
+      .map(({ solid }) => solid);
   }
 
   private drawObject(kind: RectCollection, object: RectObject): void {
@@ -2680,13 +2699,22 @@ class LevelEditor {
 
   private hitTest(point: Vec2): Selection | null {
     const tolerance = HIT_TOLERANCE_PX / this.view.w;
+    const candidates: Array<{ selection: Selection; rect: Rect }> = [];
+    for (const kind of [...rectCollections].reverse()) {
+      const objects = kind === "solids" ? [...this.sortedSolidsForRender()].reverse() : [...readCollection(this.level, kind)].reverse();
+      for (const object of objects) {
+        candidates.push({ selection: { kind, id: object.id }, rect: object });
+      }
+    }
+    if (rectContainsWithTolerance(this.level.exit, point, 0)) return { kind: "exit" };
+    if (rectContainsWithTolerance(this.startRect(), point, 0)) return { kind: "start" };
+    for (const candidate of candidates) {
+      if (rectContainsWithTolerance(candidate.rect, point, 0)) return candidate.selection;
+    }
     if (rectContainsWithTolerance(this.level.exit, point, tolerance)) return { kind: "exit" };
     if (rectContainsWithTolerance(this.startRect(), point, tolerance)) return { kind: "start" };
-    for (const kind of [...rectCollections].reverse()) {
-      const objects = [...readCollection(this.level, kind)].reverse();
-      for (const object of objects) {
-        if (rectContainsWithTolerance(object, point, tolerance)) return { kind, id: object.id };
-      }
+    for (const candidate of candidates) {
+      if (rectContainsWithTolerance(candidate.rect, point, tolerance)) return candidate.selection;
     }
     return null;
   }

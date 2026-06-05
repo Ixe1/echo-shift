@@ -82,9 +82,9 @@ const sourceLevels: Level[] = [
   {
     id: "portal-primer",
     index: 0,
-    name: "Portal Primer",
-    subtitle: "A clean line through the lab",
-    backgroundKey: "level-1-readable-lab",
+    name: "Springtide Glassgrove",
+    subtitle: "First steps through the reclaimed atrium",
+    backgroundKey: "level-1-springtide-glassgrove",
     backgroundAmbience: { preset: "lab", intensity: 0.34, color: "#43f7ff", drift: 0.28, flicker: 0.18, particles: 0.3 },
     start: { x: 58, y: 450 },
     exit: r(2286, 438, 48, 62),

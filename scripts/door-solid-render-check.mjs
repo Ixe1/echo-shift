@@ -317,6 +317,12 @@ const level = {
     { id: "short-floor", x: 410, y: 450, w: 128, h: 30, sprite: "floor", tone: "steel" },
     { id: "block-a", x: 560, y: 420, w: 32, h: 60, sprite: "block", tone: "dark" },
     { id: "block-b", x: 592, y: 420, w: 32, h: 60, sprite: "block", tone: "dark" },
+    { id: "top-only-overlay", x: 638, y: 120, w: 140, h: 18, sprite: "floor", tone: "steel", collision: "top-only" },
+    { id: "solid-cover", x: 660, y: 106, w: 84, h: 54, sprite: "block", tone: "dark" },
+    { id: "lower-floor-overlay", x: 132, y: 160, w: 150, h: 18, sprite: "floor", tone: "steel" },
+    { id: "upper-floor-cover", x: 160, y: 120, w: 88, h: 98, sprite: "floor", tone: "steel" },
+    { id: "lower-solid-floor", x: 300, y: 230, w: 150, h: 18, sprite: "floor", tone: "steel" },
+    { id: "upper-top-only-cover", x: 328, y: 120, w: 88, h: 158, sprite: "floor", tone: "steel", collision: "top-only" },
     { id: "enclosed-top", x: 800, y: 400, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-left", x: 780, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-center", x: 800, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
@@ -428,6 +434,17 @@ try {
   }));
 
   const doorEntries = diagnostics.doors.split("|").filter(Boolean);
+  const solidEntries = diagnostics.solids.split(",").filter(Boolean);
+  const solidDiagnosticsById = new Map(solidEntries.map((entry) => {
+    const [id, frame, material, tileCount, collision, depth] = entry.split(":");
+    return [id, {
+      frame: Number(frame),
+      material,
+      tileCount: Number(tileCount),
+      collision,
+      depth: Number(depth)
+    }];
+  }));
   const parseDoorEntry = (entry) => {
     const match = entry.match(/^door:([^:]+):(\d+):logic:([\d-]+),([\d-]+),([\d-]+),([\d-]+):pos:([\d-]+),([\d-]+):origin:([.\d-]+),([.\d-]+):box:([\d-]+),([\d-]+),([\d-]+),([\d-]+)$/);
     assert(match, `Malformed door diagnostic entry: ${entry}`);
@@ -502,6 +519,25 @@ try {
   assert(diagnostics.solids.includes("thin-wall:1"), `Expected wall atlas frame diagnostic, got ${diagnostics.solids}`);
   assert(diagnostics.solids.includes("left-wall-upper:1:glass-energy"), `Expected legacy glass wall to map to glass-energy terrain, got ${diagnostics.solids}`);
   assert(diagnostics.solids.includes("enclosed-center:2"), `Expected enclosed center block frame diagnostic, got ${diagnostics.solids}`);
+  const topOnlyOverlay = solidDiagnosticsById.get("top-only-overlay");
+  const solidCover = solidDiagnosticsById.get("solid-cover");
+  const lowerFloorOverlay = solidDiagnosticsById.get("lower-floor-overlay");
+  const upperFloorCover = solidDiagnosticsById.get("upper-floor-cover");
+  const lowerSolidFloor = solidDiagnosticsById.get("lower-solid-floor");
+  const upperTopOnlyCover = solidDiagnosticsById.get("upper-top-only-cover");
+  assert(topOnlyOverlay, `Missing top-only overlay solid diagnostic: ${diagnostics.solids}`);
+  assert(solidCover, `Missing solid cover diagnostic: ${diagnostics.solids}`);
+  assert(lowerFloorOverlay, `Missing lower floor overlay diagnostic: ${diagnostics.solids}`);
+  assert(upperFloorCover, `Missing upper floor cover diagnostic: ${diagnostics.solids}`);
+  assert(lowerSolidFloor, `Missing lower solid floor diagnostic: ${diagnostics.solids}`);
+  assert(upperTopOnlyCover, `Missing upper top-only cover diagnostic: ${diagnostics.solids}`);
+  assert(topOnlyOverlay.collision === "top-only", `Expected top-only overlay collision diagnostic, got ${JSON.stringify(topOnlyOverlay)}`);
+  assert(solidCover.collision === "solid", `Expected solid cover collision diagnostic, got ${JSON.stringify(solidCover)}`);
+  assert(lowerSolidFloor.collision === "solid", `Expected lower floor to stay solid, got ${JSON.stringify(lowerSolidFloor)}`);
+  assert(upperTopOnlyCover.collision === "top-only", `Expected upper cover to be top-only, got ${JSON.stringify(upperTopOnlyCover)}`);
+  assert(topOnlyOverlay.depth > solidCover.depth, `Expected top-only terrain to render above overlapping solid terrain, got ${JSON.stringify({ topOnlyOverlay, solidCover })}`);
+  assert(lowerFloorOverlay.depth > upperFloorCover.depth, `Expected lower floor terrain to render above taller overlapping floor terrain, got ${JSON.stringify({ lowerFloorOverlay, upperFloorCover })}`);
+  assert(lowerSolidFloor.depth > upperTopOnlyCover.depth, `Expected lower solid floor to render above higher top-only floor terrain, got ${JSON.stringify({ lowerSolidFloor, upperTopOnlyCover })}`);
   assertOutline("floor-a", {
     segments: ["top:0-300", "bottom:0-300", "left:480-520"]
   });

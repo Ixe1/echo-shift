@@ -8,7 +8,8 @@ import { rectCenter } from "../game/geometry";
 import { doorRequiredCoreIds, droneIsActive, droneRectAt, isMajorCore, laserIsActive, movingLaserRectAt } from "../game/objects";
 import { platformRectAt } from "../game/player";
 import { recordLevelScore } from "../game/progress";
-import { legacySolidSprite } from "../game/solidSprites";
+import { solidCollisionFor } from "../game/solidCollision";
+import { solidRenderDepth, solidVisualRoleFor } from "../game/solidRenderOrder";
 import { soundtrackForLevel } from "../game/soundtracks";
 import { RoomSimulation } from "../game/state";
 import {
@@ -397,7 +398,6 @@ export class GameScene extends Phaser.Scene {
     if (events.cores.length > 0) {
       audio.play("core");
       for (const core of events.cores) {
-        this.spawnBurst(core, 0xffe35a);
         this.spawnEffectFrame(core, 2, 0.42);
       }
     }
@@ -841,17 +841,18 @@ export class GameScene extends Phaser.Scene {
     for (const solid of this.level.solids) {
       const frame = this.solidFrame(solid);
       const material = terrainMaterialForSolid(solid);
-      const tileIds = this.syncStaticSolidAsset(solid, frame, material);
-      this.staticSolidAssetFrames.push(`${solid.id}:${frame}:${material}:${tileIds.length}`);
+      const depth = solidRenderDepth(solid);
+      const tileIds = this.syncStaticSolidAsset(solid, frame, material, depth);
+      this.staticSolidAssetFrames.push(`${solid.id}:${frame}:${material}:${tileIds.length}:${solidCollisionFor(solid)}:${depth.toFixed(3)}`);
       for (const tileId of tileIds) this.markStaticObjectAsset(tileId);
       this.drawSolidReadabilityOutline(solid);
     }
   }
 
-  private syncStaticSolidAsset(solid: Solid, frame: number, material: TerrainMaterial): string[] {
+  private syncStaticSolidAsset(solid: Solid, frame: number, material: TerrainMaterial, depth: number): string[] {
     if (solid.w <= 0 || solid.h <= 0) return [];
     if (!this.textures.exists(TERRAIN_TILE_KEY)) {
-      this.syncFallbackSolidAsset(solid, frame);
+      this.syncFallbackSolidAsset(solid, frame, depth);
       return [`solid:${solid.id}`];
     }
 
@@ -869,19 +870,19 @@ export class GameScene extends Phaser.Scene {
         const role = this.terrainTileRole(frame, row);
         const tileFrame = terrainTileFrame(material, role);
         const id = `solid:${solid.id}:tile:${row}:${column}`;
-        this.syncTerrainTileAsset(id, tileFrame, tileX, tileY, tileW, tileH);
+        this.syncTerrainTileAsset(id, tileFrame, tileX, tileY, tileW, tileH, depth);
         ids.push(id);
       }
     }
     return ids;
   }
 
-  private syncFallbackSolidAsset(solid: Solid, frame: number): void {
+  private syncFallbackSolidAsset(solid: Solid, frame: number, depth: number): void {
     if (!this.textures.exists(OBJECT_ATLAS_KEY)) return;
     const asset = this.assetFor(`solid:${solid.id}`, "image", frame) as Phaser.GameObjects.Image;
     asset
       .setVisible(true)
-      .setDepth(1)
+      .setDepth(depth)
       .setAlpha(1)
       .setOrigin(0.5, 0.5)
       .setPosition(solid.x + solid.w / 2, solid.y + solid.h / 2)
@@ -899,11 +900,11 @@ export class GameScene extends Phaser.Scene {
     return "blockFace";
   }
 
-  private syncTerrainTileAsset(id: string, frame: number, x: number, y: number, width: number, height: number): void {
+  private syncTerrainTileAsset(id: string, frame: number, x: number, y: number, width: number, height: number, depth: number): void {
     const asset = this.assetFor(id, "image", frame, TERRAIN_TILE_KEY) as Phaser.GameObjects.Image;
     asset
       .setVisible(true)
-      .setDepth(1)
+      .setDepth(depth)
       .setAlpha(1)
       .setOrigin(0, 0)
       .setPosition(Math.round(x), Math.round(y))
@@ -1063,19 +1064,9 @@ export class GameScene extends Phaser.Scene {
       const center = rectCenter(core);
       const pulse = 1 + Math.sin(this.time.now / 140) * 0.12;
       const large = this.coreIsLarge(core);
-      const glowRadius = large ? 34 : 22;
-      const ringRadius = large ? 27 : 17;
-      const lineRadius = large ? 28 : 18;
-      this.world.fillStyle(large ? 0x43f7ff : 0xffe35a, large ? 0.14 : 0.18);
-      this.world.fillCircle(center.x, center.y, glowRadius * pulse);
       if (!this.textures.exists(large ? CORE_MAJOR_KEY : "time-effects")) {
         this.drawDiamond(center.x, center.y, (large ? 18 : 12) * pulse, large ? 0x43f7ff : 0xffe35a, 0.9, 0xffffff, 0.72);
       }
-      this.world.lineStyle(2, 0xffffff, 0.7);
-      this.world.strokeCircle(center.x, center.y, ringRadius * pulse);
-      this.world.lineStyle(1, large ? 0x43f7ff : 0xffe35a, large ? 0.42 : 0.5);
-      this.world.lineBetween(center.x - lineRadius, center.y, center.x + lineRadius, center.y);
-      if (large) this.world.lineBetween(center.x, center.y - lineRadius, center.x, center.y + lineRadius);
     }
   }
 
@@ -1648,20 +1639,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private solidFrame(solid: Solid): number {
-    const sprite = solid.sprite || legacySolidSprite(solid);
-    if (sprite === "floor") return OBJECT_FRAME.floor;
-    if (sprite === "wall") return OBJECT_FRAME.wall;
-    if (sprite === "block") return OBJECT_FRAME.block;
-    if (sprite === "warning") return OBJECT_FRAME.warning;
-    if (solid.tone === "warning") return OBJECT_FRAME.warning;
-
-    const width = Math.max(1, solid.w);
-    const height = Math.max(1, solid.h);
-    if (height >= width * 1.35) return OBJECT_FRAME.wall;
-    if (width >= height * 2) return OBJECT_FRAME.floor;
-    if (solid.tone === "glass") return OBJECT_FRAME.block;
-    if (solid.tone === "dark") return OBJECT_FRAME.wall;
-    return OBJECT_FRAME.block;
+    return OBJECT_FRAME[solidVisualRoleFor(solid)];
   }
 
   private syncImageAsset(
@@ -1836,23 +1814,6 @@ export class GameScene extends Phaser.Scene {
     point.x = actor.x;
     point.y = actor.y;
     trail.push(point);
-  }
-
-  private spawnBurst(origin: { x: number; y: number }, color: number): void {
-    for (let i = 0; i < 9; i += 1) {
-      const dot = this.add.circle(origin.x, origin.y, 3, color, 0.85).setDepth(26);
-      const angle = (Math.PI * 2 * i) / 9;
-      this.tweens.add({
-        targets: dot,
-        x: dot.x + Math.cos(angle) * 38,
-        y: dot.y + Math.sin(angle) * 28,
-        alpha: 0,
-        scale: 0.3,
-        duration: 360,
-        ease: "Cubic.easeOut",
-        onComplete: () => dot.destroy()
-      });
-    }
   }
 
   private spawnEffectFrame(origin: { x: number; y: number }, frame: number, scale: number): void {

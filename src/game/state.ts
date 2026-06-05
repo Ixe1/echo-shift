@@ -18,6 +18,9 @@ import { finalScoreForLevel, timeBonusForFrames } from "./scoring";
 import type { ActorBody, InputFrame, Level, SimulationSnapshot, StepEvents } from "./types";
 
 const MIN_ECHO_FRAMES = 18;
+const LAUNCH_PAD_FACE_TOLERANCE = 3;
+const LAUNCH_PAD_COOLDOWN_FRAMES = 12;
+const LAUNCH_PAD_CONTROL_LOCK_FRAMES = 10;
 
 export class RoomSimulation {
   readonly level: Level;
@@ -217,16 +220,30 @@ export class RoomSimulation {
   }
 
   private applyLaunchPads(actor: ActorBody, previousY: number): boolean {
-    if (!actor.alive || actor.vy < 0) return false;
+    actor.launchCooldown = Math.max(0, actor.launchCooldown - 1);
+    if (!actor.alive || actor.launchCooldown > 0 || actor.vy < 0) return false;
     const launchPad = (this.level.launchPads || []).find((pad) => {
       const previousFootY = previousY + actor.h;
-      return rectsOverlap(actor, pad) && previousFootY <= pad.y + pad.h + 2 && actor.y + actor.h >= pad.y;
+      const currentFootY = actor.y + actor.h;
+      const footLeft = actor.x + 2;
+      const footRight = actor.x + actor.w - 2;
+      return (
+        rectsOverlap(actor, pad) &&
+        footLeft < pad.x + pad.w &&
+        footRight > pad.x &&
+        previousFootY <= pad.y + pad.h + LAUNCH_PAD_FACE_TOLERANCE &&
+        currentFootY >= pad.y
+      );
     });
     if (!launchPad) return false;
-    actor.vx += launchPad.powerX || 0;
+    actor.y = launchPad.y - actor.h;
+    if (launchPad.powerX !== undefined) actor.vx = launchPad.powerX;
     actor.vy = -Math.max(1, launchPad.powerY);
     actor.onGround = false;
     actor.coyote = 0;
+    actor.jumpBuffer = 0;
+    actor.launchCooldown = LAUNCH_PAD_COOLDOWN_FRAMES;
+    actor.launchControlLock = LAUNCH_PAD_CONTROL_LOCK_FRAMES;
     actor.standingOn = null;
     return true;
   }
