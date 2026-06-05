@@ -7,13 +7,27 @@ type ToneName =
   | "rewind"
   | "switch"
   | "core"
+  | "bigCore"
+  | "launch"
   | "death"
+  | "playerLaserVaporized"
+  | "echoLaserVaporized"
   | "portal"
   | "select";
 
 type AudioContextConstructor = new () => AudioContext;
 
 const unlockEvents = ["pointerdown", "keydown", "touchstart"] as const;
+const effectPath = (file: string): string => `/assets/audio/effects/${file}`;
+const sampledEffects = {
+  jump: { src: effectPath("player_jump.mp3"), volume: 0.48 },
+  core: { src: effectPath("core_pickup.mp3"), volume: 0.5 },
+  bigCore: { src: effectPath("big_core_pickup.mp3"), volume: 0.56 },
+  launch: { src: effectPath("spring_launch_pad.mp3"), volume: 0.58 },
+  death: { src: effectPath("player_death.mp3"), volume: 0.58 },
+  playerLaserVaporized: { src: effectPath("player_laser_vaporised.mp3"), volume: 0.58 },
+  echoLaserVaporized: { src: effectPath("echo_laser_vaporised.mp3"), volume: 0.42 }
+} as const satisfies Partial<Record<ToneName, { src: string; volume: number }>>;
 
 export class SynthAudio {
   private context: AudioContext | null = null;
@@ -21,6 +35,7 @@ export class SynthAudio {
   private music: HTMLAudioElement | null = null;
   private musicKey: SoundtrackKey | null = null;
   private musicCache = new Map<SoundtrackKey, HTMLAudioElement>();
+  private activeEffects = new Set<HTMLAudioElement>();
   private musicPlayAttempt = 0;
   private fadeToken = 0;
   private musicMuted = false;
@@ -48,12 +63,13 @@ export class SynthAudio {
 
   play(name: ToneName): void {
     this.resume();
+    if (this.playSample(name)) return;
     if (!this.context || !this.master) return;
     if (this.context.state !== "running") {
       void this.context
         .resume()
         .then(() => {
-          if (this.context?.state === "running") this.playTone(name);
+          if (this.context?.state === "running" && !this.playSample(name)) this.playTone(name);
         })
         .catch(() => this.markAudioState("blocked"));
       return;
@@ -185,6 +201,10 @@ export class SynthAudio {
     this.musicPaused = false;
     this.music = null;
     this.musicKey = null;
+    for (const element of this.activeEffects) {
+      this.unloadMusicElement(element);
+    }
+    this.activeEffects.clear();
     for (const element of this.musicCache.values()) {
       this.unloadMusicElement(element);
     }
@@ -234,6 +254,32 @@ export class SynthAudio {
 
   private retryMusic(): void {
     if (this.music && !this.musicPaused) this.playMusicElement(this.music);
+  }
+
+  private playSample(name: ToneName): boolean {
+    const settings = sampledEffects[name as keyof typeof sampledEffects];
+    if (!settings || typeof Audio === "undefined") return false;
+
+    const element = new Audio(settings.src);
+    element.preload = "auto";
+    element.volume = settings.volume;
+    this.activeEffects.add(element);
+    const release = () => {
+      element.pause();
+      this.activeEffects.delete(element);
+    };
+    if (typeof element.addEventListener === "function") {
+      element.addEventListener("ended", release, { once: true });
+      element.addEventListener("error", release, { once: true });
+    }
+
+    void element
+      .play()
+      .then(() => {
+        if (typeof element.addEventListener !== "function") this.activeEffects.delete(element);
+      })
+      .catch(release);
+    return true;
   }
 
   private playMusicElement(element: HTMLAudioElement): void {
@@ -357,8 +403,16 @@ export class SynthAudio {
         return { start: 380, end: 520, duration: 0.08, volume: 0.18, filter: 1800, type: "square" as OscillatorType };
       case "core":
         return { start: 520, end: 1100, duration: 0.2, volume: 0.22, filter: 3200, type: "triangle" as OscillatorType };
+      case "bigCore":
+        return { start: 420, end: 1250, duration: 0.26, volume: 0.25, filter: 3400, type: "triangle" as OscillatorType };
+      case "launch":
+        return { start: 190, end: 720, duration: 0.16, volume: 0.26, filter: 2600, type: "square" as OscillatorType };
       case "death":
         return { start: 220, end: 35, duration: 0.42, volume: 0.24, filter: 800, type: "sawtooth" as OscillatorType };
+      case "playerLaserVaporized":
+        return { start: 980, end: 120, duration: 0.28, volume: 0.26, filter: 3000, type: "sawtooth" as OscillatorType };
+      case "echoLaserVaporized":
+        return { start: 760, end: 160, duration: 0.2, volume: 0.18, filter: 2600, type: "triangle" as OscillatorType };
       case "portal":
         return { start: 300, end: 900, duration: 0.28, volume: 0.28, filter: 3600, type: "sine" as OscillatorType };
       case "select":

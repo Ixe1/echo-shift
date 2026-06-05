@@ -245,6 +245,8 @@ export type StepEvents = {
   core: CorePickupEvent | null;
   cores: CorePickupEvent[];
   died: boolean;
+  playerLaserVaporized: boolean;
+  echoLaserVaporized: number;
   livesExhausted: boolean;
   won: boolean;
 };

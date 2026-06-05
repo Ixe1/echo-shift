@@ -26,6 +26,11 @@ import { uiRoot } from "../ui/dom";
 const STEP_MS = 1000 / 60;
 const BACKGROUND_DRIFT_PADDING = 16;
 const BACKGROUND_AMBIENCE_REDRAW_FRAMES = 4;
+const DEATH_FALL_MS = 1700;
+const DEATH_FADE_OUT_MS = 360;
+const DEATH_FADE_IN_MS = 360;
+const DEATH_BOUNCE_SPEED = -8.8;
+const DEATH_FALL_GRAVITY = 0.52;
 const CORE_MAJOR_KEY = "core-major";
 const OBJECT_ATLAS_KEY = "object-atlas";
 const OBJECT_FRAME = {
@@ -70,6 +75,13 @@ type RenderView = {
   livesRemaining: number;
   dead: boolean;
   won: boolean;
+};
+
+type DeathPresentation = {
+  actor: ActorBody;
+  elapsedMs: number;
+  livesExhausted: boolean;
+  fadeStarted: boolean;
 };
 
 type KeyMap = {
@@ -156,6 +168,7 @@ export class GameScene extends Phaser.Scene {
   private texturePrewarmSprites: Phaser.GameObjects.Image[] = [];
   private cameraTarget?: Phaser.GameObjects.Zone;
   private playerCastUntil = 0;
+  private deathPresentation: DeathPresentation | null = null;
   private sceneCleanupRegistered = false;
 
   constructor() {
@@ -279,6 +292,7 @@ export class GameScene extends Phaser.Scene {
     this.backgroundAmbienceRenderTick = -1;
     this.texturePrewarmSprites = [];
     this.cameraTarget = undefined;
+    this.deathPresentation = null;
   }
 
   create(): void {
@@ -326,6 +340,15 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     const updateStart = performance.now();
     this.handleHotkeys();
+    if (this.deathPresentation) {
+      this.updateDeathPresentation(delta);
+      const updateMs = performance.now() - updateStart;
+      const renderStart = performance.now();
+      this.renderWorld();
+      this.updateHud();
+      this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
+      return;
+    }
     if (this.pausedByHud || this.completeHandled) {
       const updateMs = performance.now() - updateStart;
       const renderStart = performance.now();
@@ -345,15 +368,19 @@ export class GameScene extends Phaser.Scene {
     const updateMs = performance.now() - updateStart;
     const renderStart = performance.now();
     this.renderWorld();
+    this.updateHud();
+    this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
+  }
+
+  private updateHud(): void {
     this.hud.update({
       levelNumber: this.level.index + 1,
       levelName: this.level.name,
       frames: this.simulation.totalFrames,
       score: this.simulation.score,
       lives: this.simulation.livesRemaining(),
-      dead: this.simulation.dead
+      dead: this.simulation.dead || Boolean(this.deathPresentation)
     });
-    this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
   }
 
   private createKeys(): KeyMap {
@@ -382,6 +409,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleHotkeys(): void {
+    if (this.deathPresentation) return;
     if (this.retryRequired) {
       if (Phaser.Input.Keyboard.JustDown(this.keys.t)) this.restartLevel();
       return;
@@ -392,31 +420,101 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleEvents(events: ReturnType<RoomSimulation["step"]>): void {
-    if (events.jumped || events.launched) audio.play("jump");
+    if (events.jumped) audio.play("jump");
+    if (events.launched) audio.play("launch");
     if (events.landed) audio.play("land");
     if (events.switched) audio.play("switch");
     if (events.cores.length > 0) {
-      audio.play("core");
       for (const core of events.cores) {
+        audio.play(this.corePickupIsLarge(core.id) ? "bigCore" : "core");
         this.spawnEffectFrame(core, 2, 0.42);
       }
     }
+    for (let index = 0; index < events.echoLaserVaporized; index += 1) audio.play("echoLaserVaporized");
     if (events.died) {
-      audio.play("death");
-      this.cameras.main.shake(180, 0.006);
-      if (events.livesExhausted) {
-        this.pausedByHud = true;
-        this.retryRequired = true;
-        this.hud.showRetryRequired(this.level.name);
-      } else {
-        this.hud.toast(`Signal lost. ${this.simulation.livesRemaining()} lives left.`);
-      }
+      this.startDeathPresentation(events.livesExhausted, events.playerLaserVaporized);
     }
     if (events.won) this.completeLevel();
   }
 
+  private corePickupIsLarge(coreId: string): boolean {
+    const core = (this.level.cores || []).find((item) => item.id === coreId);
+    return core ? this.coreIsLarge(core) : false;
+  }
+
+  private startDeathPresentation(livesExhausted: boolean, playerLaserVaporized: boolean): void {
+    if (this.deathPresentation) return;
+    audio.play(playerLaserVaporized ? "playerLaserVaporized" : "death");
+    this.cameras.main.shake(180, 0.006);
+    const player = this.simulation.player;
+    this.deathPresentation = {
+      actor: {
+        ...player,
+        vy: DEATH_BOUNCE_SPEED,
+        vx: player.vx * 0.35,
+        onGround: false,
+        coyote: 0,
+        jumpBuffer: 0,
+        standingOn: null,
+        alive: false
+      },
+      elapsedMs: 0,
+      livesExhausted,
+      fadeStarted: false
+    };
+    this.playerCastUntil = 0;
+    this.virtualInput = { left: false, right: false, jump: false };
+    if (!livesExhausted) this.hud.toast(`Signal lost. ${this.simulation.livesRemaining()} lives left.`);
+    this.writeDeathPresentationDiagnostics("fall");
+  }
+
+  private updateDeathPresentation(delta: number): void {
+    const presentation = this.deathPresentation;
+    if (!presentation) return;
+    const frameScale = Math.min(delta, 80) / STEP_MS;
+    presentation.elapsedMs += delta;
+    presentation.actor.x += presentation.actor.vx * frameScale;
+    presentation.actor.y += presentation.actor.vy * frameScale;
+    presentation.actor.vy += DEATH_FALL_GRAVITY * frameScale;
+
+    if (!presentation.fadeStarted && presentation.elapsedMs >= DEATH_FALL_MS) {
+      presentation.fadeStarted = true;
+      this.cameras.main.fadeOut(DEATH_FADE_OUT_MS, 5, 7, 13);
+      this.writeDeathPresentationDiagnostics("fade-out");
+    }
+
+    if (presentation.elapsedMs < DEATH_FALL_MS + DEATH_FADE_OUT_MS) return;
+    this.finishDeathPresentation(presentation);
+  }
+
+  private finishDeathPresentation(presentation: DeathPresentation): void {
+    if (presentation.livesExhausted) {
+      this.pausedByHud = true;
+      this.retryRequired = true;
+      this.deathPresentation = null;
+      this.hud.showRetryRequired(this.level.name);
+      this.writeDeathPresentationDiagnostics("retry-required");
+      return;
+    }
+
+    this.simulation.resetAttempt(false);
+    this.accumulator = 0;
+    this.deathPresentation = null;
+    this.echoTrails.clear();
+    this.playerCastUntil = 0;
+    this.cameraTarget?.setPosition(this.level.start.x + this.simulation.player.w / 2, this.level.start.y + this.simulation.player.h / 2);
+    this.cameras.main.fadeIn(DEATH_FADE_IN_MS, 5, 7, 13);
+    this.hud.toast(`${this.simulation.livesRemaining()} lives left.`);
+    this.writeDeathPresentationDiagnostics("respawn");
+  }
+
+  private writeDeathPresentationDiagnostics(phase: string): void {
+    if (!this.diagnosticsEnabled || typeof document === "undefined") return;
+    document.documentElement.dataset.echoShiftDeathPresentation = phase;
+  }
+
   private rewind(): void {
-    if (this.completeHandled || this.pausedByHud || this.retryRequired) return;
+    if (this.deathPresentation || this.completeHandled || this.pausedByHud || this.retryRequired) return;
     const added = this.simulation.rewindToEcho();
     audio.play("rewind");
     this.playerCastUntil = this.time.now + 360;
@@ -427,7 +525,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private retryAttempt(): void {
-    if (this.completeHandled || this.pausedByHud || this.retryRequired) return;
+    if (this.deathPresentation || this.completeHandled || this.pausedByHud || this.retryRequired) return;
     this.simulation.resetLevel();
     this.playerCastUntil = 0;
     this.echoTrails.clear();
@@ -439,6 +537,7 @@ export class GameScene extends Phaser.Scene {
     this.completeHandled = false;
     this.pausedByHud = false;
     this.retryRequired = false;
+    this.deathPresentation = null;
     this.virtualInput = { left: false, right: false, jump: false };
     audio.resumeMusic();
     this.simulation.resetLevel();
@@ -605,11 +704,14 @@ export class GameScene extends Phaser.Scene {
     this.backgroundAmbienceRenderTick = -1;
     this.texturePrewarmSprites = [];
     this.cameraTarget = undefined;
+    this.deathPresentation = null;
   };
 
   private renderWorld(): void {
     const snapshot = this.liveRenderView();
-    this.cameraTarget?.setPosition(snapshot.player.x + snapshot.player.w / 2, snapshot.player.y + snapshot.player.h / 2);
+    if (!this.deathPresentation) {
+      this.cameraTarget?.setPosition(snapshot.player.x + snapshot.player.w / 2, snapshot.player.y + snapshot.player.h / 2);
+    }
     this.beginObjectAssetSync();
     this.world.clear();
     this.structureOutlines.clear();
@@ -644,7 +746,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const view = this.renderView;
-    view.player = simulation.player;
+    view.player = this.deathPresentation?.actor || simulation.player;
     view.activePlates = objectState.activePlates;
     view.openDoors = objectState.openDoors;
     view.collectedCores = objectState.collectedCores;
@@ -655,7 +757,7 @@ export class GameScene extends Phaser.Scene {
     view.score = simulation.score;
     view.deaths = simulation.deaths;
     view.livesRemaining = simulation.livesRemaining();
-    view.dead = simulation.dead;
+    view.dead = simulation.dead || Boolean(this.deathPresentation);
     view.won = simulation.won;
     return view;
   }
@@ -1306,6 +1408,15 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftCoreSpriteFrames = this.coreSpriteFrames.join("|");
     document.documentElement.dataset.echoShiftEchoSensorAssetFrames = this.echoSensorAssetFrames.join("|");
     document.documentElement.dataset.echoShiftSolidOutlineRects = this.staticSolidOutlineRects.join("|");
+    document.documentElement.dataset.echoShiftDeathPresentation = this.retryRequired
+      ? "retry-required"
+      : this.deathPresentation
+        ? this.deathPresentation.fadeStarted
+          ? "fade-out"
+          : "fall"
+        : snapshot.dead
+          ? "dead"
+          : "idle";
     this.writeCameraDiagnostics();
     document.documentElement.dataset.echoShiftBackgroundFilter = this.backgroundTextureFilter;
     document.documentElement.dataset.echoShiftObjectAtlasFilter = this.objectAtlasTextureFilter;

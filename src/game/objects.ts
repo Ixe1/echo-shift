@@ -101,7 +101,15 @@ export const actorTouchesHazard = (
 ): boolean => {
   if ((level.hazards || []).some((hazard) => rectsOverlap(actor, hazard))) return true;
   if ((level.drones || []).some((drone) => droneIsActive(drone, objectState.activePlates) && rectsOverlap(actor, droneRectAt(drone, tick)))) return true;
+  return actorTouchesLaser(level, actor, objectState, tick);
+};
 
+export const actorTouchesLaser = (
+  level: Level,
+  actor: ActorBody,
+  objectState: ObjectState,
+  tick = 0
+): boolean => {
   for (const laser of level.lasers || []) {
     if (!laserIsActive(laser, objectState.activePlates)) continue;
     if (!rectsOverlap(actor, laser)) continue;

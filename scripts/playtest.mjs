@@ -26,6 +26,7 @@ const artifacts = {
   draftMovingLaserOrigin: `${outDir}/draft-moving-laser-origin.png`,
   draftEchoTintBefore: `${outDir}/draft-echo-tint-before.png`,
   draftEchoTintAfter: `${outDir}/draft-echo-tint-after.png`,
+  draftDeathFall: `${outDir}/draft-death-fall.png`,
   draftRetryRequired: `${outDir}/draft-retry-required.png`,
   mobileGate: `${outDir}/start-gate-mobile.png`,
   mobileMenu: `${outDir}/menu-mobile.png`,
@@ -748,7 +749,11 @@ try {
     hazards: [{ id: "instant-loss", x: 24, y: 86, w: 28, h: 34 }]
   });
   await loadDraftPlaytest(page, retryRequiredLevel, { clickCanvas: false });
-  await page.locator("[data-modal].show h1").waitFor({ state: "visible", timeout: 3000 });
+  await page.waitForFunction(() => document.documentElement.dataset.echoShiftDeathPresentation === "fall", null, { timeout: 2000 });
+  const retryRequiredDeathFallPhase = await page.evaluate(() => document.documentElement.dataset.echoShiftDeathPresentation || "");
+  await page.screenshot({ path: artifacts.draftDeathFall });
+  await page.locator("[data-modal].show h1").waitFor({ state: "visible", timeout: 6000 });
+  const retryRequiredDeathFinalPhase = await page.evaluate(() => document.documentElement.dataset.echoShiftDeathPresentation || "");
   const retryRequiredTitleBeforeEsc = await page.locator("[data-modal].show h1").textContent();
   await page.keyboard.press("Escape");
   await page.waitForTimeout(180);
@@ -958,6 +963,10 @@ try {
   assert(
     retryRequiredTitleAfterRewind === "Retry Required",
     `Expected Rewind not to bypass exhausted lives, got ${retryRequiredTitleAfterRewind}`
+  );
+  assert(
+    retryRequiredDeathFallPhase === "fall" && retryRequiredDeathFinalPhase === "retry-required",
+    `Expected death presentation to fall before retry modal, got ${retryRequiredDeathFallPhase} -> ${retryRequiredDeathFinalPhase}`
   );
   assert(retryRequiredLivesText === "0", `Expected exhausted lives HUD to stay at 0, got ${retryRequiredLivesText}`);
   assert(levelButtons === 10, `Expected 10 level buttons, got ${levelButtons}`);

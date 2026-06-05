@@ -336,9 +336,21 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     );
     deferBlockedRejects = false;
 
+    const elementsBeforeSfx = mediaElements.length;
     audio.play("jump");
     await settlePromises();
-    assert(startedTones.length >= 1, "Expected SFX tone to start after audio context unlock");
+    const jumpEffect = mediaElements.find((element) => element.src.includes("player_jump"));
+    assert(jumpEffect?.playing, "Expected sampled jump SFX to play after audio unlock");
+    audio.play("core");
+    audio.play("core");
+    await settlePromises();
+    const overlappingCoreEffects = mediaElements.filter((element) => element.src.includes("core_pickup"));
+    assert(overlappingCoreEffects.length >= 2, "Expected repeated core SFX calls to create overlapping media elements");
+    assert(mediaElements.length >= elementsBeforeSfx + 3, "Expected sampled SFX playback to allocate independent media elements");
+
+    audio.play("land");
+    await settlePromises();
+    assert(startedTones.length >= 1, "Expected synth fallback SFX tone to start after audio context unlock");
     startedTones[0].onended?.();
     assert(disconnectedNodes >= 3, `Expected SFX nodes to disconnect after ending, got ${disconnectedNodes}`);
 
@@ -818,11 +830,20 @@ try {
   const laserSim = new RoomSimulation(laserLevel);
   laserSim.echoRecordings.push({ id: "echo-blocker", frames: [], createdAtFrame: 0 });
   laserSim.echoes = [makeActor("echo-blocker", "echo", { x: 96, y: 86 })];
-  laserSim.step(idle);
+  const laserEvent = laserSim.step(idle);
   assert(!laserSim.objectState.blockedLasers.has("beam-a"), "Echo should not block the laser beam");
   assert(!laserSim.echoes[0].alive, "Echo touching an active laser should vaporize");
+  assert(laserEvent.echoLaserVaporized === 1, `Expected laser-vaporized echo event, got ${laserEvent.echoLaserVaporized}`);
   assert(laserSim.snapshot().echoes.length === 0, "Vaporized echo should be absent from snapshots");
   assert(!laserSim.dead, "Laser vaporizing an echo should not kill the player");
+
+  const playerLaserDeathSim = new RoomSimulation({
+    ...baseLevel,
+    lasers: [{ id: "player-beam", x: 18, y: 86, w: 30, h: 34, startsOn: true }]
+  });
+  const playerLaserDeathEvent = playerLaserDeathSim.step(idle);
+  assert(playerLaserDeathSim.dead, "Active laser overlap should kill the player");
+  assert(playerLaserDeathEvent.playerLaserVaporized, "Expected player laser vaporization event for laser death");
 
   const vaporizedEchoInteractionSim = new RoomSimulation({
     ...laserLevel,
@@ -1092,14 +1113,32 @@ try {
     `Conveyor pushed player through blocked crate: player ${conveyorBlockedSim.player.x}, crate ${blockedCrate.x}`
   );
 
-  const launchLevel = {
+  const walkOverLaunchLevel = {
     ...baseLevel,
     start: { x: 26, y: 86 },
     launchPads: [{ id: "launch-a", x: 20, y: 112, w: 70, h: 8, powerY: 13.5, powerX: 1 }]
   };
+  const walkOverLaunchSim = new RoomSimulation(walkOverLaunchLevel);
+  let walkedOverLaunch = walkOverLaunchSim.step(idle).launched;
+  for (let i = 0; i < 8; i += 1) {
+    walkedOverLaunch ||= walkOverLaunchSim.step(right).launched;
+  }
+  assert(!walkedOverLaunch, "Launch pad fired while being walked over instead of landed on from above");
+
+  const launchLevel = {
+    ...walkOverLaunchLevel,
+    start: { x: 26, y: 38 }
+  };
   const launchSim = new RoomSimulation(launchLevel);
-  const launchEvent = launchSim.step(idle);
-  assert(launchEvent.launched, "Launch pad did not report a launch event");
+  let launchEvent = null;
+  for (let i = 0; i < 40; i += 1) {
+    const event = launchSim.step(idle);
+    if (event.launched) {
+      launchEvent = event;
+      break;
+    }
+  }
+  assert(launchEvent?.launched, "Launch pad did not report a launch event");
   assert(
     Math.abs(launchSim.player.y + launchSim.player.h - 112) < 0.01,
     `Launch pad did not spring from its top face: foot=${launchSim.player.y + launchSim.player.h}`

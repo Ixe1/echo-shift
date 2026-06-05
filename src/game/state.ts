@@ -1,5 +1,6 @@
 import { rectsOverlap } from "./geometry";
 import {
+  actorTouchesLaser,
   actorTouchesHazard,
   closedDoorRects,
   createObjectState,
@@ -90,6 +91,8 @@ export class RoomSimulation {
       core: null,
       cores: [],
       died: false,
+      playerLaserVaporized: false,
+      echoLaserVaporized: 0,
       livesExhausted: false,
       won: false
     };
@@ -132,7 +135,10 @@ export class RoomSimulation {
     let objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick);
     this.objectState = objectUpdate.state;
 
-    while (this.vaporizeHazardousEchoes()) {
+    for (;;) {
+      const echoVaporization = this.vaporizeHazardousEchoes();
+      if (!echoVaporization.vaporized) break;
+      events.echoLaserVaporized += echoVaporization.laserVaporized;
       objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick);
       this.objectState = objectUpdate.state;
     }
@@ -143,6 +149,7 @@ export class RoomSimulation {
     for (const core of objectUpdate.cores) this.addCoreScore(core.id);
 
     if (!this.dead && playerTouchesHazard(this.level, this.player, this.objectState, this.tick)) {
+      events.playerLaserVaporized = actorTouchesLaser(this.level, this.player, this.objectState, this.tick);
       this.markPlayerDead(events);
     }
 
@@ -231,7 +238,7 @@ export class RoomSimulation {
         rectsOverlap(actor, pad) &&
         footLeft < pad.x + pad.w &&
         footRight > pad.x &&
-        previousFootY <= pad.y + pad.h + LAUNCH_PAD_FACE_TOLERANCE &&
+        previousFootY <= pad.y + LAUNCH_PAD_FACE_TOLERANCE &&
         currentFootY >= pad.y
       );
     });
@@ -252,14 +259,16 @@ export class RoomSimulation {
     return this.echoes.filter((echo) => echo.alive);
   }
 
-  private vaporizeHazardousEchoes(): boolean {
+  private vaporizeHazardousEchoes(): { vaporized: boolean; laserVaporized: number } {
     let vaporized = false;
+    let laserVaporized = 0;
     for (const echo of this.echoes) {
       if (echo.alive && actorTouchesHazard(this.level, echo, this.objectState, this.tick)) {
+        if (actorTouchesLaser(this.level, echo, this.objectState, this.tick)) laserVaporized += 1;
         echo.alive = false;
         vaporized = true;
       }
     }
-    return vaporized;
+    return { vaporized, laserVaporized };
   }
 }
