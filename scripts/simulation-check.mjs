@@ -1144,12 +1144,12 @@ try {
     `Launch pad did not spring from its top face: foot=${launchSim.player.y + launchSim.player.h}`
   );
   assert(
-    launchSim.player.vy < -13 && launchSim.player.vx === 1,
-    `Launch pad did not apply a deterministic spring velocity: vx=${launchSim.player.vx}, vy=${launchSim.player.vy}`
+    launchSim.player.vy < -12 && launchSim.player.vy > -13.5 && launchSim.player.vx === 1,
+    `Launch pad did not apply a softened deterministic spring velocity: vx=${launchSim.player.vx}, vy=${launchSim.player.vy}`
   );
   launchSim.step(idle);
   assert(
-    launchSim.player.vy < -12,
+    launchSim.player.vy < -11.5,
     `Launch pad spring velocity should not be jump-cut when jump is not held, got vy=${launchSim.player.vy}`
   );
   assert(!launchSim.step(idle).launched, "Launch pad re-fired while actor was still in spring launch cooldown");

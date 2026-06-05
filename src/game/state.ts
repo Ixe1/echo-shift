@@ -22,6 +22,8 @@ const MIN_ECHO_FRAMES = 18;
 const LAUNCH_PAD_FACE_TOLERANCE = 3;
 const LAUNCH_PAD_COOLDOWN_FRAMES = 12;
 const LAUNCH_PAD_CONTROL_LOCK_FRAMES = 10;
+const LAUNCH_PAD_FLOAT_FRAMES = 54;
+const LAUNCH_PAD_SPEED_SCALE = 0.94;
 
 export class RoomSimulation {
   readonly level: Level;
@@ -245,12 +247,13 @@ export class RoomSimulation {
     if (!launchPad) return false;
     actor.y = launchPad.y - actor.h;
     if (launchPad.powerX !== undefined) actor.vx = launchPad.powerX;
-    actor.vy = -Math.max(1, launchPad.powerY);
+    actor.vy = -Math.max(1, launchPad.powerY) * LAUNCH_PAD_SPEED_SCALE;
     actor.onGround = false;
     actor.coyote = 0;
     actor.jumpBuffer = 0;
     actor.launchCooldown = LAUNCH_PAD_COOLDOWN_FRAMES;
     actor.launchControlLock = LAUNCH_PAD_CONTROL_LOCK_FRAMES;
+    actor.launchFloatFrames = LAUNCH_PAD_FLOAT_FRAMES;
     actor.standingOn = null;
     return true;
   }

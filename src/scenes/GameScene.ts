@@ -471,8 +471,9 @@ export class GameScene extends Phaser.Scene {
   private updateDeathPresentation(delta: number): void {
     const presentation = this.deathPresentation;
     if (!presentation) return;
-    const frameScale = Math.min(delta, 80) / STEP_MS;
-    presentation.elapsedMs += delta;
+    const stepMs = Math.min(delta, 80);
+    const frameScale = stepMs / STEP_MS;
+    presentation.elapsedMs += stepMs;
     presentation.actor.x += presentation.actor.vx * frameScale;
     presentation.actor.y += presentation.actor.vy * frameScale;
     presentation.actor.vy += DEATH_FALL_GRAVITY * frameScale;

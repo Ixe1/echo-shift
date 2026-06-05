@@ -26,6 +26,7 @@ export type ActorBody = Rect & {
   jumpBuffer: number;
   launchCooldown: number;
   launchControlLock: number;
+  launchFloatFrames: number;
   prevJump: boolean;
   facing: -1 | 1;
   standingOn: string | null;

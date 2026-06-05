@@ -15,6 +15,8 @@ const JUMP_SPEED = -12.9;
 const COYOTE_FRAMES = 7;
 const JUMP_BUFFER_FRAMES = 7;
 const LAUNCH_CONTROL_ACCEL_SCALE = 0.35;
+const LAUNCH_FLOAT_GRAVITY_SCALE = 0.92;
+const LAUNCH_FLOAT_MAX_FALL_SCALE = 0.88;
 
 export const makeActor = (
   id: string,
@@ -34,6 +36,7 @@ export const makeActor = (
   jumpBuffer: 0,
   launchCooldown: 0,
   launchControlLock: 0,
+  launchFloatFrames: 0,
   prevJump: false,
   facing: 1,
   standingOn: null,
@@ -113,6 +116,8 @@ export const moveActor = (
 
   const launchControlLocked = actor.launchControlLock > 0;
   if (actor.launchControlLock > 0) actor.launchControlLock -= 1;
+  const launchFloatActive = actor.launchFloatFrames > 0;
+  if (actor.launchFloatFrames > 0) actor.launchFloatFrames -= 1;
 
   const launchAccelScale = launchControlLocked && !actor.onGround ? LAUNCH_CONTROL_ACCEL_SCALE : 1;
   const accel = (actor.onGround ? GROUND_ACCEL : AIR_ACCEL) * launchAccelScale;
@@ -150,7 +155,9 @@ export const moveActor = (
     actor.vy *= 0.78;
   }
 
-  actor.vy = clamp(actor.vy + GRAVITY, -30, MAX_FALL);
+  const gravity = launchFloatActive ? GRAVITY * LAUNCH_FLOAT_GRAVITY_SCALE : GRAVITY;
+  const maxFall = launchFloatActive ? MAX_FALL * LAUNCH_FLOAT_MAX_FALL_SCALE : MAX_FALL;
+  actor.vy = clamp(actor.vy + gravity, -30, maxFall);
   actor.onGround = false;
   actor.standingOn = null;
 
