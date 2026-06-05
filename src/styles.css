@@ -464,6 +464,10 @@ button {
   display: none;
 }
 
+.toast.show ~ .tutorial-hint {
+  top: 136px;
+}
+
 .options-panel {
   width: min(440px, 92vw);
 }
@@ -955,6 +959,10 @@ button {
   .tutorial-hint {
     top: 92px;
     font-size: 0.86rem;
+  }
+
+  .toast.show ~ .tutorial-hint {
+    top: 202px;
   }
 
   .setting-row {
