@@ -28,6 +28,7 @@ const artifacts = {
   draftEchoTintAfter: `${outDir}/draft-echo-tint-after.png`,
   draftDeathFall: `${outDir}/draft-death-fall.png`,
   draftRetryRequired: `${outDir}/draft-retry-required.png`,
+  draftRetryAfterDeath: `${outDir}/draft-retry-after-death.png`,
   mobileGate: `${outDir}/start-gate-mobile.png`,
   mobileMenu: `${outDir}/menu-mobile.png`,
   mobileGame: `${outDir}/game-mobile.png`,
@@ -762,6 +763,29 @@ try {
   const retryRequiredTitleAfterRewind = await page.locator("[data-modal].show h1").textContent();
   const retryRequiredLivesText = await page.locator("[data-lives]").textContent();
   await page.screenshot({ path: artifacts.draftRetryRequired });
+
+  const retryAfterDeathLevel = draftLevel({
+    name: "Retry After Death Fade",
+    score: {
+      lives: 1,
+      coreScore: 100,
+      deathPenalty: 500,
+      timeBonusTargetSeconds: 10,
+      timeBonusPerSecond: 100
+    },
+    hazards: [{ id: "delayed-loss", x: 78, y: 86, w: 30, h: 34 }]
+  });
+  await loadDraftPlaytest(page, retryAfterDeathLevel);
+  await page.keyboard.down("KeyD");
+  await page.waitForFunction(() => document.documentElement.dataset.echoShiftDeathPresentation === "fall", null, { timeout: 4000 });
+  await page.keyboard.up("KeyD");
+  await page.locator("[data-modal].show h1").waitFor({ state: "visible", timeout: 7000 });
+  await page.locator("[data-replay-level]").click();
+  await page.waitForTimeout(650);
+  const retryAfterDeathPhase = await page.evaluate(() => document.documentElement.dataset.echoShiftDeathPresentation || "");
+  const retryAfterDeathModalCount = await page.locator("[data-modal].show").count();
+  const retryAfterDeathLivesText = await page.locator("[data-lives]").textContent();
+  await page.screenshot({ path: artifacts.draftRetryAfterDeath });
   await desktop.close();
 
   const mobileMessages = [];
@@ -969,6 +993,9 @@ try {
     `Expected death presentation to fall before retry modal, got ${retryRequiredDeathFallPhase} -> ${retryRequiredDeathFinalPhase}`
   );
   assert(retryRequiredLivesText === "0", `Expected exhausted lives HUD to stay at 0, got ${retryRequiredLivesText}`);
+  assert(retryAfterDeathPhase === "idle", `Expected Retry Room to clear death presentation fade, got ${retryAfterDeathPhase}`);
+  assert(retryAfterDeathModalCount === 0, `Expected Retry Room to close retry modal, got ${retryAfterDeathModalCount} modals`);
+  assert(retryAfterDeathLivesText === "1", `Expected Retry Room to restore level lives, got ${retryAfterDeathLivesText}`);
   assert(levelButtons === 10, `Expected 10 level buttons, got ${levelButtons}`);
   assert(touchControlsVisible, "Mobile touch controls were not visible in-game");
   assert(beforeTouchX !== null && afterTouchX !== null, "Could not locate player pixels for touch movement check");

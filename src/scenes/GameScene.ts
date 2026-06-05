@@ -540,6 +540,7 @@ export class GameScene extends Phaser.Scene {
     this.retryRequired = false;
     this.deathPresentation = null;
     this.virtualInput = { left: false, right: false, jump: false };
+    this.cameras.main.fadeIn(DEATH_FADE_IN_MS, 5, 7, 13);
     audio.resumeMusic();
     this.simulation.resetLevel();
     this.playerCastUntil = 0;
