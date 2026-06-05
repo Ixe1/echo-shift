@@ -12,6 +12,7 @@ mkdirSync(outDir, { recursive: true });
 const artifacts = {
   desktopGate: `${outDir}/start-gate-desktop.png`,
   desktopMenu: `${outDir}/menu-desktop.png`,
+  desktopIntro: `${outDir}/level-intro-desktop.png`,
   desktopGame: `${outDir}/game-desktop.png`,
   desktopEcho: `${outDir}/echo-desktop.png`,
   desktopRetryAfterRewind: `${outDir}/retry-after-rewind-desktop.png`,
@@ -32,10 +33,12 @@ const artifacts = {
   draftDeathPauseGuard: `${outDir}/draft-death-pause-guard.png`,
   mobileGate: `${outDir}/start-gate-mobile.png`,
   mobileMenu: `${outDir}/menu-mobile.png`,
+  mobileIntro: `${outDir}/level-intro-mobile.png`,
   mobileGame: `${outDir}/game-mobile.png`,
   mobileTouch: `${outDir}/touch-mobile.png`,
   mobileLevels: `${outDir}/levels-mobile.png`,
   tabletGate: `${outDir}/start-gate-tablet.png`,
+  tabletIntro: `${outDir}/level-intro-tablet.png`,
   tabletGame: `${outDir}/game-tablet.png`,
   tabletTouch: `${outDir}/touch-tablet.png`,
   tabletJump: `${outDir}/jump-tablet.png`,
@@ -74,6 +77,17 @@ const assert = (condition, message) => {
 const startAudioGate = async (page) => {
   await page.locator("[data-start-game]").waitFor({ state: "visible" });
   await page.locator("[data-start-game]").click();
+};
+
+const waitForLevelIntro = async (page) => {
+  await page.waitForFunction(
+    () => {
+      const phase = document.documentElement.dataset.echoShiftLevelIntro;
+      return phase === "exiting" || phase === "idle";
+    },
+    null,
+    { timeout: 12000 }
+  );
 };
 
 const pulsedRightRoute = (totalFrames, jumpStarts, jumpFrames = 24) => {
@@ -204,6 +218,7 @@ const loadDraftPlaytest = async (page, level, options = {}) => {
   await page.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "networkidle" });
   await startAudioGate(page);
   await page.locator("canvas").waitFor({ state: "visible" });
+  await waitForLevelIntro(page);
   if (options.clickCanvas !== false) {
     await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   }
@@ -570,12 +585,15 @@ try {
   const title = await page.title();
   await page.screenshot({ path: artifacts.desktopMenu });
   await page.locator("[data-play]").click();
-  await page.waitForTimeout(600);
-  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  await page.locator("canvas").waitFor({ state: "visible" });
   await page.waitForFunction(() => document.documentElement.dataset.echoShiftAudioState === "playing");
   const levelAudioState = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioState || "");
   const desktopBackgroundKey = await page.evaluate(() => document.documentElement.dataset.echoShiftBackgroundKey);
   const objectAssetCount = Number(await page.evaluate(() => document.documentElement.dataset.echoShiftObjectAssetCount || "0"));
+  const desktopIntroVisible = await page.locator("[data-level-intro='active']").isVisible();
+  await page.screenshot({ path: artifacts.desktopIntro });
+  await waitForLevelIntro(page);
+  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await page.screenshot({ path: artifacts.desktopGame });
   await page.keyboard.down("KeyD");
   await page.waitForTimeout(700);
@@ -591,7 +609,7 @@ try {
   await page.waitForTimeout(80);
   await page.keyboard.up("KeyR");
   await page.locator("[data-retry]").click();
-  await page.waitForTimeout(120);
+  await waitForLevelIntro(page);
   const retryCastPixels = await rewindCastPixelsNearStart(page);
   await page.screenshot({ path: artifacts.desktopRetryAfterRewind });
   await page.keyboard.down("Escape");
@@ -624,7 +642,7 @@ try {
   await page.locator("[data-play]").waitFor({ state: "visible" });
   await page.evaluate(() => window.localStorage.clear());
   await page.locator("[data-play]").click();
-  await page.waitForTimeout(650);
+  await waitForLevelIntro(page);
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await runKeyboardRouteWithHudFrames(page, firstRoomRoute);
   await page.locator("[data-modal].show").waitFor({ state: "visible", timeout: 3000 });
@@ -636,6 +654,7 @@ try {
   await page.screenshot({ path: artifacts.desktopComplete });
   await page.locator("[data-next]").click();
   await page.waitForFunction(() => document.querySelector("[data-level]")?.textContent?.includes("2. First Afterimage"));
+  await waitForLevelIntro(page);
   const nextLevelLabel = await page.locator("[data-level]").textContent();
   await page.screenshot({ path: artifacts.desktopNext });
   await page.goto(url, { waitUntil: "domcontentloaded" });
@@ -643,7 +662,7 @@ try {
   await page.locator("[data-levels]").waitFor({ state: "visible" });
   await page.locator("[data-levels]").click();
   await page.locator("[data-level='3']").click();
-  await page.waitForTimeout(600);
+  await waitForLevelIntro(page);
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await runKeyboardRoute(page, [["right", 245]]);
   const corePixels = await coreSpritePixels(page);
@@ -655,7 +674,7 @@ try {
   await page.locator("[data-levels]").waitFor({ state: "visible" });
   await page.locator("[data-levels]").click();
   await page.locator("[data-level='2']").click();
-  await page.waitForTimeout(600);
+  await waitForLevelIntro(page);
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   const heldOpenSolidFrames = await page.evaluate(() => document.documentElement.dataset.echoShiftSolidAssetFrames || "");
   await runKeyboardRouteWithHudFrames(page, heldOpenEchoRoute);
@@ -670,6 +689,7 @@ try {
   await page.locator("[data-levels]").click();
   await page.locator("[data-level='4']").click();
   await page.locator("canvas").waitFor({ state: "visible" });
+  await waitForLevelIntro(page);
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   const liftPhaseTilePhasesBefore = await page.evaluate(() => document.documentElement.dataset.echoShiftTileAssetPhases || "");
   const liftPhaseRouteResult = await runKeyboardRouteWithHudFrames(page, liftPhaseClearRoute);
@@ -782,7 +802,7 @@ try {
   await page.keyboard.up("KeyD");
   await page.locator("[data-modal].show h1").waitFor({ state: "visible", timeout: 7000 });
   await page.locator("[data-replay-level]").click();
-  await page.waitForTimeout(650);
+  await waitForLevelIntro(page);
   const retryAfterDeathPhase = await page.evaluate(() => document.documentElement.dataset.echoShiftDeathPresentation || "");
   const retryAfterDeathModalCount = await page.locator("[data-modal].show").count();
   const retryAfterDeathLivesText = await page.locator("[data-lives]").textContent();
@@ -822,7 +842,9 @@ try {
   await mobile.screenshot({ path: artifacts.mobileMenu });
   await mobile.locator("[data-play]").click();
   await mobile.locator("[data-touch-control='right']").waitFor({ state: "visible" });
-  await mobile.waitForTimeout(450);
+  const mobileIntroVisible = await mobile.locator("[data-level-intro='active']").isVisible();
+  await mobile.screenshot({ path: artifacts.mobileIntro });
+  await waitForLevelIntro(mobile);
   const touchControlsVisible =
     (await mobile.locator("[data-touch-control='left']").isVisible()) &&
     (await mobile.locator("[data-touch-control='right']").isVisible()) &&
@@ -862,7 +884,9 @@ try {
   await tablet.locator("[data-play]").waitFor({ state: "visible" });
   await tablet.locator("[data-play]").click();
   await tablet.locator("[data-touch-control='right']").waitFor({ state: "visible" });
-  await tablet.waitForTimeout(450);
+  const tabletIntroVisible = await tablet.locator("[data-level-intro='active']").isVisible();
+  await tablet.screenshot({ path: artifacts.tabletIntro });
+  await waitForLevelIntro(tablet);
   const tabletTouchControlsVisible =
     (await tablet.locator("[data-touch-control='left']").isVisible()) &&
     (await tablet.locator("[data-touch-control='right']").isVisible()) &&
@@ -896,7 +920,7 @@ try {
   await touchFlow.locator("[data-play]").waitFor({ state: "visible" });
   await touchFlow.locator("[data-play]").click();
   await touchFlow.locator("[data-touch-control='right']").waitFor({ state: "visible" });
-  await touchFlow.waitForTimeout(450);
+  await waitForLevelIntro(touchFlow);
   const beforeTouchJump = await playerCentroid(touchFlow);
   const comboJumpButton = await touchFlow.locator("[data-touch-control='jump']").boundingBox();
   assert(comboJumpButton, "Could not locate tablet jump touch control");
@@ -918,6 +942,7 @@ try {
   assert(preGateMusicKey === "", `Expected no soundtrack request before the audio gate, got ${preGateMusicKey}`);
   assert(menuAudioState === "playing", `Expected menu audio to start after the audio gate, got ${menuAudioState}`);
   assert(levelAudioState === "playing", `Expected level audio to continue after Play, got ${levelAudioState}`);
+  assert(desktopIntroVisible, "Expected level intro cutscene to appear on desktop");
   assert(
     desktopBackgroundKey === "level-1-springtide-glassgrove",
     `Expected Level 1 Springtide Glassgrove background key, got ${desktopBackgroundKey}`
@@ -1018,9 +1043,11 @@ try {
   assert(deathPauseLivesText === "2", `Expected guarded death respawn to leave 2 lives, got ${deathPauseLivesText}`);
   assert(levelButtons === 10, `Expected 10 level buttons, got ${levelButtons}`);
   assert(touchControlsVisible, "Mobile touch controls were not visible in-game");
+  assert(mobileIntroVisible, "Expected level intro cutscene to appear on mobile");
   assert(beforeTouchX !== null && afterTouchX !== null, "Could not locate player pixels for touch movement check");
   assert(afterTouchX > beforeTouchX + 8, `Expected touch-right to move player right: ${beforeTouchX} -> ${afterTouchX}`);
   assert(tabletTouchControlsVisible, "Tablet touch controls were not visible in-game");
+  assert(tabletIntroVisible, "Expected level intro cutscene to appear on tablet");
   assert(
     beforeTabletTouchX !== null && afterTabletTouchX !== null,
     "Could not locate player pixels for tablet touch movement check"
@@ -1052,6 +1079,7 @@ try {
         scoreText,
         livesText,
         retryCastPixels,
+        desktopIntroVisible,
         pauseVisible,
         returnedToTitle,
         completionTitle,
@@ -1074,8 +1102,10 @@ try {
         echoTintAfter,
         levelButtons,
         touchControlsVisible,
+        mobileIntroVisible,
         mobileTouchDelta: Number((afterTouchX - beforeTouchX).toFixed(2)),
         tabletTouchControlsVisible,
+        tabletIntroVisible,
         tabletTouchDelta: Number((afterTabletTouchX - beforeTabletTouchX).toFixed(2)),
         tabletJumpDeltaY: Number((afterTouchJump.y - beforeTouchJump.y).toFixed(2)),
         tabletPauseVisible,

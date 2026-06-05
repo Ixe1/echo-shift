@@ -100,6 +100,14 @@ export class Hud {
     this.toastTimer = window.setTimeout(() => toast.classList.remove("show"), 1800);
   }
 
+  hideToast(): void {
+    const toast = this.root.querySelector<HTMLElement>("[data-toast]");
+    window.clearTimeout(this.toastTimer);
+    if (!toast) return;
+    toast.classList.remove("show");
+    toast.textContent = "";
+  }
+
   scan(): void {
     const scanline = this.root.querySelector<HTMLElement>("[data-scanline]");
     if (!scanline) return;
@@ -112,8 +120,9 @@ export class Hud {
     const modal = this.modal();
     modal.innerHTML = `
       <section class="panel complete-panel">
-        <h1>${levelName}</h1>
-        <p>Timeline paused.</p>
+        <img class="modal-logo" src="/assets/echo-shift-logo.png" alt="Echo Shift" />
+        <h1>Paused</h1>
+        <p>${levelName}</p>
         <div class="button-grid">
           <button class="ui-button primary" data-resume>Resume</button>
           <button class="ui-button" data-replay-level>${icon("restart")} Restart Level</button>

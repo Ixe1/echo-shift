@@ -24,11 +24,11 @@ export class MenuScene extends Phaser.Scene {
       <main class="screen art-screen menu-screen">
         <div class="menu-shell">
           <section class="brand-block">
-            <img class="brand-logo" src="/assets/echo-shift-mark.svg" alt="Echo Shift" />
+            <img class="brand-logo" src="/assets/echo-shift-logo.png" alt="Echo Shift" />
             <p class="tagline">Rewind failed runs into reliable echoes, then cooperate with your past selves through ten compact time-lab rooms.</p>
           </section>
           <section class="panel menu-panel">
-            <h1>${draftPlaytest ? "Draft Playtest" : "Echo Shift"}</h1>
+            <h1>${draftPlaytest ? "Draft Playtest" : "Main Menu"}</h1>
             <p>${
               draftPlaytest
                 ? "Testing the browser-saved editor draft. Clears and scores are not written to normal progress."
@@ -77,7 +77,7 @@ export class MenuScene extends Phaser.Scene {
       <main class="screen art-screen menu-screen">
         <section class="panel menu-panel">
           <h1>Credits</h1>
-          <p class="credits-text">Echo Shift was designed and built with Codex-assisted development for the Community Dev Challenge.</p>
+          <p class="credits-text">Designed and built with Codex-assisted development for the Community Dev Challenge.</p>
           <p class="credits-text">Game design, TypeScript implementation, procedural visual direction, and QA loop produced in this workspace.</p>
           <div class="button-grid">
             <button class="ui-button primary" data-back>${icon("back")} Back</button>

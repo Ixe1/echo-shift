@@ -241,6 +241,7 @@ export type CorePickupEvent = Vec2 & {
 export type StepEvents = {
   jumped: boolean;
   launched: boolean;
+  launchPadId: string | null;
   landed: boolean;
   switched: boolean;
   core: CorePickupEvent | null;

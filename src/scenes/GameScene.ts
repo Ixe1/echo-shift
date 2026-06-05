@@ -33,6 +33,12 @@ const DEATH_BOUNCE_SPEED = -8.8;
 const DEATH_FALL_GRAVITY = 0.52;
 const CORE_MAJOR_KEY = "core-major";
 const OBJECT_ATLAS_KEY = "object-atlas";
+const LAUNCH_PAD_KEY = "launch-pad";
+const LAUNCH_PAD_FRAME_WIDTH = 256;
+const LAUNCH_PAD_FRAME_HEIGHT = 192;
+const LAUNCH_PAD_ACTIVE_MS = 360;
+const LEVEL_INTRO_MS = 3000;
+const LEVEL_INTRO_OUTRO_MS = 820;
 const OBJECT_FRAME = {
   floor: 0,
   wall: 1,
@@ -51,6 +57,22 @@ const OBJECT_FRAME = {
   droneActive: 14,
   droneInactive: 15
 } as const;
+
+const escapeHtml = (value: string): string =>
+  value.replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      default:
+        return "&#39;";
+    }
+  });
 
 type ObjectAsset = Phaser.GameObjects.TileSprite | Phaser.GameObjects.Image;
 type SolidOutlineSide = "top" | "bottom" | "left" | "right";
@@ -82,6 +104,10 @@ type DeathPresentation = {
   elapsedMs: number;
   livesExhausted: boolean;
   fadeStarted: boolean;
+};
+
+type RetryPresentation = {
+  elapsedMs: number;
 };
 
 type KeyMap = {
@@ -129,11 +155,13 @@ export class GameScene extends Phaser.Scene {
   private doorAssetTransforms: string[] = [];
   private coreSpriteFrames: string[] = [];
   private echoSensorAssetFrames: string[] = [];
+  private launchPadSpriteFrames: string[] = [];
   private staticSolidOutlineRects: string[] = [];
   private lastCameraSample = "";
   private lastCameraWorldView = "";
   private backgroundTextureFilter = "";
   private objectAtlasTextureFilter = "";
+  private launchPadTextureFilter = "";
   private terrainTextureFilter = "";
   private requiredCoreIds = new Set<string>();
   private diagnosticsEnabled = false;
@@ -169,6 +197,11 @@ export class GameScene extends Phaser.Scene {
   private cameraTarget?: Phaser.GameObjects.Zone;
   private playerCastUntil = 0;
   private deathPresentation: DeathPresentation | null = null;
+  private retryPresentation: RetryPresentation | null = null;
+  private introActive = false;
+  private introElapsedMs = 0;
+  private levelIntroOverlay: HTMLElement | null = null;
+  private readonly launchPadActiveUntil = new Map<string, number>();
   private sceneCleanupRegistered = false;
 
   constructor() {
@@ -273,11 +306,13 @@ export class GameScene extends Phaser.Scene {
     this.doorAssetTransforms = [];
     this.coreSpriteFrames = [];
     this.echoSensorAssetFrames = [];
+    this.launchPadSpriteFrames = [];
     this.staticSolidOutlineRects = [];
     this.lastCameraSample = "";
     this.lastCameraWorldView = "";
     this.backgroundTextureFilter = "";
     this.objectAtlasTextureFilter = "";
+    this.launchPadTextureFilter = "";
     this.terrainTextureFilter = "";
     this.requiredCoreIds = doorRequiredCoreIds(this.level.doors || []);
     this.diagnosticsEnabled = this.shouldExposeRenderDiagnostics();
@@ -293,11 +328,16 @@ export class GameScene extends Phaser.Scene {
     this.texturePrewarmSprites = [];
     this.cameraTarget = undefined;
     this.deathPresentation = null;
+    this.retryPresentation = null;
+    this.introActive = false;
+    this.introElapsedMs = 0;
+    this.levelIntroOverlay = null;
+    this.launchPadActiveUntil.clear();
   }
 
   create(): void {
     this.syncDraftPlaytestUrl();
-    audio.playMusic(soundtrackForLevel(this.level, this.levelIndex).key);
+    audio.playMusic(this.currentLevelSoundtrackKey());
     this.cameras.main.setBounds(this.level.bounds.x, this.level.bounds.y, this.level.bounds.w, this.level.bounds.h);
     this.cameras.main.setBackgroundColor("#05070d");
     this.configureCameraFrame();
@@ -334,12 +374,40 @@ export class GameScene extends Phaser.Scene {
     this.hud.toast(`${isDraftPlaytestActive() ? "Draft playtest · " : ""}${this.level.index + 1}: ${this.level.name}`);
     this.registerSceneCleanup();
     this.prewarmLevelTextures();
+    this.startLevelIntro();
     this.renderWorld();
+    this.updateHud();
   }
 
   update(_time: number, delta: number): void {
     const updateStart = performance.now();
+    if (this.introActive) this.updateLevelIntro(delta);
+    if (this.levelIntroBlocksGameplay()) {
+      const updateMs = performance.now() - updateStart;
+      const renderStart = performance.now();
+      this.renderWorld();
+      this.updateHud();
+      this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
+      return;
+    }
+    if (this.retryPresentation) {
+      this.updateRetryPresentation(delta);
+      const updateMs = performance.now() - updateStart;
+      const renderStart = performance.now();
+      this.renderWorld();
+      this.updateHud();
+      this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
+      return;
+    }
     this.handleHotkeys();
+    if (this.retryPresentation) {
+      const updateMs = performance.now() - updateStart;
+      const renderStart = performance.now();
+      this.renderWorld();
+      this.updateHud();
+      this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
+      return;
+    }
     if (this.deathPresentation) {
       this.updateDeathPresentation(delta);
       const updateMs = performance.now() - updateStart;
@@ -383,6 +451,72 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private currentLevelSoundtrackKey(): ReturnType<typeof soundtrackForLevel>["key"] {
+    return soundtrackForLevel(this.level, this.levelIndex).key;
+  }
+
+  private restartLevelMusic(): void {
+    audio.playMusic(this.currentLevelSoundtrackKey(), { restart: true });
+  }
+
+  private startLevelIntro(): void {
+    this.finishLevelIntro();
+    this.hud.hideToast();
+    this.introActive = true;
+    this.introElapsedMs = 0;
+    const overlay = document.createElement("div");
+    overlay.className = "level-intro";
+    overlay.dataset.levelIntro = "active";
+    overlay.innerHTML = `
+      <div class="level-intro-track" aria-hidden="true">
+        <img class="level-intro-track-logo" src="/assets/echo-shift-logo.png" alt="" />
+      </div>
+      <section class="level-intro-card" aria-label="Level start">
+        <div class="level-intro-number">${this.level.index + 1}</div>
+        <div class="level-intro-copy">
+          <span class="level-intro-kicker">Room ${String(this.level.index + 1).padStart(2, "0")}</span>
+          <strong>${escapeHtml(this.level.name)}</strong>
+          <span>${escapeHtml(this.level.subtitle)}</span>
+        </div>
+        <div class="level-intro-ready">Ready</div>
+      </section>
+      <div class="level-intro-sweep" aria-hidden="true">
+        <img class="level-intro-sweep-logo" src="/assets/echo-shift-logo.png" alt="" />
+      </div>
+    `;
+    uiRoot().append(overlay);
+    this.levelIntroOverlay = overlay;
+    this.writeLevelIntroDiagnostics("active");
+  }
+
+  private updateLevelIntro(delta: number): void {
+    if (!this.introActive) return;
+    this.introElapsedMs += Math.min(delta, 120);
+    if (this.introElapsedMs >= LEVEL_INTRO_MS - LEVEL_INTRO_OUTRO_MS) {
+      this.levelIntroOverlay?.classList.add("is-exiting");
+      this.writeLevelIntroDiagnostics("exiting");
+    }
+    if (this.introElapsedMs < LEVEL_INTRO_MS) return;
+    this.finishLevelIntro();
+  }
+
+  private finishLevelIntro(): void {
+    this.introActive = false;
+    this.introElapsedMs = 0;
+    this.levelIntroOverlay?.remove();
+    this.levelIntroOverlay = null;
+    this.writeLevelIntroDiagnostics("idle");
+  }
+
+  private levelIntroBlocksGameplay(): boolean {
+    return this.introActive && this.introElapsedMs < LEVEL_INTRO_MS - LEVEL_INTRO_OUTRO_MS;
+  }
+
+  private writeLevelIntroDiagnostics(phase: string): void {
+    if (!this.diagnosticsEnabled || typeof document === "undefined") return;
+    document.documentElement.dataset.echoShiftLevelIntro = phase;
+  }
+
   private createKeys(): KeyMap {
     const keyboard = this.input.keyboard;
     if (!keyboard) throw new Error("Keyboard input unavailable");
@@ -421,7 +555,10 @@ export class GameScene extends Phaser.Scene {
 
   private handleEvents(events: ReturnType<RoomSimulation["step"]>): void {
     if (events.jumped) audio.play("jump");
-    if (events.launched) audio.play("launch");
+    if (events.launched) {
+      audio.play("launch");
+      if (events.launchPadId) this.launchPadActiveUntil.set(events.launchPadId, this.time.now + LAUNCH_PAD_ACTIVE_MS);
+    }
     if (events.landed) audio.play("land");
     if (events.switched) audio.play("switch");
     if (events.cores.length > 0) {
@@ -497,16 +634,18 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.simulation.resetAttempt(false);
+    this.simulation.resetLifeAttempt();
     this.accumulator = 0;
     this.pausedByHud = false;
     this.deathPresentation = null;
     this.echoTrails.clear();
+    this.launchPadActiveUntil.clear();
     this.playerCastUntil = 0;
     this.cameraTarget?.setPosition(this.level.start.x + this.simulation.player.w / 2, this.level.start.y + this.simulation.player.h / 2);
+    this.restartLevelMusic();
     this.cameras.main.fadeIn(DEATH_FADE_IN_MS, 5, 7, 13);
+    this.startLevelIntro();
     this.hud.hideModal();
-    this.hud.toast(`${this.simulation.livesRemaining()} lives left.`);
     this.writeDeathPresentationDiagnostics("respawn");
   }
 
@@ -516,7 +655,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private rewind(): void {
-    if (this.deathPresentation || this.completeHandled || this.pausedByHud || this.retryRequired) return;
+    if (this.levelIntroBlocksGameplay() || this.retryPresentation || this.deathPresentation || this.completeHandled || this.pausedByHud || this.retryRequired) return;
     const added = this.simulation.rewindToEcho();
     audio.play("rewind");
     this.playerCastUntil = this.time.now + 360;
@@ -527,12 +666,42 @@ export class GameScene extends Phaser.Scene {
   }
 
   private retryAttempt(): void {
-    if (this.deathPresentation || this.completeHandled || this.pausedByHud || this.retryRequired) return;
+    if (this.levelIntroBlocksGameplay() || this.retryPresentation || this.deathPresentation || this.completeHandled || this.pausedByHud || this.retryRequired) return;
+    this.startRetryPresentation();
+    audio.play("select");
+  }
+
+  private startRetryPresentation(): void {
+    this.finishLevelIntro();
+    this.retryPresentation = { elapsedMs: 0 };
+    this.virtualInput = { left: false, right: false, jump: false };
+    this.hud.hideToast();
+    this.cameras.main.fadeOut(DEATH_FADE_OUT_MS, 5, 7, 13);
+  }
+
+  private updateRetryPresentation(delta: number): void {
+    const presentation = this.retryPresentation;
+    if (!presentation) return;
+    presentation.elapsedMs += Math.min(delta, 80);
+    if (presentation.elapsedMs < DEATH_FADE_OUT_MS) return;
+    this.finishRetryPresentation();
+  }
+
+  private finishRetryPresentation(): void {
+    if (!this.retryPresentation) return;
+    this.retryPresentation = null;
     this.simulation.resetLevel();
+    this.accumulator = 0;
+    this.completeHandled = false;
+    this.pausedByHud = false;
+    this.retryRequired = false;
     this.playerCastUntil = 0;
     this.echoTrails.clear();
-    audio.play("select");
-    this.hud.toast("Run reset");
+    this.launchPadActiveUntil.clear();
+    this.restartLevelMusic();
+    this.cameraTarget?.setPosition(this.level.start.x + this.simulation.player.w / 2, this.level.start.y + this.simulation.player.h / 2);
+    this.cameras.main.fadeIn(DEATH_FADE_IN_MS, 5, 7, 13);
+    this.startLevelIntro();
   }
 
   private restartLevel(): void {
@@ -541,17 +710,18 @@ export class GameScene extends Phaser.Scene {
     this.retryRequired = false;
     this.deathPresentation = null;
     this.virtualInput = { left: false, right: false, jump: false };
+    this.restartLevelMusic();
     this.cameras.main.fadeIn(DEATH_FADE_IN_MS, 5, 7, 13);
-    audio.resumeMusic();
     this.simulation.resetLevel();
     this.playerCastUntil = 0;
     this.echoTrails.clear();
+    this.launchPadActiveUntil.clear();
+    this.startLevelIntro();
     this.hud.hideModal();
-    this.hud.toast(`${this.level.index + 1}: ${this.level.name}`);
   }
 
   private togglePause(force?: boolean): void {
-    if (this.deathPresentation || this.completeHandled || this.retryRequired) return;
+    if (this.levelIntroBlocksGameplay() || this.retryPresentation || this.deathPresentation || this.completeHandled || this.retryRequired) return;
     this.pausedByHud = force ?? !this.pausedByHud;
     if (this.pausedByHud) {
       this.hud.showPause(this.level.name);
@@ -692,11 +862,13 @@ export class GameScene extends Phaser.Scene {
     this.doorAssetTransforms = [];
     this.coreSpriteFrames = [];
     this.echoSensorAssetFrames = [];
+    this.launchPadSpriteFrames = [];
     this.staticSolidOutlineRects = [];
     this.lastCameraSample = "";
     this.lastCameraWorldView = "";
     this.backgroundTextureFilter = "";
     this.objectAtlasTextureFilter = "";
+    this.launchPadTextureFilter = "";
     this.requiredCoreIds = new Set();
     this.perfSamples = [];
     this.perfLastUpdate = 0;
@@ -708,6 +880,9 @@ export class GameScene extends Phaser.Scene {
     this.texturePrewarmSprites = [];
     this.cameraTarget = undefined;
     this.deathPresentation = null;
+    this.retryPresentation = null;
+    this.finishLevelIntro();
+    this.launchPadActiveUntil.clear();
   };
 
   private renderWorld(): void {
@@ -725,6 +900,7 @@ export class GameScene extends Phaser.Scene {
     this.drawCrates(snapshot.crates);
     this.drawDoors(snapshot.openDoors);
     this.drawPlates(snapshot.activePlates);
+    this.drawLaunchPads();
     this.drawTimedSwitches(snapshot.activePlates);
     this.drawEchoSensors(snapshot.activePlates);
     this.drawCores(snapshot.collectedCores);
@@ -925,6 +1101,10 @@ export class GameScene extends Phaser.Scene {
       this.textures.get(OBJECT_ATLAS_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
       this.objectAtlasTextureFilter = `${OBJECT_ATLAS_KEY}:${Phaser.Textures.FilterMode.LINEAR}`;
     }
+    if (this.textures.exists(LAUNCH_PAD_KEY)) {
+      this.textures.get(LAUNCH_PAD_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
+      this.launchPadTextureFilter = `${LAUNCH_PAD_KEY}:${Phaser.Textures.FilterMode.LINEAR}`;
+    }
     if (this.textures.exists(TERRAIN_TILE_KEY)) {
       this.textures.get(TERRAIN_TILE_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
       this.terrainTextureFilter = `${TERRAIN_TILE_KEY}:${Phaser.Textures.FilterMode.LINEAR}`;
@@ -939,7 +1119,6 @@ export class GameScene extends Phaser.Scene {
     this.syncStaticSolids();
     this.syncStaticOneWayPlatforms();
     this.syncStaticHazards();
-    this.syncStaticLaunchPads();
   }
 
   private syncStaticSolids(): void {
@@ -1038,22 +1217,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private syncStaticLaunchPads(): void {
-    for (const pad of this.level.launchPads || []) {
-      this.syncImageAsset(
-        `launch-pad:${pad.id}`,
-        OBJECT_FRAME.plateActive,
-        pad.x + pad.w / 2,
-        pad.y + pad.h - 16,
-        Math.max(54, pad.w),
-        42,
-        4,
-        0.92
-      );
-      this.markStaticObjectAsset(`launch-pad:${pad.id}`);
-    }
-  }
-
   private markStaticObjectAsset(id: string): void {
     this.staticObjectAssetIds.add(id);
   }
@@ -1125,6 +1288,50 @@ export class GameScene extends Phaser.Scene {
         0.96
       );
     }
+  }
+
+  private drawLaunchPads(): void {
+    for (const pad of this.level.launchPads || []) {
+      const activeUntil = this.launchPadActiveUntil.get(pad.id) || 0;
+      const active = activeUntil > this.time.now;
+      if (!active && activeUntil > 0) this.launchPadActiveUntil.delete(pad.id);
+      this.syncLaunchPadAsset(pad, active);
+    }
+  }
+
+  private syncLaunchPadAsset(pad: Rect & { id: string }, active: boolean): void {
+    const frame = active ? 1 : 0;
+    const id = `launch-pad:${pad.id}`;
+    if (this.textures.exists(LAUNCH_PAD_KEY)) {
+      const width = Math.max(58, pad.w);
+      const height = width * (LAUNCH_PAD_FRAME_HEIGHT / LAUNCH_PAD_FRAME_WIDTH);
+      const asset = this.assetFor(id, "image", frame, LAUNCH_PAD_KEY) as Phaser.GameObjects.Image;
+      asset
+        .setVisible(true)
+        .setDepth(6)
+        .setAlpha(0.98)
+        .setOrigin(0.5, 1)
+        .setPosition(pad.x + pad.w / 2, pad.y + pad.h + 5)
+        .setRotation(0)
+        .setFrame(frame)
+        .setDisplaySize(width, height)
+        .clearTint();
+      this.activeObjectAssetIds.add(id);
+      if (this.diagnosticsEnabled) this.launchPadSpriteFrames.push(`${id}:${frame}:${active ? "active" : "idle"}`);
+      return;
+    }
+
+    this.syncImageAsset(
+      id,
+      active ? OBJECT_FRAME.plateActive : OBJECT_FRAME.plateIdle,
+      pad.x + pad.w / 2,
+      pad.y + pad.h - 16,
+      Math.max(54, pad.w),
+      42,
+      4,
+      0.92
+    );
+    if (this.diagnosticsEnabled) this.launchPadSpriteFrames.push(`${id}:fallback:${active ? "active" : "idle"}`);
   }
 
   private drawTimedSwitches(activePlates: Set<string>): void {
@@ -1366,6 +1573,7 @@ export class GameScene extends Phaser.Scene {
     const targets: Array<{ key: string; frame?: number }> = [
       { key: background.key },
       { key: OBJECT_ATLAS_KEY, frame: 0 },
+      { key: LAUNCH_PAD_KEY, frame: 0 },
       { key: TERRAIN_TILE_KEY, frame: 0 },
       { key: "time-runner", frame: 0 },
       { key: "time-effects", frame: 0 },
@@ -1410,6 +1618,7 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftDoorAssetTransforms = this.doorAssetTransforms.join("|");
     document.documentElement.dataset.echoShiftCoreSpriteFrames = this.coreSpriteFrames.join("|");
     document.documentElement.dataset.echoShiftEchoSensorAssetFrames = this.echoSensorAssetFrames.join("|");
+    document.documentElement.dataset.echoShiftLaunchPadSpriteFrames = this.launchPadSpriteFrames.join("|");
     document.documentElement.dataset.echoShiftSolidOutlineRects = this.staticSolidOutlineRects.join("|");
     document.documentElement.dataset.echoShiftDeathPresentation = this.retryRequired
       ? "retry-required"
@@ -1423,6 +1632,7 @@ export class GameScene extends Phaser.Scene {
     this.writeCameraDiagnostics();
     document.documentElement.dataset.echoShiftBackgroundFilter = this.backgroundTextureFilter;
     document.documentElement.dataset.echoShiftObjectAtlasFilter = this.objectAtlasTextureFilter;
+    document.documentElement.dataset.echoShiftLaunchPadFilter = this.launchPadTextureFilter;
     document.documentElement.dataset.echoShiftTerrainTileFilter = this.terrainTextureFilter;
   }
 
@@ -1688,6 +1898,7 @@ export class GameScene extends Phaser.Scene {
     this.laserAssetPositions.length = 0;
     this.doorAssetTransforms.length = 0;
     this.echoSensorAssetFrames.length = 0;
+    this.launchPadSpriteFrames.length = 0;
   }
 
   private finishObjectAssetSync(): void {
@@ -1828,7 +2039,8 @@ export class GameScene extends Phaser.Scene {
   private assetFor(id: string, kind: "tile" | "image", frame: number, textureKey = OBJECT_ATLAS_KEY): ObjectAsset {
     const existing = this.objectAssets.get(id);
     if (existing) {
-      if ((kind === "tile" && existing.type === "TileSprite") || (kind === "image" && existing.type === "Image")) return existing;
+      const kindMatches = (kind === "tile" && existing.type === "TileSprite") || (kind === "image" && existing.type === "Image");
+      if (kindMatches && existing.texture.key === textureKey) return existing;
       existing.destroy();
       this.objectAssets.delete(id);
     }

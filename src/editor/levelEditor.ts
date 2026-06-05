@@ -818,7 +818,7 @@ class LevelEditor {
       <main class="level-editor" data-level-editor>
         <header class="editor-topbar">
           <div class="editor-title">
-            <strong>Echo Shift Editor</strong>
+            <strong>Level Editor</strong>
             <span data-editor-status>Draft ready</span>
           </div>
           <label class="editor-level-select">

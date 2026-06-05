@@ -24,6 +24,17 @@ const startAudioGate = async (page) => {
   await page.locator("[data-start-game]").click();
 };
 
+const waitForLevelIntro = async (page) => {
+  await page.waitForFunction(
+    () => {
+      const phase = document.documentElement.dataset.echoShiftLevelIntro;
+      return phase === "exiting" || phase === "idle";
+    },
+    null,
+    { timeout: 12000 }
+  );
+};
+
 const waitForToastClear = async (page) => {
   await page.waitForFunction(() => !document.querySelector("[data-toast]")?.classList.contains("show"));
 };
@@ -414,6 +425,7 @@ try {
   await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
   await startAudioGate(page);
   await page.locator("canvas").waitFor({ state: "visible" });
+  await waitForLevelIntro(page);
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await page.waitForTimeout(900);
 
@@ -581,6 +593,7 @@ try {
   await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&lowChurnGraphics=1`, { waitUntil: "networkidle" });
   await startAudioGate(page);
   await page.locator("canvas").waitFor({ state: "visible" });
+  await waitForLevelIntro(page);
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await page.waitForTimeout(900);
   const lowChurnDiagnostics = await page.evaluate(() => ({
@@ -602,8 +615,9 @@ try {
   await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
   await startAudioGate(page);
   await page.locator("canvas").waitFor({ state: "visible" });
-  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await page.waitForFunction(() => document.querySelector("[data-level]")?.textContent?.includes("Camera Scroll QA"));
+  await waitForLevelIntro(page);
+  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await waitForToastClear(page);
   const doorRequiredCoreFrames = await page.evaluate(() => document.documentElement.dataset.echoShiftCoreSpriteFrames || "");
   assert(
@@ -633,8 +647,9 @@ try {
   await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
   await startAudioGate(page);
   await page.locator("canvas").waitFor({ state: "visible" });
-  await page.locator("canvas").click({ position: { x: 320, y: 240 } });
   await page.waitForFunction(() => document.querySelector("[data-level]")?.textContent?.includes("Camera Scroll QA"));
+  await waitForLevelIntro(page);
+  await page.locator("canvas").click({ position: { x: 320, y: 240 } });
   await waitForToastClear(page);
   const narrowStart = await cameraSample(page);
   const narrowPixelStart = await sampleWorldColors(page, shimmerSamplePoints);

@@ -84,10 +84,18 @@ export class RoomSimulation {
     if (!keepRecording) this.currentRecording = [];
   }
 
+  resetLifeAttempt(): void {
+    this.resetAttempt(false);
+    this.totalFrames = 0;
+    this.score = 0;
+    this.currentAttemptCollectedCoreIds.clear();
+  }
+
   step(input: InputFrame): StepEvents {
     const events: StepEvents = {
       jumped: false,
       launched: false,
+      launchPadId: null,
       landed: false,
       switched: false,
       core: null,
@@ -130,7 +138,8 @@ export class RoomSimulation {
       const moved = moveActor(this.player, input, solids, doors, platforms, this.level.bounds, dynamicFor(this.player));
       events.jumped = moved.jumped;
       events.landed = moved.landed;
-      events.launched = this.applyLaunchPads(this.player, previousY);
+      events.launchPadId = this.applyLaunchPads(this.player, previousY);
+      events.launched = events.launchPadId !== null;
     }
 
     const previousObjectState = this.objectState;
@@ -228,9 +237,9 @@ export class RoomSimulation {
     events.livesExhausted = this.livesRemaining() <= 0;
   }
 
-  private applyLaunchPads(actor: ActorBody, previousY: number): boolean {
+  private applyLaunchPads(actor: ActorBody, previousY: number): string | null {
     actor.launchCooldown = Math.max(0, actor.launchCooldown - 1);
-    if (!actor.alive || actor.launchCooldown > 0 || actor.vy < 0) return false;
+    if (!actor.alive || actor.launchCooldown > 0 || actor.vy < 0) return null;
     const launchPad = (this.level.launchPads || []).find((pad) => {
       const previousFootY = previousY + actor.h;
       const currentFootY = actor.y + actor.h;
@@ -244,7 +253,7 @@ export class RoomSimulation {
         currentFootY >= pad.y
       );
     });
-    if (!launchPad) return false;
+    if (!launchPad) return null;
     actor.y = launchPad.y - actor.h;
     if (launchPad.powerX !== undefined) actor.vx = launchPad.powerX;
     actor.vy = -Math.max(1, launchPad.powerY) * LAUNCH_PAD_SPEED_SCALE;
@@ -255,7 +264,7 @@ export class RoomSimulation {
     actor.launchControlLock = LAUNCH_PAD_CONTROL_LOCK_FRAMES;
     actor.launchFloatFrames = LAUNCH_PAD_FLOAT_FRAMES;
     actor.standingOn = null;
-    return true;
+    return launchPad.id;
   }
 
   private aliveEchoes(): ActorBody[] {

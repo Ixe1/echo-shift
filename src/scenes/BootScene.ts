@@ -19,7 +19,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.svg("echo-logo", "/assets/echo-shift-mark.svg", { width: 640, height: 220 });
+    this.load.image("echo-logo", "/assets/echo-shift-logo.png");
     this.load.spritesheet("time-runner", "/assets/sprites/time-runner-sheet.png", {
       frameWidth: 64,
       frameHeight: 64
@@ -35,6 +35,10 @@ export class BootScene extends Phaser.Scene {
     this.load.spritesheet("object-atlas", "/assets/sprites/object-atlas.png", {
       frameWidth: 256,
       frameHeight: 256
+    });
+    this.load.spritesheet("launch-pad", "/assets/sprites/launch-pad-sheet.png", {
+      frameWidth: 256,
+      frameHeight: 192
     });
     this.load.spritesheet(TERRAIN_TILE_KEY, "/assets/sprites/terrain-tiles.png", {
       frameWidth: TERRAIN_TILE_SIZE,
@@ -67,11 +71,10 @@ export class BootScene extends Phaser.Scene {
       <main class="screen art-screen menu-screen">
         <div class="menu-shell">
           <section class="brand-block">
-            <img class="brand-logo" src="/assets/echo-shift-mark.svg" alt="Echo Shift" />
+            <img class="brand-logo" src="/assets/echo-shift-logo.png" alt="Echo Shift" />
             <p class="tagline">Time-lab systems armed. Start the session when ready.</p>
           </section>
-          <section class="panel menu-panel">
-            <h1>Echo Shift</h1>
+          <section class="panel menu-panel action-panel" aria-label="Echo Shift start">
             <div class="button-grid">
               <button class="ui-button primary" data-start-game>${icon("play")} Start</button>
             </div>

@@ -60,6 +60,17 @@ const startAudioGate = async (page) => {
   await page.locator("[data-start-game]").click();
 };
 
+const waitForLevelIntro = async (page) => {
+  await page.waitForFunction(
+    () => {
+      const phase = document.documentElement.dataset.echoShiftLevelIntro;
+      return phase === "exiting" || phase === "idle";
+    },
+    null,
+    { timeout: 12000 }
+  );
+};
+
 const dispatchChange = async (locator) => {
   await locator.evaluate((element) => {
     element.dispatchEvent(new Event("change", { bubbles: true }));
@@ -240,6 +251,7 @@ try {
   await startAudioGate(draftPlaytestPage);
   await draftPlaytestPage.locator("[data-level]").waitFor({ state: "visible" });
   await draftPlaytestPage.waitForFunction(() => document.documentElement.dataset.echoShiftAudioState === "playing");
+  await waitForLevelIntro(draftPlaytestPage);
   const draftPlaytestUrl = draftPlaytestPage.url();
   const draftPlaytestHudLevel = await draftPlaytestPage.locator("[data-level]").textContent();
   const draftPlaytestMusicKey = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftMusicKey);
@@ -414,6 +426,7 @@ try {
   await mismatchedDraftSelectPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
   await startAudioGate(mismatchedDraftSelectPage);
   await mismatchedDraftSelectPage.locator(".hud [data-level]").waitFor({ state: "visible" });
+  await waitForLevelIntro(mismatchedDraftSelectPage);
   await mismatchedDraftSelectPage.locator("[data-menu]").click();
   await mismatchedDraftSelectPage.locator("[data-modal] [data-levels]").click();
   await mismatchedDraftSelectPage.locator(".level-button[data-level='1']").click();
@@ -424,12 +437,14 @@ try {
   await mismatchedDraftSelectPage.reload({ waitUntil: "domcontentloaded" });
   await startAudioGate(mismatchedDraftSelectPage);
   await mismatchedDraftSelectPage.locator(".hud [data-level]").waitFor({ state: "visible" });
+  await waitForLevelIntro(mismatchedDraftSelectPage);
   const mismatchedDraftReloadedLevel = await mismatchedDraftSelectPage.locator(".hud [data-level]").textContent();
   await mismatchedDraftSelectPage.locator("[data-menu]").click();
   await mismatchedDraftSelectPage.locator("[data-modal] [data-exit-menu]").click();
   await mismatchedDraftSelectPage.locator("[data-play]").waitFor({ state: "visible" });
   await mismatchedDraftSelectPage.locator("[data-play]").click();
   await mismatchedDraftSelectPage.locator(".hud [data-level]").waitFor({ state: "visible" });
+  await waitForLevelIntro(mismatchedDraftSelectPage);
   const mismatchedDraftTitlePlayLevel = await mismatchedDraftSelectPage.locator(".hud [data-level]").textContent();
   await mismatchedDraftSelectPage.locator("[data-menu]").click();
   await mismatchedDraftSelectPage.locator("[data-modal] [data-exit-menu]").click();
@@ -443,6 +458,7 @@ try {
   await mismatchedDraftSelectPage.waitForURL(/playtestDraft=1/);
   await startAudioGate(mismatchedDraftSelectPage);
   await mismatchedDraftSelectPage.locator(".hud [data-level]").waitFor({ state: "visible" });
+  await waitForLevelIntro(mismatchedDraftSelectPage);
   await mismatchedDraftSelectPage.locator("[data-menu]").click();
   await mismatchedDraftSelectPage.locator("[data-modal] [data-editor]").click();
   await mismatchedDraftSelectPage.waitForURL(/editor=1/);

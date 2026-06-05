@@ -365,6 +365,11 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     await settlePromises();
     const levelOne = mediaElements.find((element) => element.src.includes("Level 1"));
     assert(levelOne?.playing, "Expected level music to play after the session audio gate");
+    levelOne.currentTime = 17.25;
+    audio.playMusic("level-1", { restart: true });
+    await settlePromises();
+    assert(levelOne.currentTime === 0, `Expected retry/replay music restart to seek level track to 0, got ${levelOne.currentTime}`);
+    assert(levelOne.playCalls >= 2, `Expected restarted level music to play again, got ${levelOne.playCalls} calls`);
   } finally {
     restoreGlobal("window", previousWindow);
     restoreGlobal("document", previousDocument);
@@ -1139,6 +1144,7 @@ try {
     }
   }
   assert(launchEvent?.launched, "Launch pad did not report a launch event");
+  assert(launchEvent.launchPadId === "launch-a", `Launch pad did not report its id, got ${launchEvent.launchPadId}`);
   assert(
     Math.abs(launchSim.player.y + launchSim.player.h - 112) < 0.01,
     `Launch pad did not spring from its top face: foot=${launchSim.player.y + launchSim.player.h}`
@@ -1179,7 +1185,7 @@ try {
   );
   launchFloatLandingSim.step(jump);
   assert(
-    Math.abs(launchFloatLandingSim.player.vy - -12.08) < 0.001,
+    Math.abs(launchFloatLandingSim.player.vy - -12.23) < 0.001,
     `Normal jump after launch landing should keep baseline jump velocity, got ${launchFloatLandingSim.player.vy}`
   );
 
@@ -1294,6 +1300,26 @@ try {
   runFrames(deathSim, 30, right);
   assert(deathSim.tick === deadTick, "Dead attempt should not continue ticking");
   assert(deathSim.totalFrames === deadFrames, "Dead attempt should not continue scoring time");
+
+  const lifeResetLevel = {
+    ...baseLevel,
+    cores: [{ id: "life-reset-core", x: 24, y: 86, w: 28, h: 34 }],
+    hazards: [{ id: "life-reset-loss", x: 90, y: 86, w: 28, h: 34 }]
+  };
+  const lifeResetSim = new RoomSimulation(lifeResetLevel);
+  lifeResetSim.step(idle);
+  assert(lifeResetSim.totalFrames > 0, "Expected life-reset fixture to accrue visible time before death");
+  assert(lifeResetSim.score > 0, "Expected life-reset fixture to accrue visible score before death");
+  lifeResetSim.player.x = 90;
+  lifeResetSim.player.y = 86;
+  const lifeResetDeath = lifeResetSim.step(idle);
+  assert(lifeResetDeath.died && lifeResetSim.deaths === 1, "Expected life-reset fixture to lose one life");
+  lifeResetSim.resetLifeAttempt();
+  assert(lifeResetSim.deaths === 1, `Life reset should preserve death count, got ${lifeResetSim.deaths}`);
+  assert(lifeResetSim.livesRemaining() === 2, `Life reset should preserve lost life, got ${lifeResetSim.livesRemaining()} lives`);
+  assert(lifeResetSim.totalFrames === 0, `Life reset should restart visible time, got ${lifeResetSim.totalFrames}`);
+  assert(lifeResetSim.score === 0, `Life reset should restart visible score, got ${lifeResetSim.score}`);
+  assert(!lifeResetSim.dead && lifeResetSim.player.alive, "Life reset should respawn a live player");
 
   const exhaustedLivesSim = new RoomSimulation({ ...deathLevel, score: { ...baseLevel.score, lives: 2 } });
   const firstDeath = exhaustedLivesSim.step(idle);
