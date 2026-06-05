@@ -57,6 +57,12 @@
   gap: 5px;
 }
 
+.editor-level-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto auto;
+  gap: 6px;
+}
+
 .editor-actions,
 .editor-viewport-actions {
   display: flex;
@@ -570,6 +576,10 @@
   .editor-actions,
   .editor-viewport-actions {
     justify-content: stretch;
+  }
+
+  .editor-level-row {
+    grid-template-columns: 1fr;
   }
 
   .editor-actions .editor-button,

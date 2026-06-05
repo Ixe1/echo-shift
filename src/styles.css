@@ -371,10 +371,10 @@ button {
   color: var(--yellow);
 }
 
-.hud-bottom {
+.hud-actions {
   position: absolute;
   right: 14px;
-  bottom: 14px;
+  top: 14px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -439,6 +439,79 @@ button {
   border-radius: 8px;
   font-size: 0.86rem;
   font-weight: 700;
+}
+
+.tutorial-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 28px));
+  padding: 10px 14px;
+  border: 1px solid rgba(67, 247, 255, 0.42);
+  background: rgba(4, 8, 18, 0.76);
+  color: #ecfbff;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 850;
+  line-height: 1.25;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+}
+
+.tutorial-hint[hidden] {
+  display: none;
+}
+
+.options-panel {
+  width: min(440px, 92vw);
+}
+
+.settings-list,
+.controls-list {
+  display: grid;
+  gap: 10px;
+}
+
+.setting-row,
+.control-row {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid rgba(67, 247, 255, 0.18);
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 6px;
+}
+
+.setting-row {
+  grid-template-columns: minmax(116px, 1fr) minmax(120px, 1.2fr) 48px;
+  align-items: center;
+}
+
+.setting-row span,
+.control-row span {
+  color: var(--yellow);
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.setting-row output {
+  color: rgba(236, 251, 255, 0.82);
+  font-weight: 900;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.setting-row input[type="range"] {
+  width: 100%;
+  accent-color: var(--cyan);
+}
+
+.control-row strong {
+  color: #fff;
+  font-size: 1rem;
+  line-height: 1.2;
 }
 
 .touch-controls {
@@ -861,9 +934,9 @@ button {
     column-gap: 16px;
   }
 
-  .hud-bottom {
+  .hud-actions {
     right: 8px;
-    bottom: 8px;
+    top: 8px;
   }
 
   .hud-lives {
@@ -876,6 +949,20 @@ button {
 
   .toast {
     top: 154px;
+  }
+
+  .tutorial-hint {
+    bottom: 8px;
+    font-size: 0.86rem;
+  }
+
+  .setting-row {
+    grid-template-columns: 1fr 48px;
+  }
+
+  .setting-row input[type="range"] {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .level-intro-card {

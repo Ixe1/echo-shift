@@ -3,6 +3,7 @@ import { readEditorDraftCurrentIndex } from "../data/editorDraft";
 import { isDraftPlaytestActive } from "../data/levels";
 import { audio } from "../game/audio";
 import { clearUi, icon, uiRoot } from "../ui/dom";
+import { bindOptionsPanel, optionsPanelHtml } from "../ui/options";
 
 export class MenuScene extends Phaser.Scene {
   private uiCleanupRegistered = false;
@@ -36,8 +37,10 @@ export class MenuScene extends Phaser.Scene {
             }</p>
             <div class="button-grid">
               <button class="ui-button primary" data-play>${icon("play")} ${draftPlaytest ? "Play Draft" : "Play"}</button>
+              ${draftPlaytest ? "" : `<button class="ui-button" data-tutorial>${icon("play")} Tutorial</button>`}
               <button class="ui-button" data-levels>${icon("levels")} Level Select</button>
               ${editorButton}
+              <button class="ui-button" data-options>Options</button>
               <button class="ui-button" data-credits>${icon("credits")} Credits</button>
             </div>
           </section>
@@ -53,6 +56,10 @@ export class MenuScene extends Phaser.Scene {
       audio.play("select");
       this.scene.start("LevelSelectScene");
     });
+    root.querySelector("[data-tutorial]")?.addEventListener("click", () => {
+      audio.play("select");
+      this.scene.start("GameScene", { tutorial: true });
+    });
     root.querySelector("[data-editor]")?.addEventListener("click", () => {
       audio.play("select");
       const url = new URL(window.location.href);
@@ -62,6 +69,7 @@ export class MenuScene extends Phaser.Scene {
       window.location.href = `${url.pathname}${url.search}${url.hash}`;
     });
     root.querySelector("[data-credits]")?.addEventListener("click", () => this.showCredits());
+    root.querySelector("[data-options]")?.addEventListener("click", () => this.showOptions());
   }
 
   private currentDraftLevelIndex(): number {
@@ -86,6 +94,20 @@ export class MenuScene extends Phaser.Scene {
       </main>
     `;
     root.querySelector("[data-back]")?.addEventListener("click", () => this.create());
+  }
+
+  private showOptions(): void {
+    audio.play("select");
+    const root = uiRoot();
+    root.innerHTML = `
+      <main class="screen art-screen menu-screen">
+        ${optionsPanelHtml()}
+      </main>
+    `;
+    bindOptionsPanel(root.querySelector<HTMLElement>(".screen") || root, {
+      onBack: () => this.create(),
+      onNavigate: () => audio.play("select")
+    });
   }
 
   private registerUiCleanup(): void {

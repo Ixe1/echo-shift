@@ -16,9 +16,20 @@ type ToneName =
   | "select";
 
 type AudioContextConstructor = new () => AudioContext;
+export type AudioMixSettings = {
+  masterVolume: number;
+  fxVolume: number;
+  musicVolume: number;
+};
 
 const unlockEvents = ["pointerdown", "keydown", "touchstart"] as const;
 const effectPath = (file: string): string => `/assets/audio/effects/${file}`;
+const AUDIO_SETTINGS_KEY = "echo-shift-audio-settings-v1";
+const DEFAULT_AUDIO_SETTINGS: AudioMixSettings = {
+  masterVolume: 1,
+  fxVolume: 1,
+  musicVolume: 1
+};
 const sampledEffects = {
   jump: { src: effectPath("player_jump.mp3"), volume: 0.48 },
   core: { src: effectPath("core_pickup.mp3"), volume: 0.5 },
@@ -29,20 +40,69 @@ const sampledEffects = {
   echoLaserVaporized: { src: effectPath("echo_laser_vaporised.mp3"), volume: 0.42 }
 } as const satisfies Partial<Record<ToneName, { src: string; volume: number }>>;
 
+const clampVolume = (value: unknown, fallback: number): number => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(0, Math.min(1, numeric));
+};
+
+const readAudioSettings = (): AudioMixSettings => {
+  if (typeof window === "undefined") return { ...DEFAULT_AUDIO_SETTINGS };
+  try {
+    const raw = window.localStorage.getItem(AUDIO_SETTINGS_KEY);
+    if (!raw) return { ...DEFAULT_AUDIO_SETTINGS };
+    const parsed = JSON.parse(raw) as Partial<AudioMixSettings>;
+    return {
+      masterVolume: clampVolume(parsed.masterVolume, DEFAULT_AUDIO_SETTINGS.masterVolume),
+      fxVolume: clampVolume(parsed.fxVolume, DEFAULT_AUDIO_SETTINGS.fxVolume),
+      musicVolume: clampVolume(parsed.musicVolume, DEFAULT_AUDIO_SETTINGS.musicVolume)
+    };
+  } catch {
+    return { ...DEFAULT_AUDIO_SETTINGS };
+  }
+};
+
+const writeAudioSettings = (settings: AudioMixSettings): void => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(AUDIO_SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    return;
+  }
+};
+
 export class SynthAudio {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
   private music: HTMLAudioElement | null = null;
   private musicKey: SoundtrackKey | null = null;
   private musicCache = new Map<SoundtrackKey, HTMLAudioElement>();
-  private activeEffects = new Set<HTMLAudioElement>();
+  private activeEffects = new Map<HTMLAudioElement, number>();
   private musicPlayAttempt = 0;
   private fadeToken = 0;
   private musicMuted = false;
   private musicPaused = false;
   private unlockListenersInstalled = false;
-  private readonly musicVolume = 0.28;
+  private settingsState = readAudioSettings();
+  private readonly synthBaseVolume = 0.18;
+  private readonly musicBaseVolume = 0.28;
   private readonly maxCachedMusicElements = 3;
+
+  getSettings(): AudioMixSettings {
+    return { ...this.settingsState };
+  }
+
+  setSettings(settings: Partial<AudioMixSettings>): void {
+    this.settingsState = {
+      masterVolume: clampVolume(settings.masterVolume, this.settingsState.masterVolume),
+      fxVolume: clampVolume(settings.fxVolume, this.settingsState.fxVolume),
+      musicVolume: clampVolume(settings.musicVolume, this.settingsState.musicVolume)
+    };
+    writeAudioSettings(this.settingsState);
+    this.applySynthVolume();
+    if (this.music) this.applyMusicVolume(this.music);
+    for (const [element, baseVolume] of this.activeEffects) element.volume = baseVolume * this.fxOutputMultiplier();
+  }
 
   unlock(): void {
     this.resume();
@@ -201,7 +261,7 @@ export class SynthAudio {
     this.musicPaused = false;
     this.music = null;
     this.musicKey = null;
-    for (const element of this.activeEffects) {
+    for (const element of this.activeEffects.keys()) {
       this.unloadMusicElement(element);
     }
     this.activeEffects.clear();
@@ -246,7 +306,7 @@ export class SynthAudio {
     const context = new AudioContextClass();
     this.context = context;
     this.master = context.createGain();
-    this.master.gain.value = 0.18;
+    this.applySynthVolume();
     this.master.connect(context.destination);
     this.markAudioState(context.state);
     return context;
@@ -262,8 +322,8 @@ export class SynthAudio {
 
     const element = new Audio(settings.src);
     element.preload = "auto";
-    element.volume = settings.volume;
-    this.activeEffects.add(element);
+    element.volume = settings.volume * this.fxOutputMultiplier();
+    this.activeEffects.set(element, settings.volume);
     const release = () => {
       element.pause();
       this.activeEffects.delete(element);
@@ -331,7 +391,7 @@ export class SynthAudio {
   }
 
   private applyMusicVolume(element: HTMLAudioElement): void {
-    element.volume = this.musicMuted ? 0 : this.musicVolume;
+    element.volume = this.musicMuted ? 0 : this.musicOutputVolume();
   }
 
   private fadeMusic(previous: HTMLAudioElement | null, next: HTMLAudioElement, token: number): void {
@@ -343,7 +403,7 @@ export class SynthAudio {
       if (token !== this.fadeToken) return;
       const progress = Math.min(1, Math.max(0, (now - started) / duration));
       const eased = 1 - Math.pow(1 - progress, 3);
-      next.volume = this.musicMuted ? 0 : this.musicVolume * eased;
+      next.volume = this.musicMuted ? 0 : this.musicOutputVolume() * eased;
       if (previous) previous.volume = this.musicMuted ? 0 : previousStart * (1 - eased);
 
       if (progress < 1) {
@@ -389,6 +449,19 @@ export class SynthAudio {
     element.pause();
     element.removeAttribute("src");
     element.load();
+  }
+
+  private applySynthVolume(): void {
+    if (!this.master) return;
+    this.master.gain.value = this.synthBaseVolume * this.fxOutputMultiplier();
+  }
+
+  private fxOutputMultiplier(): number {
+    return this.settingsState.masterVolume * this.settingsState.fxVolume;
+  }
+
+  private musicOutputVolume(): number {
+    return this.musicBaseVolume * this.settingsState.masterVolume * this.settingsState.musicVolume;
   }
 
   private settings(name: ToneName) {

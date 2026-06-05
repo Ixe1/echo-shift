@@ -233,7 +233,8 @@ const solidCollisionOptions: SelectOption[] = [
 
 const cloneLevels = (items: Level[]): Level[] => JSON.parse(JSON.stringify(items)) as Level[];
 
-const exportableLevels = (items: Level[]): Level[] => cloneLevels(items).map((level) => markAnchoredMotionModel(level));
+const exportableLevels = (items: Level[]): Level[] =>
+  cloneLevels(items).map((level, index) => markAnchoredMotionModel({ ...level, index }));
 
 const escapeHtml = (value: unknown): string =>
   String(value ?? "")
@@ -722,6 +723,7 @@ class LevelEditor {
     this.host = host;
     const draft = this.loadDraft();
     this.levels = draft?.levels || cloneLevels(sourceLevels);
+    this.reindexLevels();
     this.currentIndex = levelIndex(draft?.currentIndex, this.levels.length - 1);
   }
 
@@ -838,7 +840,11 @@ class LevelEditor {
           </div>
           <label class="editor-level-select">
             <span>Level</span>
-            <select data-level-select></select>
+            <div class="editor-level-row">
+              <select data-level-select></select>
+              <button type="button" class="editor-button" data-add-level>New</button>
+              <button type="button" class="editor-button danger" data-delete-level>Delete</button>
+            </div>
           </label>
           <div class="editor-actions">
             <button type="button" class="editor-button" data-save-draft>Save Draft</button>
@@ -971,6 +977,8 @@ class LevelEditor {
     this.require<HTMLButtonElement>("[data-zoom-in]").addEventListener("click", () => this.zoomAtCanvasCenter(1.16));
     this.require<HTMLButtonElement>("[data-save-draft]").addEventListener("click", () => this.persistDraft("Draft saved"));
     this.require<HTMLButtonElement>("[data-playtest-draft]").addEventListener("click", () => this.playtestDraft());
+    this.require<HTMLButtonElement>("[data-add-level]").addEventListener("click", () => this.addLevel());
+    this.require<HTMLButtonElement>("[data-delete-level]").addEventListener("click", () => this.deleteCurrentLevel());
     this.require<HTMLButtonElement>("[data-reset-source]").addEventListener("click", () => {
       this.levels = exportableLevels(sourceLevels);
       this.currentIndex = 0;
@@ -1763,6 +1771,76 @@ class LevelEditor {
     return id;
   }
 
+  private levelIdExists(id: string): boolean {
+    return this.levels.some((level) => level.id === id);
+  }
+
+  private nextLevelId(stem: string, startIndex: number): string {
+    let index = Math.max(1, startIndex);
+    let id = `${stem}-${index}`;
+    while (this.levelIdExists(id)) {
+      index += 1;
+      id = `${stem}-${index}`;
+    }
+    return id;
+  }
+
+  private createDraftLevel(index: number): Level {
+    const width = 2200;
+    return markAnchoredMotionModel({
+      id: this.nextLevelId("new-level", index + 1),
+      index,
+      name: `New Level ${index + 1}`,
+      subtitle: "Draft room",
+      start: { x: 64, y: 450 },
+      exit: { x: width - 150, y: 438, w: 48, h: 62 },
+      bounds: { x: 0, y: 0, w: width, h: 540 },
+      solids: [
+        { id: "floor", x: 0, y: 500, w: width, h: 60, tone: "dark", sprite: "floor" },
+        { id: "left-wall", x: -26, y: 0, w: 26, h: 560, tone: "glass", sprite: "wall" },
+        { id: "right-wall", x: width, y: 0, w: 26, h: 560, tone: "glass", sprite: "wall" }
+      ],
+      score: normalizeScoreSettings(undefined, 2400),
+      hint: "Add objects, test the route, then export the level JSON."
+    });
+  }
+
+  private addLevel(): void {
+    const insertAt = this.currentIndex + 1;
+    this.levels.splice(insertAt, 0, this.createDraftLevel(insertAt));
+    this.currentIndex = insertAt;
+    this.afterLevelListMutation("Level added");
+  }
+
+  private deleteCurrentLevel(): void {
+    if (this.levels.length <= 1) {
+      this.setStatus("At least one level is required");
+      return;
+    }
+    const currentName = this.level.name;
+    if (!window.confirm(`Delete "${currentName}" from the draft?`)) return;
+    this.levels.splice(this.currentIndex, 1);
+    this.currentIndex = levelIndex(this.currentIndex, this.levels.length - 1, this.currentIndex - 1);
+    this.afterLevelListMutation("Level deleted");
+  }
+
+  private afterLevelListMutation(status: string): void {
+    this.reindexLevels();
+    this.selection = null;
+    this.drag = null;
+    this.tool = "select";
+    this.placementPreset = null;
+    this.fitLevel();
+    this.renderAll();
+    this.persistDraft(status);
+  }
+
+  private reindexLevels(): void {
+    this.levels.forEach((level, index) => {
+      level.index = index;
+    });
+  }
+
   private renderAll(): void {
     this.renderLevelSelect();
     this.renderToolbar();
@@ -1796,6 +1874,9 @@ class LevelEditor {
           `<option value="${index}" ${index === this.currentIndex ? "selected" : ""}>${index + 1}. ${escapeHtml(level.name)}</option>`
       )
       .join("");
+    const deleteButton = this.require<HTMLButtonElement>("[data-delete-level]");
+    deleteButton.disabled = this.levels.length <= 1;
+    deleteButton.title = deleteButton.disabled ? "At least one level is required" : "Delete selected level";
   }
 
   private renderToolbar(): void {
@@ -2944,12 +3025,14 @@ class LevelEditor {
           .filter((level): level is Level => Boolean(level));
         if (imported.length === 0) throw new Error("No valid levels found");
         this.levels = imported;
+        this.reindexLevels();
         this.currentIndex = levelIndex(this.currentIndex, this.levels.length - 1);
       } else {
         const imported = normalizeImportedLevel(parsed, this.currentIndex);
         if (!imported) throw new Error("No valid level found");
         imported.index = this.currentIndex;
         this.levels[this.currentIndex] = imported;
+        this.reindexLevels();
       }
       this.selection = null;
       this.importArea.value = "";

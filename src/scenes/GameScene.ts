@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { updateEditorDraftCurrentIndex } from "../data/editorDraft";
 import { getLevel, isDraftPlaytestActive, levels } from "../data/levels";
+import { tutorialLevel } from "../data/tutorialLevel";
 import { audio } from "../game/audio";
 import { backgroundAmbienceForLevel, backgroundAmbienceIsActive, type NormalizedBackgroundAmbience } from "../game/backgroundAmbience";
 import { backgroundForLevel } from "../game/backgrounds";
@@ -41,6 +42,7 @@ const HAZARD_VENT_KEY = "hazard-vent";
 const HAZARD_VENT_FRAME_WIDTH = 352;
 const HAZARD_VENT_FRAME_HEIGHT = 288;
 const HAZARD_VENT_FRAMES = 6;
+const RUN_FRAMES = [1, 2, 3, 4] as const;
 const LEVEL_INTRO_MS = 3000;
 const LEVEL_INTRO_OUTRO_MS = 820;
 const OBJECT_FRAME = {
@@ -124,11 +126,16 @@ type KeyMap = {
   space: Phaser.Input.Keyboard.Key;
   r: Phaser.Input.Keyboard.Key;
   t: Phaser.Input.Keyboard.Key;
-  esc: Phaser.Input.Keyboard.Key;
+};
+
+type GameSceneData = {
+  levelIndex?: number;
+  tutorial?: boolean;
 };
 
 export class GameScene extends Phaser.Scene {
   private levelIndex = 0;
+  private tutorialMode = false;
   private level!: Level;
   private _simulation: RoomSimulation | null = null;
   private _keys: KeyMap | null = null;
@@ -206,8 +213,14 @@ export class GameScene extends Phaser.Scene {
   private introActive = false;
   private introElapsedMs = 0;
   private levelIntroOverlay: HTMLElement | null = null;
+  private lastTutorialHint = "";
   private readonly launchPadActiveUntil = new Map<string, number>();
   private sceneCleanupRegistered = false;
+  private readonly handleWindowKeyDown = (event: KeyboardEvent): void => {
+    if (event.key !== "Escape" || event.repeat) return;
+    event.preventDefault();
+    this.togglePause();
+  };
 
   constructor() {
     super("GameScene");
@@ -285,9 +298,10 @@ export class GameScene extends Phaser.Scene {
     this._fx = fx;
   }
 
-  init(data: { levelIndex?: number }): void {
-    this.levelIndex = data.levelIndex || 0;
-    this.level = getLevel(this.levelIndex);
+  init(data: GameSceneData): void {
+    this.tutorialMode = data.tutorial === true;
+    this.levelIndex = this.tutorialMode ? 0 : data.levelIndex || 0;
+    this.level = this.tutorialMode ? tutorialLevel : getLevel(this.levelIndex);
     this.simulation = new RoomSimulation(this.level);
     this.accumulator = 0;
     this.pausedByHud = false;
@@ -338,6 +352,7 @@ export class GameScene extends Phaser.Scene {
     this.introActive = false;
     this.introElapsedMs = 0;
     this.levelIntroOverlay = null;
+    this.lastTutorialHint = "";
     this.launchPadActiveUntil.clear();
   }
 
@@ -361,6 +376,7 @@ export class GameScene extends Phaser.Scene {
     this.fx = this.add.graphics().setDepth(30);
     this.syncStaticLevelAssets();
     this.keys = this.createKeys();
+    window.addEventListener("keydown", this.handleWindowKeyDown);
     this.hud = new Hud({
       onRewind: () => this.rewind(),
       onRetry: () => this.retryAttempt(),
@@ -448,13 +464,13 @@ export class GameScene extends Phaser.Scene {
 
   private updateHud(): void {
     this.hud.update({
-      levelNumber: this.level.index + 1,
+      levelNumber: this.tutorialMode ? null : this.level.index + 1,
       levelName: this.level.name,
       frames: this.simulation.totalFrames,
       score: this.simulation.score,
-      lives: this.simulation.livesRemaining(),
-      dead: this.simulation.dead || Boolean(this.deathPresentation)
+      lives: this.simulation.livesRemaining()
     });
+    this.updateTutorialHint();
   }
 
   private currentLevelSoundtrackKey(): ReturnType<typeof soundtrackForLevel>["key"] {
@@ -478,9 +494,9 @@ export class GameScene extends Phaser.Scene {
         <img class="level-intro-track-logo" src="/assets/echo-shift-logo.png" alt="" />
       </div>
       <section class="level-intro-card" aria-label="Level start">
-        <div class="level-intro-number">${this.level.index + 1}</div>
+        <div class="level-intro-number">${this.tutorialMode ? "T" : this.level.index + 1}</div>
         <div class="level-intro-copy">
-          <span class="level-intro-kicker">Room ${String(this.level.index + 1).padStart(2, "0")}</span>
+          <span class="level-intro-kicker">${this.tutorialMode ? "Training" : `Room ${String(this.level.index + 1).padStart(2, "0")}`}</span>
           <strong>${escapeHtml(this.level.name)}</strong>
           <span>${escapeHtml(this.level.subtitle)}</span>
         </div>
@@ -535,8 +551,7 @@ export class GameScene extends Phaser.Scene {
       w: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
       space: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
       r: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R),
-      t: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.T),
-      esc: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
+      t: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.T)
     };
   }
 
@@ -556,7 +571,6 @@ export class GameScene extends Phaser.Scene {
     }
     if (Phaser.Input.Keyboard.JustDown(this.keys.r)) this.rewind();
     if (Phaser.Input.Keyboard.JustDown(this.keys.t)) this.retryAttempt();
-    if (Phaser.Input.Keyboard.JustDown(this.keys.esc)) this.togglePause();
   }
 
   private handleEvents(events: ReturnType<RoomSimulation["step"]>): void {
@@ -727,14 +741,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private togglePause(force?: boolean): void {
-    if (this.levelIntroBlocksGameplay() || this.retryPresentation || this.deathPresentation || this.completeHandled || this.retryRequired) return;
+    if (this.retryPresentation || this.deathPresentation || this.completeHandled || this.retryRequired) return;
+    if (this.introActive) this.finishLevelIntro();
     this.pausedByHud = force ?? !this.pausedByHud;
     if (this.pausedByHud) {
+      this.lastTutorialHint = "";
+      this.hud.setTutorialHint(null);
       this.hud.showPause(this.level.name);
       audio.pauseMusic();
     } else {
       this.hud.hideModal();
       audio.resumeMusic();
+      this.updateTutorialHint();
     }
     audio.play("select");
   }
@@ -752,12 +770,17 @@ export class GameScene extends Phaser.Scene {
       cores: this.simulation.objectState.collectedCores.size,
       timeBonus: this.simulation.timeBonus()
     };
-    if (!isDraftPlaytestActive()) recordLevelScore(score, this.level.index);
+    if (!this.tutorialMode && !isDraftPlaytestActive()) recordLevelScore(score, this.level.index);
     this.cameras.main.flash(280, 255, 227, 90, false);
-    this.hud.showComplete(score, this.levelIndex === levels.length - 1);
+    if (this.tutorialMode) this.hud.showTutorialComplete(score);
+    else this.hud.showComplete(score, this.levelIndex === levels.length - 1);
   }
 
   private nextLevel(): void {
+    if (this.tutorialMode) {
+      this.openTitle();
+      return;
+    }
     const next = Math.min(this.levelIndex + 1, levels.length - 1);
     this.scene.start("GameScene", { levelIndex: next });
   }
@@ -786,13 +809,39 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncDraftPlaytestUrl(): void {
-    if (!isDraftPlaytestActive()) return;
+    if (this.tutorialMode || !isDraftPlaytestActive()) return;
     const url = new URL(window.location.href);
     const nextLevel = String(this.levelIndex);
     if (url.searchParams.get("level") === nextLevel) return;
     url.searchParams.set("playtestDraft", "1");
     url.searchParams.set("level", nextLevel);
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }
+
+  private updateTutorialHint(): void {
+    if (!this.tutorialMode) return;
+
+    let message = "";
+    if (!this.completeHandled && !this.retryRequired && !this.deathPresentation) {
+      const snapshot = this.simulation.snapshot();
+      const playerCenterX = snapshot.player.x + snapshot.player.w / 2;
+      if (snapshot.echoes.length === 0) {
+        if (playerCenterX < 300) message = "Move with A / D or the arrow keys.";
+        else if (playerCenterX < 560) message = "Jump with W, Up, or Space to cross the gap.";
+        else if (!snapshot.activePlates.has("tutorial-plate")) message = "Stand on the plate near the gate.";
+        else message = "Press R to rewind. The replay becomes an echo that can hold the plate.";
+      } else if (!snapshot.openDoors.has("tutorial-gate")) {
+        message = "Let the echo reach the plate, then start moving when the gate opens.";
+      } else if (playerCenterX < 1180) {
+        message = "Your echo is holding the plate. Move through the open gate.";
+      } else {
+        message = "Reach the exit portal to finish the tutorial.";
+      }
+    }
+
+    if (message === this.lastTutorialHint) return;
+    this.lastTutorialHint = message;
+    this.hud.setTutorialHint(message || null);
   }
 
   private configureCameraFrame = (): void => {
@@ -839,6 +888,7 @@ export class GameScene extends Phaser.Scene {
     this.events.off(Phaser.Scenes.Events.DESTROY, this.shutdownScene);
     this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.recordCameraDiagnostics, this);
     this.scale.off(Phaser.Scale.Events.RESIZE, this.configureCameraFrame, this);
+    window.removeEventListener("keydown", this.handleWindowKeyDown);
     this.sceneCleanupRegistered = false;
     this.destroyTexturePrewarmSprites();
     this.perfOverlay?.remove();
@@ -1771,7 +1821,7 @@ export class GameScene extends Phaser.Scene {
     if (actor.kind === "player" && this.time.now < this.playerCastUntil) return 6;
     if (!actor.onGround && actor.vy < -1.2) return 3;
     if (!actor.onGround && actor.vy > 1.2) return 4;
-    if (actor.onGround && Math.abs(actor.vx) > 1.1) return tick % 16 < 8 ? 1 : 2;
+    if (actor.onGround && Math.abs(actor.vx) > 1.1) return RUN_FRAMES[Math.floor(tick / 5) % RUN_FRAMES.length];
     if (actor.onGround && Math.abs(actor.vx) > 0.2) return 5;
     return 0;
   }

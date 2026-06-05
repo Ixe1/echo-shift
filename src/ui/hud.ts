@@ -2,6 +2,8 @@ import { formatFrames } from "../game/geometry";
 import { formatScore } from "../game/scoring";
 import type { LevelScore } from "../game/types";
 import { clearUi, icon, uiRoot } from "./dom";
+import { audio } from "../game/audio";
+import { bindOptionsPanel, optionsPanelHtml } from "./options";
 
 type HudCallbacks = {
   onRewind: () => void;
@@ -18,12 +20,11 @@ type HudCallbacks = {
 };
 
 type HudState = {
-  levelNumber: number;
+  levelNumber: number | null;
   levelName: string;
   frames: number;
   score: number;
   lives: number;
-  dead: boolean;
 };
 
 export class Hud {
@@ -52,19 +53,14 @@ export class Hud {
           </div>
         </div>
         <div class="toast" data-toast></div>
-        <div class="hud-bottom">
+        <div class="hud-actions">
           <div class="command-row">
-            <button class="icon-button" data-rewind title="Rewind">${icon("rewind")}</button>
+            <button class="icon-button" data-rewind title="Rewind and create an echo">${icon("rewind")}</button>
             <button class="icon-button" data-retry title="Retry">${icon("restart")}</button>
             <button class="icon-button" data-menu title="Pause">${icon("pause")}</button>
-            <span class="command-chip">A/D or arrows</span>
-            <span class="command-chip">Space jump</span>
-            <span class="command-chip">R rewind</span>
-          </div>
-          <div class="command-row">
-            <span class="command-chip" data-status>Timeline stable</span>
           </div>
         </div>
+        <div class="tutorial-hint" data-tutorial-hint hidden></div>
         <div class="hud-lives" aria-label="Lives">
           <span class="hud-lives-label">Lives</span>
           <span class="hud-lives-value" data-lives></span>
@@ -84,11 +80,10 @@ export class Hud {
   }
 
   update(state: HudState): void {
-    this.set("[data-level]", `${state.levelNumber}. ${state.levelName}`);
+    this.set("[data-level]", state.levelNumber === null ? state.levelName : `${state.levelNumber}. ${state.levelName}`);
     this.set("[data-time]", formatFrames(state.frames));
     this.set("[data-score]", formatScore(state.score));
     this.set("[data-lives]", `${state.lives}`);
-    this.set("[data-status]", state.dead ? "Signal lost" : "Timeline stable");
   }
 
   toast(message: string): void {
@@ -106,6 +101,18 @@ export class Hud {
     if (!toast) return;
     toast.classList.remove("show");
     toast.textContent = "";
+  }
+
+  setTutorialHint(message: string | null): void {
+    const hint = this.root.querySelector<HTMLElement>("[data-tutorial-hint]");
+    if (!hint) return;
+    if (!message) {
+      hint.hidden = true;
+      hint.textContent = "";
+      return;
+    }
+    hint.hidden = false;
+    hint.textContent = message;
   }
 
   scan(): void {
@@ -126,6 +133,7 @@ export class Hud {
         <div class="button-grid">
           <button class="ui-button primary" data-resume>Resume</button>
           <button class="ui-button" data-replay-level>${icon("restart")} Restart Level</button>
+          <button class="ui-button" data-options>Options</button>
           <button class="ui-button" data-levels>${icon("levels")} Level Select</button>
           ${this.callbacks.draftPlaytest ? `<button class="ui-button" data-editor>${icon("levels")} Editor</button>` : ""}
           <button class="ui-button" data-exit-menu>${icon("back")} Title</button>
@@ -135,6 +143,7 @@ export class Hud {
     modal.classList.add("show");
     this.modalButton("[data-resume]", this.callbacks.onResume);
     this.modalButton("[data-replay-level]", this.callbacks.onReplay);
+    this.modalButton("[data-options]", () => this.showOptions(levelName));
     this.modalButton("[data-levels]", this.callbacks.onLevelSelect);
     this.modalButton("[data-editor]", () => this.callbacks.onEditor?.());
     this.modalButton("[data-exit-menu]", this.callbacks.onTitle);
@@ -180,6 +189,28 @@ export class Hud {
     this.modalButton("[data-exit-menu]", this.callbacks.onTitle);
   }
 
+  showTutorialComplete(score: LevelScore): void {
+    const modal = this.modal();
+    modal.innerHTML = `
+      <section class="panel complete-panel">
+        <h1>Tutorial Complete</h1>
+        <p>Echo timing confirmed.</p>
+        <div class="score-row">
+          <div class="score-cell"><strong>Time</strong><span>${formatFrames(score.frames)}</span></div>
+          <div class="score-cell"><strong>Echoes</strong><span>${score.echoes}</span></div>
+          <div class="score-cell"><strong>Deaths</strong><span>${score.deaths}</span></div>
+        </div>
+        <div class="button-grid">
+          <button class="ui-button primary" data-replay-level>${icon("restart")} Replay Tutorial</button>
+          <button class="ui-button" data-exit-menu>${icon("back")} Title</button>
+        </div>
+      </section>
+    `;
+    modal.classList.add("show");
+    this.modalButton("[data-replay-level]", this.callbacks.onReplay);
+    this.modalButton("[data-exit-menu]", this.callbacks.onTitle);
+  }
+
   showRetryRequired(levelName: string): void {
     const modal = this.modal();
     modal.innerHTML = `
@@ -211,6 +242,16 @@ export class Hud {
     this.root.querySelector("[data-retry]")?.addEventListener("click", this.callbacks.onRetry);
     this.root.querySelector("[data-menu]")?.addEventListener("click", this.callbacks.onPause);
     this.bindTouchControls();
+  }
+
+  private showOptions(levelName: string): void {
+    const modal = this.modal();
+    modal.innerHTML = optionsPanelHtml();
+    modal.classList.add("show");
+    bindOptionsPanel(modal, {
+      onBack: () => this.showPause(levelName),
+      onNavigate: () => audio.play("select")
+    });
   }
 
   private bindTouchControls(): void {
