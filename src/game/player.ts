@@ -247,6 +247,7 @@ const resolveAxis = (
         actor.y = solid.y - actor.h;
         actor.vy = 0;
         actor.onGround = true;
+        actor.launchFloatFrames = 0;
         actor.standingOn = "platformId" in solid && solid.platformId ? solid.platformId : null;
       } else if (actor.vy < 0) {
         actor.y = solid.y + solid.h;

@@ -1154,6 +1154,35 @@ try {
   );
   assert(!launchSim.step(idle).launched, "Launch pad re-fired while actor was still in spring launch cooldown");
 
+  const launchFloatLandingLevel = {
+    ...baseLevel,
+    start: { x: 26, y: 38 },
+    launchPads: [{ id: "launch-float-clear", x: 20, y: 112, w: 30, h: 8, powerY: 9, powerX: 4 }]
+  };
+  const launchFloatLandingSim = new RoomSimulation(launchFloatLandingLevel);
+  let floatLaunchEvent = null;
+  for (let i = 0; i < 40; i += 1) {
+    const event = launchFloatLandingSim.step(idle);
+    if (event.launched) {
+      floatLaunchEvent = event;
+      break;
+    }
+  }
+  assert(floatLaunchEvent?.launched, "Launch pad did not fire in float-clear fixture");
+  for (let i = 0; i < 90 && !launchFloatLandingSim.player.onGround; i += 1) {
+    launchFloatLandingSim.step(idle);
+  }
+  assert(launchFloatLandingSim.player.onGround, "Launch float-clear fixture did not land back on normal floor");
+  assert(
+    launchFloatLandingSim.player.launchFloatFrames === 0,
+    `Launch float should clear on landing before normal jumps, got ${launchFloatLandingSim.player.launchFloatFrames}`
+  );
+  launchFloatLandingSim.step(jump);
+  assert(
+    Math.abs(launchFloatLandingSim.player.vy - -12.08) < 0.001,
+    `Normal jump after launch landing should keep baseline jump velocity, got ${launchFloatLandingSim.player.vy}`
+  );
+
   const sideLaunchLevel = {
     ...baseLevel,
     start: { x: 45, y: 98 },
