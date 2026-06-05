@@ -427,7 +427,6 @@ export class GameScene extends Phaser.Scene {
     if (events.cores.length > 0) {
       for (const core of events.cores) {
         audio.play(this.corePickupIsLarge(core.id) ? "bigCore" : "core");
-        this.spawnEffectFrame(core, 2, 0.42);
       }
     }
     for (let index = 0; index < events.echoLaserVaporized; index += 1) audio.play("echoLaserVaporized");
@@ -1931,16 +1930,4 @@ export class GameScene extends Phaser.Scene {
     trail.push(point);
   }
 
-  private spawnEffectFrame(origin: { x: number; y: number }, frame: number, scale: number): void {
-    if (!this.textures.exists("time-effects")) return;
-    const sprite = this.add.image(origin.x, origin.y, "time-effects", frame).setDepth(25).setScale(scale).setAlpha(0.9);
-    this.tweens.add({
-      targets: sprite,
-      alpha: 0,
-      scale: scale * 1.5,
-      duration: 420,
-      ease: "Cubic.easeOut",
-      onComplete: () => sprite.destroy()
-    });
-  }
 }
