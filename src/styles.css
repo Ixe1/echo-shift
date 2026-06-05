@@ -444,7 +444,8 @@ button {
 .tutorial-hint {
   position: absolute;
   left: 50%;
-  bottom: 18px;
+  top: 92px;
+  bottom: auto;
   transform: translateX(-50%);
   width: min(560px, calc(100vw - 28px));
   padding: 10px 14px;
@@ -952,7 +953,7 @@ button {
   }
 
   .tutorial-hint {
-    bottom: 8px;
+    top: 92px;
     font-size: 0.86rem;
   }
 
