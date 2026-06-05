@@ -500,11 +500,13 @@ export class GameScene extends Phaser.Scene {
 
     this.simulation.resetAttempt(false);
     this.accumulator = 0;
+    this.pausedByHud = false;
     this.deathPresentation = null;
     this.echoTrails.clear();
     this.playerCastUntil = 0;
     this.cameraTarget?.setPosition(this.level.start.x + this.simulation.player.w / 2, this.level.start.y + this.simulation.player.h / 2);
     this.cameras.main.fadeIn(DEATH_FADE_IN_MS, 5, 7, 13);
+    this.hud.hideModal();
     this.hud.toast(`${this.simulation.livesRemaining()} lives left.`);
     this.writeDeathPresentationDiagnostics("respawn");
   }
@@ -550,7 +552,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private togglePause(force?: boolean): void {
-    if (this.completeHandled || this.retryRequired) return;
+    if (this.deathPresentation || this.completeHandled || this.retryRequired) return;
     this.pausedByHud = force ?? !this.pausedByHud;
     if (this.pausedByHud) {
       this.hud.showPause(this.level.name);

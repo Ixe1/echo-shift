@@ -29,6 +29,7 @@ const artifacts = {
   draftDeathFall: `${outDir}/draft-death-fall.png`,
   draftRetryRequired: `${outDir}/draft-retry-required.png`,
   draftRetryAfterDeath: `${outDir}/draft-retry-after-death.png`,
+  draftDeathPauseGuard: `${outDir}/draft-death-pause-guard.png`,
   mobileGate: `${outDir}/start-gate-mobile.png`,
   mobileMenu: `${outDir}/menu-mobile.png`,
   mobileGame: `${outDir}/game-mobile.png`,
@@ -786,6 +787,22 @@ try {
   const retryAfterDeathModalCount = await page.locator("[data-modal].show").count();
   const retryAfterDeathLivesText = await page.locator("[data-lives]").textContent();
   await page.screenshot({ path: artifacts.draftRetryAfterDeath });
+
+  const deathPauseGuardLevel = draftLevel({
+    name: "Death Pause Guard",
+    hazards: [{ id: "pause-guard-loss", x: 78, y: 86, w: 30, h: 34 }]
+  });
+  await loadDraftPlaytest(page, deathPauseGuardLevel);
+  await page.keyboard.down("KeyD");
+  await page.waitForFunction(() => document.documentElement.dataset.echoShiftDeathPresentation === "fall", null, { timeout: 4000 });
+  await page.keyboard.up("KeyD");
+  await page.locator("[data-menu]").click();
+  await page.waitForTimeout(180);
+  const deathPauseModalDuringFall = await page.locator("[data-modal].show").count();
+  await page.waitForFunction(() => document.documentElement.dataset.echoShiftDeathPresentation === "idle", null, { timeout: 7000 });
+  const deathPauseModalAfterRespawn = await page.locator("[data-modal].show").count();
+  const deathPauseLivesText = await page.locator("[data-lives]").textContent();
+  await page.screenshot({ path: artifacts.draftDeathPauseGuard });
   await desktop.close();
 
   const mobileMessages = [];
@@ -996,6 +1013,9 @@ try {
   assert(retryAfterDeathPhase === "idle", `Expected Retry Room to clear death presentation fade, got ${retryAfterDeathPhase}`);
   assert(retryAfterDeathModalCount === 0, `Expected Retry Room to close retry modal, got ${retryAfterDeathModalCount} modals`);
   assert(retryAfterDeathLivesText === "1", `Expected Retry Room to restore level lives, got ${retryAfterDeathLivesText}`);
+  assert(deathPauseModalDuringFall === 0, `Expected pause button to be ignored during death presentation, got ${deathPauseModalDuringFall} modals`);
+  assert(deathPauseModalAfterRespawn === 0, `Expected death respawn to leave no pause modal, got ${deathPauseModalAfterRespawn} modals`);
+  assert(deathPauseLivesText === "2", `Expected guarded death respawn to leave 2 lives, got ${deathPauseLivesText}`);
   assert(levelButtons === 10, `Expected 10 level buttons, got ${levelButtons}`);
   assert(touchControlsVisible, "Mobile touch controls were not visible in-game");
   assert(beforeTouchX !== null && afterTouchX !== null, "Could not locate player pixels for touch movement check");
