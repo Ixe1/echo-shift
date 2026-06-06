@@ -374,7 +374,7 @@ export class RoomSimulation {
     this.echoes = checkpoint.echoes.map((echo) => ({ ...cloneActor(echo), alive: echo.alive }));
     this.echoRecordings.length = 0;
     this.echoRecordings.push(...cloneEchoRecordings(checkpoint.echoRecordings));
-    this.currentRecording = [...checkpoint.currentRecording];
+    this.currentRecording = [];
     this.objectState = cloneObjectState(checkpoint.objectState);
     this.killedMonsterIds.clear();
     for (const id of checkpoint.killedMonsterIds) this.killedMonsterIds.add(id);

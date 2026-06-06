@@ -1389,6 +1389,7 @@ try {
   assert(bossCheckpointSim.objectState.collectedCores.has("pre-boss-core"), "Expected checkpoint restore to preserve collected core");
   assert(bossCheckpointSim.score === 900, `Expected checkpoint restore to preserve score with one death penalty, got ${bossCheckpointSim.score}`);
   assert(bossCheckpointSim.totalFrames === 1, `Expected checkpoint restore to preserve pre-boss frame count, got ${bossCheckpointSim.totalFrames}`);
+  assert(bossCheckpointSim.currentRecording.length === 0, "Expected checkpoint restore to start a fresh continuous recording");
 
   const bonusSim = new RoomSimulation(baseLevel);
   runFrames(bonusSim, 60, idle);
