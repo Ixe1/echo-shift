@@ -1320,6 +1320,27 @@ try {
   assert(multiBossStartB.bossCheckpointActivated === "boss-b", "Expected second boss to create a fresh checkpoint");
   assert(multiBossSim.bossCheckpointActive(), "Expected second boss checkpoint to be active during intro");
 
+  const simultaneousBossSim = new RoomSimulation(multiBossLevel);
+  Object.assign(simultaneousBossSim.player, { x: 62, y: 86, vx: 0, vy: 0, onGround: true });
+  simultaneousBossSim.step(idle);
+  Object.assign(simultaneousBossSim.player, { x: 332, y: 86, vx: 0, vy: 0, onGround: true });
+  simultaneousBossSim.step(idle);
+  runFrames(simultaneousBossSim, 60, idle);
+  assert(simultaneousBossSim.bossFightInProgress(), "Expected simultaneous multi-boss fight to be in progress before first defeat");
+  const simultaneousBossBodyA = simultaneousBossSim.bossSnapshots().find((boss) => boss.id === "boss-a")?.body;
+  assert(simultaneousBossBodyA, "Expected first simultaneous boss body snapshot");
+  Object.assign(simultaneousBossSim.player, {
+    x: simultaneousBossBodyA.x + simultaneousBossBodyA.w / 2 - 12,
+    y: simultaneousBossBodyA.y - 35,
+    vx: 0,
+    vy: 4,
+    onGround: false
+  });
+  const simultaneousBossDefeatA = simultaneousBossSim.step(idle);
+  assert(simultaneousBossDefeatA.bossDefeated?.id === "boss-a", "Expected first simultaneous boss defeat");
+  assert(!simultaneousBossDefeatA.bossPortalUnlocked, "Expected simultaneous first boss defeat to keep portal locked");
+  assert(simultaneousBossSim.bossFightInProgress(), "Expected boss fight to remain in progress while second boss is still active");
+
   const bossCheckpointLevel = {
     ...baseLevel,
     score: { ...baseLevel.score, coreScore: 1000, deathPenalty: 100 },

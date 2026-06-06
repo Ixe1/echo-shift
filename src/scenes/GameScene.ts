@@ -505,6 +505,10 @@ export class GameScene extends Phaser.Scene {
     audio.playMusic(this.currentLevelSoundtrackKey(), { restart: true, fadeMs: BOSS_MUSIC_FADE_MS });
   }
 
+  private bossFightInProgress(): boolean {
+    return this.simulation.bossFightInProgress();
+  }
+
   private startLevelIntro(): void {
     this.finishLevelIntro();
     this.hud.hideToast();
@@ -630,7 +634,7 @@ export class GameScene extends Phaser.Scene {
         events.bossDefeated ? `+${events.bossDefeated.score}` : `${events.bossHit.health}`
       );
     }
-    if (events.bossDefeated) this.restartLevelMusic();
+    if (events.bossDefeated && !this.bossFightInProgress()) this.restartLevelMusic();
     if (events.bossPortalUnlocked) {
       const exitCenter = rectCenter(this.level.exit);
       audio.play("portal");

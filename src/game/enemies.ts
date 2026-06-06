@@ -148,7 +148,13 @@ export const bossScore = (boss: Boss): number => Math.max(0, Math.round(finiteNu
 export const bossIntroFrames = (boss: Boss): number =>
   Math.max(1, Math.round(finiteNumber(boss.introSeconds, BOSS_INTRO_SECONDS) * 60));
 
-export const bossWeakSpot = (boss: Boss): BossWeakSpot => boss.weakSpot || defaultBossWeakSpot(boss.kind);
+export const defaultBossWeakSpotForKind = (kind: BossKind): BossWeakSpot => {
+  if (kind === "cryo-conservator") return "bottom";
+  if (kind === "clockwork-regent") return "core";
+  return "top";
+};
+
+export const bossWeakSpot = (boss: Boss): BossWeakSpot => boss.weakSpot || defaultBossWeakSpotForKind(boss.kind);
 
 export const createBossRuntimeState = (boss: Boss): BossRuntimeState => ({
   id: boss.id,
@@ -255,12 +261,6 @@ const defaultBossHealth = (kind: BossKind): number => {
   if (kind === "clockwork-regent") return 5;
   if (kind === "archive-custodian") return 4;
   return 3;
-};
-
-const defaultBossWeakSpot = (kind: BossKind): BossWeakSpot => {
-  if (kind === "cryo-conservator") return "bottom";
-  if (kind === "clockwork-regent") return "core";
-  return "top";
 };
 
 const bossBodySize = (boss: Boss): { w: number; h: number } => ({

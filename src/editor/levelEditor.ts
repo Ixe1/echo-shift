@@ -14,6 +14,7 @@ import {
   bossEntrySides,
   bossKinds,
   bossWeakSpots,
+  defaultBossWeakSpotForKind,
   monsterKinds,
   normalizeBossEntrySide,
   normalizeBossKind,
@@ -313,6 +314,10 @@ const numberValue = (value: unknown, fallback: number): number => {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
 };
+
+const defaultBossCheckpoint = (rect: Rect): Vec2 => ({ x: rect.x - 60, y: rect.y + rect.h - 48 });
+
+const pointsMatch = (a: Vec2, b: Vec2): boolean => Math.abs(a.x - b.x) < 0.001 && Math.abs(a.y - b.y) < 0.001;
 
 const nonNegativeNumber = (value: unknown, fallback: number): number => Math.max(0, positiveNumber(value, fallback));
 
@@ -754,14 +759,15 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
   }
   if (kind === "bosses") {
     const checkpointRecord = isRecord(record.checkpoint) ? record.checkpoint : null;
+    const bossKind = normalizeBossKind(record.kind);
     return {
       ...base,
       id,
-      kind: normalizeBossKind(record.kind),
+      kind: bossKind,
       entrySide: normalizeBossEntrySide(record.entrySide),
-      weakSpot: normalizeBossWeakSpot(record.weakSpot),
+      weakSpot: record.weakSpot === undefined ? defaultBossWeakSpotForKind(bossKind) : normalizeBossWeakSpot(record.weakSpot),
       checkpoint: checkpointRecord
-        ? { x: numberValue(checkpointRecord.x, base.x - 60), y: numberValue(checkpointRecord.y, base.y + base.h - 48) }
+        ? { x: numberValue(checkpointRecord.x, defaultBossCheckpoint(base).x), y: numberValue(checkpointRecord.y, defaultBossCheckpoint(base).y) }
         : undefined,
       introSeconds: positiveInteger(record.introSeconds, 17),
       health: positiveInteger(record.health, 3),
@@ -1164,12 +1170,14 @@ class LevelEditor {
     const target = this.selectedRectObject();
     if (!target) return;
     if (field === "x" || field === "y" || field === "w" || field === "h") {
+      const previousRect = { x: target.x, y: target.y, w: target.w, h: target.h };
       if (this.selection.kind === "exit") {
         target[field] = field === "w" || field === "h" ? Math.max(1, Number(value)) : Number(value);
       } else {
         target[field] = field === "w" || field === "h" ? snapSize(Number(value)) : snap(Number(value));
         this.snapToNearbySurface(this.selection.kind, target);
       }
+      this.syncBossDefaultCheckpoint(this.selection.kind, target, previousRect);
     } else if (field === "id") {
       const nextId = normalizedObjectIdValue(value);
       if (!nextId) {
@@ -1206,7 +1214,13 @@ class LevelEditor {
     }
     if (field === "kind") {
       if (this.selection?.kind === "monsters") record.kind = normalizeMonsterKind(value);
-      else if (this.selection?.kind === "bosses") record.kind = normalizeBossKind(value);
+      else if (this.selection?.kind === "bosses") {
+        const previousKind = normalizeBossKind(record.kind);
+        const previousWeakSpot = record.weakSpot === undefined ? defaultBossWeakSpotForKind(previousKind) : normalizeBossWeakSpot(record.weakSpot);
+        const nextKind = normalizeBossKind(value);
+        record.kind = nextKind;
+        if (previousWeakSpot === defaultBossWeakSpotForKind(previousKind)) record.weakSpot = defaultBossWeakSpotForKind(nextKind);
+      }
       return;
     }
     if (field === "vulnerableFrom") {
@@ -1225,9 +1239,10 @@ class LevelEditor {
     }
     if (field === "checkpointX" || field === "checkpointY") {
       const existing = isRecord(record.checkpoint) ? record.checkpoint : {};
+      const fallback = defaultBossCheckpoint(target);
       record.checkpoint = {
-        x: field === "checkpointX" ? Number(value) : numberValue(existing.x, target.x - 60),
-        y: field === "checkpointY" ? Number(value) : numberValue(existing.y, target.y + target.h - 48)
+        x: field === "checkpointX" ? Number(value) : numberValue(existing.x, fallback.x),
+        y: field === "checkpointY" ? Number(value) : numberValue(existing.y, fallback.y)
       };
       return;
     }
@@ -1562,6 +1577,7 @@ class LevelEditor {
 
     const target = this.findObject(this.drag.kind, this.drag.id);
     if (!target) return;
+    const previousRect = { x: target.x, y: target.y, w: target.w, h: target.h };
     const size = defaultSizeFor(this.drag.kind, this.drag.kind === "solids" ? this.drag.preset : null);
     const minX = Math.min(this.drag.origin.x, world.x);
     const minY = Math.min(this.drag.origin.y, world.y);
@@ -1575,6 +1591,7 @@ class LevelEditor {
       Object.assign(target, this.drag.startRect);
     }
     this.snapToNearbySurface(this.drag.kind, target);
+    this.syncBossDefaultCheckpoint(this.drag.kind, target, previousRect);
     this.renderObjectList();
     this.renderInspector();
     this.renderValidation();
@@ -1606,6 +1623,7 @@ class LevelEditor {
     rect.x = startRect.x + dx;
     rect.y = startRect.y + dy;
     if (selection.kind !== "exit") this.snapToNearbySurface(selection.kind, rect);
+    this.syncBossDefaultCheckpoint(selection.kind, rect as RectObject, startRect);
   }
 
   private resizeSelection(selection: Selection, startRect: Rect, handle: ResizeHandle, dx: number, dy: number): void {
@@ -1616,6 +1634,14 @@ class LevelEditor {
 
     Object.assign(rect, resizeRectOnGrid(startRect, handle, dx, dy));
     this.snapToNearbySurface(selection.kind, rect);
+    this.syncBossDefaultCheckpoint(selection.kind, rect, startRect);
+  }
+
+  private syncBossDefaultCheckpoint(kind: Selection["kind"], object: RectObject, previousRect: Rect): void {
+    if (kind !== "bosses") return;
+    const boss = object as Boss;
+    if (!boss.checkpoint) return;
+    if (pointsMatch(boss.checkpoint, defaultBossCheckpoint(previousRect))) boss.checkpoint = defaultBossCheckpoint(boss);
   }
 
   private hitResizeHandle(point: Vec2): { selection: Selection; handle: ResizeHandle; rect: Rect; distance: number } | null {
@@ -1878,12 +1904,13 @@ class LevelEditor {
     if (kind === "drones") return { ...base, axis: "x", distance: 120, period: 200, phase: 0 } as PatrolDrone;
     if (kind === "monsters") return { ...base, kind: "sprout-hopper", axis: "x", distance: 120, period: 180, phase: 0 } as Monster;
     if (kind === "bosses") {
+      const kindValue = "storm-relay-warden";
       return {
         ...base,
-        kind: "storm-relay-warden",
+        kind: kindValue,
         entrySide: "right",
-        weakSpot: "top",
-        checkpoint: { x: base.x - 60, y: base.y + base.h - 48 },
+        weakSpot: defaultBossWeakSpotForKind(kindValue),
+        checkpoint: defaultBossCheckpoint(base),
         introSeconds: 17,
         health: 3,
         score: 3000
@@ -2276,13 +2303,15 @@ class LevelEditor {
     }
     if (kind === "bosses") {
       const checkpoint = isRecord(record.checkpoint) ? record.checkpoint : null;
-      const checkpointX = checkpoint ? numberValue(checkpoint.x, object.x - 60) : object.x - 60;
-      const checkpointY = checkpoint ? numberValue(checkpoint.y, object.y + object.h - 48) : object.y + object.h - 48;
+      const checkpointFallback = defaultBossCheckpoint(object);
+      const bossKind = normalizeBossKind(record.kind);
+      const checkpointX = checkpoint ? numberValue(checkpoint.x, checkpointFallback.x) : checkpointFallback.x;
+      const checkpointY = checkpoint ? numberValue(checkpoint.y, checkpointFallback.y) : checkpointFallback.y;
       return `
         <div class="inspector-grid two">
-          ${this.selectField("Kind", "kind", String(record.kind || "storm-relay-warden"), bossKinds.map((value) => ({ value, label: value })))}
+          ${this.selectField("Kind", "kind", bossKind, bossKinds.map((value) => ({ value, label: value })))}
           ${this.selectField("Entry", "entrySide", String(record.entrySide || "right"), bossEntrySides.map((value) => ({ value, label: value })))}
-          ${this.selectField("Weak Spot", "weakSpot", String(record.weakSpot || "top"), bossWeakSpots.map((value) => ({ value, label: value })))}
+          ${this.selectField("Weak Spot", "weakSpot", String(record.weakSpot || defaultBossWeakSpotForKind(bossKind)), bossWeakSpots.map((value) => ({ value, label: value })))}
           ${this.numberField("Intro Seconds", "introSeconds", Number(record.introSeconds || 17), "object", 1)}
           ${this.numberField("Health", "health", Number(record.health || 3), "object", 1)}
           ${this.numberField("Score", "scoreValue", Number(record.score || 0), "object", 100)}
@@ -2526,7 +2555,7 @@ class LevelEditor {
           if (!bossEntrySides.includes((boss.entrySide || "right") as BossEntrySide)) {
             messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid boss entry side.` });
           }
-          if (!bossWeakSpots.includes((boss.weakSpot || "top") as BossWeakSpot)) {
+          if (!bossWeakSpots.includes((boss.weakSpot || defaultBossWeakSpotForKind(boss.kind)) as BossWeakSpot)) {
             messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid boss weak spot.` });
           }
           if (boss.introSeconds !== undefined && (!Number.isFinite(boss.introSeconds) || boss.introSeconds <= 0)) {
@@ -2800,7 +2829,7 @@ class LevelEditor {
     ctx.strokeRect(object.x, object.y, object.w, object.h);
     ctx.setLineDash([]);
 
-    const checkpoint = object.checkpoint || { x: object.x - 60, y: object.y + object.h - 48 };
+    const checkpoint = object.checkpoint || defaultBossCheckpoint(object);
     const radius = Math.max(9 / this.view.w, 7);
     ctx.fillStyle = "rgba(80, 255, 194, 0.9)";
     ctx.strokeStyle = "#041018";

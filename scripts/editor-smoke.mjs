@@ -878,6 +878,27 @@ try {
   const toolkitCrateY = await objectNumber(page, "y");
   const toolkitCrateBottom = toolkitCrateY + (await objectNumber(page, "h"));
 
+  await dragToolToWorld(page, "bosses", { x: 1540, y: 160 });
+  await page.locator("[data-object-field='id']").fill("smoke-boss");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  const bossStormWeakSpot = await page.locator("[data-object-field='weakSpot']").inputValue();
+  await page.locator("[data-object-field='kind']").selectOption("cryo-conservator");
+  const bossCryoWeakSpot = await page.locator("[data-object-field='weakSpot']").inputValue();
+  const bossCheckpointXBeforeDrag = await objectNumber(page, "checkpointX");
+  const bossCheckpointYBeforeDrag = await objectNumber(page, "checkpointY");
+  const bossXBeforeDrag = await objectNumber(page, "x");
+  const bossYBeforeDrag = await objectNumber(page, "y");
+  await page.locator("[data-tool='select']").click();
+  await dragWorld(
+    page,
+    { x: bossXBeforeDrag + 80, y: bossYBeforeDrag + 80 },
+    { x: bossXBeforeDrag + 140, y: bossYBeforeDrag + 120 }
+  );
+  const bossXAfterDrag = await objectNumber(page, "x");
+  const bossYAfterDrag = await objectNumber(page, "y");
+  const bossCheckpointXAfterDrag = await objectNumber(page, "checkpointX");
+  const bossCheckpointYAfterDrag = await objectNumber(page, "checkpointY");
+
   const toolkitLevel = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
   const toolkitValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   const toolkitConveyor = toolkitLevel.conveyors.find((item) => item.id === "smoke-conveyor");
@@ -890,6 +911,7 @@ try {
   const toolkitRequiredCore = toolkitLevel.cores.find((item) => item.id === "smoke-required-core");
   const toolkitRequiredDoor = toolkitLevel.doors.find((item) => item.id === "smoke-required-door");
   const toolkitCrate = toolkitLevel.crates.find((item) => item.id === "smoke-crate");
+  const toolkitBoss = toolkitLevel.bosses.find((item) => item.id === "smoke-boss");
 
   await dragToolToWorld(page, "platforms", { x: 1320, y: 420 });
   await page.locator("[data-object-field='id']").fill("smoke-moving-surface");
@@ -1399,6 +1421,17 @@ try {
   );
   assert(movingLaserHandleCleanupValidation === "clean", `Expected clean validation after moving laser handle cleanup, got ${movingLaserHandleCleanupValidation}`);
   assert(toolkitCrate && toolkitCrateBottom === 480, `Expected crate to export and snap flush to floor, got ${JSON.stringify(toolkitCrate)} bottom ${toolkitCrateBottom}`);
+  assert(bossStormWeakSpot === "top", `Expected new storm boss weak spot to default to top, got ${bossStormWeakSpot}`);
+  assert(bossCryoWeakSpot === "bottom", `Expected cryo boss weak spot to switch to bottom, got ${bossCryoWeakSpot}`);
+  assert(
+    toolkitBoss?.kind === "cryo-conservator" && toolkitBoss?.weakSpot === "bottom",
+    `Expected boss kind and weak spot to export, got ${JSON.stringify(toolkitBoss)}`
+  );
+  assert(
+    bossCheckpointXAfterDrag - bossCheckpointXBeforeDrag === bossXAfterDrag - bossXBeforeDrag &&
+      bossCheckpointYAfterDrag - bossCheckpointYBeforeDrag === bossYAfterDrag - bossYBeforeDrag,
+    `Expected default boss checkpoint to move with arena, checkpoint ${bossCheckpointXBeforeDrag},${bossCheckpointYBeforeDrag} -> ${bossCheckpointXAfterDrag},${bossCheckpointYAfterDrag}; boss ${bossXBeforeDrag},${bossYBeforeDrag} -> ${bossXAfterDrag},${bossYAfterDrag}`
+  );
   assert(renamedTimerExists, "Expected timed switch rename to export");
   assert(
     renamedSweeper?.disabledBy?.includes("smoke-timer-renamed") && !renamedSweeper?.disabledBy?.includes("smoke-timer"),

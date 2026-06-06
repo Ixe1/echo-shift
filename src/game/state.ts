@@ -310,6 +310,10 @@ export class RoomSimulation {
     return this.bossCheckpoint !== null;
   }
 
+  bossFightInProgress(): boolean {
+    return [...this.bossStates.values()].some((state) => state.phase === "intro" || state.phase === "active");
+  }
+
   replaySummary(): string {
     const seconds = Math.floor(this.totalFrames / 60);
     const plates = [...this.objectState.activePlates].join(", ") || "none";
