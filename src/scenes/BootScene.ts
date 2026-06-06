@@ -2,6 +2,17 @@ import Phaser from "phaser";
 import { isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
 import { levelBackgrounds } from "../game/backgrounds";
+import {
+  BOSS_ATLAS_FRAME_HEIGHT,
+  BOSS_ATLAS_FRAME_WIDTH,
+  BOSS_ATLAS_KEY,
+  MONSTER_ATLAS_FRAME_HEIGHT,
+  MONSTER_ATLAS_FRAME_WIDTH,
+  MONSTER_ATLAS_KEY,
+  POOF_FRAME_HEIGHT,
+  POOF_FRAME_WIDTH,
+  POOF_SHEET_KEY
+} from "../game/enemySprites";
 import { soundtrackForLevel } from "../game/soundtracks";
 import { TERRAIN_TILE_KEY, TERRAIN_TILE_SIZE } from "../game/terrainMaterials";
 import { clearUi, icon, uiRoot } from "../ui/dom";
@@ -43,6 +54,18 @@ export class BootScene extends Phaser.Scene {
     this.load.spritesheet("hazard-vent", "/assets/sprites/hazard-vent-sheet.png", {
       frameWidth: 352,
       frameHeight: 288
+    });
+    this.load.spritesheet(BOSS_ATLAS_KEY, "/assets/sprites/boss-atlas.png", {
+      frameWidth: BOSS_ATLAS_FRAME_WIDTH,
+      frameHeight: BOSS_ATLAS_FRAME_HEIGHT
+    });
+    this.load.spritesheet(MONSTER_ATLAS_KEY, "/assets/sprites/monster-atlas.png", {
+      frameWidth: MONSTER_ATLAS_FRAME_WIDTH,
+      frameHeight: MONSTER_ATLAS_FRAME_HEIGHT
+    });
+    this.load.spritesheet(POOF_SHEET_KEY, "/assets/sprites/enemy-poof-sheet.png", {
+      frameWidth: POOF_FRAME_WIDTH,
+      frameHeight: POOF_FRAME_HEIGHT
     });
     this.load.spritesheet(TERRAIN_TILE_KEY, "/assets/sprites/terrain-tiles.png", {
       frameWidth: TERRAIN_TILE_SIZE,

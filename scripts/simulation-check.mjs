@@ -406,7 +406,85 @@ try {
   const { backgroundForLevel, levelBackgrounds } = await server.ssrLoadModule("/src/game/backgrounds.ts");
   const { backgroundAmbienceForLevel, backgroundAmbienceIsActive } = await server.ssrLoadModule("/src/game/backgroundAmbience.ts");
   const { terrainMaterialForSolid } = await server.ssrLoadModule("/src/game/terrainMaterials.ts");
+  const { BOSS_ATTACK_ACTIVE_FRAMES, BOSS_ATTACK_CYCLE_FRAMES, BOSS_ATTACK_WINDUP_FRAMES, bossIsVulnerable } = await server.ssrLoadModule("/src/game/enemies.ts");
   const { SynthAudio } = await server.ssrLoadModule("/src/game/audio.ts");
+
+  const runBossUntilVulnerable = (simulation, bossId) => {
+    for (let frameIndex = 0; frameIndex < BOSS_ATTACK_WINDUP_FRAMES + BOSS_ATTACK_ACTIVE_FRAMES + 90; frameIndex += 1) {
+      const snapshots = simulation.bossSnapshots();
+      const snapshot = snapshots.find((boss) => boss.id === bossId);
+      if (snapshot && bossIsVulnerable(snapshot)) return snapshot;
+      const danger = snapshots.find(
+        (boss) => boss.phase === "active" && boss.activeFrames >= BOSS_ATTACK_WINDUP_FRAMES - 1 && !bossIsVulnerable(boss)
+      );
+      if (danger) {
+        const levelCenterX = simulation.level.bounds.x + simulation.level.bounds.w / 2;
+        const bodyCenterX = danger.body.x + danger.body.w / 2;
+        const dodgeX = bodyCenterX < levelCenterX ? simulation.level.bounds.x + simulation.level.bounds.w - 56 : simulation.level.bounds.x + 32;
+        Object.assign(simulation.player, { x: dodgeX, y: 18, vx: 0, vy: 0, onGround: false });
+      }
+      simulation.step(idle);
+    }
+    throw new Error(`Expected boss ${bossId} to expose a vulnerability window`);
+  };
+
+  const runBossUntilAttack = (simulation, bossId) => {
+    for (let frameIndex = 0; frameIndex < 240; frameIndex += 1) {
+      const snapshots = simulation.bossSnapshots();
+      const snapshot = snapshots.find((boss) => boss.id === bossId);
+      const cycleFrame = snapshot ? snapshot.activeFrames % BOSS_ATTACK_CYCLE_FRAMES : 0;
+      if (snapshot?.attacks.length > 0 && cycleFrame < BOSS_ATTACK_WINDUP_FRAMES + BOSS_ATTACK_ACTIVE_FRAMES - 1) return snapshot;
+      const danger = snapshots.find(
+        (boss) => boss.phase === "active" && boss.activeFrames >= BOSS_ATTACK_WINDUP_FRAMES - 1 && !bossIsVulnerable(boss)
+      );
+      if (danger) {
+        const levelCenterX = simulation.level.bounds.x + simulation.level.bounds.w / 2;
+        const bodyCenterX = danger.body.x + danger.body.w / 2;
+        const dodgeX = bodyCenterX < levelCenterX ? simulation.level.bounds.x + simulation.level.bounds.w - 56 : simulation.level.bounds.x + 32;
+        Object.assign(simulation.player, { x: dodgeX, y: 18, vx: 0, vy: 0, onGround: false });
+      }
+      simulation.step(idle);
+    }
+    throw new Error(`Expected boss ${bossId} to start an attack window`);
+  };
+
+  const upwardHitBoss = (simulation, snapshot) => {
+    const spot = snapshot.weakSpot;
+    const playerWidth = simulation.player.w || 24;
+    const floorTop = (simulation.level.solids || [])
+      .filter((solid) => solid.w >= playerWidth && solid.y >= spot.y)
+      .reduce((min, solid) => Math.min(min, solid.y), Number.POSITIVE_INFINITY);
+    const standingTop = Number.isFinite(floorTop) ? floorTop - simulation.player.h - 1 : spot.y + spot.h + 2;
+    Object.assign(simulation.player, {
+      x: spot.x + spot.w / 2 - playerWidth / 2,
+      y: Math.min(spot.y + spot.h + 2, standingTop),
+      vx: 0,
+      vy: -8,
+      onGround: false
+    });
+    return simulation.step(idle);
+  };
+
+  const assertAttackStartsFromBoss = (snapshot, label) => {
+    assert(snapshot.attacks.length > 0, `${label}: expected an active boss attack`);
+    const attack = snapshot.attacks[0];
+    assert(
+      attack.originX >= snapshot.body.x - 1 && attack.originX <= snapshot.body.x + snapshot.body.w + 1,
+      `${label}: expected attack origin x to be inside boss body, got ${attack.originX} for ${JSON.stringify(snapshot.body)}`
+    );
+    assert(
+      attack.originY >= snapshot.body.y - 1 && attack.originY <= snapshot.body.y + snapshot.body.h + 1,
+      `${label}: expected attack origin y to be inside boss body, got ${attack.originY} for ${JSON.stringify(snapshot.body)}`
+    );
+    if (attack.kind === "vertical") {
+      assert(attack.y >= attack.originY - 1, `${label}: expected vertical attack to start at the boss, got y=${attack.y}, originY=${attack.originY}`);
+    } else {
+      assert(
+        Math.abs(attack.y + attack.h / 2 - attack.originY) <= 2,
+        `${label}: expected horizontal attack lane to pass through boss origin, got ${JSON.stringify(attack)}`
+      );
+    }
+  };
 
   assert(levels.length === 5, `Expected 5 handcrafted levels, found ${levels.length}`);
   assert(levels.some((level) => (level.plates || []).length > 0), "Expected at least one pressure-plate level");
@@ -1269,7 +1347,7 @@ try {
   assert(bossStart.bossCheckpointActivated === "boss-test", "Expected boss entry to create a checkpoint");
   const bossIntroSnapshot = bossIntroSim.bossSnapshots()[0];
   assert(bossIntroSnapshot?.introTotalFrames === 17 * 60, `Expected boss intro snapshot to use configured intro frames, got ${bossIntroSnapshot?.introTotalFrames}`);
-  assert(bossIntroSnapshot?.weakSpotKind === "top", `Expected storm boss weak spot to default to top, got ${bossIntroSnapshot?.weakSpotKind}`);
+  assert(bossIntroSnapshot?.weakSpotKind === "bottom", `Expected storm boss weak spot to default to bottom, got ${bossIntroSnapshot?.weakSpotKind}`);
   assert(!bossIntroSim.dead, "Boss intro should not damage player on first contact");
   runFrames(bossIntroSim, 17 * 60 - 2, idle);
   const introBossState = bossIntroSim.bossStates.get("boss-test");
@@ -1280,10 +1358,16 @@ try {
   assert(activeBossState?.phase === "active", `Expected boss to activate after 17s, got ${activeBossState?.phase}`);
   assert(activeBossState?.activeFrames === 0, `Expected boss active frames to start at 0, got ${activeBossState?.activeFrames}`);
   assert(bossIntroSim.bossSnapshots()[0].attacks.length === 0, "Expected boss active phase to start with a clear attack wind-up");
-  const bossBody = bossIntroSim.bossSnapshots()[0].body;
-  Object.assign(bossIntroSim.player, { x: bossBody.x + bossBody.w / 2 - 12, y: bossBody.y - 35, vx: 0, vy: 4, onGround: false });
-  const bossHit = bossIntroSim.step(idle);
-  assert(bossHit.bossHit?.id === "boss-test", "Expected top hit to damage active boss");
+  assert(!bossIsVulnerable(bossIntroSim.bossSnapshots()[0]), "Expected boss weak point to stay guarded at the start of the active phase");
+  const guardedHitSim = new RoomSimulation(bossLevel);
+  guardedHitSim.player.x = bossLevel.start.x;
+  guardedHitSim.step(idle);
+  runFrames(guardedHitSim, 17 * 60 - 1, idle);
+  assert(upwardHitBoss(guardedHitSim, guardedHitSim.bossSnapshots()[0]).bossHit === null, "Expected guarded boss weak point to reject an early upward hit");
+  const bossVulnerableSnapshot = runBossUntilVulnerable(bossIntroSim, "boss-test");
+  assert(bossVulnerableSnapshot.attacks.length === 0, "Expected boss vulnerability window to open after the attack resolves");
+  const bossHit = upwardHitBoss(bossIntroSim, bossVulnerableSnapshot);
+  assert(bossHit.bossHit?.id === "boss-test", "Expected upward weak-point hit to damage active boss");
   assert(bossHit.bossDefeated?.score === 1200, `Expected boss defeat score event, got ${JSON.stringify(bossHit.bossDefeated)}`);
   assert(bossHit.bossPortalUnlocked, "Expected boss defeat to unlock the exit portal");
   assert(bossIntroSim.exitUnlocked(), "Expected boss level exit to unlock after boss defeat");
@@ -1309,10 +1393,8 @@ try {
   assert(multiBossStartA.bossCheckpointActivated === "boss-a", "Expected first boss to create its checkpoint");
   assert(multiBossSim.bossCheckpointActive(), "Expected first boss checkpoint to be active during intro");
   runFrames(multiBossSim, 60, idle);
-  const multiBossBodyA = multiBossSim.bossSnapshots().find((boss) => boss.id === "boss-a")?.body;
-  assert(multiBossBodyA, "Expected first multi-boss body snapshot");
-  Object.assign(multiBossSim.player, { x: multiBossBodyA.x + multiBossBodyA.w / 2 - 12, y: multiBossBodyA.y - 35, vx: 0, vy: 4, onGround: false });
-  const multiBossDefeatA = multiBossSim.step(idle);
+  const multiBossVulnerableA = runBossUntilVulnerable(multiBossSim, "boss-a");
+  const multiBossDefeatA = upwardHitBoss(multiBossSim, multiBossVulnerableA);
   assert(multiBossDefeatA.bossDefeated?.id === "boss-a", "Expected first multi-boss defeat");
   assert(!multiBossDefeatA.bossPortalUnlocked, "Expected first multi-boss defeat to keep portal locked");
   assert(!multiBossSim.exitUnlocked(), "Expected multi-boss exit to remain locked after first boss");
@@ -1329,16 +1411,8 @@ try {
   simultaneousBossSim.step(idle);
   runFrames(simultaneousBossSim, 60, idle);
   assert(simultaneousBossSim.bossFightInProgress(), "Expected simultaneous multi-boss fight to be in progress before first defeat");
-  const simultaneousBossBodyA = simultaneousBossSim.bossSnapshots().find((boss) => boss.id === "boss-a")?.body;
-  assert(simultaneousBossBodyA, "Expected first simultaneous boss body snapshot");
-  Object.assign(simultaneousBossSim.player, {
-    x: simultaneousBossBodyA.x + simultaneousBossBodyA.w / 2 - 12,
-    y: simultaneousBossBodyA.y - 35,
-    vx: 0,
-    vy: 4,
-    onGround: false
-  });
-  const simultaneousBossDefeatA = simultaneousBossSim.step(idle);
+  const simultaneousBossVulnerableA = runBossUntilVulnerable(simultaneousBossSim, "boss-a");
+  const simultaneousBossDefeatA = upwardHitBoss(simultaneousBossSim, simultaneousBossVulnerableA);
   assert(simultaneousBossDefeatA.bossDefeated?.id === "boss-a", "Expected first simultaneous boss defeat");
   assert(!simultaneousBossDefeatA.bossPortalUnlocked, "Expected simultaneous first boss defeat to keep portal locked");
   assert(simultaneousBossSim.bossFightInProgress(), "Expected boss fight to remain in progress while second boss is still active");
@@ -1351,29 +1425,24 @@ try {
   simultaneousCheckpointSim.step(idle);
   assert(simultaneousCheckpointSim.bossCheckpointActive(), "Expected second simultaneous boss to create a checkpoint");
   runFrames(simultaneousCheckpointSim, 60, idle);
-  const simultaneousBossBodyB = simultaneousCheckpointSim.bossSnapshots().find((boss) => boss.id === "boss-b")?.body;
-  assert(simultaneousBossBodyB, "Expected second simultaneous boss body snapshot");
-  Object.assign(simultaneousCheckpointSim.player, {
-    x: simultaneousBossBodyB.x + simultaneousBossBodyB.w / 2 - 12,
-    y: simultaneousBossBodyB.y - 35,
-    vx: 0,
-    vy: 4,
-    onGround: false
-  });
-  const simultaneousCheckpointDefeatB = simultaneousCheckpointSim.step(idle);
+  const simultaneousBossVulnerableB = runBossUntilVulnerable(simultaneousCheckpointSim, "boss-b");
+  const simultaneousCheckpointDefeatB = upwardHitBoss(simultaneousCheckpointSim, simultaneousBossVulnerableB);
   assert(simultaneousCheckpointDefeatB.bossDefeated?.id === "boss-b", "Expected checkpoint-owning second boss defeat");
   assert(simultaneousCheckpointSim.bossCheckpointActive(), "Expected checkpoint to remain active while first simultaneous boss is still active");
-  const simultaneousBossBodyAAfterB = simultaneousCheckpointSim.bossSnapshots().find((boss) => boss.id === "boss-a")?.body;
-  assert(simultaneousBossBodyAAfterB, "Expected first simultaneous boss to remain active after second boss defeat");
+  const simultaneousBossAAfterB = simultaneousCheckpointSim.bossSnapshots().find((boss) => boss.id === "boss-a");
+  assert(simultaneousBossAAfterB, "Expected first simultaneous boss to remain active after second boss defeat");
+  const simultaneousBossAttackA = runBossUntilAttack(simultaneousCheckpointSim, "boss-a");
+  assertAttackStartsFromBoss(simultaneousBossAttackA, "simultaneous boss attack");
+  const simultaneousAttackA = simultaneousBossAttackA.attacks[0];
   Object.assign(simultaneousCheckpointSim.player, {
-    x: simultaneousBossBodyAAfterB.x + simultaneousBossBodyAAfterB.w * 0.65,
-    y: simultaneousBossBodyAAfterB.y + simultaneousBossBodyAAfterB.h * 0.45,
+    x: simultaneousAttackA.x + simultaneousAttackA.w / 2 - 12,
+    y: simultaneousAttackA.y + simultaneousAttackA.h / 2 - 16,
     vx: 0,
     vy: 0,
     onGround: false
   });
   const simultaneousCheckpointDeath = simultaneousCheckpointSim.step(idle);
-  assert(simultaneousCheckpointDeath.died, "Expected simultaneous checkpoint boss body collision to kill player");
+  assert(simultaneousCheckpointDeath.died, "Expected simultaneous checkpoint boss attack collision to kill player");
   simultaneousCheckpointSim.resetLifeAttempt();
   assert(simultaneousCheckpointSim.bossFightInProgress(), "Expected checkpoint restore to preserve an in-progress simultaneous boss fight");
 
@@ -1391,10 +1460,18 @@ try {
   const checkpointEvent = bossCheckpointSim.step(idle);
   assert(checkpointEvent.bossCheckpointActivated === "checkpoint-boss", "Expected boss checkpoint activation event");
   runFrames(bossCheckpointSim, 60, idle);
-  const checkpointBossBody = bossCheckpointSim.bossSnapshots()[0].body;
-  Object.assign(bossCheckpointSim.player, { x: checkpointBossBody.x + checkpointBossBody.w * 0.65, y: checkpointBossBody.y + checkpointBossBody.h * 0.45, vx: 0, vy: 0, onGround: false });
+  const checkpointBossAttackSnapshot = runBossUntilAttack(bossCheckpointSim, "checkpoint-boss");
+  assertAttackStartsFromBoss(checkpointBossAttackSnapshot, "checkpoint boss attack");
+  const checkpointBossAttack = checkpointBossAttackSnapshot.attacks[0];
+  Object.assign(bossCheckpointSim.player, {
+    x: checkpointBossAttack.x + checkpointBossAttack.w / 2 - 12,
+    y: checkpointBossAttack.y + checkpointBossAttack.h / 2 - 16,
+    vx: 0,
+    vy: 0,
+    onGround: false
+  });
   const checkpointDeath = bossCheckpointSim.step(idle);
-  assert(checkpointDeath.died, "Expected side/body boss collision to kill the player during checkpoint fight");
+  assert(checkpointDeath.died, "Expected boss attack collision to kill the player during checkpoint fight");
   bossCheckpointSim.resetLifeAttempt();
   assert(!bossCheckpointSim.dead, "Expected checkpoint life reset to respawn alive");
   assert(bossCheckpointSim.bossStates.get("checkpoint-boss")?.phase === "idle", "Expected checkpoint restore to reset boss fight to idle");

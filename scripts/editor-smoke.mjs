@@ -1467,7 +1467,7 @@ try {
   );
   assert(movingLaserHandleCleanupValidation === "clean", `Expected clean validation after moving laser handle cleanup, got ${movingLaserHandleCleanupValidation}`);
   assert(toolkitCrate && toolkitCrateBottom === 480, `Expected crate to export and snap flush to floor, got ${JSON.stringify(toolkitCrate)} bottom ${toolkitCrateBottom}`);
-  assert(bossStormWeakSpot === "top", `Expected new storm boss weak spot to default to top, got ${bossStormWeakSpot}`);
+  assert(bossStormWeakSpot === "bottom", `Expected new storm boss weak spot to default to bottom, got ${bossStormWeakSpot}`);
   assert(bossCryoWeakSpot === "bottom", `Expected cryo boss weak spot to switch to bottom, got ${bossCryoWeakSpot}`);
   assert(
     toolkitBoss?.kind === "cryo-conservator" && toolkitBoss?.weakSpot === "bottom",

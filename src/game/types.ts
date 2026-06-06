@@ -193,17 +193,24 @@ export type Boss = Rect & {
   score?: number;
 };
 
+export type BossAttackSnapshot = Rect & {
+  kind: "horizontal" | "vertical";
+  originX: number;
+  originY: number;
+};
+
 export type BossSnapshot = {
   id: string;
   phase: BossPhase;
   health: number;
   introFrames: number;
   introTotalFrames: number;
+  activeFrames: number;
   invulnerableFrames: number;
   body: Rect;
   weakSpot: Rect;
   weakSpotKind: BossWeakSpot;
-  attacks: Rect[];
+  attacks: BossAttackSnapshot[];
 };
 
 export type SoundtrackKey =

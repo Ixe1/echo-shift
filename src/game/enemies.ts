@@ -1,8 +1,9 @@
-import { rectsOverlap } from "./geometry";
+import { rectCenter, rectsOverlap } from "./geometry";
 import { oscillatingOffsetAt } from "./motion";
 import type {
   ActorBody,
   Boss,
+  BossAttackSnapshot,
   BossEntrySide,
   BossKind,
   BossPhase,
@@ -18,6 +19,11 @@ export const BOSS_INTRO_FRAMES = BOSS_INTRO_SECONDS * 60;
 export const BOSS_INVULNERABLE_FRAMES = 54;
 export const BOSS_HIT_BOUNCE_SPEED = -12.2;
 export const MONSTER_BOUNCE_SPEED = -10.8;
+export const BOSS_ATTACK_CYCLE_FRAMES = 180;
+export const BOSS_ATTACK_WINDUP_FRAMES = 56;
+export const BOSS_ATTACK_ACTIVE_FRAMES = 48;
+export const BOSS_VULNERABLE_READY_FRAMES = 18;
+export const BOSS_VULNERABLE_FRAMES = BOSS_ATTACK_CYCLE_FRAMES - BOSS_ATTACK_WINDUP_FRAMES - BOSS_ATTACK_ACTIVE_FRAMES - BOSS_VULNERABLE_READY_FRAMES;
 
 export const monsterKinds = [
   "sprout-hopper",
@@ -54,6 +60,12 @@ export type BossRuntimeState = {
   activeFrames: number;
   health: number;
   invulnerableFrames: number;
+  bodyX: number;
+  bodyY: number;
+  targetX: number;
+  targetY: number;
+  attackX: number;
+  attackY: number;
 };
 
 type MonsterDefinition = {
@@ -100,7 +112,7 @@ export const normalizeBossEntrySide = (value: unknown): BossEntrySide =>
   bossEntrySides.includes(value as BossEntrySide) ? (value as BossEntrySide) : "right";
 
 export const normalizeBossWeakSpot = (value: unknown): BossWeakSpot =>
-  bossWeakSpots.includes(value as BossWeakSpot) ? (value as BossWeakSpot) : "top";
+  bossWeakSpots.includes(value as BossWeakSpot) ? (value as BossWeakSpot) : "bottom";
 
 export const monsterScore = (monster: Monster): number =>
   Math.max(0, Math.round(finiteNumber(monster.score, monsterDefinitions[monster.kind].score)));
@@ -150,25 +162,99 @@ export const bossIntroFrames = (boss: Boss): number =>
   Math.max(1, Math.round(finiteNumber(boss.introSeconds, BOSS_INTRO_SECONDS) * 60));
 
 export const defaultBossWeakSpotForKind = (kind: BossKind): BossWeakSpot => {
-  if (kind === "cryo-conservator") return "bottom";
-  if (kind === "clockwork-regent") return "core";
-  return "top";
+  if (kind === "archive-custodian" || kind === "clockwork-regent") return "core";
+  return "bottom";
 };
 
 export const bossWeakSpot = (boss: Boss): BossWeakSpot => boss.weakSpot || defaultBossWeakSpotForKind(boss.kind);
 
-export const createBossRuntimeState = (boss: Boss): BossRuntimeState => ({
-  id: boss.id,
-  phase: "idle",
-  introFrames: 0,
-  activeFrames: 0,
-  health: bossHealth(boss),
-  invulnerableFrames: 0
-});
+export const createBossRuntimeState = (boss: Boss): BossRuntimeState => {
+  const body = bossRestingBodyRect(boss);
+  const center = rectCenter(body);
+  return {
+    id: boss.id,
+    phase: "idle",
+    introFrames: 0,
+    activeFrames: 0,
+    health: bossHealth(boss),
+    invulnerableFrames: 0,
+    bodyX: body.x,
+    bodyY: body.y,
+    targetX: center.x,
+    targetY: center.y,
+    attackX: center.x,
+    attackY: center.y
+  };
+};
 
-export const bossBodyRectAt = (boss: Boss, state: BossRuntimeState, tick: number): Rect => {
+export const bossIsVulnerable = (state: Pick<BossRuntimeState, "phase" | "activeFrames" | "invulnerableFrames">): boolean => {
+  if (state.phase !== "active" || state.invulnerableFrames > 0) return false;
+  const cycle = state.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
+  return cycle >= BOSS_ATTACK_WINDUP_FRAMES + BOSS_ATTACK_ACTIVE_FRAMES + BOSS_VULNERABLE_READY_FRAMES;
+};
+
+export const bossBodyDamages = (state: Pick<BossRuntimeState, "phase" | "activeFrames">): boolean => {
+  if (state.phase !== "active") return false;
+  const cycle = state.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
+  return cycle >= BOSS_ATTACK_WINDUP_FRAMES && cycle < BOSS_ATTACK_WINDUP_FRAMES + BOSS_ATTACK_ACTIVE_FRAMES;
+};
+
+export const settleBossAtIntroEnd = (boss: Boss, state: BossRuntimeState): void => {
+  const body = bossRestingBodyRect(boss);
+  const center = rectCenter(body);
+  state.bodyX = body.x;
+  state.bodyY = body.y;
+  state.targetX = center.x;
+  state.targetY = center.y;
+  state.attackX = center.x;
+  state.attackY = center.y;
+};
+
+export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, player: ActorBody): void => {
+  if (state.phase !== "active") return;
   const size = bossBodySize(boss);
-  const target = bossTargetBodyRect(boss, size, tick);
+  const cycle = state.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
+  const playerCenterX = player.x + player.w / 2;
+  const playerCenterY = player.y + player.h / 2;
+  if (cycle === 0) {
+    state.attackX = clamp(playerCenterX, boss.x + 24, boss.x + boss.w - 24);
+    state.attackY = clamp(playerCenterY, boss.y + 22, boss.y + boss.h - 22);
+  }
+
+  const arena = bossMovementBounds(boss, size);
+  if (cycle < BOSS_ATTACK_WINDUP_FRAMES) {
+    state.targetX = clamp(playerCenterX, arena.minX + size.w / 2, arena.maxX + size.w / 2);
+    state.targetY = clamp(playerCenterY - size.h * 0.95, arena.minY + size.h / 2, arena.maxY + size.h / 2);
+  } else if (cycle < BOSS_ATTACK_WINDUP_FRAMES + BOSS_ATTACK_ACTIVE_FRAMES) {
+    state.targetX = clamp(state.attackX, arena.minX + size.w / 2, arena.maxX + size.w / 2);
+    state.targetY = clamp(state.attackY - size.h * 0.52, arena.minY + size.h / 2, arena.maxY + size.h / 2);
+  } else {
+    state.targetX = clamp(state.attackX, arena.minX + size.w / 2, arena.maxX + size.w / 2);
+    state.targetY = arena.minY + size.h * 0.55;
+  }
+
+  const desiredX = state.targetX - size.w / 2;
+  const desiredY = state.targetY - size.h / 2;
+  const ease = cycle < BOSS_ATTACK_WINDUP_FRAMES ? 0.1 : cycle < BOSS_ATTACK_WINDUP_FRAMES + BOSS_ATTACK_ACTIVE_FRAMES ? 0.18 : 0.12;
+  state.bodyX += (desiredX - state.bodyX) * ease;
+  state.bodyY += (desiredY - state.bodyY) * ease;
+  state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
+  state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
+};
+
+export const bossBodyRectAt = (boss: Boss, state: BossRuntimeState, _tick: number): Rect => {
+  const size = bossBodySize(boss);
+  if (state.phase === "active") {
+    const arena = bossMovementBounds(boss, size);
+    return {
+      x: clamp(finiteNumber(state.bodyX, bossRestingBodyRect(boss).x), arena.minX, arena.maxX),
+      y: clamp(finiteNumber(state.bodyY, bossRestingBodyRect(boss).y), arena.minY, arena.maxY),
+      w: size.w,
+      h: size.h
+    };
+  }
+
+  const target = bossRestingBodyRect(boss);
   if (state.phase !== "intro") return target;
 
   const total = bossIntroFrames(boss);
@@ -183,27 +269,42 @@ export const bossBodyRectAt = (boss: Boss, state: BossRuntimeState, tick: number
   };
 };
 
-export const bossAttackRectsAt = (boss: Boss, state: BossRuntimeState, tick: number): Rect[] => {
+export const bossAttackRectsAt = (boss: Boss, state: BossRuntimeState, tick: number): BossAttackSnapshot[] => {
   if (state.phase !== "active") return [];
+  const cycle = state.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
+  if (cycle < BOSS_ATTACK_WINDUP_FRAMES || cycle >= BOSS_ATTACK_WINDUP_FRAMES + BOSS_ATTACK_ACTIVE_FRAMES) return [];
   const body = bossBodyRectAt(boss, state, tick);
-  const cycle = state.activeFrames % 180;
-  if (cycle < 70) return [];
-  if (cycle < 116) {
+  const bodyCenter = rectCenter(body);
+  if (boss.kind !== "clockwork-regent") {
+    const direction = finiteNumber(state.attackX, bodyCenter.x) >= bodyCenter.x ? 1 : -1;
+    const originX = direction > 0 ? body.x + body.w * 0.82 : body.x + body.w * 0.18;
+    const originY = clamp(finiteNumber(state.attackY, bodyCenter.y), body.y + body.h * 0.32, body.y + body.h * 0.72);
+    const startX = direction > 0 ? originX - 2 : boss.x + 12;
+    const endX = direction > 0 ? boss.x + boss.w - 12 : originX + 2;
     return [
       {
-        x: boss.x + 12,
-        y: body.y + body.h * 0.58,
-        w: Math.max(20, boss.w - 24),
-        h: 14
+        x: Math.min(startX, endX),
+        y: originY - 7,
+        w: Math.max(20, Math.abs(endX - startX)),
+        h: 14,
+        kind: "horizontal",
+        originX,
+        originY
       }
     ];
   }
+  const originX = clamp(finiteNumber(state.attackX, bodyCenter.x), body.x + body.w * 0.22, body.x + body.w * 0.78);
+  const originY = body.y + body.h * 0.66;
+  const endY = boss.y + boss.h - 12;
   return [
     {
-      x: body.x + body.w / 2 - 14,
-      y: boss.y + 12,
+      x: originX - 14,
+      y: originY,
       w: 28,
-      h: Math.max(20, boss.h - 24)
+      h: Math.max(20, endY - originY),
+      kind: "vertical",
+      originX,
+      originY
     }
   ];
 };
@@ -215,16 +316,16 @@ export const bossWeakSpotRectAt = (boss: Boss, body: Rect): Rect => {
     const h = clamp(body.h * 0.2, 16, 30);
     return {
       x: body.x + body.w / 2 - w / 2,
-      y: body.y + body.h - h + 4,
+      y: body.y + body.h - h - 4,
       w,
       h
     };
   }
   if (spot === "core") {
-    const size = clamp(Math.min(body.w, body.h) * 0.34, 24, 48);
+    const size = clamp(Math.min(body.w, body.h) * 0.38, 28, 54);
     return {
       x: body.x + body.w / 2 - size / 2,
-      y: body.y + body.h * 0.42 - size / 2,
+      y: body.y + body.h * 0.58 - size / 2,
       w: size,
       h: size
     };
@@ -240,7 +341,7 @@ export const bossWeakSpotRectAt = (boss: Boss, body: Rect): Rect => {
 };
 
 export const bossTakesHit = (actor: ActorBody, previousY: number, boss: Boss, bossRect: Rect, state: BossRuntimeState): boolean => {
-  if (state.phase !== "active" || state.invulnerableFrames > 0) return false;
+  if (!bossIsVulnerable(state)) return false;
   const weakSpotRect = bossWeakSpotRectAt(boss, bossRect);
   if (!rectsOverlap(actor, weakSpotRect)) return false;
   const weakSpotKind = bossWeakSpot(boss);
@@ -266,22 +367,29 @@ const defaultBossHealth = (kind: BossKind): number => {
 };
 
 const bossBodySize = (boss: Boss): { w: number; h: number } => ({
-  w: clamp(boss.w * 0.2, 72, 140),
-  h: clamp(boss.h * 0.36, 72, 150)
+  w: clamp(boss.w * 0.46, 104, 220),
+  h: clamp(boss.h * 0.45, 58, 150)
 });
 
-const bossTargetBodyRect = (boss: Boss, size: { w: number; h: number }, tick: number): Rect => {
-  const marginX = Math.min(80, Math.max(20, boss.w * 0.12));
-  const marginY = Math.min(54, Math.max(18, boss.h * 0.12));
-  const travelX = Math.max(0, boss.w - size.w - marginX * 2);
-  const travelY = Math.max(0, boss.h - size.h - marginY * 2);
-  const xWave = (1 - Math.cos(tick / 96)) / 2;
-  const yWave = (1 - Math.cos(tick / 132 + Math.PI / 2)) / 2;
+const bossRestingBodyRect = (boss: Boss): Rect => {
+  const size = bossBodySize(boss);
+  const arena = bossMovementBounds(boss, size);
   return {
-    x: boss.x + marginX + travelX * xWave,
-    y: boss.y + marginY + travelY * yWave,
+    x: boss.x + boss.w / 2 - size.w / 2,
+    y: arena.maxY,
     w: size.w,
     h: size.h
+  };
+};
+
+const bossMovementBounds = (boss: Boss, size: { w: number; h: number }): { minX: number; minY: number; maxX: number; maxY: number } => {
+  const marginX = Math.min(72, Math.max(18, boss.w * 0.08));
+  const marginY = Math.min(24, Math.max(6, boss.h * 0.05));
+  return {
+    minX: boss.x + marginX,
+    minY: boss.y + marginY,
+    maxX: Math.max(boss.x + marginX, boss.x + boss.w - marginX - size.w),
+    maxY: Math.max(boss.y + marginY, boss.y + boss.h - marginY - size.h)
   };
 };
 

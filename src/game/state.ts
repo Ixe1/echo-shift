@@ -4,7 +4,9 @@ import {
   BOSS_INVULNERABLE_FRAMES,
   MONSTER_BOUNCE_SPEED,
   actorKillsMonster,
+  advanceBossActiveMotion,
   bossAttackRectsAt,
+  bossBodyDamages,
   bossBodyRectAt,
   bossIntroFrames,
   bossScore,
@@ -14,6 +16,7 @@ import {
   createBossRuntimeState,
   monsterRectAt,
   monsterScore,
+  settleBossAtIntroEnd,
   type BossRuntimeState
 } from "./enemies";
 import {
@@ -436,10 +439,12 @@ export class RoomSimulation {
           state.phase = "active";
           state.introFrames = bossIntroFrames(boss);
           state.activeFrames = 0;
+          settleBossAtIntroEnd(boss, state);
         }
       } else if (state.phase === "active") {
         state.activeFrames += 1;
         state.invulnerableFrames = Math.max(0, state.invulnerableFrames - 1);
+        advanceBossActiveMotion(boss, state, this.player);
       }
 
       if (state.phase !== "active") continue;
@@ -450,7 +455,7 @@ export class RoomSimulation {
       }
 
       const attacks = bossAttackRectsAt(boss, state, this.tick);
-      if (rectsOverlap(this.player, body) || attacks.some((attack) => rectsOverlap(this.player, attack))) {
+      if ((bossBodyDamages(state) && rectsOverlap(this.player, body)) || attacks.some((attack) => rectsOverlap(this.player, attack))) {
         this.markPlayerDead(events);
         return;
       }
@@ -525,6 +530,7 @@ export class RoomSimulation {
           health: state.health,
           introFrames: state.introFrames,
           introTotalFrames: bossIntroFrames(boss),
+          activeFrames: state.activeFrames,
           invulnerableFrames: state.invulnerableFrames,
           body,
           weakSpot,
