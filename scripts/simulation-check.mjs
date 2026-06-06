@@ -48,6 +48,8 @@ const rectsOverlap = (a, b) =>
   a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
 const solidSupportsGameplay = (solid) => solid.collision !== "decorative";
+const solidIsFloorSegment = (solid) =>
+  solid.id === "floor" || solid.id.startsWith("floor-") || solid.id.startsWith("floorpiece-") || solid.sprite === "floor";
 
 const oscillatingRectAt = (item, tick) => {
   const phase = item.phase || 0;
@@ -94,7 +96,8 @@ const routeObstacleRects = (simulation) => {
   const lowSolids = simulation.level.solids.filter(
     (solid) =>
       solidSupportsGameplay(solid) &&
-      !["floor", "left-wall", "right-wall"].includes(solid.id) &&
+      !solidIsFloorSegment(solid) &&
+      !["left-wall", "right-wall"].includes(solid.id) &&
       solid.h <= 58 &&
       solid.y < footY &&
       solid.y + solid.h > actor.y + 10
@@ -397,7 +400,7 @@ try {
   const { terrainMaterialForSolid } = await server.ssrLoadModule("/src/game/terrainMaterials.ts");
   const { SynthAudio } = await server.ssrLoadModule("/src/game/audio.ts");
 
-  assert(levels.length === 10, `Expected 10 handcrafted levels, found ${levels.length}`);
+  assert(levels.length === 5, `Expected 5 handcrafted levels, found ${levels.length}`);
   assert(levels.some((level) => (level.plates || []).length > 0), "Expected at least one pressure-plate level");
   assert(levels.some((level) => (level.doors || []).length > 0), "Expected at least one door level");
   assert(levels.some((level) => (level.lasers || []).length > 0), "Expected at least one laser level");
@@ -432,9 +435,13 @@ try {
   assert(Boolean(levelBackgrounds["time-lab-prototype"]), "Expected prototype level background");
   assert(Boolean(levelBackgrounds["level-1-time-lab-no-portals"]), "Expected Level 1 no-portal background");
   assert(Boolean(levelBackgrounds["level-1-springtide-glassgrove"]), "Expected Springtide Glassgrove level background");
-  assert(Boolean(levelBackgrounds["level-10-readable-lab"]), "Expected final readable level background");
+  assert(Boolean(levelBackgrounds["level-3-cryo-conservatory"]), "Expected Cryo Conservatory level background");
+  assert(Boolean(levelBackgrounds["level-4-timber-archive"]), "Expected Timber Archive level background");
+  assert(Boolean(levelBackgrounds["level-5-sunken-clockwork"]), "Expected Sunken Clockwork level background");
   assert(backgroundForLevel(levels[0], 0).key === "level-1-springtide-glassgrove", "Expected Level 1 to use Springtide Glassgrove background");
-  assert(backgroundForLevel(levels[9], 9).key === "level-10-readable-lab", "Expected Level 10 to use readable background");
+  assert(backgroundForLevel(levels[2], 2).key === "level-3-cryo-conservatory", "Expected Level 3 to use Cryo Conservatory background");
+  assert(backgroundForLevel(levels[3], 3).key === "level-4-timber-archive", "Expected Level 4 to use Timber Archive background");
+  assert(backgroundForLevel(levels[4], 4).key === "level-5-sunken-clockwork", "Expected Level 5 to use Sunken Clockwork background");
   assert(
     backgroundForLevel({ ...levels[1], backgroundKey: undefined }, 1).key === "time-lab-prototype",
     "Expected levels without explicit backgrounds to use prototype fallback"
@@ -445,9 +452,11 @@ try {
   );
   assert(backgroundAmbienceForLevel({ ...levels[0], backgroundAmbience: undefined }).preset === "none", "Expected missing ambience to normalize to none");
   assert(soundtrackForLevel({ ...levels[0], soundtrackKey: "level-6" }).key === "level-6", "Expected explicit level soundtrack key to override index fallback");
-  assert(soundtrackForLevel({ ...levels[5], soundtrackKey: undefined }, 5).key === "level-6", "Expected missing soundtrack key to fall back to level slot");
-  assert(soundtrackForLevel({ ...levels[5], soundtrackKey: "missing-track" }, 5).key === "level-6", "Expected unknown soundtrack key to fall back to level slot");
-  assert(soundtrackForLevel({ ...levels[5], soundtrackKey: "menu" }, 5).key === "level-6", "Expected menu soundtrack key to be ignored for levels");
+  assert(soundtrackForLevel(levels[3], 3).key === "level-9", "Expected Level 4 to use Level 9 music");
+  assert(soundtrackForLevel(levels[4], 4).key === "level-10", "Expected Level 5 to use final Level 10 music");
+  assert(soundtrackForLevel({ ...levels[4], soundtrackKey: undefined }, 5).key === "level-6", "Expected missing soundtrack key to fall back to level slot");
+  assert(soundtrackForLevel({ ...levels[4], soundtrackKey: "missing-track" }, 5).key === "level-6", "Expected unknown soundtrack key to fall back to level slot");
+  assert(soundtrackForLevel({ ...levels[4], soundtrackKey: "menu" }, 5).key === "level-6", "Expected menu soundtrack key to be ignored for levels");
   assert(soundtrackForLevel({ ...levels[0], index: 9, soundtrackKey: undefined }, 1).key === "level-2", "Expected auto soundtrack fallback to use runtime level slot, not authored index");
   assert(
     terrainMaterialForSolid({ id: "legacy-floor", tone: "steel", sprite: "floor" }) === "metal-lab",
@@ -505,7 +514,20 @@ try {
   const handcraftedRoutes = [
     {
       id: "portal-primer",
-      route: [["smartRight", 1400]]
+      route: [
+        ["right", 105],
+        ["jumpRight", 24],
+        ["right", 95],
+        ["jumpRight", 54],
+        ["right", 220],
+        ["jumpRight", 36],
+        ["right", 70],
+        ["jumpRight", 30],
+        ["right", 95],
+        ["jumpRight", 30],
+        ["idle", 60],
+        ["right", 900]
+      ]
     },
     {
       id: "first-afterimage",
@@ -522,54 +544,6 @@ try {
     {
       id: "lift-phase",
       route: [["smartRightUntilX", 2700, 900], ["idle", 40], ["smartRight", 1000]]
-    },
-    {
-      id: "laser-shadow",
-      route: [["smartRightUntilX", 390, 260], ["idle", 45], ["rewind"], ["smartRight", 2200]],
-      activePlates: ["beam-safe"]
-    },
-    {
-      id: "dual-lock",
-      route: [
-        ["smartRightUntilX", 160, 120],
-        ["idle", 45],
-        ["rewind"],
-        ["smartRightUntilX", 332, 180],
-        ["idle", 45],
-        ["rewind"],
-        ["smartRight", 2300]
-      ]
-    },
-    {
-      id: "cross-current",
-      route: [["smartRightUntilX", 206, 150], ["idle", 45], ["rewind"], ["smartRight", 2500]]
-    },
-    {
-      id: "phase-braid",
-      route: [
-        ["smartRightUntilX", 232, 150],
-        ["idle", 45],
-        ["rewind"],
-        ["smartRightUntilX", 1470, 720],
-        ["idle", 45],
-        ["rewind"],
-        ["smartRight", 2600]
-      ]
-    },
-    {
-      id: "echo-shift",
-      route: [
-        ["smartRightUntilX", 220, 150],
-        ["idle", 45],
-        ["rewind"],
-        ["smartRightUntilX", 902, 500],
-        ["idle", 45],
-        ["rewind"],
-        ["smartRightUntilX", 1610, 720],
-        ["idle", 45],
-        ["rewind"],
-        ["smartRight", 3200]
-      ]
     }
   ];
 
@@ -626,7 +600,7 @@ try {
   );
 
   const sparseCourseLevels = levels
-    .filter((level) => level.solids.filter((solid) => solid.id === "floor" || solid.id.startsWith("floor-")).length < 3)
+    .filter((level) => level.solids.filter(solidIsFloorSegment).length < 3)
     .map((level) => level.id);
   assert(
     sparseCourseLevels.length === 0,

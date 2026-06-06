@@ -61,6 +61,13 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     sourceSize: { w: 1881, h: 836 },
     repeat: "x"
   },
+  "level-2-rainhouse-relay": {
+    key: "level-2-rainhouse-relay",
+    title: "Rainhouse Relay",
+    src: "/assets/backgrounds/level-2-rainhouse-relay.png",
+    sourceSize: { w: 1920, h: 819 },
+    repeat: "x"
+  },
   "level-2-readable-lab": {
     key: "level-2-readable-lab",
     title: "Level 2 Relay Chamber",
@@ -75,6 +82,13 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     sourceSize: { w: 1915, h: 821 },
     repeat: "x"
   },
+  "level-3-cryo-conservatory": {
+    key: "level-3-cryo-conservatory",
+    title: "Cryo Conservatory",
+    src: "/assets/backgrounds/level-3-cryo-conservatory.png",
+    sourceSize: { w: 1920, h: 819 },
+    repeat: "x"
+  },
   "level-4-readable-lab": {
     key: "level-4-readable-lab",
     title: "Level 4 Relay Vault",
@@ -82,11 +96,25 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     sourceSize: { w: 1881, h: 836 },
     repeat: "x"
   },
+  "level-4-timber-archive": {
+    key: "level-4-timber-archive",
+    title: "Timber Archive",
+    src: "/assets/backgrounds/level-4-timber-archive.png",
+    sourceSize: { w: 1920, h: 819 },
+    repeat: "x"
+  },
   "level-5-readable-lab": {
     key: "level-5-readable-lab",
     title: "Level 5 Lift Machinery Bay",
     src: "/assets/backgrounds/level-5-readable-lab.webp",
     sourceSize: { w: 1983, h: 793 },
+    repeat: "x"
+  },
+  "level-5-sunken-clockwork": {
+    key: "level-5-sunken-clockwork",
+    title: "Sunken Clockwork",
+    src: "/assets/backgrounds/level-5-sunken-clockwork.png",
+    sourceSize: { w: 1921, h: 819 },
     repeat: "x"
   },
   "level-6-readable-lab": {

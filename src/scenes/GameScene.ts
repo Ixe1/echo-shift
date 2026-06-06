@@ -822,18 +822,41 @@ export class GameScene extends Phaser.Scene {
     if (!this.tutorialMode) return;
 
     let message = "";
-    if (!this.completeHandled && !this.retryRequired && !this.deathPresentation) {
+    if (!this.introActive && !this.completeHandled && !this.retryRequired && !this.deathPresentation) {
       const snapshot = this.simulation.snapshot();
       const playerCenterX = snapshot.player.x + snapshot.player.w / 2;
       if (snapshot.echoes.length === 0) {
         if (playerCenterX < 300) message = "Move with A / D or the arrow keys.";
         else if (playerCenterX < 560) message = "Jump with W, Up, or Space to cross the gap.";
-        else if (!snapshot.activePlates.has("tutorial-plate")) message = "Stand on the plate near the gate.";
-        else message = "Press R to rewind. The replay becomes an echo that can hold the plate.";
+        else if (playerCenterX < 1220 && !snapshot.activePlates.has("tutorial-plate")) message = "Stand on the plate near the gate.";
+        else if (playerCenterX < 1220)
+          message = "Press R to rewind. The replay becomes an echo that can hold the plate.";
+        else if (playerCenterX < 2050) message = "Push crates onto plates. Crates keep doors open while you move ahead.";
+        else if (playerCenterX < 2700) message = "Timed switches stay active briefly. Step on one, then move before the door closes.";
+        else if (playerCenterX < 3260) message = "Small cores add score. Large cores marked as keys can unlock core doors.";
+        else if (playerCenterX < 3740) message = "Some switches disable lasers for a short window. Move as soon as the beam drops.";
+        else if (playerCenterX < 4140) message = "Moving lasers sweep a lane. Wait for the rhythm, or use the safe ledge above.";
+        else if (playerCenterX < 4480) message = "Moving platforms are one-way. Land on top and ride them across gaps.";
+        else if (playerCenterX < 5020) message = "Drones are hazards, but plates can power them down. Crates can hold those plates too.";
+        else message = "Avoid spark traps and reach the exit portal to finish the tutorial.";
       } else if (!snapshot.openDoors.has("tutorial-gate")) {
         message = "Let the echo reach the plate, then start moving when the gate opens.";
       } else if (playerCenterX < 1180) {
         message = "Your echo is holding the plate. Move through the open gate.";
+      } else if (playerCenterX < 2050) {
+        message = "Crates count as weight. Push one onto the next plate to open the crate gate.";
+      } else if (playerCenterX < 2700) {
+        message = "Timed switches do not need constant weight, but the timer runs down.";
+      } else if (playerCenterX < 3260) {
+        message = "Collect the large core before the core-locked door.";
+      } else if (playerCenterX < 3740) {
+        message = "The laser switch is temporary. Cross while the beam is disabled.";
+      } else if (playerCenterX < 4140) {
+        message = "Read the moving laser, then pass during the open beat.";
+      } else if (playerCenterX < 4480) {
+        message = "Ride the moving platform from above; it will not catch you from below.";
+      } else if (playerCenterX < 5020) {
+        message = "Use the crate plate to disable the drone before crossing its patrol.";
       } else {
         message = "Reach the exit portal to finish the tutorial.";
       }

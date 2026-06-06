@@ -102,8 +102,21 @@ const pulsedRightRoute = (totalFrames, jumpStarts, jumpFrames = 24) => {
   return route.filter(([, frames]) => frames > 0);
 };
 
-// Public-input route for clearing the expanded Portal Primer without test hooks.
-const firstRoomRoute = pulsedRightRoute(700, [287, 377, 405, 568, 599]);
+// Public-input route for clearing the redesigned Springtide Sprint without test hooks.
+const firstRoomRoute = [
+  ["right", 105],
+  ["jumpRight", 24],
+  ["right", 95],
+  ["jumpRight", 54],
+  ["right", 220],
+  ["jumpRight", 36],
+  ["right", 70],
+  ["jumpRight", 30],
+  ["right", 95],
+  ["jumpRight", 30],
+  ["idle", 60],
+  ["right", 900]
+];
 
 // Public-input route for Level 3: record a plate echo, then clear the expanded side-scrolling lane.
 const heldOpenEchoRoute = [
@@ -653,7 +666,7 @@ try {
   });
   await page.screenshot({ path: artifacts.desktopComplete });
   await page.locator("[data-next]").click();
-  await page.waitForFunction(() => document.querySelector("[data-level]")?.textContent?.includes("2. First Afterimage"));
+  await page.waitForFunction(() => document.querySelector("[data-level]")?.textContent?.includes("2. Rainhouse Relay"));
   await waitForLevelIntro(page);
   const nextLevelLabel = await page.locator("[data-level]").textContent();
   await page.screenshot({ path: artifacts.desktopNext });
@@ -964,14 +977,14 @@ try {
       storedProgress.scores["portal-primer"].score > 0,
     `Expected first room numeric score to persist: ${JSON.stringify(storedProgress)}`
   );
-  assert(nextLevelLabel?.includes("2. First Afterimage"), `Expected Next Room to load level 2, got ${nextLevelLabel}`);
+  assert(nextLevelLabel?.includes("2. Rainhouse Relay"), `Expected Next Room to load level 2, got ${nextLevelLabel}`);
   assert(corePixels > 60, `Expected generated core/effect sprite pixels in Relay Key, got ${corePixels}`);
   assert(coreSpriteFrames.includes("core-c:core-major:"), `Expected Relay Key core to use major core sprite, got ${coreSpriteFrames}`);
   assert(/^\d+\.\d{4}:-?\d/.test(cameraSnap), `Expected camera snap diagnostics after side-scroll route, got ${cameraSnap}`);
   assert(
     heldOpenSolidFrames.includes("left-wall:1") &&
       heldOpenSolidFrames.includes("right-wall:1") &&
-      heldOpenSolidFrames.includes("low-block:0") &&
+      heldOpenSolidFrames.includes("low-block:2") &&
       heldOpenSolidFrames.includes("mid-ledge:0"),
     `Expected legacy Held Open ledges to use floor sprite frames, got ${heldOpenSolidFrames}`
   );
@@ -1041,7 +1054,7 @@ try {
   assert(deathPauseModalDuringFall === 0, `Expected pause button to be ignored during death presentation, got ${deathPauseModalDuringFall} modals`);
   assert(deathPauseModalAfterRespawn === 0, `Expected death respawn to leave no pause modal, got ${deathPauseModalAfterRespawn} modals`);
   assert(deathPauseLivesText === "2", `Expected guarded death respawn to leave 2 lives, got ${deathPauseLivesText}`);
-  assert(levelButtons === 10, `Expected 10 level buttons, got ${levelButtons}`);
+  assert(levelButtons === 5, `Expected 5 level buttons, got ${levelButtons}`);
   assert(touchControlsVisible, "Mobile touch controls were not visible in-game");
   assert(mobileIntroVisible, "Expected level intro cutscene to appear on mobile");
   assert(beforeTouchX !== null && afterTouchX !== null, "Could not locate player pixels for touch movement check");
