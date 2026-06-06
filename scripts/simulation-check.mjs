@@ -1278,6 +1278,8 @@ try {
   bossIntroSim.step(idle);
   const activeBossState = bossIntroSim.bossStates.get("boss-test");
   assert(activeBossState?.phase === "active", `Expected boss to activate after 17s, got ${activeBossState?.phase}`);
+  assert(activeBossState?.activeFrames === 0, `Expected boss active frames to start at 0, got ${activeBossState?.activeFrames}`);
+  assert(bossIntroSim.bossSnapshots()[0].attacks.length === 0, "Expected boss active phase to start with a clear attack wind-up");
   const bossBody = bossIntroSim.bossSnapshots()[0].body;
   Object.assign(bossIntroSim.player, { x: bossBody.x + bossBody.w / 2 - 12, y: bossBody.y - 35, vx: 0, vy: 4, onGround: false });
   const bossHit = bossIntroSim.step(idle);

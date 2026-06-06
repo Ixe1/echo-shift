@@ -51,6 +51,7 @@ export type BossRuntimeState = {
   id: string;
   phase: BossPhase;
   introFrames: number;
+  activeFrames: number;
   health: number;
   invulnerableFrames: number;
 };
@@ -160,6 +161,7 @@ export const createBossRuntimeState = (boss: Boss): BossRuntimeState => ({
   id: boss.id,
   phase: "idle",
   introFrames: 0,
+  activeFrames: 0,
   health: bossHealth(boss),
   invulnerableFrames: 0
 });
@@ -184,7 +186,7 @@ export const bossBodyRectAt = (boss: Boss, state: BossRuntimeState, tick: number
 export const bossAttackRectsAt = (boss: Boss, state: BossRuntimeState, tick: number): Rect[] => {
   if (state.phase !== "active") return [];
   const body = bossBodyRectAt(boss, state, tick);
-  const cycle = tick % 180;
+  const cycle = state.activeFrames % 180;
   if (cycle < 70) return [];
   if (cycle < 116) {
     return [

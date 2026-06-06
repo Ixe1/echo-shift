@@ -78,6 +78,7 @@ export class SynthAudio {
   private musicKey: SoundtrackKey | null = null;
   private musicCache = new Map<SoundtrackKey, HTMLAudioElement>();
   private activeEffects = new Map<HTMLAudioElement, number>();
+  private fadingMusic = new Set<HTMLAudioElement>();
   private musicPlayAttempt = 0;
   private fadeToken = 0;
   private musicMuted = false;
@@ -206,6 +207,8 @@ export class SynthAudio {
     }
 
     const next = this.musicElementFor(key);
+    this.stopStaleFadingMusic(next);
+    this.fadingMusic.delete(next);
     const previous = this.music && this.music !== next ? this.music : null;
     this.prepareMusicElement(next);
     if (options.restart) {
@@ -398,9 +401,13 @@ export class SynthAudio {
     const started = performance.now();
     const duration = Math.max(180, Math.min(1600, fadeMs ?? 760));
     const previousStart = previous?.volume || 0;
+    if (previous) this.fadingMusic.add(previous);
 
     const step = (now: number) => {
-      if (token !== this.fadeToken) return;
+      if (token !== this.fadeToken) {
+        if (previous) this.stopMusicElement(previous);
+        return;
+      }
       const progress = Math.min(1, Math.max(0, (now - started) / duration));
       const eased = 1 - Math.pow(1 - progress, 3);
       next.volume = this.musicMuted ? 0 : this.musicOutputVolume() * eased;
@@ -413,13 +420,26 @@ export class SynthAudio {
 
       this.applyMusicVolume(next);
       if (previous) {
-        previous.pause();
-        previous.currentTime = 0;
+        this.stopMusicElement(previous);
       }
       this.releaseUnusedMusic();
     };
 
     requestAnimationFrame(step);
+  }
+
+  private stopMusicElement(element: HTMLAudioElement): void {
+    this.fadingMusic.delete(element);
+    if (element === this.music) return;
+    element.pause();
+    element.currentTime = 0;
+    element.volume = 0;
+  }
+
+  private stopStaleFadingMusic(except: HTMLAudioElement): void {
+    for (const element of [...this.fadingMusic]) {
+      if (element !== except) this.stopMusicElement(element);
+    }
   }
 
   private disconnectWhenEnded(source: AudioScheduledSourceNode, ...nodes: AudioNode[]): void {

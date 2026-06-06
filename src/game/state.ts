@@ -435,8 +435,10 @@ export class RoomSimulation {
         if (state.introFrames >= bossIntroFrames(boss)) {
           state.phase = "active";
           state.introFrames = bossIntroFrames(boss);
+          state.activeFrames = 0;
         }
       } else if (state.phase === "active") {
+        state.activeFrames += 1;
         state.invulnerableFrames = Math.max(0, state.invulnerableFrames - 1);
       }
 
