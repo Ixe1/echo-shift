@@ -1287,6 +1287,39 @@ try {
   assert(bossIntroSim.exitUnlocked(), "Expected boss level exit to unlock after boss defeat");
   assert(bossIntroSim.score === 1200, `Expected boss defeat score to apply, got ${bossIntroSim.score}`);
 
+  const multiBossLevel = {
+    ...baseLevel,
+    exit: { x: 580, y: 82, w: 28, h: 38 },
+    bounds: { x: 0, y: 0, w: 640, h: 180 },
+    solids: [
+      { id: "floor", x: 0, y: 120, w: 640, h: 40 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 180 },
+      { id: "right-wall", x: 640, y: 0, w: 20, h: 180 }
+    ],
+    bosses: [
+      { id: "boss-a", kind: "storm-relay-warden", x: 60, y: 20, w: 220, h: 130, entrySide: "right", introSeconds: 1, health: 1, score: 700 },
+      { id: "boss-b", kind: "cryo-conservator", x: 330, y: 20, w: 220, h: 130, entrySide: "left", introSeconds: 1, health: 1, score: 900 }
+    ]
+  };
+  const multiBossSim = new RoomSimulation(multiBossLevel);
+  Object.assign(multiBossSim.player, { x: 62, y: 86, vx: 0, vy: 0, onGround: true });
+  const multiBossStartA = multiBossSim.step(idle);
+  assert(multiBossStartA.bossCheckpointActivated === "boss-a", "Expected first boss to create its checkpoint");
+  assert(multiBossSim.bossCheckpointActive(), "Expected first boss checkpoint to be active during intro");
+  runFrames(multiBossSim, 60, idle);
+  const multiBossBodyA = multiBossSim.bossSnapshots().find((boss) => boss.id === "boss-a")?.body;
+  assert(multiBossBodyA, "Expected first multi-boss body snapshot");
+  Object.assign(multiBossSim.player, { x: multiBossBodyA.x + multiBossBodyA.w / 2 - 12, y: multiBossBodyA.y - 35, vx: 0, vy: 4, onGround: false });
+  const multiBossDefeatA = multiBossSim.step(idle);
+  assert(multiBossDefeatA.bossDefeated?.id === "boss-a", "Expected first multi-boss defeat");
+  assert(!multiBossDefeatA.bossPortalUnlocked, "Expected first multi-boss defeat to keep portal locked");
+  assert(!multiBossSim.exitUnlocked(), "Expected multi-boss exit to remain locked after first boss");
+  assert(!multiBossSim.bossCheckpointActive(), "Expected first boss checkpoint to clear after first boss defeat");
+  Object.assign(multiBossSim.player, { x: 332, y: 86, vx: 0, vy: 0, onGround: true });
+  const multiBossStartB = multiBossSim.step(idle);
+  assert(multiBossStartB.bossCheckpointActivated === "boss-b", "Expected second boss to create a fresh checkpoint");
+  assert(multiBossSim.bossCheckpointActive(), "Expected second boss checkpoint to be active during intro");
+
   const bossCheckpointLevel = {
     ...baseLevel,
     score: { ...baseLevel.score, coreScore: 1000, deathPenalty: 100 },

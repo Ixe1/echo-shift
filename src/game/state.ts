@@ -476,8 +476,8 @@ export class RoomSimulation {
       x: body.x + body.w / 2,
       y: body.y + body.h / 2
     };
+    if (this.bossCheckpoint?.bossId === boss.id) this.bossCheckpoint = null;
     if (this.exitUnlocked()) {
-      this.bossCheckpoint = null;
       events.bossPortalUnlocked = true;
     }
   }

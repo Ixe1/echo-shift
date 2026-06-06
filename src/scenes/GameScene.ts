@@ -630,10 +630,10 @@ export class GameScene extends Phaser.Scene {
         events.bossDefeated ? `+${events.bossDefeated.score}` : `${events.bossHit.health}`
       );
     }
+    if (events.bossDefeated) this.restartLevelMusic();
     if (events.bossPortalUnlocked) {
       const exitCenter = rectCenter(this.level.exit);
       audio.play("portal");
-      this.restartLevelMusic();
       this.addFxBurst(exitCenter.x, exitCenter.y, 0x43f7ff, "OPEN");
     }
     if (events.died) {
