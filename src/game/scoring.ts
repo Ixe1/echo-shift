@@ -24,6 +24,9 @@ const positiveInteger = (value: unknown, fallback: number): number =>
 const nonNegativeInteger = (value: unknown, fallback: number): number =>
   Math.max(0, Math.round(finiteNumber(value, fallback)));
 
+const livesValue = (value: unknown, fallback: number | null): number | null =>
+  value === null ? null : positiveInteger(value, typeof fallback === "number" ? fallback : 3);
+
 const legacyGoldSeconds = (legacyGoldFrames: unknown): number | null => {
   const frames = finiteNumber(legacyGoldFrames, Number.NaN);
   if (!Number.isFinite(frames) || frames <= 0) return null;
@@ -42,7 +45,7 @@ export const normalizeScoreSettings = (
   const record = isRecord(value) ? value : {};
   const fallbackTarget = legacyGoldSeconds(legacyGoldFrames) || DEFAULT_SCORE_SETTINGS.timeBonusTargetSeconds;
   return {
-    lives: positiveInteger(record.lives, DEFAULT_SCORE_SETTINGS.lives),
+    lives: livesValue(record.lives, DEFAULT_SCORE_SETTINGS.lives),
     coreScore: nonNegativeInteger(record.coreScore, DEFAULT_SCORE_SETTINGS.coreScore),
     deathPenalty: nonNegativeInteger(record.deathPenalty, DEFAULT_SCORE_SETTINGS.deathPenalty),
     timeBonusTargetSeconds: positiveInteger(record.timeBonusTargetSeconds, fallbackTarget),

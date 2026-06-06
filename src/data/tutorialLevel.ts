@@ -77,7 +77,7 @@ export const tutorialLevel: Level = markAnchoredMotionModel({
   index: 0,
   name: "Training Annex",
   subtitle: "Echoes, objects, locks, hazards, and moving systems",
-  soundtrackKey: "level-1",
+  soundtrackKey: "tutorial",
   backgroundKey: "level-1-readable-lab",
   backgroundAmbience: { preset: "lab", intensity: 0.28, color: "#43f7ff", drift: 0.24, flicker: 0.12, particles: 0.2 },
   start: { x: 58, y: 450 },
@@ -131,6 +131,6 @@ export const tutorialLevel: Level = markAnchoredMotionModel({
   ],
   hazards: [h("tutorial-spark-a", 4040, 496, 58, 4), h("tutorial-spark-b", 5280, 496, 58, 4)],
   drones: [d("tutorial-drone", 4820, 472, 30, 24, "x", 130, 210, 0, ["drone-plate"])],
-  score: scoreSettingsFromGoldFrames(5400),
+  score: { ...scoreSettingsFromGoldFrames(5400), lives: null },
   hint: "Each station introduces a tool. Echoes, crates, switches, cores, and platforms all change what stays open."
 });

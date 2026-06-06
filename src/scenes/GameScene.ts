@@ -5,6 +5,7 @@ import { tutorialLevel } from "../data/tutorialLevel";
 import { audio } from "../game/audio";
 import { backgroundAmbienceForLevel, backgroundAmbienceIsActive, type NormalizedBackgroundAmbience } from "../game/backgroundAmbience";
 import { backgroundForLevel } from "../game/backgrounds";
+import { BOSS_INTRO_FRAMES, bossHealth, monsterRectAt } from "../game/enemies";
 import { rectCenter } from "../game/geometry";
 import { doorRequiredCoreIds, droneIsActive, droneRectAt, isMajorCore, laserIsActive, movingLaserRectAt } from "../game/objects";
 import { platformRectAt } from "../game/player";
@@ -20,7 +21,7 @@ import {
   TERRAIN_TILE_SIZE,
   type TerrainTileRole
 } from "../game/terrainMaterials";
-import type { ActorBody, Core, Door, InputFrame, Level, LevelScore, MovingPlatform, Rect, Solid, TerrainMaterial } from "../game/types";
+import type { ActorBody, BossSnapshot, Core, Door, InputFrame, Level, LevelScore, MovingPlatform, Rect, Solid, TerrainMaterial } from "../game/types";
 import { Hud } from "../ui/hud";
 import { uiRoot } from "../ui/dom";
 
@@ -96,11 +97,13 @@ type RenderView = {
   collectedCores: Set<string>;
   blockedLasers: Set<string>;
   crates: Map<string, Rect>;
+  killedMonsters: Set<string>;
+  bosses: BossSnapshot[];
   tick: number;
   totalFrames: number;
   score: number;
   deaths: number;
-  livesRemaining: number;
+  livesRemaining: number | null;
   dead: boolean;
   won: boolean;
 };
@@ -114,6 +117,15 @@ type DeathPresentation = {
 
 type RetryPresentation = {
   elapsedMs: number;
+};
+
+type FxBurst = {
+  x: number;
+  y: number;
+  color: number;
+  label?: string;
+  startedAt: number;
+  durationMs: number;
 };
 
 type KeyMap = {
@@ -191,6 +203,8 @@ export class GameScene extends Phaser.Scene {
     collectedCores: new Set(),
     blockedLasers: new Set(),
     crates: new Map(),
+    killedMonsters: new Set(),
+    bosses: [],
     tick: 0,
     totalFrames: 0,
     score: 0,
@@ -215,6 +229,8 @@ export class GameScene extends Phaser.Scene {
   private levelIntroOverlay: HTMLElement | null = null;
   private lastTutorialHint = "";
   private readonly launchPadActiveUntil = new Map<string, number>();
+  private readonly fxBursts: FxBurst[] = [];
+  private bossMusicActive = false;
   private sceneCleanupRegistered = false;
   private readonly handleWindowKeyDown = (event: KeyboardEvent): void => {
     if (event.key !== "Escape" || event.repeat) return;
@@ -354,6 +370,8 @@ export class GameScene extends Phaser.Scene {
     this.levelIntroOverlay = null;
     this.lastTutorialHint = "";
     this.launchPadActiveUntil.clear();
+    this.fxBursts.length = 0;
+    this.bossMusicActive = false;
   }
 
   create(): void {
@@ -478,6 +496,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private restartLevelMusic(): void {
+    this.bossMusicActive = false;
     audio.playMusic(this.currentLevelSoundtrackKey(), { restart: true });
   }
 
@@ -587,6 +606,25 @@ export class GameScene extends Phaser.Scene {
       }
     }
     for (let index = 0; index < events.echoLaserVaporized; index += 1) audio.play("echoLaserVaporized");
+    if (events.bossIntroStarted && !this.bossMusicActive) {
+      this.bossMusicActive = true;
+      audio.playMusic("boss");
+      this.hud.toast("Boss approaching");
+    }
+    for (const kill of events.monsterKills) {
+      audio.play("core");
+      this.addFxBurst(kill.x, kill.y, 0xffe35a, `+${kill.score}`);
+    }
+    if (events.bossHit) {
+      audio.play(events.bossDefeated ? "bigCore" : "switch");
+      this.cameras.main.shake(events.bossDefeated ? 260 : 130, events.bossDefeated ? 0.007 : 0.003);
+      this.addFxBurst(
+        events.bossHit.x,
+        events.bossHit.y,
+        0xffffff,
+        events.bossDefeated ? `+${events.bossDefeated.score}` : `${events.bossHit.health}`
+      );
+    }
     if (events.died) {
       this.startDeathPresentation(events.livesExhausted, events.playerLaserVaporized);
     }
@@ -596,6 +634,17 @@ export class GameScene extends Phaser.Scene {
   private corePickupIsLarge(coreId: string): boolean {
     const core = (this.level.cores || []).find((item) => item.id === coreId);
     return core ? this.coreIsLarge(core) : false;
+  }
+
+  private addFxBurst(x: number, y: number, color: number, label?: string): void {
+    this.fxBursts.push({
+      x,
+      y,
+      color,
+      label,
+      startedAt: this.time.now,
+      durationMs: 620
+    });
   }
 
   private startDeathPresentation(livesExhausted: boolean, playerLaserVaporized: boolean): void {
@@ -620,7 +669,10 @@ export class GameScene extends Phaser.Scene {
     };
     this.playerCastUntil = 0;
     this.virtualInput = { left: false, right: false, jump: false };
-    if (!livesExhausted) this.hud.toast(`Signal lost. ${this.simulation.livesRemaining()} lives left.`);
+    if (!livesExhausted) {
+      const lives = this.simulation.livesRemaining();
+      this.hud.toast(lives === null ? "Signal lost. Retrying." : `Signal lost. ${lives} lives left.`);
+    }
     this.writeDeathPresentationDiagnostics("fall");
   }
 
@@ -963,6 +1015,8 @@ export class GameScene extends Phaser.Scene {
     this.retryPresentation = null;
     this.finishLevelIntro();
     this.launchPadActiveUntil.clear();
+    this.fxBursts.length = 0;
+    this.bossMusicActive = false;
   };
 
   private renderWorld(): void {
@@ -988,9 +1042,12 @@ export class GameScene extends Phaser.Scene {
     this.drawLasers(snapshot.activePlates, snapshot.blockedLasers);
     this.drawMovingLasers(snapshot.tick, snapshot.activePlates, snapshot.blockedLasers);
     this.drawDrones(snapshot.tick, snapshot.activePlates);
+    this.drawMonsters(snapshot.tick, snapshot.killedMonsters);
+    this.drawBosses(snapshot.bosses);
     this.drawExit(this.level.exit, snapshot.won);
     this.drawEchoes(snapshot.echoes);
     this.drawActor(snapshot.player, snapshot.dead ? 0xff4f8b : 0x43f7ff, 1);
+    this.drawFxBursts();
     if (!this.lowChurnGraphics) this.drawForegroundText(snapshot.tick);
     this.finishObjectAssetSync();
     this.syncSpriteLayer(snapshot);
@@ -1012,6 +1069,8 @@ export class GameScene extends Phaser.Scene {
     view.collectedCores = objectState.collectedCores;
     view.blockedLasers = objectState.blockedLasers;
     view.crates = objectState.crates;
+    view.killedMonsters = simulation.killedMonsterIds;
+    view.bosses = simulation.bossSnapshots();
     view.tick = simulation.tick;
     view.totalFrames = simulation.totalFrames;
     view.score = simulation.score;
@@ -1565,6 +1624,117 @@ export class GameScene extends Phaser.Scene {
         this.world.lineBetween(drone.x + drone.w / 2, drone.y, drone.x + drone.w / 2, drone.y + drone.distance);
       }
     }
+  }
+
+  private drawMonsters(tick: number, killedMonsters: Set<string>): void {
+    for (const monster of this.level.monsters || []) {
+      if (killedMonsters.has(monster.id)) continue;
+      const rect = monsterRectAt(monster, tick);
+      const center = rectCenter(rect);
+      const color = this.monsterColor(monster.kind);
+      this.world.fillStyle(color, 0.24);
+      this.world.fillEllipse(center.x, center.y, rect.w * 1.7, rect.h * 1.75);
+      this.world.fillStyle(0x05070d, 0.88);
+      this.world.fillRoundedRect(rect.x, rect.y, rect.w, rect.h, 6);
+      this.world.lineStyle(2, color, 0.86);
+      this.world.strokeRoundedRect(rect.x, rect.y, rect.w, rect.h, 6);
+      this.world.fillStyle(color, 0.72);
+      this.world.fillCircle(center.x - rect.w * 0.2, rect.y + rect.h * 0.34, 2.2);
+      this.world.fillCircle(center.x + rect.w * 0.2, rect.y + rect.h * 0.34, 2.2);
+      if (monster.axis) {
+        this.world.lineStyle(1, color, 0.18);
+        if (monster.axis === "x") this.world.lineBetween(monster.x, center.y, monster.x + (monster.distance || 0), center.y);
+        else this.world.lineBetween(center.x, monster.y, center.x, monster.y + (monster.distance || 0));
+      }
+    }
+  }
+
+  private drawBosses(bosses: BossSnapshot[]): void {
+    for (const boss of this.level.bosses || []) {
+      const snapshot = bosses.find((item) => item.id === boss.id);
+      const phase = snapshot?.phase || "idle";
+      const color = this.bossColor(boss.kind);
+      this.world.lineStyle(phase === "idle" ? 1 : 2, color, phase === "idle" ? 0.22 : 0.5);
+      this.world.strokeRect(boss.x, boss.y, boss.w, boss.h);
+      if (!snapshot || phase === "defeated") continue;
+
+      for (const attack of snapshot.attacks) {
+        this.world.fillStyle(0xff4f8b, 0.2);
+        this.world.fillRect(attack.x, attack.y, attack.w, attack.h);
+        this.world.lineStyle(2, 0xff4f8b, 0.72);
+        this.world.strokeRect(attack.x, attack.y, attack.w, attack.h);
+      }
+
+      const body = snapshot.body;
+      const center = rectCenter(body);
+      const introProgress = phase === "intro" ? Math.min(1, snapshot.introFrames / BOSS_INTRO_FRAMES) : 1;
+      const flickerWhite = snapshot.invulnerableFrames > 0 && Math.floor(this.simulation.tick / 4) % 2 === 0;
+      this.world.fillStyle(color, phase === "intro" ? 0.16 + introProgress * 0.2 : 0.26);
+      this.world.fillEllipse(center.x, center.y, body.w * 1.55, body.h * 1.42);
+      this.world.fillStyle(flickerWhite ? 0xffffff : 0x05070d, phase === "intro" ? 0.62 : 0.94);
+      this.world.fillRoundedRect(body.x, body.y, body.w, body.h, 10);
+      this.world.lineStyle(3, flickerWhite ? 0xffffff : color, phase === "intro" ? 0.48 + introProgress * 0.42 : 0.92);
+      this.world.strokeRoundedRect(body.x, body.y, body.w, body.h, 10);
+      this.world.fillStyle(flickerWhite ? color : 0xffffff, phase === "intro" ? 0.35 : 0.72);
+      this.world.fillCircle(center.x - body.w * 0.18, body.y + body.h * 0.36, 3);
+      this.world.fillCircle(center.x + body.w * 0.18, body.y + body.h * 0.36, 3);
+
+      if (phase === "intro") {
+        this.world.lineStyle(4, 0xffffff, 0.28);
+        this.world.beginPath();
+        this.world.arc(center.x, center.y, Math.max(body.w, body.h) * 0.62, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * introProgress);
+        this.world.strokePath();
+      } else if (phase === "active") {
+        const maxHealth = bossHealth(boss);
+        const barW = Math.min(180, Math.max(72, boss.w * 0.34));
+        const barX = boss.x + boss.w / 2 - barW / 2;
+        const barY = boss.y + 12;
+        this.world.fillStyle(0x05070d, 0.78);
+        this.world.fillRect(barX, barY, barW, 8);
+        this.world.fillStyle(color, 0.9);
+        this.world.fillRect(barX, barY, barW * Math.max(0, snapshot.health / maxHealth), 8);
+        this.world.lineStyle(1, 0xffffff, 0.48);
+        this.world.strokeRect(barX, barY, barW, 8);
+      }
+    }
+  }
+
+  private drawFxBursts(): void {
+    const now = this.time.now;
+    for (let index = this.fxBursts.length - 1; index >= 0; index -= 1) {
+      const burst = this.fxBursts[index];
+      const progress = (now - burst.startedAt) / burst.durationMs;
+      if (progress >= 1) {
+        this.fxBursts.splice(index, 1);
+        continue;
+      }
+      const radius = 8 + progress * 34;
+      const alpha = 1 - progress;
+      this.fx.lineStyle(2, burst.color, alpha * 0.82);
+      this.fx.strokeCircle(burst.x, burst.y, radius);
+      this.fx.fillStyle(burst.color, alpha * 0.16);
+      this.fx.fillCircle(burst.x, burst.y, radius * 0.72);
+      this.fx.fillStyle(0xffffff, alpha * 0.52);
+      for (let i = 0; i < 6; i += 1) {
+        const angle = progress * 2.4 + i * (Math.PI / 3);
+        this.fx.fillCircle(burst.x + Math.cos(angle) * radius, burst.y + Math.sin(angle) * radius, 2.2);
+      }
+    }
+  }
+
+  private monsterColor(kind: string): number {
+    if (kind.includes("cryo") || kind.includes("frost") || kind.includes("shard")) return 0x8eeaff;
+    if (kind.includes("copper") || kind.includes("storm") || kind.includes("gutter")) return 0x50ffc2;
+    if (kind.includes("book") || kind.includes("page") || kind.includes("index")) return 0xe0af67;
+    if (kind.includes("gear") || kind.includes("clock") || kind.includes("sand")) return 0xffe35a;
+    return 0x6eca70;
+  }
+
+  private bossColor(kind: string): number {
+    if (kind.includes("cryo")) return 0x8eeaff;
+    if (kind.includes("archive")) return 0xe0af67;
+    if (kind.includes("clockwork")) return 0xffe35a;
+    return 0x50ffc2;
   }
 
   private drawExit(exit: Rect, won: boolean): void {

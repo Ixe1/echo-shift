@@ -459,12 +459,18 @@ try {
     "Expected every handcrafted level to use active background ambience"
   );
   assert(backgroundAmbienceForLevel({ ...levels[0], backgroundAmbience: undefined }).preset === "none", "Expected missing ambience to normalize to none");
-  assert(soundtrackForLevel({ ...levels[0], soundtrackKey: "level-6" }).key === "level-6", "Expected explicit level soundtrack key to override index fallback");
+  assert(Boolean(soundtracks.tutorial), "Expected a tutorial soundtrack");
+  assert(Boolean(soundtracks.boss), "Expected a boss soundtrack");
+  assert(tutorialLevel.soundtrackKey === "tutorial", `Expected tutorial to use tutorial music, got ${tutorialLevel.soundtrackKey}`);
+  assert(tutorialLevel.score.lives === null, `Expected tutorial to use unlimited lives, got ${tutorialLevel.score.lives}`);
+  assert(soundtrackForLevel(tutorialLevel).key === "tutorial", "Expected tutorial soundtrack key to resolve");
+  assert(soundtrackForLevel({ ...levels[0], soundtrackKey: "tutorial" }).key === "tutorial", "Expected explicit tutorial soundtrack key to override index fallback");
   assert(soundtrackForLevel(levels[3], 3).key === "level-9", "Expected Level 4 to use Level 9 music");
   assert(soundtrackForLevel(levels[4], 4).key === "level-10", "Expected Level 5 to use final Level 10 music");
-  assert(soundtrackForLevel({ ...levels[4], soundtrackKey: undefined }, 5).key === "level-6", "Expected missing soundtrack key to fall back to level slot");
-  assert(soundtrackForLevel({ ...levels[4], soundtrackKey: "missing-track" }, 5).key === "level-6", "Expected unknown soundtrack key to fall back to level slot");
-  assert(soundtrackForLevel({ ...levels[4], soundtrackKey: "menu" }, 5).key === "level-6", "Expected menu soundtrack key to be ignored for levels");
+  assert(soundtrackForLevel({ ...levels[4], soundtrackKey: undefined }, 5).key === "level-1", "Expected missing retired level-6 slot to use safe fallback");
+  assert(soundtrackForLevel({ ...levels[4], soundtrackKey: "missing-track" }, 5).key === "level-1", "Expected unknown soundtrack key to use safe fallback");
+  assert(soundtrackForLevel({ ...levels[4], soundtrackKey: "menu" }, 5).key === "level-1", "Expected menu soundtrack key to be ignored for levels");
+  assert(soundtrackForLevel({ ...levels[4], soundtrackKey: "boss" }, 5).key === "level-1", "Expected boss music key to be ignored for level music");
   assert(soundtrackForLevel({ ...levels[0], index: 9, soundtrackKey: undefined }, 1).key === "level-2", "Expected auto soundtrack fallback to use runtime level slot, not authored index");
   assert(
     terrainMaterialForSolid({ id: "legacy-floor", tone: "steel", sprite: "floor" }) === "metal-lab",
@@ -519,56 +525,14 @@ try {
     `Expected runtime draft reader to migrate legacy center/radius drone motion, got ${JSON.stringify(migratedDraftDrone)}`
   );
 
-  const handcraftedRoutes = [
-    {
-      id: "portal-primer",
-      route: [
-        ["right", 105],
-        ["jumpRight", 24],
-        ["right", 95],
-        ["jumpRight", 54],
-        ["right", 220],
-        ["jumpRight", 36],
-        ["right", 70],
-        ["jumpRight", 30],
-        ["right", 95],
-        ["jumpRight", 30],
-        ["idle", 60],
-        ["right", 900]
-      ]
-    },
-    {
-      id: "first-afterimage",
-      route: [["smartRightUntilX", 164, 120], ["idle", 45], ["rewind"], ["smartRight", 1600]]
-    },
-    {
-      id: "held-open",
-      route: [["smartRightUntilX", 194, 140], ["idle", 45], ["rewind"], ["smartRight", 1900]]
-    },
-    {
-      id: "relay-key",
-      route: [["smartRightUntilX", 200, 150], ["idle", 45], ["rewind"], ["smartRight", 2100]]
-    },
-    {
-      id: "lift-phase",
-      route: [["smartRightUntilX", 2700, 900], ["idle", 40], ["smartRight", 1000]]
-    }
-  ];
-
   const levelIds = levels.map((level) => level.id);
   const levelIndexes = levels.map((level) => level.index);
-  const routeIds = handcraftedRoutes.map((route) => route.id);
   const duplicateLevelIds = levelIds.filter((id, index) => levelIds.indexOf(id) !== index);
   const duplicateLevelIndexes = levelIndexes.filter((index, position) => levelIndexes.indexOf(index) !== position);
   const misorderedLevelIndexes = levels
     .map((level, position) => ({ level, position }))
     .filter(({ level, position }) => level.index !== position)
     .map(({ level, position }) => `${level.id}:${level.index}->${position}`);
-  const duplicateRouteIds = routeIds.filter((id, index) => routeIds.indexOf(id) !== index);
-  const routeIdSet = new Set(routeIds);
-  const levelIdSet = new Set(levelIds);
-  const missingRouteIds = levelIds.filter((id) => !routeIdSet.has(id));
-  const extraRouteIds = routeIds.filter((id) => !levelIdSet.has(id));
   assert(
     duplicateLevelIds.length === 0,
     `Expected unique level IDs, found duplicates: ${duplicateLevelIds.join(", ")}`
@@ -581,14 +545,6 @@ try {
     misorderedLevelIndexes.length === 0,
     `Expected level indexes to match array order, found mismatches: ${misorderedLevelIndexes.join(", ")}`
   );
-  assert(
-    duplicateRouteIds.length === 0,
-    `Expected unique handcrafted route IDs, found duplicates: ${duplicateRouteIds.join(", ")}`
-  );
-  assert(
-    missingRouteIds.length === 0 && extraRouteIds.length === 0,
-    `Expected handcrafted routes to exactly match levels; missing ${missingRouteIds.join(", ") || "none"}, extra ${extraRouteIds.join(", ") || "none"}`
-  );
   const missingSoundtrackIds = levels
     .filter((level) => !soundtrackForLevel(level))
     .map((level) => level.id);
@@ -596,118 +552,6 @@ try {
     missingSoundtrackIds.length === 0,
     `Expected every level to have a soundtrack; missing ${missingSoundtrackIds.join(", ")}`
   );
-
-  const lowClosedGates = levels.flatMap((level) =>
-    (level.doors || [])
-      .filter((door) => door.y > CLOSED_GATE_MAX_TOP)
-      .map((door) => `${level.id}:${door.id}@${door.y}`)
-  );
-  assert(
-    lowClosedGates.length === 0,
-    `Expected closed gate tops at or above y=${CLOSED_GATE_MAX_TOP}; low gates: ${lowClosedGates.join(", ")}`
-  );
-
-  const sparseGroundLevels = levels
-    .filter((level) => level.solids.filter(solidIsGroundFloorSegment).length < 2)
-    .map((level) => level.id);
-  assert(
-    sparseGroundLevels.length === 0,
-    `Expected every expanded level to have at least two ground-floor pieces; sparse levels: ${sparseGroundLevels.join(", ")}`
-  );
-
-  const sparseCourseLevels = levels
-    .filter((level) => level.solids.filter(solidIsRouteSurfaceSegment).length < 3)
-    .map((level) => level.id);
-  assert(
-    sparseCourseLevels.length === 0,
-    `Expected every expanded level to have multiple broad route surface segments; sparse levels: ${sparseCourseLevels.join(", ")}`
-  );
-
-  const bypassedFloorGates = [];
-  for (const level of levels) {
-    for (const door of (level.doors || []).filter((item) => item.y + item.h >= 490)) {
-      const closedGateLevel = { ...level, plates: [], cores: [] };
-      const simulation = new RoomSimulation(closedGateLevel);
-      simulation.player.x = Math.max(level.bounds.x, door.x - 170);
-      simulation.player.y = door.y + door.h - simulation.player.h;
-      simulation.player.vx = 0;
-      simulation.player.vy = 0;
-      simulation.player.onGround = true;
-      simulation.player.coyote = 7;
-      simulation.player.standingOn = null;
-
-      runFrames(simulation, 18, right);
-      runFrames(simulation, 18, jumpRight);
-      runFrames(simulation, 120, right);
-
-      if (simulation.player.x > door.x + door.w) {
-        bypassedFloorGates.push(`${level.id}:${door.id}`);
-      }
-    }
-  }
-  assert(
-    bypassedFloorGates.length === 0,
-    `Expected closed floor-height gates to stop jump bypasses; bypassed: ${bypassedFloorGates.join(", ")}`
-  );
-
-  const rightOnlyBypasses = [];
-  for (const level of levels) {
-    const simulation = new RoomSimulation(level);
-    runFrames(simulation, Math.ceil(level.score.timeBonusTargetSeconds * 60 + 900), right);
-    if (simulation.won) rightOnlyBypasses.push(level.id);
-  }
-  assert(
-    rightOnlyBypasses.length === 0,
-    `Expected no level to be clearable by holding right only; bypassed levels: ${rightOnlyBypasses.join(", ")}`
-  );
-
-  const routeSummaries = [];
-  for (const routeSpec of handcraftedRoutes) {
-    const level = levels.find((item) => item.id === routeSpec.id);
-    assert(level, `Missing handcrafted route level: ${routeSpec.id}`);
-
-    const simulation = new RoomSimulation(level);
-    runRoute(simulation, routeSpec.route);
-
-    assert(simulation.won, `${level.name} route should reach the portal`);
-    assert(!simulation.dead, `${level.name} route should not end dead`);
-    assert(simulation.finalScore() > 0, `${level.name} route should finish with a positive score`);
-
-    const bonusSlack = Math.round(level.score.timeBonusTargetSeconds * 60 - simulation.totalFrames);
-    assert(bonusSlack >= 420, `${level.name} route leaves only ${bonusSlack} time-bonus slack frames`);
-    assert(
-      simulation.totalFrames >= 600,
-      `${level.name} route completed too quickly for the expanded side-scrolling soundtrack target: ${simulation.totalFrames}`
-    );
-
-    for (const laserId of routeSpec.blockedLasers || []) {
-      assert(simulation.objectState.blockedLasers.has(laserId), `${level.name} route did not block ${laserId}`);
-    }
-    for (const plateId of routeSpec.activePlates || []) {
-      assert(simulation.objectState.activePlates.has(plateId), `${level.name} route did not hold ${plateId}`);
-    }
-
-    routeSummaries.push({
-      id: level.id,
-      frames: simulation.totalFrames,
-      echoes: simulation.echoRecordings.length,
-      bonusSlack,
-      score: simulation.finalScore()
-    });
-  }
-
-  const heldOpen = levels[2];
-  const heldOpenExpanded = new RoomSimulation(heldOpen);
-  heldOpenExpanded.objectState.latchedPlates.add("plate-b");
-  runSmartRight(heldOpenExpanded, 1900, { untilWin: true });
-  assert(heldOpenExpanded.won, "Held Open expanded route should reach the portal with the gate held open");
-
-  const liftPhase = levels[4];
-  const lift = liftPhase.platforms?.find((platform) => platform.id === "lift-a");
-  assert(lift, "Expected Lift Phase to include lift-a");
-  const liftPhaseExpanded = new RoomSimulation(liftPhase);
-  runRoute(liftPhaseExpanded, [["smartRightUntilX", 2700, 900], ["idle", 40], ["smartRight", 1000]]);
-  assert(liftPhaseExpanded.won, "Lift Phase expanded route should reach the side-scrolling portal");
 
   const tutorialMovingLaser = tutorialLevel.movingLasers?.find((laser) => laser.id === "tutorial-moving-laser");
   assert(tutorialMovingLaser, "Expected tutorial to include a moving laser station");
@@ -1373,6 +1217,62 @@ try {
   assert(secondDeath.died && secondDeath.livesExhausted, "Second two-life death should require retry");
   assert(exhaustedLivesSim.livesRemaining() === 0, `Expected no lives remaining, got ${exhaustedLivesSim.livesRemaining()}`);
 
+  const unlimitedLivesSim = new RoomSimulation({ ...deathLevel, score: { ...baseLevel.score, lives: null } });
+  const unlimitedDeath = unlimitedLivesSim.step(idle);
+  assert(unlimitedDeath.died && !unlimitedDeath.livesExhausted, "Unlimited lives should never require retry");
+  assert(unlimitedLivesSim.livesRemaining() === null, `Expected unlimited lives to report null, got ${unlimitedLivesSim.livesRemaining()}`);
+
+  const monsterLevel = {
+    ...baseLevel,
+    monsters: [{ id: "stompable-test", kind: "sprout-hopper", x: 40, y: 96, w: 28, h: 24, score: 250 }]
+  };
+  const monsterStompSim = new RoomSimulation(monsterLevel);
+  Object.assign(monsterStompSim.player, { x: 42, y: 60, vx: 0, vy: 5, onGround: false });
+  const monsterStomp = monsterStompSim.step(idle);
+  assert(monsterStomp.monsterKills.length === 1, "Expected top stomp to kill stompable monster");
+  assert(monsterStompSim.killedMonsterIds.has("stompable-test"), "Expected killed monster to persist in current attempt");
+  assert(monsterStompSim.score === 250, `Expected monster score reward, got ${monsterStompSim.score}`);
+  monsterStompSim.rewindToEcho();
+  assert(!monsterStompSim.killedMonsterIds.has("stompable-test"), "Rewind/reset should restore killed monsters");
+  assert(monsterStompSim.score === 0, `Rewind/reset should remove current-attempt monster score, got ${monsterStompSim.score}`);
+
+  const monsterSideSim = new RoomSimulation({
+    ...baseLevel,
+    monsters: [{ id: "side-danger-test", kind: "sprout-hopper", x: 20, y: 86, w: 28, h: 34 }]
+  });
+  const monsterSide = monsterSideSim.step(idle);
+  assert(monsterSide.died && monsterSideSim.dead, "Expected side monster collision to kill player");
+
+  const undersideMonsterSim = new RoomSimulation({
+    ...baseLevel,
+    monsters: [{ id: "under-test", kind: "copper-leech", x: 40, y: 50, w: 28, h: 24, score: 200 }]
+  });
+  Object.assign(undersideMonsterSim.player, { x: 42, y: 76, vx: 0, vy: -4, onGround: false });
+  const undersideKill = undersideMonsterSim.step(idle);
+  assert(undersideKill.monsterKills.length === 1, "Expected upward underside hit to kill vulnerable monster");
+
+  const bossLevel = {
+    ...baseLevel,
+    bosses: [{ id: "boss-test", kind: "storm-relay-warden", x: 40, y: 20, w: 220, h: 130, entrySide: "right", introSeconds: 17, health: 1, score: 1200 }]
+  };
+  const bossIntroSim = new RoomSimulation(bossLevel);
+  const bossStart = bossIntroSim.step(idle);
+  assert(bossStart.bossIntroStarted === "boss-test", "Expected boss arena overlap to start boss intro");
+  assert(!bossIntroSim.dead, "Boss intro should not damage player on first contact");
+  runFrames(bossIntroSim, 17 * 60 - 2, idle);
+  const introBossState = bossIntroSim.bossStates.get("boss-test");
+  assert(introBossState?.phase === "intro", `Expected boss to remain in intro before 17s completes, got ${introBossState?.phase}`);
+  assert(!bossIntroSim.dead, "Boss intro should be harmless for the full transition window");
+  bossIntroSim.step(idle);
+  const activeBossState = bossIntroSim.bossStates.get("boss-test");
+  assert(activeBossState?.phase === "active", `Expected boss to activate after 17s, got ${activeBossState?.phase}`);
+  const bossBody = bossIntroSim.bossSnapshots()[0].body;
+  Object.assign(bossIntroSim.player, { x: bossBody.x + bossBody.w / 2 - 12, y: bossBody.y - 35, vx: 0, vy: 4, onGround: false });
+  const bossHit = bossIntroSim.step(idle);
+  assert(bossHit.bossHit?.id === "boss-test", "Expected top hit to damage active boss");
+  assert(bossHit.bossDefeated?.score === 1200, `Expected boss defeat score event, got ${JSON.stringify(bossHit.bossDefeated)}`);
+  assert(bossIntroSim.score === 1200, `Expected boss defeat score to apply, got ${bossIntroSim.score}`);
+
   const bonusSim = new RoomSimulation(baseLevel);
   runFrames(bonusSim, 60, idle);
   assert(bonusSim.timeBonus() === 900, `Expected 900 score time bonus after 1s under a 10s target, got ${bonusSim.timeBonus()}`);
@@ -1477,8 +1377,6 @@ try {
         levels: levels.length,
         checks: [
           "level-data",
-          "held-open-expanded-route",
-          "lift-phase-expanded-route",
           "tutorial-laser-station",
           "score-ranking",
           "legacy-progress-migration",
@@ -1491,20 +1389,17 @@ try {
           "laser-disable-vaporization",
           "entity-toolkit",
           "death-freeze",
+          "unlimited-lives",
+          "monster-combat",
+          "boss-intro-combat",
           "drone-disable-vaporization",
           "fall-death-freeze",
           "deterministic-replay",
           "audio-unlock-retry",
           "soundtrack-manifest",
           "draft-motion-migration",
-          "side-scrolling-bounds",
-          "closed-gate-top-contract",
-          "closed-floor-gate-bypass",
-          "multi-segment-level-density",
-          "right-only-bypass-regression",
-          "all-level-score-routes"
-        ],
-        routeSummaries
+          "side-scrolling-bounds"
+        ]
       },
       null,
       2

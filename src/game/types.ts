@@ -141,20 +141,79 @@ export type PushableCrate = Rect & {
   id: string;
 };
 
+export type MonsterKind =
+  | "sprout-hopper"
+  | "glasswing-wisp"
+  | "root-roller"
+  | "gutter-skimmer"
+  | "copper-leech"
+  | "storm-snail"
+  | "frost-crawler"
+  | "cryo-puffer"
+  | "shard-wisp"
+  | "bookbeetle"
+  | "page-mote"
+  | "index-mimic"
+  | "gear-tick"
+  | "pendulum-drone"
+  | "sand-winder";
+
+export type MonsterVulnerability = "top" | "bottom" | "both";
+
+export type Monster = Rect & {
+  id: string;
+  kind: MonsterKind;
+  axis?: "x" | "y";
+  distance?: number;
+  period?: number;
+  phase?: number;
+  score?: number;
+  killable?: boolean;
+  vulnerableFrom?: MonsterVulnerability;
+};
+
+export type BossKind =
+  | "storm-relay-warden"
+  | "cryo-conservator"
+  | "archive-custodian"
+  | "clockwork-regent";
+
+export type BossEntrySide = "left" | "right" | "top" | "bottom" | "center";
+export type BossPhase = "idle" | "intro" | "active" | "defeated";
+
+export type Boss = Rect & {
+  id: string;
+  kind: BossKind;
+  entrySide?: BossEntrySide;
+  introSeconds?: number;
+  health?: number;
+  score?: number;
+};
+
+export type BossSnapshot = {
+  id: string;
+  phase: BossPhase;
+  health: number;
+  introFrames: number;
+  invulnerableFrames: number;
+  body: Rect;
+  attacks: Rect[];
+};
+
 export type SoundtrackKey =
   | "menu"
+  | "tutorial"
+  | "boss"
   | "level-1"
   | "level-2"
   | "level-3"
   | "level-4"
   | "level-5"
-  | "level-6"
-  | "level-7"
   | "level-8"
   | "level-9"
   | "level-10";
 
-export type LevelSoundtrackKey = Exclude<SoundtrackKey, "menu">;
+export type LevelSoundtrackKey = Exclude<SoundtrackKey, "menu" | "boss">;
 
 export type LevelBackgroundKey =
   | "time-lab-prototype"
@@ -190,7 +249,7 @@ export type LevelBackgroundAmbience = {
 };
 
 export type LevelScoreSettings = {
-  lives: number;
+  lives: number | null;
   coreScore: number;
   deathPenalty: number;
   timeBonusTargetSeconds: number;
@@ -224,6 +283,8 @@ export type Level = {
   cores?: Core[];
   hazards?: Hazard[];
   crates?: PushableCrate[];
+  monsters?: Monster[];
+  bosses?: Boss[];
   score: LevelScoreSettings;
   hint: string;
 };
@@ -243,6 +304,21 @@ export type CorePickupEvent = Vec2 & {
   id: string;
 };
 
+export type MonsterKillEvent = Vec2 & {
+  id: string;
+  score: number;
+};
+
+export type BossHitEvent = Vec2 & {
+  id: string;
+  health: number;
+};
+
+export type BossDefeatEvent = Vec2 & {
+  id: string;
+  score: number;
+};
+
 export type StepEvents = {
   jumped: boolean;
   launched: boolean;
@@ -255,6 +331,10 @@ export type StepEvents = {
   playerLaserVaporized: boolean;
   echoLaserVaporized: number;
   livesExhausted: boolean;
+  monsterKills: MonsterKillEvent[];
+  bossIntroStarted: string | null;
+  bossHit: BossHitEvent | null;
+  bossDefeated: BossDefeatEvent | null;
   won: boolean;
 };
 
@@ -266,11 +346,13 @@ export type SimulationSnapshot = {
   collectedCores: Set<string>;
   blockedLasers: Set<string>;
   crates: Map<string, Rect>;
+  killedMonsters: Set<string>;
+  bosses: BossSnapshot[];
   tick: number;
   totalFrames: number;
   score: number;
   deaths: number;
-  livesRemaining: number;
+  livesRemaining: number | null;
   dead: boolean;
   won: boolean;
 };

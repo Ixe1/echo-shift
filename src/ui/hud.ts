@@ -24,7 +24,7 @@ type HudState = {
   levelName: string;
   frames: number;
   score: number;
-  lives: number;
+  lives: number | null;
 };
 
 export class Hud {
@@ -83,7 +83,7 @@ export class Hud {
     this.set("[data-level]", state.levelNumber === null ? state.levelName : `${state.levelNumber}. ${state.levelName}`);
     this.set("[data-time]", formatFrames(state.frames));
     this.set("[data-score]", formatScore(state.score));
-    this.set("[data-lives]", `${state.lives}`);
+    this.set("[data-lives]", state.lives === null ? "∞" : `${state.lives}`);
   }
 
   toast(message: string): void {

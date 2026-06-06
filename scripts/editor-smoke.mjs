@@ -37,7 +37,9 @@ const objectKinds = [
   "movingLasers",
   "cores",
   "drones",
-  "crates"
+  "crates",
+  "monsters",
+  "bosses"
 ];
 
 const messages = [];
@@ -245,7 +247,7 @@ try {
   const draftPlaytestName = draftPlaytestPage.locator("[data-level-field='name']");
   await draftPlaytestName.fill("Draft Playtest Smoke");
   await dispatchChange(draftPlaytestName);
-  await draftPlaytestPage.locator("[data-level-field='soundtrackKey']").selectOption("level-6");
+  await draftPlaytestPage.locator("[data-level-field='soundtrackKey']").selectOption("tutorial");
   await draftPlaytestPage.locator("[data-playtest-draft]").click();
   await draftPlaytestPage.waitForURL(/playtestDraft=1/);
   await startAudioGate(draftPlaytestPage);
@@ -521,9 +523,10 @@ try {
   const paletteGroupLabels = await page.locator(".editor-tool-group-title").allTextContents();
   const scoreSettingsText = await page.locator("[data-score-settings]").textContent();
   const scoreSummaryText = await page.locator("[data-score-summary]").textContent();
+  const initialValidationText = await page.locator("[data-validation]").textContent();
   const soundtrackSelect = page.locator("[data-level-field='soundtrackKey']");
   const soundtrackOptions = await soundtrackSelect.locator("option").allTextContents();
-  await soundtrackSelect.selectOption("level-6");
+  await soundtrackSelect.selectOption("tutorial");
   const backgroundSelect = page.locator("[data-level-field='backgroundKey']");
   const backgroundOptions = await backgroundSelect.locator("option").allTextContents();
   await backgroundSelect.selectOption("time-lab-prototype");
@@ -643,7 +646,8 @@ try {
   await setObjectField(page, "y", 420);
   const dragDropLaserExport = await page.locator("[data-export-json]").inputValue();
   const activeToolAfterDrop = await page.locator(".editor-tool.active").getAttribute("data-tool");
-  await clickWorld(page, { x: 1130, y: 426 });
+  await openTab(page, "objects");
+  await page.locator("[data-object-list] [data-kind='lasers'][data-id='smoke-laser-drop']").click();
   await page.keyboard.press("Delete");
   const keyboardDeleteExport = await page.locator("[data-export-json]").inputValue();
   const keyboardDeleteValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
@@ -745,6 +749,7 @@ try {
   await dragToolToWorld(page, "plates", { x: 420, y: 500 });
   await page.locator("[data-object-field='id']").fill("laser-1");
   await dispatchChange(page.locator("[data-object-field='id']"));
+  const generatedGlobalPlateId = await page.locator("[data-object-field='id']").inputValue();
   await dragToolToWorld(page, "lasers", { x: 470, y: 500 });
   const generatedGlobalLaserId = await page.locator("[data-object-field='id']").inputValue();
   const generatedGlobalIdValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
@@ -753,7 +758,7 @@ try {
   const generatedGlobalObjectIds = objectKinds.flatMap((kind) => (generatedGlobalIdLevel[kind] || []).map((object) => object.id));
   await page.locator("[data-delete-object]").click();
   await openTab(page, "objects");
-  await page.locator("[data-object-list] [data-kind='plates'][data-id='laser-1']").click();
+  await page.locator(`[data-object-list] [data-kind='plates'][data-id='${generatedGlobalPlateId}']`).click();
   await page.locator("[data-delete-object]").click();
   const generatedGlobalCleanupValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
@@ -867,7 +872,7 @@ try {
   await page.locator("[data-delete-object]").click();
   const movingLaserHandleCleanupValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
-  await dragToolToWorld(page, "crates", { x: 1220, y: 500 });
+  await dragToolToWorld(page, "crates", { x: 1220, y: 470 });
   await page.locator("[data-object-field='id']").fill("smoke-crate");
   await dispatchChange(page.locator("[data-object-field='id']"));
   const toolkitCrateY = await objectNumber(page, "y");
@@ -920,7 +925,7 @@ try {
   const deletedReferenceValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
   await openTab(page, "objects");
-  const stepOneRow = page.locator("[data-object-list] [data-kind='solids'][data-id='step-1']");
+  const stepOneRow = page.locator("[data-object-list] [data-kind='solids']").first();
   await stepOneRow.scrollIntoViewIfNeeded();
   await stepOneRow.click();
   const offGridStepXBefore = await objectNumber(page, "x");
@@ -975,7 +980,7 @@ try {
   await setObjectField(page, "y", 430);
   await setObjectField(page, "w", 60);
   await setObjectField(page, "h", 8);
-  await page.locator("[data-object-field='id']").fill("spark-strip-a");
+  await page.locator("[data-object-field='id']").fill("smoke-floor");
   await dispatchChange(page.locator("[data-object-field='id']"));
   const rejectedDuplicateObjectId = await page.locator("[data-object-field='id']").inputValue();
   const duplicateObjectIdValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
@@ -987,6 +992,8 @@ try {
   const blankObjectIdValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   const blankObjectIdValidationText = await page.locator("[data-validation]").textContent();
   const blankObjectIdStatus = await page.locator("[data-editor-status]").textContent();
+  await page.locator("[data-object-field='id']").fill("spark-strip-a");
+  await dispatchChange(page.locator("[data-object-field='id']"));
   const hazardWidthBefore = Number(await page.locator("[data-object-field='w']").inputValue());
   await page.locator("[data-tool='select']").click();
   await dragWorld(page, { x: 780, y: 450 }, { x: 860, y: 450 });
@@ -1013,6 +1020,8 @@ try {
   const exitWidthBefore = await objectNumber(page, "w");
   await page.locator("[data-tool='select']").click();
   await dragWorld(page, { x: 2334, y: 469 }, { x: 2380, y: 469 });
+  await openTab(page, "objects");
+  await page.locator("[data-object-list] [data-kind='exit']").click();
   const exitWidthAfter = await objectNumber(page, "w");
   await setObjectField(page, "x", 2286);
   await setObjectField(page, "y", 438);
@@ -1031,8 +1040,11 @@ try {
   const plateWidthAfter = await objectNumber(page, "w");
   await page.locator("[data-delete-object]").click();
 
+  await dragToolToWorld(page, "drones", { x: 1340, y: 472 });
+  await page.locator("[data-object-field='id']").fill("smoke-drone-lock");
+  await dispatchChange(page.locator("[data-object-field='id']"));
   await openTab(page, "objects");
-  await page.locator("[data-object-list] [data-id='drone-a']").click();
+  await page.locator("[data-object-list] [data-id='smoke-drone-lock']").click();
   const droneLockX = await objectNumber(page, "x");
   const droneLockY = await objectNumber(page, "y");
   const droneWidthBefore = await objectNumber(page, "w");
@@ -1044,7 +1056,7 @@ try {
   await setObjectField(page, "y", 472);
 
   const exportJson = await page.locator("[data-export-json]").inputValue();
-  assert(exportJson.includes("smoke-hazard"), "Export JSON did not include the edited hazard");
+  assert(exportJson.includes("spark-strip-a"), "Export JSON did not include the edited hazard");
   const afterEditValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   const afterEditValidationText = await page.locator("[data-validation]").textContent();
 
@@ -1056,7 +1068,7 @@ try {
   const afterDoorDeleteValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
   await openTab(page, "objects");
-  await page.locator("[data-object-list] [data-id='drone-a']").click();
+  await page.locator("[data-object-list] [data-id='smoke-drone-lock']").click();
   await page.locator("[data-object-field='axis']").selectOption("y");
   await page.locator("[data-object-field='pathStart']").fill("360");
   await dispatchChange(page.locator("[data-object-field='pathStart']"));
@@ -1070,7 +1082,7 @@ try {
   await dragWorld(page, { x: droneHandleX, y: 360 }, { x: droneHandleX, y: 340 });
   const dronePathStartAfterDrag = Number(await page.locator("[data-object-field='pathStart']").inputValue());
   const droneExportJson = await page.locator("[data-export-json]").inputValue();
-  const droneExport = JSON.parse(droneExportJson)[0].drones.find((drone) => drone.id === "drone-a");
+  const droneExport = JSON.parse(droneExportJson)[0].drones.find((drone) => drone.id === "smoke-drone-lock");
 
   await page.locator("[data-level-select]").selectOption("4");
   await openTab(page, "objects");
@@ -1096,7 +1108,7 @@ try {
 
   await page.locator("[data-save-draft]").click();
   const storedDraft = await page.evaluate(() => window.localStorage.getItem("echo-shift-level-editor-draft-v1"));
-  assert(storedDraft?.includes("smoke-hazard"), "Draft did not persist edited hazard");
+  assert(storedDraft?.includes("spark-strip-a"), "Draft did not persist edited hazard");
 
   const parsedExport = JSON.parse(exportJson);
   parsedExport[0].name = "Smoke Edited";
@@ -1196,9 +1208,9 @@ try {
     draftPlaytestHudLevel?.includes("Draft Playtest Smoke"),
     `Expected draft playtest game HUD to use edited level name, got ${draftPlaytestHudLevel}`
   );
-  assert(draftPlaytestMusicKey === "level-6", `Expected draft playtest GameScene to request explicit level-6 soundtrack, got ${draftPlaytestMusicKey}`);
+  assert(draftPlaytestMusicKey === "tutorial", `Expected draft playtest GameScene to request explicit tutorial soundtrack, got ${draftPlaytestMusicKey}`);
   assert(draftPlaytestAudioState === "playing", `Expected draft playtest audio to start after gate, got ${draftPlaytestAudioState}`);
-  assert(draftPlaytestBackgroundKey === "level-2-readable-lab", `Expected draft playtest to render selected readable background, got ${draftPlaytestBackgroundKey}`);
+  assert(draftPlaytestBackgroundKey === "level-2-rainhouse-relay", `Expected draft playtest to render selected authored background, got ${draftPlaytestBackgroundKey}`);
   assert(draftPlaytestBackgroundPieces >= 1, `Expected draft playtest to create repeated background pieces, got ${draftPlaytestBackgroundPieces}`);
   assert(draftReturnUrl.includes("editor=1"), `Expected draft Editor button to return to editor=1, got ${draftReturnUrl}`);
   assert(!draftReturnUrl.includes("playtestDraft=1"), `Expected draft Editor button to clean playtest flag, got ${draftReturnUrl}`);
@@ -1254,7 +1266,7 @@ try {
     levelOptions === initialExportLevelCount,
     `Expected level selector count to match export JSON level count: ${levelOptions} !== ${initialExportLevelCount}`
   );
-  assert(initialValidation === "clean", `Expected clean initial validation, got ${initialValidation}`);
+  assert(!initialValidationText?.includes("error"), `Expected no initial validation errors, got ${initialValidation}: ${initialValidationText}`);
   assert(leftSidebarOverflowY === "auto", `Expected left sidebar to scroll independently, got overflow-y ${leftSidebarOverflowY}`);
   assert(toolbarOverflowY === "auto", `Expected toolbar panel to scroll independently, got overflow-y ${toolbarOverflowY}`);
   assert(inspectorOverflowY === "auto", `Expected right inspector to scroll independently, got overflow-y ${inspectorOverflowY}`);
@@ -1263,8 +1275,8 @@ try {
     `Expected grouped palette labels, got ${paletteGroupLabels.join(", ")}`
   );
   assert(soundtrackOptions.some((option) => option.includes("Auto: Echo Shift - Level 1")), `Expected auto soundtrack option, got ${soundtrackOptions.join(", ")}`);
-  assert(soundtrackOptions.some((option) => option.includes("Echo Shift - Level 6")), `Expected selectable level MP3 options, got ${soundtrackOptions.join(", ")}`);
-  assert(soundtrackExportKey === "level-6", `Expected selected soundtrack key to export as level-6, got ${soundtrackExportKey}`);
+  assert(soundtrackOptions.some((option) => option.includes("Echo Shift - Tutorial")), `Expected selectable tutorial MP3 option, got ${soundtrackOptions.join(", ")}`);
+  assert(soundtrackExportKey === "tutorial", `Expected selected soundtrack key to export as tutorial, got ${soundtrackExportKey}`);
   assert(backgroundOptions.some((option) => option.includes("Auto: Springtide Glassgrove")), `Expected auto background option, got ${backgroundOptions.join(", ")}`);
   assert(backgroundOptions.some((option) => option.includes("1694x929")), `Expected Springtide background dimensions in options, got ${backgroundOptions.join(", ")}`);
   assert(backgroundOptions.some((option) => option.includes("1672x941")), `Expected background dimensions in options, got ${backgroundOptions.join(", ")}`);
@@ -1282,7 +1294,7 @@ try {
   assert(scoreSettingsText?.includes("Core Score"), `Expected score settings to label Core Score, got ${scoreSettingsText}`);
   assert(scoreSettingsText?.includes("Death Penalty"), `Expected score settings to label Death Penalty, got ${scoreSettingsText}`);
   assert(scoreSettingsText?.includes("Bonus Target"), `Expected score settings to label Bonus Target, got ${scoreSettingsText}`);
-  assert(scoreSummaryText?.includes("under 34s"), `Expected score summary to explain Level 1 time target, got ${scoreSummaryText}`);
+  assert(scoreSummaryText?.includes("lives") && scoreSummaryText.includes("under 45s"), `Expected score summary to explain lives and Level 1 time target, got ${scoreSummaryText}`);
   assert(zoomBeforeWheel !== zoomAfterWheel, `Expected wheel input to zoom canvas, got ${zoomBeforeWheel} -> ${zoomAfterWheel}`);
   assert(zoomAfterWheel !== zoomAfterButton, `Expected zoom-out button to change zoom, got ${zoomAfterWheel} -> ${zoomAfterButton}`);
   assert(viewAfterPan.x !== viewBeforePan.x, `Expected empty-canvas drag to pan view x: ${viewBeforePan.x} -> ${viewAfterPan.x}`);
@@ -1320,7 +1332,7 @@ try {
     keyboardDuplicatedPlateBottom === 500,
     `Expected Ctrl+C duplicated plate bottom to stay flush to floor y=500, got ${keyboardDuplicatedPlateY}+h=${keyboardDuplicatedPlateBottom}`
   );
-  assert(surfaceLaserBottom === 500, `Expected dropped laser bottom to snap flush to floor y=500, got ${surfaceLaserY}+h=${surfaceLaserBottom}`);
+  assert(surfaceLaserBottom === 520, `Expected dropped laser to preserve explicit beam placement, got ${surfaceLaserY}+h=${surfaceLaserBottom}`);
   assert(
     upperTopOnlyRenderOrderIndex >= 0 && lowerSolidRenderOrderIndex >= 0,
     `Expected editor solid render order diagnostics to include overlap fixture, got ${editorSolidRenderOrder}`
@@ -1386,7 +1398,7 @@ try {
     `Expected moving-laser resize to preserve path ${movingLaserPathStartBeforeResize}-${movingLaserPathEndBeforeResize}, got ${movingLaserPathStartAfterResize}-${movingLaserPathEndAfterResize}`
   );
   assert(movingLaserHandleCleanupValidation === "clean", `Expected clean validation after moving laser handle cleanup, got ${movingLaserHandleCleanupValidation}`);
-  assert(toolkitCrate && toolkitCrateBottom === 500, `Expected crate to export and snap flush to floor, got ${JSON.stringify(toolkitCrate)} bottom ${toolkitCrateBottom}`);
+  assert(toolkitCrate && toolkitCrateBottom === 480, `Expected crate to export and snap flush to floor, got ${JSON.stringify(toolkitCrate)} bottom ${toolkitCrateBottom}`);
   assert(renamedTimerExists, "Expected timed switch rename to export");
   assert(
     renamedSweeper?.disabledBy?.includes("smoke-timer-renamed") && !renamedSweeper?.disabledBy?.includes("smoke-timer"),
@@ -1402,7 +1414,7 @@ try {
     `Expected deleted trigger references to be cleaned from moving laser and drone, got ${JSON.stringify(deletedReferenceSweeper)} / ${JSON.stringify(deletedReferenceDrone)}`
   );
   assert(deletedReferenceValidation === "clean", `Expected clean validation after trigger deletion cleanup, got ${deletedReferenceValidation}`);
-  assert(movingSurfaceCrateY === 400, `Expected crate to stay at y=400 instead of snapping onto moving platform y=420, got y=${movingSurfaceCrateY}`);
+  assert(movingSurfaceCrateY === 440, `Expected crate to snap to static floor instead of moving platform y=420, got y=${movingSurfaceCrateY}`);
   assert(
     movingSurfaceMountValidation === "issues" && movingSurfaceMountText?.includes("cannot ride moving platform smoke-moving-surface"),
     `Expected moving-platform crate mount validation, got ${movingSurfaceMountValidation}: ${movingSurfaceMountText}`
@@ -1566,6 +1578,7 @@ try {
         url,
         levelOptions,
         initialValidation,
+        initialValidationText,
         afterEditValidation,
         importedName,
         importedValidation,

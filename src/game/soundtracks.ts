@@ -2,13 +2,13 @@ import type { Level, LevelSoundtrackKey, SoundtrackKey } from "./types";
 
 export const soundtrackKeys = [
   "menu",
+  "tutorial",
+  "boss",
   "level-1",
   "level-2",
   "level-3",
   "level-4",
   "level-5",
-  "level-6",
-  "level-7",
   "level-8",
   "level-9",
   "level-10"
@@ -29,6 +29,18 @@ export const soundtracks: Record<SoundtrackKey, Soundtrack> = {
     title: "Echo Shift - Main Menu",
     src: soundtrackPath("Echo Shift - Main Menu.mp3"),
     durationSeconds: 94.8
+  },
+  tutorial: {
+    key: "tutorial",
+    title: "Echo Shift - Tutorial",
+    src: soundtrackPath("Echo Shift - Tutorial.mp3"),
+    durationSeconds: 82.3
+  },
+  boss: {
+    key: "boss",
+    title: "Echo Shift - Boss",
+    src: soundtrackPath("Echo Shift - Boss.mp3"),
+    durationSeconds: 129.9
   },
   "level-1": {
     key: "level-1",
@@ -60,18 +72,6 @@ export const soundtracks: Record<SoundtrackKey, Soundtrack> = {
     src: soundtrackPath("Echo Shift - Level 5.mp3"),
     durationSeconds: 100.9
   },
-  "level-6": {
-    key: "level-6",
-    title: "Echo Shift - Level 6",
-    src: soundtrackPath("Echo Shift - Level 6.mp3"),
-    durationSeconds: 129.9
-  },
-  "level-7": {
-    key: "level-7",
-    title: "Echo Shift - Level 7",
-    src: soundtrackPath("Echo Shift - Level 7.mp3"),
-    durationSeconds: 82.3
-  },
   "level-8": {
     key: "level-8",
     title: "Echo Shift - Level 8",
@@ -92,13 +92,13 @@ export const soundtracks: Record<SoundtrackKey, Soundtrack> = {
   }
 };
 
-export const levelSoundtrackKeys = soundtrackKeys.filter((key): key is LevelSoundtrackKey => key !== "menu");
+export const levelSoundtrackKeys = soundtrackKeys.filter((key): key is LevelSoundtrackKey => key !== "menu" && key !== "boss");
 
 export const isSoundtrackKey = (value: unknown): value is SoundtrackKey =>
   typeof value === "string" && Object.prototype.hasOwnProperty.call(soundtracks, value);
 
 export const isLevelSoundtrackKey = (value: unknown): value is LevelSoundtrackKey =>
-  isSoundtrackKey(value) && value !== "menu";
+  isSoundtrackKey(value) && value !== "menu" && value !== "boss";
 
 export const defaultSoundtrackKeyForLevel = (level: Pick<Level, "index">, levelSlot = level.index): LevelSoundtrackKey => {
   const key = `level-${levelSlot + 1}` as SoundtrackKey;

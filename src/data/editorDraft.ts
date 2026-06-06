@@ -1,6 +1,7 @@
 import type { Level } from "../game/types";
 import { isBackgroundAmbienceColor, isBackgroundAmbiencePreset, normalizeBackgroundAmbience } from "../game/backgroundAmbience";
 import { isLevelBackgroundKey } from "../game/backgrounds";
+import { bossEntrySides, bossKinds, monsterKinds } from "../game/enemies";
 import { normalizeScoreSettings } from "../game/scoring";
 import { solidCollisionValues } from "../game/solidCollision";
 import { normalizeSolid, solidSpriteValues } from "../game/solidSprites";
@@ -53,7 +54,7 @@ const optionalStringArray = (value: unknown): boolean => value === undefined || 
 
 const scoreSettingsLike = (value: unknown): boolean =>
   isRecord(value) &&
-  positiveIntegerValue(value.lives) &&
+  (positiveIntegerValue(value.lives) || value.lives === null) &&
   nonNegativeIntegerValue(value.coreScore) &&
   nonNegativeIntegerValue(value.deathPenalty) &&
   positiveIntegerValue(value.timeBonusTargetSeconds) &&
@@ -108,6 +109,27 @@ const laserLike = (value: unknown): boolean =>
 const droneLike = (value: unknown): boolean => movingObjectLike(value) && optionalStringArray((value as Record<string, unknown>).disabledBy);
 const movingLaserLike = (value: unknown): boolean => movingObjectLike(value) && optionalStringArray((value as Record<string, unknown>).disabledBy) && optionalBoolean((value as Record<string, unknown>).startsOn);
 const crateLike = (value: unknown): boolean => objectRectLike(value);
+const monsterLike = (value: unknown): boolean =>
+  objectRectLike(value) &&
+  monsterKinds.includes((value as Record<string, unknown>).kind as (typeof monsterKinds)[number]) &&
+  ((value as Record<string, unknown>).axis === undefined || (value as Record<string, unknown>).axis === "x" || (value as Record<string, unknown>).axis === "y") &&
+  ((value as Record<string, unknown>).distance === undefined || finiteValue((value as Record<string, unknown>).distance)) &&
+  ((value as Record<string, unknown>).period === undefined || positiveIntegerValue((value as Record<string, unknown>).period)) &&
+  ((value as Record<string, unknown>).phase === undefined || finiteValue((value as Record<string, unknown>).phase)) &&
+  ((value as Record<string, unknown>).score === undefined || nonNegativeIntegerValue((value as Record<string, unknown>).score)) &&
+  optionalBoolean((value as Record<string, unknown>).killable) &&
+  ((value as Record<string, unknown>).vulnerableFrom === undefined ||
+    (value as Record<string, unknown>).vulnerableFrom === "top" ||
+    (value as Record<string, unknown>).vulnerableFrom === "bottom" ||
+    (value as Record<string, unknown>).vulnerableFrom === "both");
+const bossLike = (value: unknown): boolean =>
+  objectRectLike(value) &&
+  bossKinds.includes((value as Record<string, unknown>).kind as (typeof bossKinds)[number]) &&
+  ((value as Record<string, unknown>).entrySide === undefined ||
+    bossEntrySides.includes((value as Record<string, unknown>).entrySide as (typeof bossEntrySides)[number])) &&
+  ((value as Record<string, unknown>).introSeconds === undefined || positiveIntegerValue((value as Record<string, unknown>).introSeconds)) &&
+  ((value as Record<string, unknown>).health === undefined || positiveIntegerValue((value as Record<string, unknown>).health)) &&
+  ((value as Record<string, unknown>).score === undefined || nonNegativeIntegerValue((value as Record<string, unknown>).score));
 
 const optionalObjectArray = (value: unknown, predicate: (item: unknown) => boolean): boolean =>
   value === undefined || (Array.isArray(value) && value.every(predicate));
@@ -144,6 +166,8 @@ const levelLike = (value: unknown): value is Level => {
     optionalObjectArray(value.cores, coreLike) &&
     optionalObjectArray(value.hazards, hazardLike) &&
     optionalObjectArray(value.crates, crateLike) &&
+    optionalObjectArray(value.monsters, monsterLike) &&
+    optionalObjectArray(value.bosses, bossLike) &&
     (scoreSettingsLike(value.score) || legacyMedalSettingsLike(medalFrames)) &&
     stringValue(value.hint)
   );

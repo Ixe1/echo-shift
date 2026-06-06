@@ -10,6 +10,15 @@ import {
   normalizeBackgroundAmbience
 } from "../game/backgroundAmbience";
 import { backgroundForLevel, isLevelBackgroundKey, levelBackgroundKeys, levelBackgrounds } from "../game/backgrounds";
+import {
+  bossEntrySides,
+  bossKinds,
+  monsterKinds,
+  normalizeBossEntrySide,
+  normalizeBossKind,
+  normalizeMonsterKind,
+  normalizeMonsterVulnerability
+} from "../game/enemies";
 import { doorRequiredCoreIds, isMajorCore, movingLaserBeamAxis } from "../game/objects";
 import { normalizeScoreSettings } from "../game/scoring";
 import { normalizeSolidCollision, solidCollisionFor, solidCollisionValues, solidHasGameplayCollision } from "../game/solidCollision";
@@ -19,6 +28,8 @@ import { defaultSoundtrackKeyForLevel, isLevelSoundtrackKey, levelSoundtrackKeys
 import { normalizeTerrainMaterial, terrainMaterialForSolid, terrainMaterialLabels, terrainMaterialValues } from "../game/terrainMaterials";
 import type {
   Conveyor,
+  Boss,
+  BossEntrySide,
   Core,
   Door,
   EchoSensor,
@@ -30,6 +41,9 @@ import type {
   LevelBackgroundAmbiencePreset,
   MovingLaser,
   MovingPlatform,
+  Monster,
+  MonsterKind,
+  MonsterVulnerability,
   OneWayPlatform,
   PatrolDrone,
   PressurePlate,
@@ -56,7 +70,9 @@ const rectCollections = [
   "movingLasers",
   "cores",
   "drones",
-  "crates"
+  "crates",
+  "monsters",
+  "bosses"
 ] as const;
 type RectCollection = (typeof rectCollections)[number];
 type RectObject =
@@ -74,7 +90,9 @@ type RectObject =
   | MovingLaser
   | Core
   | PatrolDrone
-  | PushableCrate;
+  | PushableCrate
+  | Monster
+  | Boss;
 type SelectableKind = RectCollection | "start" | "exit";
 type Tool = SelectableKind | "select";
 type PlaceableTool = Exclude<Tool, "select">;
@@ -87,6 +105,7 @@ type EditorPanel = "inspect" | "objects" | "validation" | "export";
 type ValidationSeverity = "error" | "warning";
 type ResizeHandle = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
 type MovingKind = "platforms" | "drones" | "movingLasers";
+type PathableObject = MovingPlatform | PatrolDrone | MovingLaser | Monster;
 type PathEndpoint = "start" | "end";
 type SelectOption = string | { value: string; label: string };
 
@@ -167,7 +186,9 @@ const collectionLabels: Record<RectCollection, string> = {
   cores: "Cores",
   drones: "Drones",
   movingLasers: "Moving Lasers",
-  crates: "Crates"
+  crates: "Crates",
+  monsters: "Monsters",
+  bosses: "Boss Arenas"
 };
 
 const toolLabels: Record<Tool, string> = {
@@ -188,7 +209,9 @@ const toolLabels: Record<Tool, string> = {
   cores: "Core",
   drones: "Drone",
   movingLasers: "Moving Laser",
-  crates: "Crate"
+  crates: "Crate",
+  monsters: "Monster",
+  bosses: "Boss Arena"
 };
 
 const objectIdStems: Record<RectCollection, string> = {
@@ -206,7 +229,9 @@ const objectIdStems: Record<RectCollection, string> = {
   movingLasers: "moving-laser",
   cores: "core",
   drones: "drone",
-  crates: "crate"
+  crates: "crate",
+  monsters: "monster",
+  bosses: "boss"
 };
 
 const solidPresetLabels: Record<SolidPreset, string> = {
@@ -290,7 +315,7 @@ const positiveInteger = (value: unknown, fallback: number): number => Math.max(1
 const levelIndex = (value: unknown, maxIndex: number, fallback = 0): number => clamp(nonNegativeInteger(value, fallback), 0, Math.max(0, maxIndex));
 
 const scoreSummary = (level: Level): string =>
-  `+${level.score.timeBonusPerSecond} per full second under ${level.score.timeBonusTargetSeconds}s`;
+  `${level.score.lives === null ? "Unlimited lives" : `${level.score.lives} lives`}; +${level.score.timeBonusPerSecond} per full second under ${level.score.timeBonusTargetSeconds}s`;
 
 const csvToList = (value: string): string[] =>
   value
@@ -369,6 +394,8 @@ const styleForKind = (kind: SelectableKind, item?: RectObject): { fill: string; 
   if (kind === "movingLasers") return { fill: "rgba(255, 47, 108, 0.48)", stroke: "#ff4f8b", text: "#fff" };
   if (kind === "cores") return { fill: "rgba(255, 227, 90, 0.8)", stroke: "#ecfbff", text: "#05070d" };
   if (kind === "crates") return { fill: "rgba(255, 227, 90, 0.32)", stroke: "#ffe35a", text: "#fff8bf" };
+  if (kind === "monsters") return { fill: "rgba(110, 202, 112, 0.48)", stroke: "#6eca70", text: "#041018" };
+  if (kind === "bosses") return { fill: "rgba(255, 227, 90, 0.12)", stroke: "#ffe35a", text: "#fff8bf" };
   return { fill: "rgba(255, 79, 139, 0.5)", stroke: "#ff4f8b", text: "#fff" };
 };
 
@@ -407,18 +434,24 @@ const defaultSizeFor = (kind: RectCollection, solidPreset: SolidPreset | null = 
       return { w: 40, h: 20 };
     case "crates":
       return { w: 40, h: 40 };
+    case "monsters":
+      return { w: 36, h: 30 };
+    case "bosses":
+      return { w: 560, h: 320 };
   }
 };
 
-const movingPath = (item: MovingPlatform | PatrolDrone | MovingLaser): { start: number; end: number; center: number; speed: number } => {
-  const start = item.axis === "x" ? item.x : item.y;
+const movingPath = (item: PathableObject): { start: number; end: number; center: number; speed: number } => {
+  const axis = item.axis === "y" ? "y" : "x";
+  const start = axis === "x" ? item.x : item.y;
   const distance = nonNegativeNumber(item.distance, 0);
+  const period = positiveNumber(item.period, 180);
   const end = start + distance;
   return {
     start,
     end,
     center: start,
-    speed: item.period > 0 ? Math.round((120 * distance) / item.period) : 0
+    speed: period > 0 ? Math.round((120 * distance) / period) : 0
   };
 };
 
@@ -450,7 +483,7 @@ const alignMovingLaserRectToBeam = <T extends MovingLaser>(laser: T): T => {
 };
 
 const setMovingPath = (
-  item: MovingPlatform | PatrolDrone | MovingLaser,
+  item: PathableObject,
   nextStart: number,
   nextEnd: number
 ): void => {
@@ -459,7 +492,7 @@ const setMovingPath = (
   const start = Math.min(snappedStart, snappedEnd);
   const end = Math.max(snappedStart, snappedEnd);
   item.distance = Math.max(0, end - start);
-  if (item.axis === "x") item.x = start;
+  if (item.axis !== "y") item.x = start;
   else item.y = start;
 };
 
@@ -577,6 +610,8 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number, draftAnch
     cores: normalizeOptionalCollection(value.cores, "cores", usedObjectIds) as Core[],
     hazards: normalizeOptionalCollection(value.hazards, "hazards", usedObjectIds) as Hazard[],
     crates: normalizeOptionalCollection(value.crates, "crates", usedObjectIds) as PushableCrate[],
+    monsters: normalizeOptionalCollection(value.monsters, "monsters", usedObjectIds) as Monster[],
+    bosses: normalizeOptionalCollection(value.bosses, "bosses", usedObjectIds) as Boss[],
     score: scoreSettings,
     hint: String(value.hint || "")
   };
@@ -695,6 +730,31 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
       size: normalizedCoreSize(record.size)
     } as Core;
   }
+  if (kind === "monsters") {
+    return {
+      ...base,
+      id,
+      kind: normalizeMonsterKind(record.kind),
+      axis: record.axis === "x" || record.axis === "y" ? record.axis : undefined,
+      distance: record.axis === "x" || record.axis === "y" ? nonNegativeNumber(record.distance, 100) : undefined,
+      period: record.axis === "x" || record.axis === "y" ? positiveInteger(record.period, 180) : undefined,
+      phase: record.axis === "x" || record.axis === "y" ? positiveNumber(record.phase, 0) : undefined,
+      score: Number.isFinite(Number(record.score)) ? nonNegativeInteger(record.score, 0) : undefined,
+      killable: record.killable === false ? false : undefined,
+      vulnerableFrom: normalizeMonsterVulnerability(record.vulnerableFrom)
+    } as Monster;
+  }
+  if (kind === "bosses") {
+    return {
+      ...base,
+      id,
+      kind: normalizeBossKind(record.kind),
+      entrySide: normalizeBossEntrySide(record.entrySide),
+      introSeconds: positiveInteger(record.introSeconds, 17),
+      health: positiveInteger(record.health, 3),
+      score: Number.isFinite(Number(record.score)) ? nonNegativeInteger(record.score, 0) : undefined
+    } as Boss;
+  }
   return { ...base, id } as Hazard | OneWayPlatform | PushableCrate;
 };
 
@@ -798,7 +858,9 @@ class LevelEditor {
         label: "Actors",
         tools: [
           { id: "drones", tool: "drones", label: "Drone", compact: true },
-          { id: "crates", tool: "crates", label: "Crate", compact: true }
+          { id: "crates", tool: "crates", label: "Crate", compact: true },
+          { id: "monsters", tool: "monsters", label: "Monster", compact: true },
+          { id: "bosses", tool: "bosses", label: "Boss Arena" }
         ]
       },
       {
@@ -1046,6 +1108,11 @@ class LevelEditor {
     } else if (field === "index") {
       level.index = Math.max(0, Math.round(Number(value)));
     } else if (field.startsWith("score.")) {
+      if (field === "score.unlimitedLives") {
+        level.score.lives = value === true ? null : 3;
+        this.afterMutation("Level updated");
+        return;
+      }
       const key = field.split(".")[1] as keyof Level["score"];
       if (key === "lives" || key === "timeBonusTargetSeconds") {
         level.score[key] = Math.max(1, Math.round(Number(value)));
@@ -1124,6 +1191,27 @@ class LevelEditor {
       else delete record[field];
       return;
     }
+    if (field === "kind") {
+      if (this.selection?.kind === "monsters") record.kind = normalizeMonsterKind(value);
+      else if (this.selection?.kind === "bosses") record.kind = normalizeBossKind(value);
+      return;
+    }
+    if (field === "vulnerableFrom") {
+      const vulnerability = normalizeMonsterVulnerability(value);
+      if (vulnerability) record.vulnerableFrom = vulnerability;
+      else delete record.vulnerableFrom;
+      return;
+    }
+    if (field === "entrySide") {
+      record.entrySide = normalizeBossEntrySide(value);
+      return;
+    }
+    if (field === "scoreValue") {
+      const score = nonNegativeInteger(value, 0);
+      if (score > 0) record.score = score;
+      else delete record.score;
+      return;
+    }
     if (field === "sprite") {
       record.sprite = normalizeSolidSprite(String(value).trim()) || "auto";
       return;
@@ -1175,20 +1263,20 @@ class LevelEditor {
       else delete record.powerX;
       return;
     }
-    if (field === "powerY" || field === "duration") {
-      record[field] = field === "duration" ? positiveInteger(value, 1) : Math.max(1, Number(value));
+    if (field === "powerY" || field === "duration" || field === "introSeconds" || field === "health") {
+      record[field] = field === "powerY" ? Math.max(1, Number(value)) : positiveInteger(value, 1);
       return;
     }
     if (field === "pathStart" || field === "pathEnd") {
-      const moving = target as MovingPlatform | PatrolDrone | MovingLaser;
+      const moving = target as PathableObject;
       const path = movingPath(moving);
       setMovingPath(moving, field === "pathStart" ? snap(Number(value)) : path.start, field === "pathEnd" ? snap(Number(value)) : path.end);
       return;
     }
     if (field === "speed") {
-      const moving = target as MovingPlatform | PatrolDrone | MovingLaser;
+      const moving = target as PathableObject;
       const speed = Math.max(1, Number(value));
-      moving.period = Math.max(1, Math.round((120 * Math.max(1, moving.distance)) / speed));
+      moving.period = Math.max(1, Math.round((120 * Math.max(1, moving.distance || 0)) / speed));
       return;
     }
     if (field === "distance" || field === "period" || field === "phase") {
@@ -1197,7 +1285,12 @@ class LevelEditor {
       else record.phase = Number(value);
       return;
     }
-    if (field === "once" || field === "inverted") {
+    if (field === "once" || field === "inverted" || field === "killable") {
+      if (field === "killable") {
+        if (value === true) delete record.killable;
+        else record.killable = false;
+        return;
+      }
       if (value === true) record[field] = true;
       else delete record[field];
       return;
@@ -1615,7 +1708,8 @@ class LevelEditor {
       kind === "lasers" ||
       kind === "launchPads" ||
       kind === "conveyors" ||
-      kind === "crates"
+      kind === "crates" ||
+      kind === "monsters"
     );
   }
 
@@ -1757,6 +1851,10 @@ class LevelEditor {
     if (kind === "movingLasers") return { ...base, startsOn: true, axis: "x", distance: 100, period: 180, phase: 0 } as MovingLaser;
     if (kind === "cores") return { ...base, label: id.split("-").at(-1)?.toUpperCase() } as Core;
     if (kind === "drones") return { ...base, axis: "x", distance: 120, period: 200, phase: 0 } as PatrolDrone;
+    if (kind === "monsters") return { ...base, kind: "sprout-hopper", axis: "x", distance: 120, period: 180, phase: 0 } as Monster;
+    if (kind === "bosses") {
+      return { ...base, kind: "storm-relay-warden", entrySide: "right", introSeconds: 17, health: 3, score: 3000 } as Boss;
+    }
     return base as PushableCrate;
   }
 
@@ -1947,8 +2045,9 @@ class LevelEditor {
       <div class="inspector-section" data-score-settings>
         <h3>Scoring</h3>
         <p class="editor-field-note">Score uses cores, deaths, and a clear-time bonus. Rewinds do not count as deaths.</p>
+        ${this.levelCheckboxField("Unlimited Lives", "score.unlimitedLives", level.score.lives === null)}
         <div class="inspector-grid three">
-          ${this.numberField("Lives", "score.lives", level.score.lives, "level", 1)}
+          ${this.numberField("Lives", "score.lives", level.score.lives ?? 3, "level", 1)}
           ${this.numberField("Core Score", "score.coreScore", level.score.coreScore, "level", 1)}
           ${this.numberField("Death Penalty", "score.deathPenalty", level.score.deathPenalty, "level", 1)}
           ${this.numberField("Bonus Target (s)", "score.timeBonusTargetSeconds", level.score.timeBonusTargetSeconds, "level", 1)}
@@ -2107,6 +2206,51 @@ class LevelEditor {
         ])}
       `;
     }
+    if (kind === "monsters") {
+      const monster = object as Monster;
+      const axis = monster.axis || "x";
+      const path = movingPath({
+        ...monster,
+        axis,
+        distance: monster.distance || 0,
+        period: monster.period || 180
+      });
+      const axisName = axis === "x" ? "X" : "Y";
+      return `
+        <div class="inspector-grid two">
+          ${this.selectField("Kind", "kind", String(record.kind || "sprout-hopper"), monsterKinds.map((value) => ({ value, label: value })))}
+          ${this.selectField("Vulnerable", "vulnerableFrom", String(record.vulnerableFrom || "default"), [
+            { value: "default", label: "Default" },
+            { value: "top", label: "Top" },
+            { value: "bottom", label: "Bottom" },
+            { value: "both", label: "Top or Bottom" }
+          ])}
+          ${this.numberField("Score", "scoreValue", Number(record.score || 0), "object", 50)}
+          ${this.checkboxField("Killable", "killable", record.killable !== false)}
+        </div>
+        <div class="inspector-grid two">
+          ${this.selectField("Axis", "axis", axis, ["x", "y"])}
+          ${this.numberField("Speed", "speed", path.speed || 80, "object", 5)}
+        </div>
+        <div class="inspector-grid four">
+          ${this.numberField(`Start ${axisName}`, "pathStart", path.start, "object")}
+          ${this.numberField(`End ${axisName}`, "pathEnd", path.end, "object")}
+          ${this.numberField("Cycle", "period", Number(record.period || 180), "object", 1)}
+          ${this.numberField("Phase", "phase", Number(record.phase || 0), "object", 0.1)}
+        </div>
+      `;
+    }
+    if (kind === "bosses") {
+      return `
+        <div class="inspector-grid two">
+          ${this.selectField("Kind", "kind", String(record.kind || "storm-relay-warden"), bossKinds.map((value) => ({ value, label: value })))}
+          ${this.selectField("Entry", "entrySide", String(record.entrySide || "right"), bossEntrySides.map((value) => ({ value, label: value })))}
+          ${this.numberField("Intro Seconds", "introSeconds", Number(record.introSeconds || 17), "object", 1)}
+          ${this.numberField("Health", "health", Number(record.health || 3), "object", 1)}
+          ${this.numberField("Score", "scoreValue", Number(record.score || 0), "object", 100)}
+        </div>
+      `;
+    }
     return "";
   }
 
@@ -2178,6 +2322,10 @@ class LevelEditor {
 
   private checkboxField(label: string, field: string, checked: boolean): string {
     return `<label class="editor-check"><input data-object-field="${field}" type="checkbox" ${checked ? "checked" : ""} /><span>${label}</span></label>`;
+  }
+
+  private levelCheckboxField(label: string, field: string, checked: boolean): string {
+    return `<label class="editor-check"><input data-level-field="${field}" type="checkbox" ${checked ? "checked" : ""} /><span>${label}</span></label>`;
   }
 
   private selectField(label: string, field: string, value: string, options: SelectOption[], scope: "level" | "object" = "object"): string {
@@ -2276,8 +2424,8 @@ class LevelEditor {
     if (!rectInside(level.exit, level.bounds)) {
       messages.push({ severity: "error", text: `${level.name} exit is outside bounds.` });
     }
-    if (!Number.isInteger(level.score.lives) || level.score.lives <= 0) {
-      messages.push({ severity: "error", text: `${level.name} lives must be a positive integer.` });
+    if (level.score.lives !== null && (!Number.isInteger(level.score.lives) || level.score.lives <= 0)) {
+      messages.push({ severity: "error", text: `${level.name} lives must be unlimited or a positive integer.` });
     }
     if (!Number.isInteger(level.score.coreScore) || level.score.coreScore < 0) {
       messages.push({ severity: "error", text: `${level.name} core score must be a non-negative integer.` });
@@ -2311,6 +2459,36 @@ class LevelEditor {
           }
           if (!Number.isFinite(moving.period) || moving.period <= 0) {
             messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid movement period.` });
+          }
+        }
+        if (kind === "monsters") {
+          const monster = object as Monster;
+          if (!monsterKinds.includes(monster.kind as MonsterKind)) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has unknown monster kind ${String(monster.kind)}.` });
+          }
+          if (monster.vulnerableFrom && !(["top", "bottom", "both"] as MonsterVulnerability[]).includes(monster.vulnerableFrom)) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid monster vulnerability.` });
+          }
+          if (monster.distance !== undefined && (!Number.isFinite(monster.distance) || monster.distance < 0)) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid monster movement distance.` });
+          }
+          if (monster.period !== undefined && (!Number.isFinite(monster.period) || monster.period <= 0)) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid monster movement period.` });
+          }
+        }
+        if (kind === "bosses") {
+          const boss = object as Boss;
+          if (!bossKinds.includes(boss.kind as Boss["kind"])) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has unknown boss kind ${String(boss.kind)}.` });
+          }
+          if (!bossEntrySides.includes((boss.entrySide || "right") as BossEntrySide)) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid boss entry side.` });
+          }
+          if (boss.introSeconds !== undefined && (!Number.isFinite(boss.introSeconds) || boss.introSeconds <= 0)) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid boss intro seconds.` });
+          }
+          if (boss.health !== undefined && (!Number.isFinite(boss.health) || boss.health <= 0)) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid boss health.` });
           }
         }
         if (kind === "conveyors") {
@@ -2348,7 +2526,7 @@ class LevelEditor {
         }
         const structuralSolid =
           kind === "solids" &&
-          (object.id === "left-wall" || object.id === "right-wall" || object.id === "floor" || object.id.startsWith("floor-"));
+          this.isBoundaryStructuralSolid(level, object as Solid);
         if (!structuralSolid && !rectInside(object, level.bounds)) {
           messages.push({ severity: "warning", text: `${level.name}:${object.id} is outside level bounds.` });
         }
@@ -2390,6 +2568,15 @@ class LevelEditor {
       }
     }
     return messages;
+  }
+
+  private isBoundaryStructuralSolid(level: Level, solid: Solid): boolean {
+    if (solid.id === "left-wall" || solid.id === "right-wall" || solid.id === "floor" || solid.id.startsWith("floor-")) return true;
+    const floorBand = level.bounds.y + level.bounds.h - 80;
+    const sideBand = 32;
+    if (solid.sprite === "floor" && solid.y >= floorBand) return true;
+    if (solid.sprite === "wall" && (solid.x <= level.bounds.x + sideBand || solid.x + solid.w >= level.bounds.x + level.bounds.w - sideBand)) return true;
+    return false;
   }
 
   private movingPlatformMount(level: Level, rect: Rect): MovingPlatform | null {
