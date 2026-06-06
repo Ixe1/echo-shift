@@ -1256,8 +1256,13 @@ try {
     bosses: [{ id: "boss-test", kind: "storm-relay-warden", x: 40, y: 20, w: 220, h: 130, entrySide: "right", introSeconds: 17, health: 1, score: 1200 }]
   };
   const bossIntroSim = new RoomSimulation(bossLevel);
+  bossIntroSim.player.x = 260;
+  assert(bossIntroSim.bossSnapshots().length === 0, "Idle boss should not expose a visible body snapshot before intro");
+  bossIntroSim.player.x = bossLevel.start.x;
   const bossStart = bossIntroSim.step(idle);
   assert(bossStart.bossIntroStarted === "boss-test", "Expected boss arena overlap to start boss intro");
+  const bossIntroSnapshot = bossIntroSim.bossSnapshots()[0];
+  assert(bossIntroSnapshot?.introTotalFrames === 17 * 60, `Expected boss intro snapshot to use configured intro frames, got ${bossIntroSnapshot?.introTotalFrames}`);
   assert(!bossIntroSim.dead, "Boss intro should not damage player on first contact");
   runFrames(bossIntroSim, 17 * 60 - 2, idle);
   const introBossState = bossIntroSim.bossStates.get("boss-test");

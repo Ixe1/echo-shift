@@ -372,7 +372,7 @@ export class RoomSimulation {
   bossSnapshots(): BossSnapshot[] {
     return (this.level.bosses || []).flatMap((boss) => {
       const state = this.bossStates.get(boss.id);
-      if (!state) return [];
+      if (!state || state.phase === "idle") return [];
       const body = bossBodyRectAt(boss, state, this.tick);
       return [
         {
@@ -380,6 +380,7 @@ export class RoomSimulation {
           phase: state.phase,
           health: state.health,
           introFrames: state.introFrames,
+          introTotalFrames: bossIntroFrames(boss),
           invulnerableFrames: state.invulnerableFrames,
           body,
           attacks: bossAttackRectsAt(boss, state, this.tick)

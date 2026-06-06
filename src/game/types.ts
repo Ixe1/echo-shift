@@ -195,6 +195,7 @@ export type BossSnapshot = {
   phase: BossPhase;
   health: number;
   introFrames: number;
+  introTotalFrames: number;
   invulnerableFrames: number;
   body: Rect;
   attacks: Rect[];

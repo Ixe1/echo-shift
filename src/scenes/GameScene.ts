@@ -5,7 +5,7 @@ import { tutorialLevel } from "../data/tutorialLevel";
 import { audio } from "../game/audio";
 import { backgroundAmbienceForLevel, backgroundAmbienceIsActive, type NormalizedBackgroundAmbience } from "../game/backgroundAmbience";
 import { backgroundForLevel } from "../game/backgrounds";
-import { BOSS_INTRO_FRAMES, bossHealth, monsterRectAt } from "../game/enemies";
+import { bossHealth, monsterRectAt } from "../game/enemies";
 import { rectCenter } from "../game/geometry";
 import { doorRequiredCoreIds, droneIsActive, droneRectAt, isMajorCore, laserIsActive, movingLaserRectAt } from "../game/objects";
 import { platformRectAt } from "../game/player";
@@ -734,6 +734,7 @@ export class GameScene extends Phaser.Scene {
     this.hud.scan();
     this.cameras.main.flash(220, 67, 247, 255, false);
     this.echoTrails.clear();
+    if (this.bossMusicActive) this.restartLevelMusic();
     this.hud.toast(added ? `Echo ${this.simulation.echoRecordings.length} anchored` : "Attempt reset");
   }
 
@@ -1667,7 +1668,7 @@ export class GameScene extends Phaser.Scene {
 
       const body = snapshot.body;
       const center = rectCenter(body);
-      const introProgress = phase === "intro" ? Math.min(1, snapshot.introFrames / BOSS_INTRO_FRAMES) : 1;
+      const introProgress = phase === "intro" ? Math.min(1, snapshot.introFrames / Math.max(1, snapshot.introTotalFrames)) : 1;
       const flickerWhite = snapshot.invulnerableFrames > 0 && Math.floor(this.simulation.tick / 4) % 2 === 0;
       this.world.fillStyle(color, phase === "intro" ? 0.16 + introProgress * 0.2 : 0.26);
       this.world.fillEllipse(center.x, center.y, body.w * 1.55, body.h * 1.42);
