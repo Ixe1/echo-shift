@@ -1343,6 +1343,28 @@ try {
   assert(!simultaneousBossDefeatA.bossPortalUnlocked, "Expected simultaneous first boss defeat to keep portal locked");
   assert(simultaneousBossSim.bossFightInProgress(), "Expected boss fight to remain in progress while second boss is still active");
 
+  const simultaneousCheckpointSim = new RoomSimulation(multiBossLevel);
+  Object.assign(simultaneousCheckpointSim.player, { x: 62, y: 86, vx: 0, vy: 0, onGround: true });
+  simultaneousCheckpointSim.step(idle);
+  runFrames(simultaneousCheckpointSim, 60, idle);
+  Object.assign(simultaneousCheckpointSim.player, { x: 332, y: 86, vx: 0, vy: 0, onGround: true });
+  simultaneousCheckpointSim.step(idle);
+  assert(simultaneousCheckpointSim.bossCheckpointActive(), "Expected second simultaneous boss to create a checkpoint");
+  runFrames(simultaneousCheckpointSim, 60, idle);
+  const simultaneousBossBodyB = simultaneousCheckpointSim.bossSnapshots().find((boss) => boss.id === "boss-b")?.body;
+  assert(simultaneousBossBodyB, "Expected second simultaneous boss body snapshot");
+  Object.assign(simultaneousCheckpointSim.player, {
+    x: simultaneousBossBodyB.x + simultaneousBossBodyB.w * 0.65,
+    y: simultaneousBossBodyB.y + simultaneousBossBodyB.h * 0.45,
+    vx: 0,
+    vy: 0,
+    onGround: false
+  });
+  const simultaneousCheckpointDeath = simultaneousCheckpointSim.step(idle);
+  assert(simultaneousCheckpointDeath.died, "Expected simultaneous checkpoint boss body collision to kill player");
+  simultaneousCheckpointSim.resetLifeAttempt();
+  assert(simultaneousCheckpointSim.bossFightInProgress(), "Expected checkpoint restore to preserve an in-progress simultaneous boss fight");
+
   const bossCheckpointLevel = {
     ...baseLevel,
     score: { ...baseLevel.score, coreScore: 1000, deathPenalty: 100 },

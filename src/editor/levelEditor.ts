@@ -760,6 +760,7 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
   if (kind === "bosses") {
     const checkpointRecord = isRecord(record.checkpoint) ? record.checkpoint : null;
     const bossKind = normalizeBossKind(record.kind);
+    const checkpointFallback = defaultBossCheckpoint(base);
     return {
       ...base,
       id,
@@ -767,8 +768,8 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
       entrySide: normalizeBossEntrySide(record.entrySide),
       weakSpot: record.weakSpot === undefined ? defaultBossWeakSpotForKind(bossKind) : normalizeBossWeakSpot(record.weakSpot),
       checkpoint: checkpointRecord
-        ? { x: numberValue(checkpointRecord.x, defaultBossCheckpoint(base).x), y: numberValue(checkpointRecord.y, defaultBossCheckpoint(base).y) }
-        : undefined,
+        ? { x: numberValue(checkpointRecord.x, checkpointFallback.x), y: numberValue(checkpointRecord.y, checkpointFallback.y) }
+        : checkpointFallback,
       introSeconds: positiveInteger(record.introSeconds, 17),
       health: positiveInteger(record.health, 3),
       score: Number.isFinite(Number(record.score)) ? nonNegativeInteger(record.score, 0) : undefined

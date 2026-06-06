@@ -236,6 +236,40 @@ try {
   const legacyDraftDroneExport = legacyDraftLevelExport.drones.find((drone) => drone.id === "legacy-draft-drone");
   await staleDraft.close();
 
+  const legacyBossDraft = await browser.newContext({ viewport: { width: 900, height: 700 } });
+  const legacyBossPage = await legacyBossDraft.newPage();
+  collectConsole(legacyBossPage);
+  await legacyBossPage.goto(`${url}?editor=1`, { waitUntil: "domcontentloaded" });
+  await legacyBossPage.evaluate(() => {
+    window.localStorage.setItem(
+      "echo-shift-level-editor-draft-v1",
+      JSON.stringify({
+        currentIndex: 0,
+        levels: [
+          {
+            id: "legacy-boss-draft",
+            index: 0,
+            name: "Legacy Boss Draft",
+            subtitle: "",
+            start: { x: 60, y: 450 },
+            exit: { x: 850, y: 438, w: 48, h: 62 },
+            bounds: { x: 0, y: 0, w: 960, h: 540 },
+            solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
+            bosses: [{ id: "legacy-boss", kind: "clockwork-regent", x: 300, y: 180, w: 300, h: 220, entrySide: "right" }],
+            perfectEchoes: 0,
+            medalFrames: { gold: 1800, silver: 2400 },
+            hint: ""
+          }
+        ]
+      })
+    );
+  });
+  await legacyBossPage.reload({ waitUntil: "domcontentloaded" });
+  await legacyBossPage.locator("[data-level-editor]").waitFor({ state: "visible" });
+  const legacyBossExportLevel = JSON.parse(await legacyBossPage.locator("[data-export-json]").inputValue())[0];
+  const legacyBossExport = legacyBossExportLevel.bosses.find((boss) => boss.id === "legacy-boss");
+  await legacyBossDraft.close();
+
   const draftPlaytest = await browser.newContext({ viewport: { width: 960, height: 540 } });
   const draftPlaytestPage = await draftPlaytest.newPage();
   collectConsole(draftPlaytestPage);
@@ -1223,6 +1257,11 @@ try {
   assert(
     legacyDraftLevelExport.motionModel === "anchored" && legacyDraftDroneExport?.x === 100 && legacyDraftDroneExport?.distance === 80,
     `Expected legacy draft export to be marked anchored with migrated x/distance values, got ${JSON.stringify(legacyDraftLevelExport)}`
+  );
+  assert(legacyBossExport?.weakSpot === "core", `Expected legacy clockwork boss to export core weak spot, got ${JSON.stringify(legacyBossExport)}`);
+  assert(
+    legacyBossExport?.checkpoint?.x === 240 && legacyBossExport?.checkpoint?.y === 352,
+    `Expected legacy boss import to materialize default checkpoint, got ${JSON.stringify(legacyBossExport)}`
   );
   assert(draftPlaytestUrl.includes("playtestDraft=1"), `Expected Playtest button to navigate to playtestDraft=1, got ${draftPlaytestUrl}`);
   assert(draftPlaytestUrl.includes("level=1"), `Expected Playtest button to preserve selected level=1, got ${draftPlaytestUrl}`);

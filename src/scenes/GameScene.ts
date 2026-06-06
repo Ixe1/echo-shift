@@ -729,7 +729,12 @@ export class GameScene extends Phaser.Scene {
     this.launchPadActiveUntil.clear();
     this.playerCastUntil = 0;
     this.cameraTarget?.setPosition(this.simulation.player.x + this.simulation.player.w / 2, this.simulation.player.y + this.simulation.player.h / 2);
-    this.restartLevelMusic();
+    if (this.bossFightInProgress()) {
+      this.bossMusicActive = true;
+      audio.playMusic("boss", { restart: true, fadeMs: BOSS_MUSIC_FADE_MS });
+    } else {
+      this.restartLevelMusic();
+    }
     this.cameras.main.fadeIn(DEATH_FADE_IN_MS, 5, 7, 13);
     this.startLevelIntro();
     this.hud.hideModal();
