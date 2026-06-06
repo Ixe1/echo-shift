@@ -1,6 +1,6 @@
 import type { Level, MovingPlatform, PatrolDrone, Rect, Solid } from "../game/types";
 import { scoreSettingsFromGoldFrames } from "../game/scoring";
-import level1SpringtideSprint from "./level-1-springtide-sprint.json";
+import { level1SpringtideSprint } from "./level-1-springtide-sprint";
 import { markAnchoredMotionModel } from "./motionModel";
 
 const r = (x: number, y: number, w: number, h: number): Rect => ({ x, y, w, h });
@@ -65,8 +65,7 @@ const m = (
 
 const bounds = (width: number): Rect => r(0, 0, width, 540);
 const score = scoreSettingsFromGoldFrames;
-const springtideSprintDraft = level1SpringtideSprint as unknown as Level;
-const springtideSprintLevel: Level = springtideSprintDraft;
+const springtideSprintLevel: Level = level1SpringtideSprint;
 const frame = (width: number, floorY = 500, gaps: Array<[number, number]> = []): Solid[] => {
   const floors: Solid[] = [];
   let cursor = 0;

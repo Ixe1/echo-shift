@@ -1,4 +1,6 @@
-  {
+import type { Level } from "../game/types";
+
+export const level1SpringtideSprint = {
     "id": "portal-primer",
     "index": 0,
     "name": "Springtide Sprint",
@@ -863,4 +865,4 @@
       "timeBonusPerSecond": 100
     },
     "hint": "Ride the garden route, bank core arcs, and use the crate plate to quiet the beams."
-  }
+} satisfies Level;

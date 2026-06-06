@@ -48,8 +48,15 @@ const rectsOverlap = (a, b) =>
   a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
 const solidSupportsGameplay = (solid) => solid.collision !== "decorative";
-const solidIsFloorSegment = (solid) =>
-  solid.id === "floor" || solid.id.startsWith("floor-") || solid.id.startsWith("floorpiece-") || solid.sprite === "floor";
+const solidIsGroundFloorSegment = (solid) =>
+  solidSupportsGameplay(solid) &&
+  solid.collision !== "top-only" &&
+  (solid.id === "floor" ||
+    solid.id.startsWith("floor-") ||
+    ((solid.id.startsWith("floorpiece-") || solid.sprite === "floor") && solid.y >= 430));
+const solidIsRouteFloorLike = (solid) => solidIsGroundFloorSegment(solid) || solid.collision === "top-only" || solid.sprite === "floor";
+const solidIsRouteSurfaceSegment = (solid) =>
+  solidSupportsGameplay(solid) && solid.sprite === "floor" && solid.w >= 60 && solid.collision !== "decorative";
 
 const oscillatingRectAt = (item, tick) => {
   const phase = item.phase || 0;
@@ -96,7 +103,7 @@ const routeObstacleRects = (simulation) => {
   const lowSolids = simulation.level.solids.filter(
     (solid) =>
       solidSupportsGameplay(solid) &&
-      !solidIsFloorSegment(solid) &&
+      !solidIsRouteFloorLike(solid) &&
       !["left-wall", "right-wall"].includes(solid.id) &&
       solid.h <= 58 &&
       solid.y < footY &&
@@ -391,6 +398,7 @@ try {
   const { RoomSimulation } = await server.ssrLoadModule("/src/game/state.ts");
   const { makeActor } = await server.ssrLoadModule("/src/game/player.ts");
   const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
+  const { tutorialLevel } = await server.ssrLoadModule("/src/data/tutorialLevel.ts");
   const { doorRequiredCoreIds, isMajorCore, movingLaserRectAt } = await server.ssrLoadModule("/src/game/objects.ts");
   const { EDITOR_DRAFT_STORAGE_KEY, readEditorDraftSnapshot } = await server.ssrLoadModule("/src/data/editorDraft.ts");
   const { getBestScores, isBetterLevelScore, recordLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
@@ -599,12 +607,20 @@ try {
     `Expected closed gate tops at or above y=${CLOSED_GATE_MAX_TOP}; low gates: ${lowClosedGates.join(", ")}`
   );
 
+  const sparseGroundLevels = levels
+    .filter((level) => level.solids.filter(solidIsGroundFloorSegment).length < 2)
+    .map((level) => level.id);
+  assert(
+    sparseGroundLevels.length === 0,
+    `Expected every expanded level to have at least two ground-floor pieces; sparse levels: ${sparseGroundLevels.join(", ")}`
+  );
+
   const sparseCourseLevels = levels
-    .filter((level) => level.solids.filter(solidIsFloorSegment).length < 3)
+    .filter((level) => level.solids.filter(solidIsRouteSurfaceSegment).length < 3)
     .map((level) => level.id);
   assert(
     sparseCourseLevels.length === 0,
-    `Expected every expanded level to have multiple floor segments/gaps; sparse levels: ${sparseCourseLevels.join(", ")}`
+    `Expected every expanded level to have multiple broad route surface segments; sparse levels: ${sparseCourseLevels.join(", ")}`
   );
 
   const bypassedFloorGates = [];
@@ -692,6 +708,40 @@ try {
   const liftPhaseExpanded = new RoomSimulation(liftPhase);
   runRoute(liftPhaseExpanded, [["smartRightUntilX", 2700, 900], ["idle", 40], ["smartRight", 1000]]);
   assert(liftPhaseExpanded.won, "Lift Phase expanded route should reach the side-scrolling portal");
+
+  const tutorialMovingLaser = tutorialLevel.movingLasers?.find((laser) => laser.id === "tutorial-moving-laser");
+  assert(tutorialMovingLaser, "Expected tutorial to include a moving laser station");
+  const tutorialStaticLaser = tutorialLevel.lasers?.find((laser) => laser.id === "tutorial-laser");
+  assert(
+    tutorialStaticLaser?.disabledBy?.includes("laser-timer") && tutorialMovingLaser.disabledBy?.includes("laser-timer"),
+    "Expected tutorial timed switch to disable both tutorial lasers"
+  );
+  const tutorialMovingLaserRaised = movingLaserRectAt(tutorialMovingLaser, 0);
+  assert(
+    tutorialMovingLaserRaised.w > tutorialMovingLaserRaised.h && tutorialMovingLaserRaised.y + tutorialMovingLaserRaised.h <= 360,
+    `Expected raised tutorial moving laser to be horizontal and high enough to pass under, got ${JSON.stringify(tutorialMovingLaserRaised)}`
+  );
+  const tutorialMovingLaserLowered = movingLaserRectAt(tutorialMovingLaser, Math.round(tutorialMovingLaser.period / 2));
+  assert(
+    tutorialMovingLaserLowered.w > tutorialMovingLaserLowered.h && tutorialMovingLaserLowered.y + tutorialMovingLaserLowered.h > 466,
+    `Expected lowered tutorial moving laser to block the floor lane, got ${JSON.stringify(tutorialMovingLaserLowered)}`
+  );
+  const tutorialLaserStation = new RoomSimulation(tutorialLevel);
+  Object.assign(tutorialLaserStation.player, {
+    x: 3310,
+    y: 466,
+    vx: 0,
+    vy: 0,
+    onGround: true,
+    coyote: 7,
+    standingOn: null
+  });
+  runFrames(tutorialLaserStation, 190, right);
+  assert(!tutorialLaserStation.dead, "Tutorial laser timer station should be crossable without dying");
+  assert(
+    tutorialLaserStation.player.x > 3900,
+    `Expected tutorial laser station route to pass the moving laser, got x=${tutorialLaserStation.player.x.toFixed(1)}`
+  );
 
   const bestScore = { levelId: "score-test", score: 1500, frames: 600, echoes: 3, deaths: 1, cores: 1, timeBonus: 1400 };
   const lowerScoreFewerDeaths = { levelId: "score-test", score: 1400, frames: 540, echoes: 0, deaths: 0, cores: 1, timeBonus: 1300 };
@@ -1429,6 +1479,7 @@ try {
           "level-data",
           "held-open-expanded-route",
           "lift-phase-expanded-route",
+          "tutorial-laser-station",
           "score-ranking",
           "legacy-progress-migration",
           "legacy-progress-replacement",

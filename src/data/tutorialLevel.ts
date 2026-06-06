@@ -125,8 +125,10 @@ export const tutorialLevel: Level = markAnchoredMotionModel({
     { id: "tutorial-core-d", ...r(3820, 318, 20, 20), label: "T" },
     { id: "tutorial-core-e", ...r(5050, 350, 20, 20), label: "T" }
   ],
-  lasers: [{ id: "tutorial-laser", ...r(3540, 496, 150, 4), startsOn: true, disabledBy: ["laser-timer"] }],
-  movingLasers: [{ id: "tutorial-moving-laser", ...r(3830, 378, 20, 120), axis: "x", distance: 180, period: 190, startsOn: true }],
+  lasers: [{ id: "tutorial-laser", ...r(3540, 386, 20, 112), startsOn: true, disabledBy: ["laser-timer"] }],
+  movingLasers: [
+    { id: "tutorial-moving-laser", ...r(3810, 330, 150, 20), axis: "y", beamAxis: "x", distance: 118, period: 220, startsOn: true, disabledBy: ["laser-timer"] }
+  ],
   hazards: [h("tutorial-spark-a", 4040, 496, 58, 4), h("tutorial-spark-b", 5280, 496, 58, 4)],
   drones: [d("tutorial-drone", 4820, 472, 30, 24, "x", 130, 210, 0, ["drone-plate"])],
   score: scoreSettingsFromGoldFrames(5400),

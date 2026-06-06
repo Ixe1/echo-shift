@@ -834,8 +834,8 @@ export class GameScene extends Phaser.Scene {
         else if (playerCenterX < 2050) message = "Push crates onto plates. Crates keep doors open while you move ahead.";
         else if (playerCenterX < 2700) message = "Timed switches stay active briefly. Step on one, then move before the door closes.";
         else if (playerCenterX < 3260) message = "Small cores add score. Large cores marked as keys can unlock core doors.";
-        else if (playerCenterX < 3740) message = "Some switches disable lasers for a short window. Move as soon as the beam drops.";
-        else if (playerCenterX < 4140) message = "Moving lasers sweep a lane. Wait for the rhythm, or use the safe ledge above.";
+        else if (playerCenterX < 3740) message = "Timed laser switches disable beam gates briefly. Move as soon as the beam drops.";
+        else if (playerCenterX < 4140) message = "The same timer quiets the moving beam. Cross before the laser returns.";
         else if (playerCenterX < 4480) message = "Moving platforms are one-way. Land on top and ride them across gaps.";
         else if (playerCenterX < 5020) message = "Drones are hazards, but plates can power them down. Crates can hold those plates too.";
         else message = "Avoid spark traps and reach the exit portal to finish the tutorial.";
@@ -850,9 +850,9 @@ export class GameScene extends Phaser.Scene {
       } else if (playerCenterX < 3260) {
         message = "Collect the large core before the core-locked door.";
       } else if (playerCenterX < 3740) {
-        message = "The laser switch is temporary. Cross while the beam is disabled.";
+        message = "The laser switch is temporary. Cross while the beam gate is disabled.";
       } else if (playerCenterX < 4140) {
-        message = "Read the moving laser, then pass during the open beat.";
+        message = "Cross the moving beam while the timer is still holding it quiet.";
       } else if (playerCenterX < 4480) {
         message = "Ride the moving platform from above; it will not catch you from below.";
       } else if (playerCenterX < 5020) {
