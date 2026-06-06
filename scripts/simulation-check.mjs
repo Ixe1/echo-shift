@@ -1255,14 +1255,21 @@ try {
     ...baseLevel,
     bosses: [{ id: "boss-test", kind: "storm-relay-warden", x: 40, y: 20, w: 220, h: 130, entrySide: "right", introSeconds: 17, health: 1, score: 1200 }]
   };
+  const bossGateSim = new RoomSimulation(bossLevel);
+  Object.assign(bossGateSim.player, { x: bossLevel.exit.x, y: bossLevel.exit.y, vx: 0, vy: 0 });
+  bossGateSim.step(idle);
+  assert(!bossGateSim.won, "Boss level exit should stay locked before boss defeat");
+  assert(!bossGateSim.exitUnlocked(), "Boss level exit unlock state should be false before boss defeat");
   const bossIntroSim = new RoomSimulation(bossLevel);
   bossIntroSim.player.x = 260;
   assert(bossIntroSim.bossSnapshots().length === 0, "Idle boss should not expose a visible body snapshot before intro");
   bossIntroSim.player.x = bossLevel.start.x;
   const bossStart = bossIntroSim.step(idle);
   assert(bossStart.bossIntroStarted === "boss-test", "Expected boss arena overlap to start boss intro");
+  assert(bossStart.bossCheckpointActivated === "boss-test", "Expected boss entry to create a checkpoint");
   const bossIntroSnapshot = bossIntroSim.bossSnapshots()[0];
   assert(bossIntroSnapshot?.introTotalFrames === 17 * 60, `Expected boss intro snapshot to use configured intro frames, got ${bossIntroSnapshot?.introTotalFrames}`);
+  assert(bossIntroSnapshot?.weakSpotKind === "top", `Expected storm boss weak spot to default to top, got ${bossIntroSnapshot?.weakSpotKind}`);
   assert(!bossIntroSim.dead, "Boss intro should not damage player on first contact");
   runFrames(bossIntroSim, 17 * 60 - 2, idle);
   const introBossState = bossIntroSim.bossStates.get("boss-test");
@@ -1276,7 +1283,34 @@ try {
   const bossHit = bossIntroSim.step(idle);
   assert(bossHit.bossHit?.id === "boss-test", "Expected top hit to damage active boss");
   assert(bossHit.bossDefeated?.score === 1200, `Expected boss defeat score event, got ${JSON.stringify(bossHit.bossDefeated)}`);
+  assert(bossHit.bossPortalUnlocked, "Expected boss defeat to unlock the exit portal");
+  assert(bossIntroSim.exitUnlocked(), "Expected boss level exit to unlock after boss defeat");
   assert(bossIntroSim.score === 1200, `Expected boss defeat score to apply, got ${bossIntroSim.score}`);
+
+  const bossCheckpointLevel = {
+    ...baseLevel,
+    score: { ...baseLevel.score, coreScore: 1000, deathPenalty: 100 },
+    cores: [{ id: "pre-boss-core", x: 20, y: 86, w: 18, h: 18 }],
+    bosses: [{ id: "checkpoint-boss", kind: "clockwork-regent", x: 78, y: 20, w: 190, h: 130, entrySide: "right", weakSpot: "core", introSeconds: 1, health: 2, score: 2000 }]
+  };
+  const bossCheckpointSim = new RoomSimulation(bossCheckpointLevel);
+  bossCheckpointSim.step(idle);
+  assert(bossCheckpointSim.objectState.collectedCores.has("pre-boss-core"), "Expected pre-boss core to be collected before checkpoint");
+  assert(bossCheckpointSim.score === 1000, `Expected pre-boss score before checkpoint, got ${bossCheckpointSim.score}`);
+  Object.assign(bossCheckpointSim.player, { x: 76, y: 86, vx: 0, vy: 0, onGround: true });
+  const checkpointEvent = bossCheckpointSim.step(idle);
+  assert(checkpointEvent.bossCheckpointActivated === "checkpoint-boss", "Expected boss checkpoint activation event");
+  runFrames(bossCheckpointSim, 60, idle);
+  const checkpointBossBody = bossCheckpointSim.bossSnapshots()[0].body;
+  Object.assign(bossCheckpointSim.player, { x: checkpointBossBody.x + checkpointBossBody.w * 0.65, y: checkpointBossBody.y + checkpointBossBody.h * 0.45, vx: 0, vy: 0, onGround: false });
+  const checkpointDeath = bossCheckpointSim.step(idle);
+  assert(checkpointDeath.died, "Expected side/body boss collision to kill the player during checkpoint fight");
+  bossCheckpointSim.resetLifeAttempt();
+  assert(!bossCheckpointSim.dead, "Expected checkpoint life reset to respawn alive");
+  assert(bossCheckpointSim.bossStates.get("checkpoint-boss")?.phase === "idle", "Expected checkpoint restore to reset boss fight to idle");
+  assert(bossCheckpointSim.objectState.collectedCores.has("pre-boss-core"), "Expected checkpoint restore to preserve collected core");
+  assert(bossCheckpointSim.score === 900, `Expected checkpoint restore to preserve score with one death penalty, got ${bossCheckpointSim.score}`);
+  assert(bossCheckpointSim.totalFrames === 1, `Expected checkpoint restore to preserve pre-boss frame count, got ${bossCheckpointSim.totalFrames}`);
 
   const bonusSim = new RoomSimulation(baseLevel);
   runFrames(bonusSim, 60, idle);

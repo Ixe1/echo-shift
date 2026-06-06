@@ -189,7 +189,7 @@ export class SynthAudio {
     }
   }
 
-  playMusic(key: SoundtrackKey, options: { restart?: boolean } = {}): void {
+  playMusic(key: SoundtrackKey, options: { restart?: boolean; fadeMs?: number } = {}): void {
     this.installUnlockListeners();
     this.musicPaused = false;
     if (this.context) {
@@ -219,7 +219,7 @@ export class SynthAudio {
     const token = ++this.fadeToken;
     this.playMusicElement(next);
 
-    this.fadeMusic(previous, next, token);
+    this.fadeMusic(previous, next, token, options.fadeMs);
   }
 
   setMusicMuted(muted: boolean): void {
@@ -394,9 +394,9 @@ export class SynthAudio {
     element.volume = this.musicMuted ? 0 : this.musicOutputVolume();
   }
 
-  private fadeMusic(previous: HTMLAudioElement | null, next: HTMLAudioElement, token: number): void {
+  private fadeMusic(previous: HTMLAudioElement | null, next: HTMLAudioElement, token: number, fadeMs?: number): void {
     const started = performance.now();
-    const duration = 760;
+    const duration = Math.max(180, Math.min(1600, fadeMs ?? 760));
     const previousStart = previous?.volume || 0;
 
     const step = (now: number) => {

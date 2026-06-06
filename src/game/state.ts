@@ -9,6 +9,8 @@ import {
   bossIntroFrames,
   bossScore,
   bossTakesHit,
+  bossWeakSpot,
+  bossWeakSpotRectAt,
   createBossRuntimeState,
   monsterRectAt,
   monsterScore,
@@ -26,6 +28,7 @@ import {
 import { makeActor, moveActor, platformFramesAt } from "./player";
 import {
   inputFrameAt,
+  cloneInputFrame,
   recordInputFrame,
   trimRecording,
   type EchoRecording
@@ -39,6 +42,45 @@ const LAUNCH_PAD_COOLDOWN_FRAMES = 12;
 const LAUNCH_PAD_CONTROL_LOCK_FRAMES = 10;
 const LAUNCH_PAD_FLOAT_FRAMES = 54;
 const LAUNCH_PAD_SPEED_SCALE = 0.94;
+
+type BossCheckpoint = {
+  bossId: string;
+  player: ActorBody;
+  echoes: ActorBody[];
+  echoRecordings: EchoRecording[];
+  currentRecording: number[];
+  objectState: ObjectState;
+  killedMonsterIds: Set<string>;
+  bossStates: Map<string, BossRuntimeState>;
+  currentAttemptCollectedCoreIds: Set<string>;
+  currentAttemptKilledMonsterIds: Map<string, number>;
+  currentAttemptDefeatedBossIds: Map<string, number>;
+  tick: number;
+  totalFrames: number;
+  score: number;
+  deaths: number;
+};
+
+const cloneActor = (actor: ActorBody): ActorBody => ({ ...actor });
+
+const cloneObjectState = (state: ObjectState): ObjectState => ({
+  activePlates: new Set(state.activePlates),
+  latchedPlates: new Set(state.latchedPlates),
+  timedSwitchTimers: new Map(state.timedSwitchTimers),
+  openDoors: new Set(state.openDoors),
+  collectedCores: new Set(state.collectedCores),
+  blockedLasers: new Set(state.blockedLasers),
+  crates: new Map([...state.crates.entries()].map(([id, rect]) => [id, { ...rect }]))
+});
+
+const cloneBossStates = (states: Map<string, BossRuntimeState>): Map<string, BossRuntimeState> =>
+  new Map([...states.entries()].map(([id, state]) => [id, { ...state }]));
+
+const cloneEchoRecordings = (recordings: EchoRecording[]): EchoRecording[] =>
+  recordings.map((recording) => ({
+    ...recording,
+    frames: recording.frames instanceof Uint8Array ? new Uint8Array(recording.frames) : recording.frames.map(cloneInputFrame)
+  }));
 
 export class RoomSimulation {
   readonly level: Level;
@@ -58,6 +100,7 @@ export class RoomSimulation {
   private readonly currentAttemptCollectedCoreIds = new Set<string>();
   private readonly currentAttemptKilledMonsterIds = new Map<string, number>();
   private readonly currentAttemptDefeatedBossIds = new Map<string, number>();
+  private bossCheckpoint: BossCheckpoint | null = null;
 
   constructor(level: Level) {
     this.level = level;
@@ -66,6 +109,7 @@ export class RoomSimulation {
   }
 
   resetLevel(): void {
+    this.bossCheckpoint = null;
     this.echoRecordings.length = 0;
     this.totalFrames = 0;
     this.score = 0;
@@ -93,6 +137,7 @@ export class RoomSimulation {
   }
 
   resetAttempt(keepRecording = false): void {
+    this.bossCheckpoint = null;
     this.removeDiscardedAttemptScore();
     this.tick = 0;
     this.dead = false;
@@ -108,6 +153,10 @@ export class RoomSimulation {
   }
 
   resetLifeAttempt(): void {
+    if (this.bossCheckpoint) {
+      this.restoreBossCheckpoint();
+      return;
+    }
     this.resetAttempt(false);
     this.totalFrames = 0;
     this.score = 0;
@@ -131,8 +180,10 @@ export class RoomSimulation {
       livesExhausted: false,
       monsterKills: [],
       bossIntroStarted: null,
+      bossCheckpointActivated: null,
       bossHit: null,
       bossDefeated: null,
+      bossPortalUnlocked: false,
       won: false
     };
 
@@ -161,9 +212,11 @@ export class RoomSimulation {
       this.applyLaunchPads(echo, previousY);
     }
 
+    let previousPlayerX = this.player.x;
     let previousPlayerY = this.player.y;
     if (!this.dead) {
       recordInputFrame(this.currentRecording, input);
+      previousPlayerX = this.player.x;
       previousPlayerY = this.player.y;
       const moved = moveActor(this.player, input, solids, doors, platforms, this.level.bounds, dynamicFor(this.player));
       events.jumped = moved.jumped;
@@ -189,7 +242,7 @@ export class RoomSimulation {
     events.cores = objectUpdate.cores;
     for (const core of objectUpdate.cores) this.addCoreScore(core.id);
 
-    if (!this.dead) this.updateBosses(events, previousPlayerY);
+    if (!this.dead) this.updateBosses(events, previousPlayerY, previousPlayerX);
     if (!this.dead) this.updateMonsters(events, previousPlayerY);
 
     if (!this.dead && playerTouchesHazard(this.level, this.player, this.objectState, this.tick)) {
@@ -201,7 +254,7 @@ export class RoomSimulation {
       this.markPlayerDead(events);
     }
 
-    if (!this.dead && rectsOverlap(this.player, this.level.exit)) {
+    if (!this.dead && this.exitUnlocked() && rectsOverlap(this.player, this.level.exit)) {
       this.won = true;
       events.won = true;
     }
@@ -222,6 +275,8 @@ export class RoomSimulation {
       crates: new Map([...this.objectState.crates.entries()].map(([id, rect]) => [id, { ...rect }])),
       killedMonsters: new Set(this.killedMonsterIds),
       bosses: this.bossSnapshots(),
+      exitUnlocked: this.exitUnlocked(),
+      bossCheckpointActive: this.bossCheckpoint !== null,
       tick: this.tick,
       totalFrames: this.totalFrames,
       score: this.score,
@@ -245,6 +300,16 @@ export class RoomSimulation {
     return finalScoreForLevel(this.level, this.totalFrames, this.score);
   }
 
+  exitUnlocked(): boolean {
+    const bosses = this.level.bosses || [];
+    if (bosses.length === 0) return true;
+    return bosses.every((boss) => this.bossStates.get(boss.id)?.phase === "defeated");
+  }
+
+  bossCheckpointActive(): boolean {
+    return this.bossCheckpoint !== null;
+  }
+
   replaySummary(): string {
     const seconds = Math.floor(this.totalFrames / 60);
     const plates = [...this.objectState.activePlates].join(", ") || "none";
@@ -263,6 +328,60 @@ export class RoomSimulation {
     for (const boss of this.level.bosses || []) {
       this.bossStates.set(boss.id, createBossRuntimeState(boss));
     }
+  }
+
+  private captureBossCheckpoint(boss: Boss, events: StepEvents, playerX: number, playerY: number): void {
+    if (this.bossCheckpoint?.bossId === boss.id) return;
+    const checkpointX = Number.isFinite(boss.checkpoint?.x) ? Number(boss.checkpoint?.x) : playerX;
+    const checkpointY = Number.isFinite(boss.checkpoint?.y) ? Number(boss.checkpoint?.y) : playerY;
+    const checkpointPlayer = { ...cloneActor(this.player), x: checkpointX, y: checkpointY, vx: 0, vy: 0, onGround: true, standingOn: null };
+    this.bossCheckpoint = {
+      bossId: boss.id,
+      player: checkpointPlayer,
+      echoes: this.echoes.map(cloneActor),
+      echoRecordings: cloneEchoRecordings(this.echoRecordings),
+      currentRecording: [...this.currentRecording],
+      objectState: cloneObjectState(this.objectState),
+      killedMonsterIds: new Set(this.killedMonsterIds),
+      bossStates: cloneBossStates(this.bossStates),
+      currentAttemptCollectedCoreIds: new Set(this.currentAttemptCollectedCoreIds),
+      currentAttemptKilledMonsterIds: new Map(this.currentAttemptKilledMonsterIds),
+      currentAttemptDefeatedBossIds: new Map(this.currentAttemptDefeatedBossIds),
+      tick: this.tick,
+      totalFrames: this.totalFrames,
+      score: this.score,
+      deaths: this.deaths
+    };
+    events.bossCheckpointActivated ||= boss.id;
+  }
+
+  private restoreBossCheckpoint(): void {
+    const checkpoint = this.bossCheckpoint;
+    if (!checkpoint) return;
+    const currentDeaths = this.deaths;
+    const deathsSinceCheckpoint = Math.max(0, currentDeaths - checkpoint.deaths);
+    this.tick = checkpoint.tick;
+    this.totalFrames = checkpoint.totalFrames;
+    this.score = Math.max(0, checkpoint.score - deathsSinceCheckpoint * this.level.score.deathPenalty);
+    this.deaths = currentDeaths;
+    this.dead = false;
+    this.won = false;
+    this.player = { ...cloneActor(checkpoint.player), alive: true };
+    this.echoes = checkpoint.echoes.map((echo) => ({ ...cloneActor(echo), alive: echo.alive }));
+    this.echoRecordings.length = 0;
+    this.echoRecordings.push(...cloneEchoRecordings(checkpoint.echoRecordings));
+    this.currentRecording = [...checkpoint.currentRecording];
+    this.objectState = cloneObjectState(checkpoint.objectState);
+    this.killedMonsterIds.clear();
+    for (const id of checkpoint.killedMonsterIds) this.killedMonsterIds.add(id);
+    this.bossStates.clear();
+    for (const [id, state] of cloneBossStates(checkpoint.bossStates)) this.bossStates.set(id, state);
+    this.currentAttemptCollectedCoreIds.clear();
+    for (const id of checkpoint.currentAttemptCollectedCoreIds) this.currentAttemptCollectedCoreIds.add(id);
+    this.currentAttemptKilledMonsterIds.clear();
+    for (const [id, score] of checkpoint.currentAttemptKilledMonsterIds) this.currentAttemptKilledMonsterIds.set(id, score);
+    this.currentAttemptDefeatedBossIds.clear();
+    for (const [id, score] of checkpoint.currentAttemptDefeatedBossIds) this.currentAttemptDefeatedBossIds.set(id, score);
   }
 
   private updateMonsters(events: StepEvents, previousPlayerY: number): void {
@@ -295,12 +414,13 @@ export class RoomSimulation {
     });
   }
 
-  private updateBosses(events: StepEvents, previousPlayerY: number): void {
+  private updateBosses(events: StepEvents, previousPlayerY: number, previousPlayerX: number): void {
     for (const boss of this.level.bosses || []) {
       const state = this.bossStates.get(boss.id);
       if (!state || state.phase === "defeated") continue;
 
       if (state.phase === "idle" && rectsOverlap(this.player, boss)) {
+        this.captureBossCheckpoint(boss, events, previousPlayerX, previousPlayerY);
         state.phase = "intro";
         state.introFrames = 0;
         events.bossIntroStarted ||= boss.id;
@@ -318,7 +438,7 @@ export class RoomSimulation {
 
       if (state.phase !== "active") continue;
       const body = bossBodyRectAt(boss, state, this.tick);
-      if (bossTakesHit(this.player, previousPlayerY, body, state)) {
+      if (bossTakesHit(this.player, previousPlayerY, boss, body, state)) {
         this.hitBoss(boss, state, body, events);
         continue;
       }
@@ -347,6 +467,7 @@ export class RoomSimulation {
 
     const score = bossScore(boss);
     state.phase = "defeated";
+    state.invulnerableFrames = 0;
     this.currentAttemptDefeatedBossIds.set(boss.id, score);
     this.score += score;
     events.bossDefeated = {
@@ -355,6 +476,10 @@ export class RoomSimulation {
       x: body.x + body.w / 2,
       y: body.y + body.h / 2
     };
+    if (this.exitUnlocked()) {
+      this.bossCheckpoint = null;
+      events.bossPortalUnlocked = true;
+    }
   }
 
   private removeDiscardedAttemptScore(): void {
@@ -374,6 +499,7 @@ export class RoomSimulation {
       const state = this.bossStates.get(boss.id);
       if (!state || state.phase === "idle") return [];
       const body = bossBodyRectAt(boss, state, this.tick);
+      const weakSpot = bossWeakSpotRectAt(boss, body);
       return [
         {
           id: boss.id,
@@ -383,6 +509,8 @@ export class RoomSimulation {
           introTotalFrames: bossIntroFrames(boss),
           invulnerableFrames: state.invulnerableFrames,
           body,
+          weakSpot,
+          weakSpotKind: bossWeakSpot(boss),
           attacks: bossAttackRectsAt(boss, state, this.tick)
         }
       ];

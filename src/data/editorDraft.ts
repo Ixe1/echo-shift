@@ -1,7 +1,7 @@
 import type { Level } from "../game/types";
 import { isBackgroundAmbienceColor, isBackgroundAmbiencePreset, normalizeBackgroundAmbience } from "../game/backgroundAmbience";
 import { isLevelBackgroundKey } from "../game/backgrounds";
-import { bossEntrySides, bossKinds, monsterKinds } from "../game/enemies";
+import { bossEntrySides, bossKinds, bossWeakSpots, monsterKinds } from "../game/enemies";
 import { normalizeScoreSettings } from "../game/scoring";
 import { solidCollisionValues } from "../game/solidCollision";
 import { normalizeSolid, solidSpriteValues } from "../game/solidSprites";
@@ -69,6 +69,9 @@ const legacyMedalSettingsLike = (value: unknown): boolean =>
 const rectLike = (value: unknown): value is Record<string, unknown> =>
   isRecord(value) && finiteValue(value.x) && finiteValue(value.y) && finiteValue(value.w) && finiteValue(value.h) && value.w > 0 && value.h > 0;
 
+const vec2Like = (value: unknown): value is Record<string, unknown> =>
+  isRecord(value) && finiteValue(value.x) && finiteValue(value.y);
+
 const objectRectLike = (value: unknown): value is Record<string, unknown> => rectLike(value) && stringValue(value.id) && value.id.length > 0;
 
 const movingObjectLike = (value: unknown): boolean =>
@@ -127,6 +130,9 @@ const bossLike = (value: unknown): boolean =>
   bossKinds.includes((value as Record<string, unknown>).kind as (typeof bossKinds)[number]) &&
   ((value as Record<string, unknown>).entrySide === undefined ||
     bossEntrySides.includes((value as Record<string, unknown>).entrySide as (typeof bossEntrySides)[number])) &&
+  ((value as Record<string, unknown>).weakSpot === undefined ||
+    bossWeakSpots.includes((value as Record<string, unknown>).weakSpot as (typeof bossWeakSpots)[number])) &&
+  ((value as Record<string, unknown>).checkpoint === undefined || vec2Like((value as Record<string, unknown>).checkpoint)) &&
   ((value as Record<string, unknown>).introSeconds === undefined || positiveIntegerValue((value as Record<string, unknown>).introSeconds)) &&
   ((value as Record<string, unknown>).health === undefined || positiveIntegerValue((value as Record<string, unknown>).health)) &&
   ((value as Record<string, unknown>).score === undefined || nonNegativeIntegerValue((value as Record<string, unknown>).score));

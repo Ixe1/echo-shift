@@ -6,6 +6,7 @@ import type {
   BossEntrySide,
   BossKind,
   BossPhase,
+  BossWeakSpot,
   Monster,
   MonsterKind,
   MonsterVulnerability,
@@ -44,6 +45,7 @@ export const bossKinds = [
 ] as const satisfies readonly BossKind[];
 
 export const bossEntrySides = ["left", "right", "top", "bottom", "center"] as const satisfies readonly BossEntrySide[];
+export const bossWeakSpots = ["top", "bottom", "core"] as const satisfies readonly BossWeakSpot[];
 
 export type BossRuntimeState = {
   id: string;
@@ -96,6 +98,9 @@ export const normalizeBossKind = (value: unknown): BossKind =>
 export const normalizeBossEntrySide = (value: unknown): BossEntrySide =>
   bossEntrySides.includes(value as BossEntrySide) ? (value as BossEntrySide) : "right";
 
+export const normalizeBossWeakSpot = (value: unknown): BossWeakSpot =>
+  bossWeakSpots.includes(value as BossWeakSpot) ? (value as BossWeakSpot) : "top";
+
 export const monsterScore = (monster: Monster): number =>
   Math.max(0, Math.round(finiteNumber(monster.score, monsterDefinitions[monster.kind].score)));
 
@@ -142,6 +147,8 @@ export const bossScore = (boss: Boss): number => Math.max(0, Math.round(finiteNu
 
 export const bossIntroFrames = (boss: Boss): number =>
   Math.max(1, Math.round(finiteNumber(boss.introSeconds, BOSS_INTRO_SECONDS) * 60));
+
+export const bossWeakSpot = (boss: Boss): BossWeakSpot => boss.weakSpot || defaultBossWeakSpot(boss.kind);
 
 export const createBossRuntimeState = (boss: Boss): BossRuntimeState => ({
   id: boss.id,
@@ -193,12 +200,54 @@ export const bossAttackRectsAt = (boss: Boss, state: BossRuntimeState, tick: num
   ];
 };
 
-export const bossTakesHit = (actor: ActorBody, previousY: number, bossRect: Rect, state: BossRuntimeState): boolean => {
-  if (state.phase !== "active" || state.invulnerableFrames > 0 || !rectsOverlap(actor, bossRect)) return false;
+export const bossWeakSpotRectAt = (boss: Boss, body: Rect): Rect => {
+  const spot = bossWeakSpot(boss);
+  if (spot === "bottom") {
+    const w = clamp(body.w * 0.42, 28, 58);
+    const h = clamp(body.h * 0.2, 16, 30);
+    return {
+      x: body.x + body.w / 2 - w / 2,
+      y: body.y + body.h - h + 4,
+      w,
+      h
+    };
+  }
+  if (spot === "core") {
+    const size = clamp(Math.min(body.w, body.h) * 0.34, 24, 48);
+    return {
+      x: body.x + body.w / 2 - size / 2,
+      y: body.y + body.h * 0.42 - size / 2,
+      w: size,
+      h: size
+    };
+  }
+  const w = clamp(body.w * 0.46, 32, 64);
+  const h = clamp(body.h * 0.22, 16, 32);
+  return {
+    x: body.x + body.w / 2 - w / 2,
+    y: body.y - 4,
+    w,
+    h
+  };
+};
+
+export const bossTakesHit = (actor: ActorBody, previousY: number, boss: Boss, bossRect: Rect, state: BossRuntimeState): boolean => {
+  if (state.phase !== "active" || state.invulnerableFrames > 0) return false;
+  const weakSpotRect = bossWeakSpotRectAt(boss, bossRect);
+  if (!rectsOverlap(actor, weakSpotRect)) return false;
+  const weakSpotKind = bossWeakSpot(boss);
   const previousBottom = previousY + actor.h;
   const currentBottom = actor.y + actor.h;
-  const topHit = actor.vy >= 0 && previousBottom <= bossRect.y + 10 && currentBottom <= bossRect.y + bossRect.h * 0.62;
-  const bottomHit = actor.vy <= 0 && previousY >= bossRect.y + bossRect.h - 10 && actor.y >= bossRect.y + bossRect.h * 0.26;
+  const topHit =
+    (weakSpotKind === "top" || weakSpotKind === "core") &&
+    actor.vy >= 0 &&
+    previousBottom <= weakSpotRect.y + 8 &&
+    currentBottom <= weakSpotRect.y + weakSpotRect.h + Math.max(6, weakSpotRect.h * 0.45);
+  const bottomHit =
+    (weakSpotKind === "bottom" || weakSpotKind === "core") &&
+    actor.vy <= 0 &&
+    previousY >= weakSpotRect.y + weakSpotRect.h - 8 &&
+    actor.y >= weakSpotRect.y - Math.max(6, weakSpotRect.h * 0.4);
   return topHit || bottomHit;
 };
 
@@ -206,6 +255,12 @@ const defaultBossHealth = (kind: BossKind): number => {
   if (kind === "clockwork-regent") return 5;
   if (kind === "archive-custodian") return 4;
   return 3;
+};
+
+const defaultBossWeakSpot = (kind: BossKind): BossWeakSpot => {
+  if (kind === "cryo-conservator") return "bottom";
+  if (kind === "clockwork-regent") return "core";
+  return "top";
 };
 
 const bossBodySize = (boss: Boss): { w: number; h: number } => ({

@@ -13,9 +13,11 @@ import { backgroundForLevel, isLevelBackgroundKey, levelBackgroundKeys, levelBac
 import {
   bossEntrySides,
   bossKinds,
+  bossWeakSpots,
   monsterKinds,
   normalizeBossEntrySide,
   normalizeBossKind,
+  normalizeBossWeakSpot,
   normalizeMonsterKind,
   normalizeMonsterVulnerability
 } from "../game/enemies";
@@ -30,6 +32,7 @@ import type {
   Conveyor,
   Boss,
   BossEntrySide,
+  BossWeakSpot,
   Core,
   Door,
   EchoSensor,
@@ -302,6 +305,11 @@ const resizeRectOnGrid = (startRect: Rect, handle: ResizeHandle, dx: number, dy:
 };
 
 const positiveNumber = (value: unknown, fallback: number): number => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+};
+
+const numberValue = (value: unknown, fallback: number): number => {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
 };
@@ -745,11 +753,16 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
     } as Monster;
   }
   if (kind === "bosses") {
+    const checkpointRecord = isRecord(record.checkpoint) ? record.checkpoint : null;
     return {
       ...base,
       id,
       kind: normalizeBossKind(record.kind),
       entrySide: normalizeBossEntrySide(record.entrySide),
+      weakSpot: normalizeBossWeakSpot(record.weakSpot),
+      checkpoint: checkpointRecord
+        ? { x: numberValue(checkpointRecord.x, base.x - 60), y: numberValue(checkpointRecord.y, base.y + base.h - 48) }
+        : undefined,
       introSeconds: positiveInteger(record.introSeconds, 17),
       health: positiveInteger(record.health, 3),
       score: Number.isFinite(Number(record.score)) ? nonNegativeInteger(record.score, 0) : undefined
@@ -1204,6 +1217,18 @@ class LevelEditor {
     }
     if (field === "entrySide") {
       record.entrySide = normalizeBossEntrySide(value);
+      return;
+    }
+    if (field === "weakSpot") {
+      record.weakSpot = normalizeBossWeakSpot(value);
+      return;
+    }
+    if (field === "checkpointX" || field === "checkpointY") {
+      const existing = isRecord(record.checkpoint) ? record.checkpoint : {};
+      record.checkpoint = {
+        x: field === "checkpointX" ? Number(value) : numberValue(existing.x, target.x - 60),
+        y: field === "checkpointY" ? Number(value) : numberValue(existing.y, target.y + target.h - 48)
+      };
       return;
     }
     if (field === "scoreValue") {
@@ -1853,7 +1878,16 @@ class LevelEditor {
     if (kind === "drones") return { ...base, axis: "x", distance: 120, period: 200, phase: 0 } as PatrolDrone;
     if (kind === "monsters") return { ...base, kind: "sprout-hopper", axis: "x", distance: 120, period: 180, phase: 0 } as Monster;
     if (kind === "bosses") {
-      return { ...base, kind: "storm-relay-warden", entrySide: "right", introSeconds: 17, health: 3, score: 3000 } as Boss;
+      return {
+        ...base,
+        kind: "storm-relay-warden",
+        entrySide: "right",
+        weakSpot: "top",
+        checkpoint: { x: base.x - 60, y: base.y + base.h - 48 },
+        introSeconds: 17,
+        health: 3,
+        score: 3000
+      } as Boss;
     }
     return base as PushableCrate;
   }
@@ -2241,13 +2275,21 @@ class LevelEditor {
       `;
     }
     if (kind === "bosses") {
+      const checkpoint = isRecord(record.checkpoint) ? record.checkpoint : null;
+      const checkpointX = checkpoint ? numberValue(checkpoint.x, object.x - 60) : object.x - 60;
+      const checkpointY = checkpoint ? numberValue(checkpoint.y, object.y + object.h - 48) : object.y + object.h - 48;
       return `
         <div class="inspector-grid two">
           ${this.selectField("Kind", "kind", String(record.kind || "storm-relay-warden"), bossKinds.map((value) => ({ value, label: value })))}
           ${this.selectField("Entry", "entrySide", String(record.entrySide || "right"), bossEntrySides.map((value) => ({ value, label: value })))}
+          ${this.selectField("Weak Spot", "weakSpot", String(record.weakSpot || "top"), bossWeakSpots.map((value) => ({ value, label: value })))}
           ${this.numberField("Intro Seconds", "introSeconds", Number(record.introSeconds || 17), "object", 1)}
           ${this.numberField("Health", "health", Number(record.health || 3), "object", 1)}
           ${this.numberField("Score", "scoreValue", Number(record.score || 0), "object", 100)}
+        </div>
+        <div class="inspector-grid two">
+          ${this.numberField("Checkpoint X", "checkpointX", checkpointX, "object", GRID)}
+          ${this.numberField("Checkpoint Y", "checkpointY", checkpointY, "object", GRID)}
         </div>
       `;
     }
@@ -2484,11 +2526,17 @@ class LevelEditor {
           if (!bossEntrySides.includes((boss.entrySide || "right") as BossEntrySide)) {
             messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid boss entry side.` });
           }
+          if (!bossWeakSpots.includes((boss.weakSpot || "top") as BossWeakSpot)) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid boss weak spot.` });
+          }
           if (boss.introSeconds !== undefined && (!Number.isFinite(boss.introSeconds) || boss.introSeconds <= 0)) {
             messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid boss intro seconds.` });
           }
           if (boss.health !== undefined && (!Number.isFinite(boss.health) || boss.health <= 0)) {
             messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid boss health.` });
+          }
+          if (boss.checkpoint && (!Number.isFinite(boss.checkpoint.x) || !Number.isFinite(boss.checkpoint.y))) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid boss checkpoint.` });
           }
         }
         if (kind === "conveyors") {
@@ -2728,6 +2776,10 @@ class LevelEditor {
       drawMotionPath();
       return;
     }
+    if (kind === "bosses") {
+      this.drawBossArena(object as Boss, style, selected);
+      return;
+    }
 
     ctx.fillStyle = style.fill;
     ctx.strokeStyle = selected ? "#fff8bf" : style.stroke;
@@ -2736,6 +2788,36 @@ class LevelEditor {
     ctx.strokeRect(object.x, object.y, object.w, object.h);
     this.drawObjectLabel(object, object.id, style.text);
     drawMotionPath();
+  }
+
+  private drawBossArena(object: Boss, style: { fill: string; stroke: string; text: string }, selected: boolean): void {
+    const ctx = this.context;
+    ctx.fillStyle = style.fill;
+    ctx.strokeStyle = selected ? "#fff8bf" : style.stroke;
+    ctx.lineWidth = selected ? 4 / this.view.w : 2 / this.view.w;
+    ctx.setLineDash([16 / this.view.w, 10 / this.view.w]);
+    ctx.fillRect(object.x, object.y, object.w, object.h);
+    ctx.strokeRect(object.x, object.y, object.w, object.h);
+    ctx.setLineDash([]);
+
+    const checkpoint = object.checkpoint || { x: object.x - 60, y: object.y + object.h - 48 };
+    const radius = Math.max(9 / this.view.w, 7);
+    ctx.fillStyle = "rgba(80, 255, 194, 0.9)";
+    ctx.strokeStyle = "#041018";
+    ctx.lineWidth = 2 / this.view.w;
+    ctx.beginPath();
+    ctx.arc(checkpoint.x, checkpoint.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(80, 255, 194, 0.55)";
+    ctx.lineWidth = 2 / this.view.w;
+    ctx.beginPath();
+    ctx.moveTo(checkpoint.x - radius * 1.7, checkpoint.y);
+    ctx.lineTo(checkpoint.x + radius * 1.7, checkpoint.y);
+    ctx.moveTo(checkpoint.x, checkpoint.y - radius * 1.7);
+    ctx.lineTo(checkpoint.x, checkpoint.y + radius * 1.7);
+    ctx.stroke();
+    this.drawObjectLabel(object, object.id, style.text);
   }
 
   private drawSolid(object: Solid, style: { fill: string; stroke: string; text: string }, selected: boolean): void {

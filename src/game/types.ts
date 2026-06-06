@@ -180,11 +180,14 @@ export type BossKind =
 
 export type BossEntrySide = "left" | "right" | "top" | "bottom" | "center";
 export type BossPhase = "idle" | "intro" | "active" | "defeated";
+export type BossWeakSpot = "top" | "bottom" | "core";
 
 export type Boss = Rect & {
   id: string;
   kind: BossKind;
   entrySide?: BossEntrySide;
+  weakSpot?: BossWeakSpot;
+  checkpoint?: Vec2;
   introSeconds?: number;
   health?: number;
   score?: number;
@@ -198,6 +201,8 @@ export type BossSnapshot = {
   introTotalFrames: number;
   invulnerableFrames: number;
   body: Rect;
+  weakSpot: Rect;
+  weakSpotKind: BossWeakSpot;
   attacks: Rect[];
 };
 
@@ -334,8 +339,10 @@ export type StepEvents = {
   livesExhausted: boolean;
   monsterKills: MonsterKillEvent[];
   bossIntroStarted: string | null;
+  bossCheckpointActivated: string | null;
   bossHit: BossHitEvent | null;
   bossDefeated: BossDefeatEvent | null;
+  bossPortalUnlocked: boolean;
   won: boolean;
 };
 
@@ -349,6 +356,8 @@ export type SimulationSnapshot = {
   crates: Map<string, Rect>;
   killedMonsters: Set<string>;
   bosses: BossSnapshot[];
+  exitUnlocked: boolean;
+  bossCheckpointActive: boolean;
   tick: number;
   totalFrames: number;
   score: number;

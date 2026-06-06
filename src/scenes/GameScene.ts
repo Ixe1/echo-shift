@@ -46,6 +46,7 @@ const HAZARD_VENT_FRAMES = 6;
 const RUN_FRAMES = [1, 2, 3, 4] as const;
 const LEVEL_INTRO_MS = 3000;
 const LEVEL_INTRO_OUTRO_MS = 820;
+const BOSS_MUSIC_FADE_MS = 620;
 const OBJECT_FRAME = {
   floor: 0,
   wall: 1,
@@ -99,6 +100,8 @@ type RenderView = {
   crates: Map<string, Rect>;
   killedMonsters: Set<string>;
   bosses: BossSnapshot[];
+  exitUnlocked: boolean;
+  bossCheckpointActive: boolean;
   tick: number;
   totalFrames: number;
   score: number;
@@ -205,6 +208,8 @@ export class GameScene extends Phaser.Scene {
     crates: new Map(),
     killedMonsters: new Set(),
     bosses: [],
+    exitUnlocked: true,
+    bossCheckpointActive: false,
     tick: 0,
     totalFrames: 0,
     score: 0,
@@ -497,7 +502,7 @@ export class GameScene extends Phaser.Scene {
 
   private restartLevelMusic(): void {
     this.bossMusicActive = false;
-    audio.playMusic(this.currentLevelSoundtrackKey(), { restart: true });
+    audio.playMusic(this.currentLevelSoundtrackKey(), { restart: true, fadeMs: BOSS_MUSIC_FADE_MS });
   }
 
   private startLevelIntro(): void {
@@ -608,8 +613,8 @@ export class GameScene extends Phaser.Scene {
     for (let index = 0; index < events.echoLaserVaporized; index += 1) audio.play("echoLaserVaporized");
     if (events.bossIntroStarted && !this.bossMusicActive) {
       this.bossMusicActive = true;
-      audio.playMusic("boss");
-      this.hud.toast("Boss approaching");
+      audio.playMusic("boss", { restart: true, fadeMs: BOSS_MUSIC_FADE_MS });
+      this.hud.toast(events.bossCheckpointActivated ? "Boss checkpoint anchored" : "Boss approaching");
     }
     for (const kill of events.monsterKills) {
       audio.play("core");
@@ -624,6 +629,12 @@ export class GameScene extends Phaser.Scene {
         0xffffff,
         events.bossDefeated ? `+${events.bossDefeated.score}` : `${events.bossHit.health}`
       );
+    }
+    if (events.bossPortalUnlocked) {
+      const exitCenter = rectCenter(this.level.exit);
+      audio.play("portal");
+      this.restartLevelMusic();
+      this.addFxBurst(exitCenter.x, exitCenter.y, 0x43f7ff, "OPEN");
     }
     if (events.died) {
       this.startDeathPresentation(events.livesExhausted, events.playerLaserVaporized);
@@ -713,7 +724,7 @@ export class GameScene extends Phaser.Scene {
     this.echoTrails.clear();
     this.launchPadActiveUntil.clear();
     this.playerCastUntil = 0;
-    this.cameraTarget?.setPosition(this.level.start.x + this.simulation.player.w / 2, this.level.start.y + this.simulation.player.h / 2);
+    this.cameraTarget?.setPosition(this.simulation.player.x + this.simulation.player.w / 2, this.simulation.player.y + this.simulation.player.h / 2);
     this.restartLevelMusic();
     this.cameras.main.fadeIn(DEATH_FADE_IN_MS, 5, 7, 13);
     this.startLevelIntro();
@@ -922,8 +933,7 @@ export class GameScene extends Phaser.Scene {
 
   private configureCameraFrame = (): void => {
     const camera = this.cameras.main;
-    const zoom = Math.max(0.1, this.scale.height / this.level.bounds.h);
-    camera.setZoom(zoom);
+    camera.setZoom(this.baseCameraZoom());
     camera.setRoundPixels(true);
     camera.setDeadzone(
       Math.min(340, Math.max(190, this.scale.width * 0.24)),
@@ -931,6 +941,16 @@ export class GameScene extends Phaser.Scene {
     );
     this.recordCameraDiagnostics();
   };
+
+  private baseCameraZoom(): number {
+    return Math.max(0.1, this.scale.height / this.level.bounds.h);
+  }
+
+  private bossArenaCameraZoom(arena: Rect): number {
+    const paddedWidth = Math.max(1, arena.w + 96);
+    const paddedHeight = Math.max(1, arena.h + 80);
+    return Math.max(0.1, Math.min(this.baseCameraZoom(), this.scale.width / paddedWidth, this.scale.height / paddedHeight));
+  }
 
   private recordCameraDiagnostics = (): void => {
     const camera = this.cameras.main;
@@ -1023,7 +1043,28 @@ export class GameScene extends Phaser.Scene {
   private renderWorld(): void {
     const snapshot = this.liveRenderView();
     if (!this.deathPresentation) {
-      this.cameraTarget?.setPosition(snapshot.player.x + snapshot.player.w / 2, snapshot.player.y + snapshot.player.h / 2);
+      const introBoss = snapshot.bosses.find((boss) => boss.phase === "intro");
+      if (introBoss) {
+        const boss = (this.level.bosses || []).find((item) => item.id === introBoss.id);
+        const arena = boss || introBoss.body;
+        const focus = rectCenter(arena);
+        this.cameras.main.setZoom(this.bossArenaCameraZoom(arena));
+        this.cameraTarget?.setPosition(focus.x, focus.y);
+        this.cameras.main.centerOn(focus.x, focus.y);
+      } else {
+        const activeBoss = snapshot.bosses.find((boss) => boss.phase === "active");
+        if (activeBoss) {
+          const boss = (this.level.bosses || []).find((item) => item.id === activeBoss.id);
+          const arena = boss || activeBoss.body;
+          const focus = rectCenter(arena);
+          this.cameras.main.setZoom(this.bossArenaCameraZoom(arena));
+          this.cameraTarget?.setPosition(focus.x, focus.y);
+          this.cameras.main.centerOn(focus.x, focus.y);
+        } else {
+          this.cameras.main.setZoom(this.baseCameraZoom());
+          this.cameraTarget?.setPosition(snapshot.player.x + snapshot.player.w / 2, snapshot.player.y + snapshot.player.h / 2);
+        }
+      }
     }
     this.beginObjectAssetSync();
     this.world.clear();
@@ -1045,7 +1086,7 @@ export class GameScene extends Phaser.Scene {
     this.drawDrones(snapshot.tick, snapshot.activePlates);
     this.drawMonsters(snapshot.tick, snapshot.killedMonsters);
     this.drawBosses(snapshot.bosses);
-    this.drawExit(this.level.exit, snapshot.won);
+    if (snapshot.exitUnlocked) this.drawExit(this.level.exit, snapshot.won);
     this.drawEchoes(snapshot.echoes);
     this.drawActor(snapshot.player, snapshot.dead ? 0xff4f8b : 0x43f7ff, 1);
     this.drawFxBursts();
@@ -1072,6 +1113,8 @@ export class GameScene extends Phaser.Scene {
     view.crates = objectState.crates;
     view.killedMonsters = simulation.killedMonsterIds;
     view.bosses = simulation.bossSnapshots();
+    view.exitUnlocked = simulation.exitUnlocked();
+    view.bossCheckpointActive = simulation.bossCheckpointActive();
     view.tick = simulation.tick;
     view.totalFrames = simulation.totalFrames;
     view.score = simulation.score;
@@ -1670,15 +1713,9 @@ export class GameScene extends Phaser.Scene {
       const center = rectCenter(body);
       const introProgress = phase === "intro" ? Math.min(1, snapshot.introFrames / Math.max(1, snapshot.introTotalFrames)) : 1;
       const flickerWhite = snapshot.invulnerableFrames > 0 && Math.floor(this.simulation.tick / 4) % 2 === 0;
-      this.world.fillStyle(color, phase === "intro" ? 0.16 + introProgress * 0.2 : 0.26);
-      this.world.fillEllipse(center.x, center.y, body.w * 1.55, body.h * 1.42);
-      this.world.fillStyle(flickerWhite ? 0xffffff : 0x05070d, phase === "intro" ? 0.62 : 0.94);
-      this.world.fillRoundedRect(body.x, body.y, body.w, body.h, 10);
-      this.world.lineStyle(3, flickerWhite ? 0xffffff : color, phase === "intro" ? 0.48 + introProgress * 0.42 : 0.92);
-      this.world.strokeRoundedRect(body.x, body.y, body.w, body.h, 10);
-      this.world.fillStyle(flickerWhite ? color : 0xffffff, phase === "intro" ? 0.35 : 0.72);
-      this.world.fillCircle(center.x - body.w * 0.18, body.y + body.h * 0.36, 3);
-      this.world.fillCircle(center.x + body.w * 0.18, body.y + body.h * 0.36, 3);
+      if (phase === "intro") this.drawBossIntroEffect(boss, body, color, introProgress);
+      this.drawBossShell(body, color, flickerWhite, phase, introProgress, boss.kind);
+      this.drawBossWeakSpot(snapshot, color, flickerWhite, phase, introProgress);
 
       if (phase === "intro") {
         this.world.lineStyle(4, 0xffffff, 0.28);
@@ -1697,6 +1734,83 @@ export class GameScene extends Phaser.Scene {
         this.world.lineStyle(1, 0xffffff, 0.48);
         this.world.strokeRect(barX, barY, barW, 8);
       }
+    }
+  }
+
+  private drawBossIntroEffect(boss: Rect, body: Rect, color: number, progress: number): void {
+    const arenaCenter = rectCenter(boss);
+    const bodyCenter = rectCenter(body);
+    this.world.fillStyle(0x05070d, 0.18);
+    this.world.fillRect(boss.x, boss.y, boss.w, boss.h);
+    this.world.lineStyle(2, color, 0.18 + progress * 0.32);
+    for (let i = 0; i < 4; i += 1) {
+      const inset = 16 + i * 18 + progress * 12;
+      this.world.strokeRect(boss.x + inset, boss.y + inset * 0.45, Math.max(0, boss.w - inset * 2), Math.max(0, boss.h - inset * 0.9));
+    }
+    this.world.lineStyle(3, color, 0.22);
+    this.world.lineBetween(arenaCenter.x, arenaCenter.y, bodyCenter.x, bodyCenter.y);
+    this.world.fillStyle(color, 0.22);
+    this.world.fillCircle(bodyCenter.x, bodyCenter.y, Math.max(body.w, body.h) * (0.7 + progress * 0.5));
+  }
+
+  private drawBossShell(body: Rect, color: number, flickerWhite: boolean, phase: string, introProgress: number, kind: string): void {
+    const center = rectCenter(body);
+    const shell = flickerWhite ? 0xffffff : 0x05070d;
+    const alpha = phase === "intro" ? 0.7 + introProgress * 0.22 : 0.96;
+    this.world.fillStyle(0x000000, 0.28);
+    this.world.fillEllipse(center.x, body.y + body.h + 9, body.w * 1.22, 14);
+    this.world.fillStyle(color, phase === "intro" ? 0.16 + introProgress * 0.22 : 0.24);
+    this.world.fillEllipse(center.x, center.y, body.w * 1.6, body.h * 1.44);
+    this.world.fillStyle(shell, alpha);
+    this.world.fillEllipse(center.x, center.y, body.w, body.h * 0.78);
+    this.world.fillStyle(flickerWhite ? color : 0x101a2b, alpha);
+    this.world.fillRoundedRect(body.x + body.w * 0.14, body.y + body.h * 0.27, body.w * 0.72, body.h * 0.48, 12);
+    this.world.lineStyle(3, flickerWhite ? 0xffffff : color, phase === "intro" ? 0.5 + introProgress * 0.38 : 0.92);
+    this.world.strokeEllipse(center.x, center.y, body.w, body.h * 0.78);
+    this.world.lineStyle(2, 0xffffff, flickerWhite ? 0.75 : 0.28);
+    this.world.lineBetween(body.x + body.w * 0.2, center.y, body.x + body.w * 0.8, center.y);
+    this.world.fillStyle(color, flickerWhite ? 0.5 : 0.82);
+    this.world.fillCircle(body.x + body.w * 0.16, center.y, Math.max(8, body.w * 0.1));
+    this.world.fillCircle(body.x + body.w * 0.84, center.y, Math.max(8, body.w * 0.1));
+    if (kind.includes("cryo")) {
+      this.world.lineStyle(2, 0x8eeaff, 0.72);
+      this.world.lineBetween(center.x, body.y + body.h * 0.16, center.x, body.y - body.h * 0.12);
+      this.world.strokeTriangle(center.x - 9, body.y - body.h * 0.1, center.x + 9, body.y - body.h * 0.1, center.x, body.y - body.h * 0.26);
+    } else if (kind.includes("archive")) {
+      this.world.lineStyle(2, 0xe0af67, 0.72);
+      this.world.strokeRect(body.x + body.w * 0.25, body.y + body.h * 0.16, body.w * 0.5, body.h * 0.16);
+    } else if (kind.includes("clockwork")) {
+      this.world.lineStyle(2, 0xffe35a, 0.76);
+      this.world.strokeCircle(center.x, center.y, Math.min(body.w, body.h) * 0.28);
+      this.world.lineBetween(center.x - body.w * 0.22, center.y, center.x + body.w * 0.22, center.y);
+    } else {
+      this.world.lineStyle(2, 0x50ffc2, 0.72);
+      this.world.lineBetween(body.x + body.w * 0.3, body.y + body.h * 0.18, body.x + body.w * 0.7, body.y + body.h * 0.18);
+    }
+  }
+
+  private drawBossWeakSpot(snapshot: BossSnapshot, color: number, flickerWhite: boolean, phase: string, introProgress: number): void {
+    const spot = snapshot.weakSpot;
+    const center = rectCenter(spot);
+    const openAlpha = phase === "active" ? 0.95 : 0.28 + introProgress * 0.38;
+    const fill = flickerWhite ? 0xffffff : 0xffe35a;
+    this.world.fillStyle(fill, openAlpha);
+    this.world.fillEllipse(center.x, center.y, spot.w, spot.h);
+    this.world.lineStyle(3, flickerWhite ? color : 0xffffff, openAlpha);
+    this.world.strokeEllipse(center.x, center.y, spot.w, spot.h);
+    this.world.lineStyle(2, fill, openAlpha * 0.9);
+    if (snapshot.weakSpotKind === "bottom") {
+      this.world.lineBetween(center.x, spot.y + spot.h + 16, center.x, spot.y + spot.h + 3);
+      this.world.lineBetween(center.x - 8, spot.y + spot.h + 11, center.x, spot.y + spot.h + 3);
+      this.world.lineBetween(center.x + 8, spot.y + spot.h + 11, center.x, spot.y + spot.h + 3);
+    } else if (snapshot.weakSpotKind === "core") {
+      this.world.strokeCircle(center.x, center.y, Math.max(spot.w, spot.h) * 0.72);
+      this.world.lineBetween(center.x - spot.w * 0.7, center.y, center.x - spot.w * 0.28, center.y);
+      this.world.lineBetween(center.x + spot.w * 0.28, center.y, center.x + spot.w * 0.7, center.y);
+    } else {
+      this.world.lineBetween(center.x, spot.y - 16, center.x, spot.y - 3);
+      this.world.lineBetween(center.x - 8, spot.y - 11, center.x, spot.y - 3);
+      this.world.lineBetween(center.x + 8, spot.y - 11, center.x, spot.y - 3);
     }
   }
 
@@ -1915,6 +2029,8 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftLaserAssetPositions = this.laserAssetPositions.join("|");
     document.documentElement.dataset.echoShiftDoorAssetTransforms = this.doorAssetTransforms.join("|");
     document.documentElement.dataset.echoShiftCoreSpriteFrames = this.coreSpriteFrames.join("|");
+    document.documentElement.dataset.echoShiftExitUnlocked = snapshot.exitUnlocked ? "true" : "false";
+    document.documentElement.dataset.echoShiftBossCheckpoint = snapshot.bossCheckpointActive ? "active" : "idle";
     document.documentElement.dataset.echoShiftEchoSensorAssetFrames = this.echoSensorAssetFrames.join("|");
     document.documentElement.dataset.echoShiftLaunchPadSpriteFrames = this.launchPadSpriteFrames.join("|");
     document.documentElement.dataset.echoShiftHazardVentSpriteFrames = this.hazardVentSpriteFrames.join("|");
@@ -2058,6 +2174,10 @@ export class GameScene extends Phaser.Scene {
 
   private syncExitSprite(snapshot: RenderView): void {
     if (!this.textures.exists("time-effects")) return;
+    if (!snapshot.exitUnlocked) {
+      this.exitSprite?.setVisible(false);
+      return;
+    }
     const center = rectCenter(this.level.exit);
     if (!this.exitSprite) {
       this.exitSprite = this.add.image(0, 0, "time-effects", 3).setDepth(10);
