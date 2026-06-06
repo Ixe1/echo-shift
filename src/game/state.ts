@@ -482,10 +482,22 @@ export class RoomSimulation {
       x: body.x + body.w / 2,
       y: body.y + body.h / 2
     };
-    if (this.bossCheckpoint?.bossId === boss.id) this.bossCheckpoint = null;
+    if (this.bossCheckpoint?.bossId === boss.id) this.reassignBossCheckpointAfterDefeat(boss.id);
     if (this.exitUnlocked()) {
       events.bossPortalUnlocked = true;
     }
+  }
+
+  private reassignBossCheckpointAfterDefeat(defeatedBossId: string): void {
+    if (!this.bossCheckpoint) return;
+    const nextBossId = (this.level.bosses || [])
+      .filter((boss) => boss.id !== defeatedBossId)
+      .find((boss) => {
+        const state = this.bossStates.get(boss.id);
+        return state?.phase === "intro" || state?.phase === "active";
+      })?.id;
+    if (nextBossId) this.bossCheckpoint = { ...this.bossCheckpoint, bossId: nextBossId };
+    else this.bossCheckpoint = null;
   }
 
   private removeDiscardedAttemptScore(): void {

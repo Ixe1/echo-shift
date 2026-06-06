@@ -932,6 +932,12 @@ try {
   const bossYAfterDrag = await objectNumber(page, "y");
   const bossCheckpointXAfterDrag = await objectNumber(page, "checkpointX");
   const bossCheckpointYAfterDrag = await objectNumber(page, "checkpointY");
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+C" : "Control+C");
+  const duplicatedBossX = await objectNumber(page, "x");
+  const duplicatedBossY = await objectNumber(page, "y");
+  const duplicatedBossCheckpointX = await objectNumber(page, "checkpointX");
+  const duplicatedBossCheckpointY = await objectNumber(page, "checkpointY");
+  const duplicatedBossId = await page.locator("[data-object-field='id']").inputValue();
 
   const toolkitLevel = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
   const toolkitValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
@@ -946,6 +952,7 @@ try {
   const toolkitRequiredDoor = toolkitLevel.doors.find((item) => item.id === "smoke-required-door");
   const toolkitCrate = toolkitLevel.crates.find((item) => item.id === "smoke-crate");
   const toolkitBoss = toolkitLevel.bosses.find((item) => item.id === "smoke-boss");
+  const toolkitDuplicatedBoss = toolkitLevel.bosses.find((item) => item.id === duplicatedBossId);
 
   await dragToolToWorld(page, "platforms", { x: 1320, y: 420 });
   await page.locator("[data-object-field='id']").fill("smoke-moving-surface");
@@ -1470,6 +1477,15 @@ try {
     bossCheckpointXAfterDrag - bossCheckpointXBeforeDrag === bossXAfterDrag - bossXBeforeDrag &&
       bossCheckpointYAfterDrag - bossCheckpointYBeforeDrag === bossYAfterDrag - bossYBeforeDrag,
     `Expected default boss checkpoint to move with arena, checkpoint ${bossCheckpointXBeforeDrag},${bossCheckpointYBeforeDrag} -> ${bossCheckpointXAfterDrag},${bossCheckpointYAfterDrag}; boss ${bossXBeforeDrag},${bossYBeforeDrag} -> ${bossXAfterDrag},${bossYAfterDrag}`
+  );
+  assert(duplicatedBossId !== "smoke-boss", `Expected duplicated boss to get a new id, got ${duplicatedBossId}`);
+  assert(
+    duplicatedBossCheckpointX === duplicatedBossX - 60 && duplicatedBossCheckpointY === duplicatedBossY + (toolkitDuplicatedBoss?.h || 0) - 48,
+    `Expected duplicated boss checkpoint to follow copied arena, got boss ${duplicatedBossX},${duplicatedBossY} ${JSON.stringify(toolkitDuplicatedBoss)} checkpoint ${duplicatedBossCheckpointX},${duplicatedBossCheckpointY}`
+  );
+  assert(
+    toolkitDuplicatedBoss?.checkpoint?.x === duplicatedBossCheckpointX && toolkitDuplicatedBoss?.checkpoint?.y === duplicatedBossCheckpointY,
+    `Expected duplicated boss checkpoint to export, got ${JSON.stringify(toolkitDuplicatedBoss)}`
   );
   assert(renamedTimerExists, "Expected timed switch rename to export");
   assert(

@@ -1815,6 +1815,7 @@ class LevelEditor {
       y: this.isSurfaceMounted(this.selection.kind) ? object.y : object.y + GRID
     };
     this.snapToNearbySurface(this.selection.kind, copy);
+    if (this.selection.kind === "bosses") (copy as Boss).checkpoint = defaultBossCheckpoint(copy);
     ensureCollection(this.level, this.selection.kind).push(copy);
     this.selection = { kind: this.selection.kind, id: copy.id };
     this.activePanel = "inspect";

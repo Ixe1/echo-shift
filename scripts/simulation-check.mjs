@@ -1300,7 +1300,7 @@ try {
     ],
     bosses: [
       { id: "boss-a", kind: "storm-relay-warden", x: 60, y: 20, w: 220, h: 130, entrySide: "right", introSeconds: 1, health: 1, score: 700 },
-      { id: "boss-b", kind: "cryo-conservator", x: 330, y: 20, w: 220, h: 130, entrySide: "left", introSeconds: 1, health: 1, score: 900 }
+      { id: "boss-b", kind: "storm-relay-warden", x: 330, y: 20, w: 220, h: 130, entrySide: "left", introSeconds: 1, health: 1, score: 900 }
     ]
   };
   const multiBossSim = new RoomSimulation(multiBossLevel);
@@ -1354,8 +1354,20 @@ try {
   const simultaneousBossBodyB = simultaneousCheckpointSim.bossSnapshots().find((boss) => boss.id === "boss-b")?.body;
   assert(simultaneousBossBodyB, "Expected second simultaneous boss body snapshot");
   Object.assign(simultaneousCheckpointSim.player, {
-    x: simultaneousBossBodyB.x + simultaneousBossBodyB.w * 0.65,
-    y: simultaneousBossBodyB.y + simultaneousBossBodyB.h * 0.45,
+    x: simultaneousBossBodyB.x + simultaneousBossBodyB.w / 2 - 12,
+    y: simultaneousBossBodyB.y - 35,
+    vx: 0,
+    vy: 4,
+    onGround: false
+  });
+  const simultaneousCheckpointDefeatB = simultaneousCheckpointSim.step(idle);
+  assert(simultaneousCheckpointDefeatB.bossDefeated?.id === "boss-b", "Expected checkpoint-owning second boss defeat");
+  assert(simultaneousCheckpointSim.bossCheckpointActive(), "Expected checkpoint to remain active while first simultaneous boss is still active");
+  const simultaneousBossBodyAAfterB = simultaneousCheckpointSim.bossSnapshots().find((boss) => boss.id === "boss-a")?.body;
+  assert(simultaneousBossBodyAAfterB, "Expected first simultaneous boss to remain active after second boss defeat");
+  Object.assign(simultaneousCheckpointSim.player, {
+    x: simultaneousBossBodyAAfterB.x + simultaneousBossBodyAAfterB.w * 0.65,
+    y: simultaneousBossBodyAAfterB.y + simultaneousBossBodyAAfterB.h * 0.45,
     vx: 0,
     vy: 0,
     onGround: false
