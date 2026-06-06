@@ -66,26 +66,7 @@ const m = (
 const bounds = (width: number): Rect => r(0, 0, width, 540);
 const score = scoreSettingsFromGoldFrames;
 const springtideSprintDraft = level1SpringtideSprint as unknown as Level;
-const springtideSprintLevel: Level = {
-  ...springtideSprintDraft,
-  name: "Springtide Sprint",
-  subtitle: "A high-speed line through the reclaimed atrium",
-  backgroundAmbience: { preset: "lab", intensity: 0.28, color: "#43f7ff", drift: 0.26, flicker: 0.12, particles: 0.22 },
-  solids: [
-    ...springtideSprintDraft.solids,
-    s("upper-catch-rail", 1680, 180, 520, 20, "steel", { sprite: "floor", material: "grass-organic", collision: "top-only" })
-  ],
-  doors: (springtideSprintDraft.doors || []).filter((door) => door.id !== "door-2"),
-  platforms: (springtideSprintDraft.platforms || []).map((platform) => {
-    if (platform.id === "platform-3") return { ...platform, phase: 2.1 };
-    if (platform.id === "platform-4") return { ...platform, x: 1680, w: 200, phase: 0 };
-    if (platform.id === "platform-5") return { ...platform, x: 1900, w: 180, phase: 0 };
-    return platform;
-  }),
-  crates: (springtideSprintDraft.crates || []).map((crate) => (crate.id === "crate-1" ? { ...crate, x: 560 } : crate)),
-  lasers: (springtideSprintDraft.lasers || []).map((laser) => (laser.id === "laser-1" ? { ...laser, disabledBy: ["plate-1"] } : laser)),
-  hint: "Ride the garden route, bank core arcs, and use the crate plate to quiet the beams."
-};
+const springtideSprintLevel: Level = springtideSprintDraft;
 const frame = (width: number, floorY = 500, gaps: Array<[number, number]> = []): Solid[] => {
   const floors: Solid[] = [];
   let cursor = 0;

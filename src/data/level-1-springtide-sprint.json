@@ -1,18 +1,18 @@
   {
     "id": "portal-primer",
     "index": 0,
-    "name": "Portal Primer",
-    "subtitle": "A clean line through the lab",
+    "name": "Springtide Sprint",
+    "subtitle": "A high-speed line through the reclaimed atrium",
     "motionModel": "anchored",
     "soundtrackKey": "level-1",
     "backgroundKey": "level-1-springtide-glassgrove",
     "backgroundAmbience": {
-      "preset": "none",
-      "intensity": 0,
+      "preset": "lab",
+      "intensity": 0.28,
       "color": "#43f7ff",
-      "drift": 0,
-      "flicker": 0,
-      "particles": 0
+      "drift": 0.26,
+      "flicker": 0.12,
+      "particles": 0.22
     },
     "start": {
       "x": 38,
@@ -204,6 +204,17 @@
         "tone": "glass",
         "sprite": "block",
         "material": "warning-industrial"
+      },
+      {
+        "x": 1680,
+        "y": 180,
+        "w": 520,
+        "h": 20,
+        "id": "upper-catch-rail",
+        "tone": "steel",
+        "sprite": "floor",
+        "material": "grass-organic",
+        "collision": "top-only"
       }
     ],
     "oneWays": [],
@@ -239,12 +250,12 @@
         "axis": "y",
         "distance": 240,
         "period": 180,
-        "phase": 0
+        "phase": 2.1
       },
       {
-        "x": 1780,
+        "x": 1680,
         "y": 180,
-        "w": 80,
+        "w": 200,
         "h": 20,
         "id": "platform-4",
         "axis": "x",
@@ -253,15 +264,15 @@
         "phase": 0
       },
       {
-        "x": 2000,
+        "x": 1900,
         "y": 180,
-        "w": 80,
+        "w": 180,
         "h": 20,
         "id": "platform-5",
         "axis": "x",
         "distance": 80,
         "period": 180,
-        "phase": 180
+        "phase": 0
       },
       {
         "x": 1220,
@@ -297,17 +308,7 @@
     ],
     "timedSwitches": [],
     "echoSensors": [],
-    "doors": [
-      {
-        "x": 0,
-        "y": 300,
-        "w": 20,
-        "h": 120,
-        "id": "door-2",
-        "opensWith": [],
-        "inverted": true
-      }
-    ],
+    "doors": [],
     "lasers": [
       {
         "x": 1200,
@@ -315,7 +316,10 @@
         "w": 380,
         "h": 20,
         "id": "laser-1",
-        "startsOn": true
+        "startsOn": true,
+        "disabledBy": [
+          "plate-1"
+        ]
       }
     ],
     "movingLasers": [
@@ -844,7 +848,7 @@
     ],
     "crates": [
       {
-        "x": 380,
+        "x": 560,
         "y": 460,
         "w": 40,
         "h": 40,
@@ -858,5 +862,5 @@
       "timeBonusTargetSeconds": 45,
       "timeBonusPerSecond": 100
     },
-    "hint": "The portal is stable. Keep momentum and hop the discharge strip."
+    "hint": "Ride the garden route, bank core arcs, and use the crate plate to quiet the beams."
   }
