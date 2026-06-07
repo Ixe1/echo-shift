@@ -1367,7 +1367,7 @@ try {
   Object.assign(stormLaneSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
   stormLaneSim.step(idle);
   runFrames(stormLaneSim, 60, idle);
-  const targetPlayerCenterX = 212;
+  const targetPlayerCenterX = 172;
   Object.assign(stormLaneSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
   const stormAttackSnapshot = runBossUntilAttack(stormLaneSim, "boss-test");
   assertAttackStartsFromBoss(stormAttackSnapshot, "storm boss downward attack");
@@ -1381,6 +1381,19 @@ try {
   assert(
     stormAttack.y + stormAttack.h >= stormLaneLevel.bosses[0].y + stormLaneLevel.bosses[0].h - 12,
     `Expected storm beam to reach the player lane floor, got ${JSON.stringify(stormAttack)}`
+  );
+  const stormEdgeLaneSim = new RoomSimulation(stormLaneLevel);
+  Object.assign(stormEdgeLaneSim.player, { x: 252, y: 86, vx: 0, vy: 0, onGround: true });
+  stormEdgeLaneSim.step(idle);
+  runFrames(stormEdgeLaneSim, 60, idle);
+  Object.assign(stormEdgeLaneSim.player, { x: 252, y: 86, vx: 0, vy: 0, onGround: true });
+  const stormEdgeAttackSnapshot = runBossUntilAttack(stormEdgeLaneSim, "boss-test");
+  const stormEdgeAttack = stormEdgeAttackSnapshot.attacks[0];
+  const stormEdgeBodyCenterX = stormEdgeAttackSnapshot.body.x + stormEdgeAttackSnapshot.body.w / 2;
+  assert(stormEdgeAttack.kind === "vertical", `Expected storm edge-lane attack to stay vertical, got ${stormEdgeAttack.kind}`);
+  assert(
+    Math.abs(stormEdgeAttack.originX - stormEdgeBodyCenterX) <= 1,
+    `Expected storm edge-lane beam origin to match reachable body lane, got origin ${stormEdgeAttack.originX} and body center ${stormEdgeBodyCenterX}`
   );
   const guardedHitSim = new RoomSimulation(bossLevel);
   guardedHitSim.player.x = bossLevel.start.x;

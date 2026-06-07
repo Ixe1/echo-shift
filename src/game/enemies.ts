@@ -219,12 +219,14 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
   const cycle = state.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
   const playerCenterX = player.x + player.w / 2;
   const playerCenterY = player.y + player.h / 2;
-  if (state.activeFrames === 1 || cycle === 0) {
-    state.attackX = clamp(playerCenterX, boss.x + 24, boss.x + boss.w - 24);
+  const arena = bossMovementBounds(boss, size);
+  if ((boss.kind === "storm-relay-warden" && state.activeFrames === 1) || cycle === 0) {
+    const attackMinX = boss.kind === "storm-relay-warden" ? arena.minX + size.w / 2 : boss.x + 24;
+    const attackMaxX = boss.kind === "storm-relay-warden" ? arena.maxX + size.w / 2 : boss.x + boss.w - 24;
+    state.attackX = clamp(playerCenterX, attackMinX, attackMaxX);
     state.attackY = clamp(playerCenterY, boss.y + 22, boss.y + boss.h - 22);
   }
 
-  const arena = bossMovementBounds(boss, size);
   if (boss.kind === "storm-relay-warden") {
     advanceStormRelayMotion(state, size, cycle, arena);
     return;
