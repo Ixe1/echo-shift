@@ -220,6 +220,7 @@ export class GameScene extends Phaser.Scene {
   private hazardVentSpriteFrames: string[] = [];
   private monsterSpriteFrames: string[] = [];
   private bossSpriteFrames: string[] = [];
+  private bossEffectFrames: string[] = [];
   private staticSolidOutlineRects: string[] = [];
   private lastCameraSample = "";
   private lastCameraWorldView = "";
@@ -1804,6 +1805,7 @@ export class GameScene extends Phaser.Scene {
 
   private drawBosses(bosses: BossSnapshot[]): void {
     this.bossSpriteFrames = [];
+    this.bossEffectFrames = [];
     for (const boss of this.level.bosses || []) {
       const snapshot = bosses.find((item) => item.id === boss.id);
       const color = this.bossColor(boss.kind);
@@ -1829,6 +1831,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawStormBossFloorShockEffect(shock: Rect, color: number): void {
+    if (this.diagnosticsEnabled) {
+      this.bossEffectFrames.push(`storm-floor-shock:${Math.round(shock.x)},${Math.round(shock.y)}:${Math.round(shock.w)}x${Math.round(shock.h)}`);
+    }
     const pulse = Math.sin(this.simulation.tick / 3.5) * 0.5 + 0.5;
     const glowAlpha = 0.14 + pulse * 0.08;
     this.fx.fillStyle(color, glowAlpha);
@@ -1880,7 +1885,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawStormBossWindupEffect(boss: Boss, snapshot: BossSnapshot, color: number): void {
-    if (snapshot.phase !== "active" || bossIsVulnerable(snapshot) || snapshot.attacks.length > 0) return;
+    if (snapshot.phase !== "active" || snapshot.recoveryFrames > 0 || bossIsVulnerable(snapshot) || snapshot.attacks.length > 0) return;
     const windupFrames = bossAttackWindupFramesFor(boss.kind);
     const cycle = snapshot.activeFrames % bossAttackCycleFramesFor(boss.kind);
     if (cycle >= windupFrames) return;
@@ -1890,6 +1895,9 @@ export class GameScene extends Phaser.Scene {
     const originY = body.y + body.h * 0.82;
     const endY = boss.y + boss.h - 10;
     const warningWidth = 12 + progress * 18;
+    if (this.diagnosticsEnabled) {
+      this.bossEffectFrames.push(`${boss.id}:storm-windup:${Math.round(progress * 100)}:${snapshot.recoveryFrames}`);
+    }
     this.fx.fillStyle(color, 0.05 + progress * 0.13);
     this.fx.fillRoundedRect(originX - warningWidth / 2, originY, warningWidth, Math.max(16, endY - originY), 7);
     this.fx.lineStyle(2, color, 0.22 + progress * 0.35);
@@ -2234,6 +2242,7 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftHazardVentSpriteFrames = this.hazardVentSpriteFrames.join("|");
     document.documentElement.dataset.echoShiftMonsterSpriteFrames = this.monsterSpriteFrames.join("|");
     document.documentElement.dataset.echoShiftBossSpriteFrames = this.bossSpriteFrames.join("|");
+    document.documentElement.dataset.echoShiftBossEffectFrames = this.bossEffectFrames.join("|");
     document.documentElement.dataset.echoShiftSolidOutlineRects = this.staticSolidOutlineRects.join("|");
     document.documentElement.dataset.echoShiftDeathPresentation = this.retryRequired
       ? "retry-required"
