@@ -1746,7 +1746,8 @@ export class GameScene extends Phaser.Scene {
 
   private syncMonsterSprite(id: string, kind: MonsterKind, rect: Rect, tick: number): void {
     if (!this.textures.exists(MONSTER_ATLAS_KEY)) return;
-    const animationFrame = Math.floor((tick + id.length * 7) / 10) % 4;
+    const frameInterval = this.monsterAnimationFrameInterval(kind);
+    const animationFrame = Math.floor((tick + id.length * 7) / frameInterval) % 4;
     const frame = monsterFrameForKind(kind, animationFrame);
     const center = rectCenter(rect);
     const bob = Math.sin((tick + frame * 17) / 11) * 1.8;
@@ -1766,6 +1767,13 @@ export class GameScene extends Phaser.Scene {
       .clearTint();
     this.activeObjectAssetIds.add(`monster:${id}`);
     if (this.diagnosticsEnabled) this.monsterSpriteFrames.push(`${id}:${MONSTER_ATLAS_KEY}:${frame}:anim${animationFrame}:${Math.round(width)}x${Math.round(height)}`);
+  }
+
+  private monsterAnimationFrameInterval(kind: MonsterKind): number {
+    if (kind === "glasswing-wisp") return 4;
+    if (kind === "shard-wisp" || kind === "page-mote" || kind === "pendulum-drone") return 6;
+    if (kind === "gear-tick" || kind === "root-roller") return 7;
+    return 9;
   }
 
   private drawBosses(bosses: BossSnapshot[]): void {
