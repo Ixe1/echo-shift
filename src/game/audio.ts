@@ -368,7 +368,7 @@ export class SynthAudio {
       this.activeEffects.delete(element);
     };
     const fallback = () => {
-      if (fallbackPlayed) return;
+      if (fallbackPlayed || !this.activeEffects.has(element)) return;
       fallbackPlayed = true;
       release();
       this.playToneWhenReady(name);

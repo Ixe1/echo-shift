@@ -249,6 +249,11 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     createBiquadFilter() {
       return { type: "lowpass", frequency: fakeParam(), connect() {}, disconnect() { disconnectedNodes += 1; } };
     }
+
+    close() {
+      this.state = "closed";
+      return Promise.resolve();
+    }
   }
   class FakeAudioElement {
     constructor(src) {
@@ -263,6 +268,10 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     }
 
     load() {}
+
+    removeAttribute(name) {
+      if (name === "src") this.src = "";
+    }
 
     play() {
       this.playCalls += 1;
@@ -433,6 +442,19 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     dispatchEvent("visibilitychange");
     await settlePromises();
     assert(levelThree.playCalls >= 2 && levelThree.playing, "Expected visible recovery to retry and start blocked level music");
+
+    const tonesBeforeDisposedSampleReject = startedTones.length;
+    deferBlockedRejects = true;
+    mediaUnlocked = false;
+    audio.play("jump");
+    await settlePromises();
+    audio.dispose();
+    rejectBlockedPlays();
+    await settlePromises();
+    assert(
+      startedTones.length === tonesBeforeDisposedSampleReject,
+      "Expected late sampled SFX rejection after dispose not to start a fallback tone"
+    );
   } finally {
     restoreGlobal("window", previousWindow);
     restoreGlobal("document", previousDocument);
