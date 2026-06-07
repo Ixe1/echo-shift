@@ -3,7 +3,9 @@ import type { BossKind, MonsterKind } from "./types";
 export const BOSS_ATLAS_KEY = "boss-atlas";
 export const BOSS_ATLAS_FRAME_WIDTH = 256;
 export const BOSS_ATLAS_FRAME_HEIGHT = 256;
-export const BOSS_FRAMES_PER_KIND = 4;
+export const BOSS_STATES_PER_KIND = 4;
+export const BOSS_STATE_FRAME_COUNT = 4;
+export const BOSS_FRAMES_PER_KIND = BOSS_STATES_PER_KIND * BOSS_STATE_FRAME_COUNT;
 
 export const MONSTER_ATLAS_KEY = "monster-atlas";
 export const MONSTER_ATLAS_FRAME_WIDTH = 96;
@@ -19,16 +21,16 @@ export type BossSpriteState = "idle" | "windup" | "attack" | "vulnerable";
 
 const bossBaseFrames: Record<BossKind, number> = {
   "storm-relay-warden": 0,
-  "cryo-conservator": 4,
-  "archive-custodian": 8,
-  "clockwork-regent": 12
+  "cryo-conservator": 16,
+  "archive-custodian": 32,
+  "clockwork-regent": 48
 };
 
 const bossStateFrames: Record<BossSpriteState, number> = {
   idle: 0,
-  windup: 1,
-  attack: 2,
-  vulnerable: 3
+  windup: 4,
+  attack: 8,
+  vulnerable: 12
 };
 
 const monsterBaseFrames: Record<MonsterKind, number> = {
@@ -49,8 +51,10 @@ const monsterBaseFrames: Record<MonsterKind, number> = {
   "sand-winder": 56
 };
 
-export const bossFrameForKind = (kind: BossKind, state: BossSpriteState = "idle"): number =>
-  (bossBaseFrames[kind] ?? bossBaseFrames["storm-relay-warden"]) + bossStateFrames[state];
+export const bossFrameForKind = (kind: BossKind, state: BossSpriteState = "idle", animationFrame = 0): number =>
+  (bossBaseFrames[kind] ?? bossBaseFrames["storm-relay-warden"]) +
+  bossStateFrames[state] +
+  (((Math.round(animationFrame) % BOSS_STATE_FRAME_COUNT) + BOSS_STATE_FRAME_COUNT) % BOSS_STATE_FRAME_COUNT);
 
 export const monsterFrameForKind = (kind: MonsterKind, animationFrame = 0): number =>
   (monsterBaseFrames[kind] ?? monsterBaseFrames["sprout-hopper"]) + (((Math.round(animationFrame) % MONSTER_FRAMES_PER_KIND) + MONSTER_FRAMES_PER_KIND) % MONSTER_FRAMES_PER_KIND);

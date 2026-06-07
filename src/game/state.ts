@@ -16,6 +16,7 @@ import {
   createBossRuntimeState,
   monsterRectAt,
   monsterScore,
+  recoverBossAfterHit,
   settleBossAtIntroEnd,
   type BossRuntimeState
 } from "./enemies";
@@ -474,7 +475,10 @@ export class RoomSimulation {
       x: body.x + body.w / 2,
       y: body.y + body.h / 2
     };
-    if (state.health > 0) return;
+    if (state.health > 0) {
+      recoverBossAfterHit(boss, state);
+      return;
+    }
 
     const score = bossScore(boss);
     state.phase = "defeated";

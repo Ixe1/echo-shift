@@ -1359,6 +1359,29 @@ try {
   assert(activeBossState?.activeFrames === 0, `Expected boss active frames to start at 0, got ${activeBossState?.activeFrames}`);
   assert(bossIntroSim.bossSnapshots()[0].attacks.length === 0, "Expected boss active phase to start with a clear attack wind-up");
   assert(!bossIsVulnerable(bossIntroSim.bossSnapshots()[0]), "Expected boss weak point to stay guarded at the start of the active phase");
+  const stormLaneLevel = {
+    ...bossLevel,
+    bosses: [{ ...bossLevel.bosses[0], introSeconds: 1, health: 2 }]
+  };
+  const stormLaneSim = new RoomSimulation(stormLaneLevel);
+  Object.assign(stormLaneSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
+  stormLaneSim.step(idle);
+  runFrames(stormLaneSim, 60, idle);
+  const targetPlayerCenterX = 212;
+  Object.assign(stormLaneSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  const stormAttackSnapshot = runBossUntilAttack(stormLaneSim, "boss-test");
+  assertAttackStartsFromBoss(stormAttackSnapshot, "storm boss downward attack");
+  const stormAttack = stormAttackSnapshot.attacks[0];
+  assert(stormAttack.kind === "vertical", `Expected storm boss to fire downward, got ${stormAttack.kind}`);
+  assert(stormAttack.h > stormAttack.w * 2, `Expected storm beam to be a tall lane hazard, got ${JSON.stringify(stormAttack)}`);
+  assert(
+    Math.abs(stormAttack.originX - targetPlayerCenterX) <= 24,
+    `Expected storm boss first attack lane to target player x ${targetPlayerCenterX}, got ${stormAttack.originX}`
+  );
+  assert(
+    stormAttack.y + stormAttack.h >= stormLaneLevel.bosses[0].y + stormLaneLevel.bosses[0].h - 12,
+    `Expected storm beam to reach the player lane floor, got ${JSON.stringify(stormAttack)}`
+  );
   const guardedHitSim = new RoomSimulation(bossLevel);
   guardedHitSim.player.x = bossLevel.start.x;
   guardedHitSim.step(idle);
@@ -1372,6 +1395,22 @@ try {
   assert(bossHit.bossPortalUnlocked, "Expected boss defeat to unlock the exit portal");
   assert(bossIntroSim.exitUnlocked(), "Expected boss level exit to unlock after boss defeat");
   assert(bossIntroSim.score === 1200, `Expected boss defeat score to apply, got ${bossIntroSim.score}`);
+  const stormRecoverySim = new RoomSimulation(stormLaneLevel);
+  Object.assign(stormRecoverySim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });
+  stormRecoverySim.step(idle);
+  runFrames(stormRecoverySim, 60, idle);
+  const stormRecoveryVulnerable = runBossUntilVulnerable(stormRecoverySim, "boss-test");
+  const stormRecoveryLowY = stormRecoveryVulnerable.body.y;
+  const stormRecoveryHit = upwardHitBoss(stormRecoverySim, stormRecoveryVulnerable);
+  assert(stormRecoveryHit.bossHit?.health === 1, "Expected first storm boss hit to leave one health for the repeat cycle");
+  assert(!stormRecoveryHit.bossDefeated, "Expected first storm boss hit not to defeat a two-health boss");
+  assert(!bossIsVulnerable(stormRecoverySim.bossSnapshots()[0]), "Expected storm boss to close its weak spot after a successful nonfatal hit");
+  runFrames(stormRecoverySim, 12, idle);
+  const stormRecoveryRising = stormRecoverySim.bossSnapshots()[0];
+  assert(
+    stormRecoveryRising.body.y < stormRecoveryLowY - 4,
+    `Expected storm boss to rise after a nonfatal hit, from ${stormRecoveryLowY} to ${stormRecoveryRising.body.y}`
+  );
 
   const multiBossLevel = {
     ...baseLevel,

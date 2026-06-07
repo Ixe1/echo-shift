@@ -8,6 +8,7 @@ import { backgroundForLevel } from "../game/backgrounds";
 import { BOSS_ATTACK_ACTIVE_FRAMES, BOSS_ATTACK_CYCLE_FRAMES, BOSS_ATTACK_WINDUP_FRAMES, bossIsVulnerable, monsterRectAt } from "../game/enemies";
 import {
   BOSS_ATLAS_KEY,
+  BOSS_STATE_FRAME_COUNT,
   MONSTER_ATLAS_KEY,
   POOF_FRAME_COUNT,
   POOF_SHEET_KEY,
@@ -32,6 +33,7 @@ import {
 } from "../game/terrainMaterials";
 import type {
   ActorBody,
+  Boss,
   BossAttackSnapshot,
   BossKind,
   BossSnapshot,
@@ -1801,6 +1803,7 @@ export class GameScene extends Phaser.Scene {
       const color = this.bossColor(boss.kind);
       if (!snapshot || snapshot.phase === "defeated") continue;
 
+      if (boss.kind === "storm-relay-warden") this.drawStormBossWindupEffect(boss, snapshot, color);
       for (const attack of snapshot.attacks) {
         this.drawBossAttackEffect(attack, color);
       }
@@ -1837,6 +1840,38 @@ export class GameScene extends Phaser.Scene {
       this.fx.fillStyle(color, 0.24);
       this.fx.fillCircle(x, y, 2.4);
     }
+    if (!horizontal) {
+      this.fx.fillStyle(0xffffff, 0.34);
+      this.fx.fillCircle(endX, endY, 5.2);
+      this.fx.fillStyle(color, 0.2);
+      this.fx.fillCircle(endX, endY, 11);
+    }
+  }
+
+  private drawStormBossWindupEffect(boss: Boss, snapshot: BossSnapshot, color: number): void {
+    if (snapshot.phase !== "active" || bossIsVulnerable(snapshot) || snapshot.attacks.length > 0) return;
+    const cycle = snapshot.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
+    if (cycle >= BOSS_ATTACK_WINDUP_FRAMES) return;
+    const body = snapshot.body;
+    const progress = Math.max(0, Math.min(1, cycle / Math.max(1, BOSS_ATTACK_WINDUP_FRAMES)));
+    const originX = body.x + body.w / 2;
+    const originY = body.y + body.h * 0.82;
+    const endY = boss.y + boss.h - 10;
+    const warningWidth = 12 + progress * 18;
+    this.fx.fillStyle(color, 0.05 + progress * 0.13);
+    this.fx.fillRoundedRect(originX - warningWidth / 2, originY, warningWidth, Math.max(16, endY - originY), 7);
+    this.fx.lineStyle(2, color, 0.22 + progress * 0.35);
+    this.fx.lineBetween(originX, originY, originX, endY);
+    this.fx.lineStyle(1, 0xffffff, 0.16 + progress * 0.3);
+    this.fx.lineBetween(originX - warningWidth * 0.34, originY + 6, originX - warningWidth * 0.34, endY);
+    this.fx.lineBetween(originX + warningWidth * 0.34, originY + 6, originX + warningWidth * 0.34, endY);
+    const pulse = 0.65 + Math.sin(this.simulation.tick / 6) * 0.12 + progress * 0.35;
+    this.fx.fillStyle(0xffffff, 0.18 + progress * 0.35);
+    this.fx.fillCircle(originX, originY, 4 + progress * 4);
+    this.fx.lineStyle(2, 0xffffff, 0.14 + progress * 0.3);
+    this.fx.strokeCircle(originX, originY, 12 * pulse);
+    this.fx.lineStyle(2, color, 0.2 + progress * 0.32);
+    this.fx.strokeCircle(originX, originY, 19 * pulse);
   }
 
   private drawBossIntroEffect(body: Rect, color: number, progress: number): void {
@@ -1860,9 +1895,10 @@ export class GameScene extends Phaser.Scene {
     if (!this.textures.exists(BOSS_ATLAS_KEY)) return;
     const body = snapshot.body;
     const center = rectCenter(body);
-    const spriteState = this.bossSpriteState(snapshot, introProgress);
-    const frame = bossFrameForKind(kind, spriteState);
-    const activePulse = snapshot.phase === "active" ? Math.sin(this.simulation.tick / 18) * 0.015 : 0;
+    const spriteState = this.bossSpriteState(kind, snapshot, introProgress);
+    const stateFrame = this.bossStateAnimationFrame(id, snapshot, spriteState, introProgress);
+    const frame = bossFrameForKind(kind, spriteState, stateFrame);
+    const activePulse = snapshot.phase === "active" && kind !== "storm-relay-warden" ? Math.sin(this.simulation.tick / 18) * 0.015 : 0;
     const displayWidth = Math.max(148, body.w * 1.5) * (1 + activePulse);
     const displayHeight = Math.max(120, body.h * 1.42) * (1 + activePulse);
     const sprite = this.assetFor(`boss:${id}`, "image", frame, BOSS_ATLAS_KEY) as Phaser.GameObjects.Image;
@@ -1881,16 +1917,33 @@ export class GameScene extends Phaser.Scene {
     this.activeObjectAssetIds.add(`boss:${id}`);
     if (this.diagnosticsEnabled) {
       this.bossSpriteFrames.push(
-        `${id}:${BOSS_ATLAS_KEY}:${frame}:${spriteState}:${snapshot.phase}:${bossIsVulnerable(snapshot) ? "vulnerable" : "guarded"}:${Math.round(displayWidth)}x${Math.round(displayHeight)}`
+        `${id}:${BOSS_ATLAS_KEY}:${frame}:${spriteState}:anim${stateFrame}:${snapshot.phase}:${bossIsVulnerable(snapshot) ? "vulnerable" : "guarded"}:${Math.round(displayWidth)}x${Math.round(displayHeight)}`
       );
     }
   }
 
-  private bossSpriteState(snapshot: BossSnapshot, introProgress: number): BossSpriteState {
+  private bossStateAnimationFrame(id: string, snapshot: BossSnapshot, state: BossSpriteState, introProgress: number): number {
+    if (snapshot.phase === "intro") return Math.min(BOSS_STATE_FRAME_COUNT - 1, Math.floor(introProgress * BOSS_STATE_FRAME_COUNT));
+    if (snapshot.phase !== "active") return 0;
+    const cycle = snapshot.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
+    if (state === "windup") {
+      return Math.min(BOSS_STATE_FRAME_COUNT - 1, Math.floor((cycle / Math.max(1, BOSS_ATTACK_WINDUP_FRAMES)) * BOSS_STATE_FRAME_COUNT));
+    }
+    if (state === "attack") {
+      const attackFrame = cycle - BOSS_ATTACK_WINDUP_FRAMES;
+      return Math.min(BOSS_STATE_FRAME_COUNT - 1, Math.floor((attackFrame / Math.max(1, BOSS_ATTACK_ACTIVE_FRAMES)) * BOSS_STATE_FRAME_COUNT));
+    }
+    if (state === "vulnerable") return Math.floor((snapshot.activeFrames + id.length * 5) / 8) % BOSS_STATE_FRAME_COUNT;
+    return Math.floor((this.simulation.tick + id.length * 11) / 16) % BOSS_STATE_FRAME_COUNT;
+  }
+
+  private bossSpriteState(kind: BossKind, snapshot: BossSnapshot, introProgress: number): BossSpriteState {
     if (snapshot.phase === "active") {
       if (bossIsVulnerable(snapshot)) return "vulnerable";
       const cycle = snapshot.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
-      if (cycle >= BOSS_ATTACK_WINDUP_FRAMES && cycle < BOSS_ATTACK_WINDUP_FRAMES + BOSS_ATTACK_ACTIVE_FRAMES) return "attack";
+      if (cycle >= BOSS_ATTACK_WINDUP_FRAMES && cycle < BOSS_ATTACK_WINDUP_FRAMES + BOSS_ATTACK_ACTIVE_FRAMES) {
+        return kind === "storm-relay-warden" ? "windup" : "attack";
+      }
       return cycle < BOSS_ATTACK_WINDUP_FRAMES ? "windup" : "idle";
     }
     if (snapshot.phase === "intro" && introProgress > 0.55 && Math.floor(this.simulation.tick / 18) % 2 === 1) return "windup";
@@ -1902,20 +1955,21 @@ export class GameScene extends Phaser.Scene {
     const center = rectCenter(spot);
     const openAlpha = 0.7 + (Math.sin(this.simulation.tick / 8) * 0.5 + 0.5) * 0.24;
     const fill = flickerWhite ? 0xffffff : 0xffe35a;
-    this.fx.fillStyle(color, 0.14);
-    this.fx.fillRoundedRect(center.x - spot.w * 0.34, center.y - spot.h * 0.34, spot.w * 0.68, spot.h * 0.68, 5);
-    this.fx.fillStyle(fill, openAlpha);
-    this.fx.fillRoundedRect(center.x - spot.w * 0.24, center.y - spot.h * 0.24, spot.w * 0.48, spot.h * 0.48, 4);
-    this.fx.lineStyle(2, flickerWhite ? color : 0xffffff, openAlpha * 0.72);
-    const corner = Math.min(10, Math.max(5, spot.w * 0.22));
-    this.fx.lineBetween(spot.x, spot.y, spot.x + corner, spot.y);
-    this.fx.lineBetween(spot.x, spot.y, spot.x, spot.y + corner);
-    this.fx.lineBetween(spot.x + spot.w, spot.y, spot.x + spot.w - corner, spot.y);
-    this.fx.lineBetween(spot.x + spot.w, spot.y, spot.x + spot.w, spot.y + corner);
-    this.fx.lineBetween(spot.x, spot.y + spot.h, spot.x + corner, spot.y + spot.h);
-    this.fx.lineBetween(spot.x, spot.y + spot.h, spot.x, spot.y + spot.h - corner);
-    this.fx.lineBetween(spot.x + spot.w, spot.y + spot.h, spot.x + spot.w - corner, spot.y + spot.h);
-    this.fx.lineBetween(spot.x + spot.w, spot.y + spot.h, spot.x + spot.w, spot.y + spot.h - corner);
+    const pulse = 0.86 + Math.sin(this.simulation.tick / 7) * 0.08;
+    this.fx.fillStyle(color, 0.12);
+    this.fx.fillEllipse(center.x, center.y, spot.w * 1.05 * pulse, spot.h * 1.05 * pulse);
+    this.fx.fillStyle(fill, openAlpha * 0.5);
+    this.fx.fillEllipse(center.x, center.y, spot.w * 0.46, spot.h * 0.46);
+    this.fx.lineStyle(2, flickerWhite ? color : 0xffffff, openAlpha * 0.7);
+    this.fx.strokeEllipse(center.x, center.y, spot.w * 0.82 * pulse, spot.h * 0.82 * pulse);
+    for (let index = 0; index < 4; index += 1) {
+      const angle = this.simulation.tick / 11 + index * Math.PI * 0.5;
+      const innerX = center.x + Math.cos(angle) * spot.w * 0.34;
+      const innerY = center.y + Math.sin(angle) * spot.h * 0.34;
+      const outerX = center.x + Math.cos(angle) * spot.w * 0.5;
+      const outerY = center.y + Math.sin(angle) * spot.h * 0.5;
+      this.fx.lineBetween(innerX, innerY, outerX, outerY);
+    }
   }
 
   private drawFxBursts(): void {
