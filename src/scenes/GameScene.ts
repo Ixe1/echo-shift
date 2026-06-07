@@ -40,6 +40,7 @@ import type {
   InputFrame,
   Level,
   LevelScore,
+  Monster,
   MonsterKind,
   MovingPlatform,
   Rect,
@@ -1740,12 +1741,13 @@ export class GameScene extends Phaser.Scene {
     for (const monster of this.level.monsters || []) {
       if (killedMonsters.has(monster.id)) continue;
       const rect = monsterRectAt(monster, tick);
-      this.syncMonsterSprite(monster.id, monster.kind, rect, tick);
+      this.syncMonsterSprite(monster, rect, tick);
     }
   }
 
-  private syncMonsterSprite(id: string, kind: MonsterKind, rect: Rect, tick: number): void {
+  private syncMonsterSprite(monster: Monster, rect: Rect, tick: number): void {
     if (!this.textures.exists(MONSTER_ATLAS_KEY)) return;
+    const { id, kind } = monster;
     const frameInterval = this.monsterAnimationFrameInterval(kind);
     const animationFrame = Math.floor((tick + id.length * 7) / frameInterval) % 4;
     const frame = monsterFrameForKind(kind, animationFrame);
@@ -1753,6 +1755,7 @@ export class GameScene extends Phaser.Scene {
     const bob = Math.sin((tick + frame * 17) / 11) * 1.8;
     const width = Math.max(44, rect.w * 2.15);
     const height = Math.max(44, rect.h * 2.25);
+    const facingLeft = this.monsterFacingLeft(monster, rect, tick);
     const sprite = this.assetFor(`monster:${id}`, "image", frame, MONSTER_ATLAS_KEY) as Phaser.GameObjects.Image;
     sprite
       .setVisible(true)
@@ -1763,10 +1766,25 @@ export class GameScene extends Phaser.Scene {
       .setRotation(0)
       .setFrame(frame)
       .setDisplaySize(width, height)
-      .setFlipX(Math.sin((tick + frame * 29) / 37) < 0)
+      .setFlipX(facingLeft)
       .clearTint();
     this.activeObjectAssetIds.add(`monster:${id}`);
-    if (this.diagnosticsEnabled) this.monsterSpriteFrames.push(`${id}:${MONSTER_ATLAS_KEY}:${frame}:anim${animationFrame}:${Math.round(width)}x${Math.round(height)}`);
+    if (this.diagnosticsEnabled) {
+      this.monsterSpriteFrames.push(
+        `${id}:${MONSTER_ATLAS_KEY}:${frame}:anim${animationFrame}:${facingLeft ? "left" : "right"}:${Math.round(width)}x${Math.round(height)}`
+      );
+    }
+  }
+
+  private monsterFacingLeft(monster: Monster, rect: Rect, tick: number): boolean {
+    if (monster.axis !== "x" || !monster.distance || monster.distance <= 0) return false;
+    const previous = monsterRectAt(monster, Math.max(0, tick - 1));
+    const dx = rect.x - previous.x;
+    if (Math.abs(dx) > 0.05) return dx < 0;
+    const next = monsterRectAt(monster, tick + 1);
+    const nextDx = next.x - rect.x;
+    if (Math.abs(nextDx) > 0.05) return nextDx < 0;
+    return false;
   }
 
   private monsterAnimationFrameInterval(kind: MonsterKind): number {
