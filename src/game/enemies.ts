@@ -11,7 +11,8 @@ import type {
   Monster,
   MonsterKind,
   MonsterVulnerability,
-  Rect
+  Rect,
+  Solid
 } from "./types";
 
 export const BOSS_INTRO_SECONDS = 17;
@@ -25,8 +26,37 @@ export const BOSS_ATTACK_ACTIVE_FRAMES = 48;
 export const BOSS_VULNERABLE_READY_FRAMES = 18;
 export const BOSS_VULNERABLE_FRAMES = BOSS_ATTACK_CYCLE_FRAMES - BOSS_ATTACK_WINDUP_FRAMES - BOSS_ATTACK_ACTIVE_FRAMES - BOSS_VULNERABLE_READY_FRAMES;
 
-const BOSS_ATTACK_END_FRAME = BOSS_ATTACK_WINDUP_FRAMES + BOSS_ATTACK_ACTIVE_FRAMES;
-const BOSS_VULNERABLE_START_FRAME = BOSS_ATTACK_END_FRAME + BOSS_VULNERABLE_READY_FRAMES;
+const STORM_ATTACK_CYCLE_FRAMES = 330;
+const STORM_ATTACK_WINDUP_FRAMES = 112;
+const STORM_ATTACK_ACTIVE_FRAMES = 54;
+const STORM_VULNERABLE_READY_FRAMES = 42;
+const STORM_VULNERABLE_WEAK_SPOT_CLEARANCE = 76;
+const STORM_HIT_PAUSE_FRAMES = 48;
+const STORM_HIT_RISE_FRAMES = 90;
+const STORM_HIT_PATROL_FRAMES = 54;
+const STORM_HIT_RECOVERY_FRAMES = STORM_HIT_PAUSE_FRAMES + STORM_HIT_RISE_FRAMES + STORM_HIT_PATROL_FRAMES;
+const STORM_FLOOR_SHOCK_WIDTH = 72;
+const STORM_FLOOR_SHOCK_HEIGHT = 10;
+
+type BossTimingSource = BossKind | { kind?: BossKind };
+
+const bossKindForTiming = (source?: BossTimingSource): BossKind | undefined => (typeof source === "string" ? source : source?.kind);
+
+export const bossAttackCycleFramesFor = (source?: BossTimingSource): number =>
+  bossKindForTiming(source) === "storm-relay-warden" ? STORM_ATTACK_CYCLE_FRAMES : BOSS_ATTACK_CYCLE_FRAMES;
+
+export const bossAttackWindupFramesFor = (source?: BossTimingSource): number =>
+  bossKindForTiming(source) === "storm-relay-warden" ? STORM_ATTACK_WINDUP_FRAMES : BOSS_ATTACK_WINDUP_FRAMES;
+
+export const bossAttackActiveFramesFor = (source?: BossTimingSource): number =>
+  bossKindForTiming(source) === "storm-relay-warden" ? STORM_ATTACK_ACTIVE_FRAMES : BOSS_ATTACK_ACTIVE_FRAMES;
+
+export const bossAttackEndFrameFor = (source?: BossTimingSource): number =>
+  bossAttackWindupFramesFor(source) + bossAttackActiveFramesFor(source);
+
+export const bossVulnerableStartFrameFor = (source?: BossTimingSource): number =>
+  bossAttackEndFrameFor(source) +
+  (bossKindForTiming(source) === "storm-relay-warden" ? STORM_VULNERABLE_READY_FRAMES : BOSS_VULNERABLE_READY_FRAMES);
 
 export const monsterKinds = [
   "sprout-hopper",
@@ -58,6 +88,7 @@ export const bossWeakSpots = ["top", "bottom", "core"] as const satisfies readon
 
 export type BossRuntimeState = {
   id: string;
+  kind: BossKind;
   phase: BossPhase;
   introFrames: number;
   activeFrames: number;
@@ -69,6 +100,7 @@ export type BossRuntimeState = {
   targetY: number;
   attackX: number;
   attackY: number;
+  recoveryFrames: number;
 };
 
 type MonsterDefinition = {
@@ -176,6 +208,7 @@ export const createBossRuntimeState = (boss: Boss): BossRuntimeState => {
   const center = rectCenter(body);
   return {
     id: boss.id,
+    kind: boss.kind,
     phase: "idle",
     introFrames: 0,
     activeFrames: 0,
@@ -186,20 +219,23 @@ export const createBossRuntimeState = (boss: Boss): BossRuntimeState => {
     targetX: center.x,
     targetY: center.y,
     attackX: center.x,
-    attackY: center.y
+    attackY: center.y,
+    recoveryFrames: 0
   };
 };
 
-export const bossIsVulnerable = (state: Pick<BossRuntimeState, "phase" | "activeFrames" | "invulnerableFrames">): boolean => {
-  if (state.phase !== "active" || state.invulnerableFrames > 0) return false;
-  const cycle = state.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
-  return cycle >= BOSS_VULNERABLE_START_FRAME;
+export const bossIsVulnerable = (
+  state: Pick<BossRuntimeState, "phase" | "activeFrames" | "invulnerableFrames"> & Partial<Pick<BossRuntimeState, "kind" | "recoveryFrames">>
+): boolean => {
+  if (state.phase !== "active" || state.invulnerableFrames > 0 || (state.recoveryFrames || 0) > 0) return false;
+  const cycle = state.activeFrames % bossAttackCycleFramesFor(state);
+  return cycle >= bossVulnerableStartFrameFor(state);
 };
 
-export const bossBodyDamages = (state: Pick<BossRuntimeState, "phase" | "activeFrames">): boolean => {
-  if (state.phase !== "active") return false;
-  const cycle = state.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
-  return cycle >= BOSS_ATTACK_WINDUP_FRAMES && cycle < BOSS_ATTACK_END_FRAME;
+export const bossBodyDamages = (state: Pick<BossRuntimeState, "phase" | "activeFrames"> & Partial<Pick<BossRuntimeState, "kind" | "recoveryFrames">>): boolean => {
+  if (state.phase !== "active" || (state.recoveryFrames || 0) > 0) return false;
+  const cycle = state.activeFrames % bossAttackCycleFramesFor(state);
+  return cycle >= bossAttackWindupFramesFor(state) && cycle < bossAttackEndFrameFor(state);
 };
 
 export const settleBossAtIntroEnd = (boss: Boss, state: BossRuntimeState): void => {
@@ -211,15 +247,26 @@ export const settleBossAtIntroEnd = (boss: Boss, state: BossRuntimeState): void 
   state.targetY = center.y;
   state.attackX = center.x;
   state.attackY = center.y;
+  state.recoveryFrames = 0;
 };
 
 export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, player: ActorBody): void => {
   if (state.phase !== "active") return;
   const size = bossBodySize(boss);
-  const cycle = state.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
+  const cycle = state.activeFrames % bossAttackCycleFramesFor(boss.kind);
   const playerCenterX = player.x + player.w / 2;
   const playerCenterY = player.y + player.h / 2;
   const arena = bossMovementBounds(boss, size);
+  if (boss.kind === "storm-relay-warden" && state.recoveryFrames <= 0) {
+    const patrolFrames = bossAttackWindupFramesFor(boss.kind);
+    const retargetFrame = Math.max(1, Math.floor(patrolFrames * 0.45));
+    if (cycle === retargetFrame) {
+      const attackMinX = arena.minX + size.w / 2;
+      const attackMaxX = arena.maxX + size.w / 2;
+      state.attackX = clamp(playerCenterX, attackMinX, attackMaxX);
+      state.attackY = clamp(playerCenterY, boss.y + 22, boss.y + boss.h - 22);
+    }
+  }
   if ((boss.kind === "storm-relay-warden" && state.activeFrames === 1) || cycle === 0) {
     const attackMinX = boss.kind === "storm-relay-warden" ? arena.minX + size.w / 2 : boss.x + 24;
     const attackMaxX = boss.kind === "storm-relay-warden" ? arena.maxX + size.w / 2 : boss.x + boss.w - 24;
@@ -228,14 +275,16 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
   }
 
   if (boss.kind === "storm-relay-warden") {
-    advanceStormRelayMotion(state, size, cycle, arena);
+    advanceStormRelayMotion(boss, state, size, cycle, arena);
     return;
   }
 
-  if (cycle < BOSS_ATTACK_WINDUP_FRAMES) {
+  const windupFrames = bossAttackWindupFramesFor(boss.kind);
+  const activeEndFrame = bossAttackEndFrameFor(boss.kind);
+  if (cycle < windupFrames) {
     state.targetX = clamp(playerCenterX, arena.minX + size.w / 2, arena.maxX + size.w / 2);
     state.targetY = clamp(playerCenterY - size.h * 0.95, arena.minY + size.h / 2, arena.maxY + size.h / 2);
-  } else if (cycle < BOSS_ATTACK_END_FRAME) {
+  } else if (cycle < activeEndFrame) {
     state.targetX = clamp(state.attackX, arena.minX + size.w / 2, arena.maxX + size.w / 2);
     state.targetY = clamp(state.attackY - size.h * 0.52, arena.minY + size.h / 2, arena.maxY + size.h / 2);
   } else {
@@ -245,7 +294,7 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
 
   const desiredX = state.targetX - size.w / 2;
   const desiredY = state.targetY - size.h / 2;
-  const ease = cycle < BOSS_ATTACK_WINDUP_FRAMES ? 0.1 : cycle < BOSS_ATTACK_WINDUP_FRAMES + BOSS_ATTACK_ACTIVE_FRAMES ? 0.18 : 0.12;
+  const ease = cycle < windupFrames ? 0.1 : cycle < activeEndFrame ? 0.18 : 0.12;
   state.bodyX += (desiredX - state.bodyX) * ease;
   state.bodyY += (desiredY - state.bodyY) * ease;
   state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
@@ -254,9 +303,11 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
 
 export const recoverBossAfterHit = (boss: Boss, state: BossRuntimeState): void => {
   if (boss.kind !== "storm-relay-warden" || state.phase !== "active" || state.health <= 0) return;
-  const cycle = state.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
-  if (cycle < BOSS_VULNERABLE_START_FRAME) return;
-  state.activeFrames += BOSS_ATTACK_CYCLE_FRAMES - cycle - 1;
+  const cycle = state.activeFrames % bossAttackCycleFramesFor(boss.kind);
+  if (cycle < bossVulnerableStartFrameFor(boss.kind)) return;
+  state.activeFrames = 0;
+  state.recoveryFrames = STORM_HIT_RECOVERY_FRAMES;
+  state.invulnerableFrames = Math.max(state.invulnerableFrames, STORM_HIT_RECOVERY_FRAMES + 12);
 };
 
 export const bossBodyRectAt = (boss: Boss, state: BossRuntimeState, _tick: number): Rect => {
@@ -287,9 +338,9 @@ export const bossBodyRectAt = (boss: Boss, state: BossRuntimeState, _tick: numbe
 };
 
 export const bossAttackRectsAt = (boss: Boss, state: BossRuntimeState, tick: number): BossAttackSnapshot[] => {
-  if (state.phase !== "active") return [];
-  const cycle = state.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
-  if (cycle < BOSS_ATTACK_WINDUP_FRAMES || cycle >= BOSS_ATTACK_END_FRAME) return [];
+  if (state.phase !== "active" || state.recoveryFrames > 0) return [];
+  const cycle = state.activeFrames % bossAttackCycleFramesFor(boss.kind);
+  if (cycle < bossAttackWindupFramesFor(boss.kind) || cycle >= bossAttackEndFrameFor(boss.kind)) return [];
   const body = bossBodyRectAt(boss, state, tick);
   const bodyCenter = rectCenter(body);
   if (boss.kind === "storm-relay-warden") {
@@ -342,7 +393,35 @@ export const bossAttackRectsAt = (boss: Boss, state: BossRuntimeState, tick: num
   ];
 };
 
+export const bossFloorShockRectsAt = (boss: Boss, state: BossRuntimeState, tick: number, solids: Solid[]): Rect[] => {
+  if (boss.kind !== "storm-relay-warden" || state.recoveryFrames > 0) return [];
+  const shocks: Rect[] = [];
+  for (const attack of bossAttackRectsAt(boss, state, tick)) {
+    if (attack.kind !== "vertical") continue;
+    const centerX = attack.originX;
+    const floor = solids
+      .filter((solid) => {
+        if (solid.collision === "decorative") return false;
+        if (solid.w <= 0 || solid.h <= 0) return false;
+        if (centerX < solid.x - STORM_FLOOR_SHOCK_WIDTH / 2 || centerX > solid.x + solid.w + STORM_FLOOR_SHOCK_WIDTH / 2) return false;
+        return solid.y >= attack.originY && solid.y <= attack.y + attack.h + 4;
+      })
+      .sort((a, b) => a.y - b.y)[0];
+    if (!floor) continue;
+    const width = Math.min(STORM_FLOOR_SHOCK_WIDTH, floor.w);
+    const x = clamp(centerX - width / 2, floor.x, floor.x + floor.w - width);
+    shocks.push({
+      x,
+      y: floor.y - STORM_FLOOR_SHOCK_HEIGHT,
+      w: width,
+      h: STORM_FLOOR_SHOCK_HEIGHT
+    });
+  }
+  return shocks;
+};
+
 const advanceStormRelayMotion = (
+  boss: Boss,
   state: BossRuntimeState,
   size: { w: number; h: number },
   cycle: number,
@@ -350,18 +429,62 @@ const advanceStormRelayMotion = (
 ): void => {
   const targetX = clamp(finiteNumber(state.attackX, state.targetX), arena.minX + size.w / 2, arena.maxX + size.w / 2);
   const highY = arena.minY + size.h * 0.48;
-  const lowY = Math.min(arena.maxY + size.h / 2, arena.minY + size.h * 0.7);
-  const targetY = cycle >= BOSS_ATTACK_END_FRAME ? lowY : highY;
+  const weakSpotHeight = clamp(size.h * 0.2, 16, 30);
+  const vulnerableBodyY = clamp(boss.y + boss.h - STORM_VULNERABLE_WEAK_SPOT_CLEARANCE - size.h + weakSpotHeight + 4, arena.minY, arena.maxY);
+  const lowY = vulnerableBodyY + size.h / 2;
+  if (state.recoveryFrames > 0) {
+    advanceStormRelayRecoveryMotion(state, size, arena, targetX, highY, lowY);
+    return;
+  }
+
+  const targetY = cycle >= bossAttackEndFrameFor("storm-relay-warden") ? lowY : highY;
 
   state.targetX = targetX;
   state.targetY = targetY;
   const desiredX = targetX - size.w / 2;
   const desiredY = targetY - size.h / 2;
-  const ease = cycle < BOSS_ATTACK_WINDUP_FRAMES ? 0.12 : cycle < BOSS_ATTACK_END_FRAME ? 0.18 : 0.32;
+  const windupFrames = bossAttackWindupFramesFor("storm-relay-warden");
+  const activeEndFrame = bossAttackEndFrameFor("storm-relay-warden");
+  const ease = cycle < windupFrames ? 0.08 : cycle < activeEndFrame ? 0.14 : 0.16;
   state.bodyX += (desiredX - state.bodyX) * ease;
   state.bodyY += (desiredY - state.bodyY) * ease;
   state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
   state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
+};
+
+const advanceStormRelayRecoveryMotion = (
+  state: BossRuntimeState,
+  size: { w: number; h: number },
+  arena: { minX: number; minY: number; maxX: number; maxY: number },
+  laneX: number,
+  highY: number,
+  lowY: number
+): void => {
+  const elapsed = STORM_HIT_RECOVERY_FRAMES - state.recoveryFrames;
+  let targetX = laneX;
+  let targetY = lowY;
+  let ease = 0.16;
+
+  if (elapsed >= STORM_HIT_PAUSE_FRAMES && elapsed < STORM_HIT_PAUSE_FRAMES + STORM_HIT_RISE_FRAMES) {
+    const riseProgress = (elapsed - STORM_HIT_PAUSE_FRAMES) / Math.max(1, STORM_HIT_RISE_FRAMES);
+    targetY = lowY + (highY - lowY) * riseProgress;
+    ease = 0.08;
+  } else if (elapsed >= STORM_HIT_PAUSE_FRAMES + STORM_HIT_RISE_FRAMES) {
+    const patrolElapsed = elapsed - STORM_HIT_PAUSE_FRAMES - STORM_HIT_RISE_FRAMES;
+    const sway = Math.sin((patrolElapsed / Math.max(1, STORM_HIT_PATROL_FRAMES)) * Math.PI * 2) * Math.min(54, (arena.maxX - arena.minX) * 0.18);
+    targetX = clamp(laneX + sway, arena.minX + size.w / 2, arena.maxX + size.w / 2);
+    targetY = highY;
+    ease = 0.1;
+  }
+
+  state.targetX = targetX;
+  state.targetY = targetY;
+  state.bodyX += (targetX - size.w / 2 - state.bodyX) * ease;
+  state.bodyY += (targetY - size.h / 2 - state.bodyY) * ease;
+  state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
+  state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
+  state.recoveryFrames = Math.max(0, state.recoveryFrames - 1);
+  if (state.recoveryFrames === 0) state.activeFrames = 0;
 };
 
 export const bossWeakSpotRectAt = (boss: Boss, body: Rect): Rect => {

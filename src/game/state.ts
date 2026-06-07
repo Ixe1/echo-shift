@@ -8,6 +8,7 @@ import {
   bossAttackRectsAt,
   bossBodyDamages,
   bossBodyRectAt,
+  bossFloorShockRectsAt,
   bossIntroFrames,
   bossScore,
   bossTakesHit,
@@ -456,7 +457,12 @@ export class RoomSimulation {
       }
 
       const attacks = bossAttackRectsAt(boss, state, this.tick);
-      if ((bossBodyDamages(state) && rectsOverlap(this.player, body)) || attacks.some((attack) => rectsOverlap(this.player, attack))) {
+      const floorShocks = bossFloorShockRectsAt(boss, state, this.tick, this.level.solids);
+      if (
+        (bossBodyDamages(state) && rectsOverlap(this.player, body)) ||
+        attacks.some((attack) => rectsOverlap(this.player, attack)) ||
+        floorShocks.some((shock) => rectsOverlap(this.player, shock))
+      ) {
         this.markPlayerDead(events);
         return;
       }
@@ -530,16 +536,19 @@ export class RoomSimulation {
       return [
         {
           id: boss.id,
+          kind: boss.kind,
           phase: state.phase,
           health: state.health,
           introFrames: state.introFrames,
           introTotalFrames: bossIntroFrames(boss),
           activeFrames: state.activeFrames,
           invulnerableFrames: state.invulnerableFrames,
+          recoveryFrames: state.recoveryFrames,
           body,
           weakSpot,
           weakSpotKind: bossWeakSpot(boss),
-          attacks: bossAttackRectsAt(boss, state, this.tick)
+          attacks: bossAttackRectsAt(boss, state, this.tick),
+          floorShocks: bossFloorShockRectsAt(boss, state, this.tick, this.level.solids)
         }
       ];
     });

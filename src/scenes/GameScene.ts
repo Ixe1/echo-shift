@@ -5,7 +5,13 @@ import { tutorialLevel } from "../data/tutorialLevel";
 import { audio } from "../game/audio";
 import { backgroundAmbienceForLevel, backgroundAmbienceIsActive, type NormalizedBackgroundAmbience } from "../game/backgroundAmbience";
 import { backgroundForLevel } from "../game/backgrounds";
-import { BOSS_ATTACK_ACTIVE_FRAMES, BOSS_ATTACK_CYCLE_FRAMES, BOSS_ATTACK_WINDUP_FRAMES, bossIsVulnerable, monsterRectAt } from "../game/enemies";
+import {
+  bossAttackActiveFramesFor,
+  bossAttackCycleFramesFor,
+  bossAttackWindupFramesFor,
+  bossIsVulnerable,
+  monsterRectAt
+} from "../game/enemies";
 import {
   BOSS_ATLAS_KEY,
   BOSS_STATE_FRAME_COUNT,
@@ -1807,6 +1813,11 @@ export class GameScene extends Phaser.Scene {
       for (const attack of snapshot.attacks) {
         this.drawBossAttackEffect(attack, color);
       }
+      if (boss.kind === "storm-relay-warden") {
+        for (const shock of snapshot.floorShocks) {
+          this.drawStormBossFloorShockEffect(shock, color);
+        }
+      }
 
       const body = snapshot.body;
       const introProgress = snapshot.phase === "intro" ? Math.min(1, snapshot.introFrames / Math.max(1, snapshot.introTotalFrames)) : 1;
@@ -1814,6 +1825,26 @@ export class GameScene extends Phaser.Scene {
       if (snapshot.phase === "intro") this.drawBossIntroEffect(body, color, introProgress);
       this.syncBossSprite(boss.id, boss.kind, snapshot, flickerWhite, introProgress);
       if (snapshot.phase === "active" && bossIsVulnerable(snapshot)) this.drawBossWeakSpot(snapshot, color, flickerWhite);
+    }
+  }
+
+  private drawStormBossFloorShockEffect(shock: Rect, color: number): void {
+    const pulse = Math.sin(this.simulation.tick / 3.5) * 0.5 + 0.5;
+    const glowAlpha = 0.14 + pulse * 0.08;
+    this.fx.fillStyle(color, glowAlpha);
+    this.fx.fillRoundedRect(shock.x - 5, shock.y - 4, shock.w + 10, shock.h + 8, 5);
+    this.fx.fillStyle(0xffffff, 0.28 + pulse * 0.16);
+    this.fx.fillRoundedRect(shock.x + 5, shock.y + shock.h * 0.35, Math.max(2, shock.w - 10), 2 + pulse * 2, 2);
+    this.fx.lineStyle(2, color, 0.52 + pulse * 0.18);
+    this.fx.lineBetween(shock.x + 3, shock.y + shock.h * 0.72, shock.x + shock.w - 3, shock.y + shock.h * 0.72);
+    const arcs = Math.max(3, Math.floor(shock.w / 18));
+    for (let index = 0; index < arcs; index += 1) {
+      const ratio = (index + 0.5) / arcs;
+      const x = shock.x + shock.w * ratio;
+      const flicker = (Math.sin(this.simulation.tick * 0.45 + index * 1.9) + 1) * 0.5;
+      const height = 5 + flicker * 10;
+      this.fx.lineStyle(1.5, index % 2 === 0 ? 0xffffff : color, 0.22 + flicker * 0.32);
+      this.fx.lineBetween(x - 3, shock.y + shock.h, x + Math.sin(this.simulation.tick / 5 + index) * 4, shock.y + shock.h - height);
     }
   }
 
@@ -1850,10 +1881,11 @@ export class GameScene extends Phaser.Scene {
 
   private drawStormBossWindupEffect(boss: Boss, snapshot: BossSnapshot, color: number): void {
     if (snapshot.phase !== "active" || bossIsVulnerable(snapshot) || snapshot.attacks.length > 0) return;
-    const cycle = snapshot.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
-    if (cycle >= BOSS_ATTACK_WINDUP_FRAMES) return;
+    const windupFrames = bossAttackWindupFramesFor(boss.kind);
+    const cycle = snapshot.activeFrames % bossAttackCycleFramesFor(boss.kind);
+    if (cycle >= windupFrames) return;
     const body = snapshot.body;
-    const progress = Math.max(0, Math.min(1, cycle / Math.max(1, BOSS_ATTACK_WINDUP_FRAMES)));
+    const progress = Math.max(0, Math.min(1, cycle / Math.max(1, windupFrames)));
     const originX = body.x + body.w / 2;
     const originY = body.y + body.h * 0.82;
     const endY = boss.y + boss.h - 10;
@@ -1896,7 +1928,7 @@ export class GameScene extends Phaser.Scene {
     const body = snapshot.body;
     const center = rectCenter(body);
     const spriteState = this.bossSpriteState(kind, snapshot, introProgress);
-    const stateFrame = this.bossStateAnimationFrame(id, snapshot, spriteState, introProgress);
+    const stateFrame = this.bossStateAnimationFrame(kind, id, snapshot, spriteState, introProgress);
     const frame = bossFrameForKind(kind, spriteState, stateFrame);
     const activePulse = snapshot.phase === "active" && kind !== "storm-relay-warden" ? Math.sin(this.simulation.tick / 18) * 0.015 : 0;
     const displayWidth = Math.max(148, body.w * 1.5) * (1 + activePulse);
@@ -1922,29 +1954,32 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private bossStateAnimationFrame(id: string, snapshot: BossSnapshot, state: BossSpriteState, introProgress: number): number {
+  private bossStateAnimationFrame(kind: BossKind, id: string, snapshot: BossSnapshot, state: BossSpriteState, introProgress: number): number {
+    if (kind === "storm-relay-warden") return 0;
     if (snapshot.phase === "intro") return Math.min(BOSS_STATE_FRAME_COUNT - 1, Math.floor(introProgress * BOSS_STATE_FRAME_COUNT));
     if (snapshot.phase !== "active") return 0;
-    const cycle = snapshot.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
+    const cycle = snapshot.activeFrames % bossAttackCycleFramesFor(snapshot);
     if (state === "windup") {
-      return Math.min(BOSS_STATE_FRAME_COUNT - 1, Math.floor((cycle / Math.max(1, BOSS_ATTACK_WINDUP_FRAMES)) * BOSS_STATE_FRAME_COUNT));
+      return Math.min(BOSS_STATE_FRAME_COUNT - 1, Math.floor((cycle / Math.max(1, bossAttackWindupFramesFor(snapshot))) * BOSS_STATE_FRAME_COUNT));
     }
     if (state === "attack") {
-      const attackFrame = cycle - BOSS_ATTACK_WINDUP_FRAMES;
-      return Math.min(BOSS_STATE_FRAME_COUNT - 1, Math.floor((attackFrame / Math.max(1, BOSS_ATTACK_ACTIVE_FRAMES)) * BOSS_STATE_FRAME_COUNT));
+      const attackFrame = cycle - bossAttackWindupFramesFor(snapshot);
+      return Math.min(BOSS_STATE_FRAME_COUNT - 1, Math.floor((attackFrame / Math.max(1, bossAttackActiveFramesFor(snapshot))) * BOSS_STATE_FRAME_COUNT));
     }
     if (state === "vulnerable") return Math.floor((snapshot.activeFrames + id.length * 5) / 8) % BOSS_STATE_FRAME_COUNT;
     return Math.floor((this.simulation.tick + id.length * 11) / 16) % BOSS_STATE_FRAME_COUNT;
   }
 
   private bossSpriteState(kind: BossKind, snapshot: BossSnapshot, introProgress: number): BossSpriteState {
+    if (kind === "storm-relay-warden") return "idle";
     if (snapshot.phase === "active") {
       if (bossIsVulnerable(snapshot)) return "vulnerable";
-      const cycle = snapshot.activeFrames % BOSS_ATTACK_CYCLE_FRAMES;
-      if (cycle >= BOSS_ATTACK_WINDUP_FRAMES && cycle < BOSS_ATTACK_WINDUP_FRAMES + BOSS_ATTACK_ACTIVE_FRAMES) {
-        return kind === "storm-relay-warden" ? "windup" : "attack";
+      const cycle = snapshot.activeFrames % bossAttackCycleFramesFor(snapshot);
+      const windupFrames = bossAttackWindupFramesFor(snapshot);
+      if (cycle >= windupFrames && cycle < windupFrames + bossAttackActiveFramesFor(snapshot)) {
+        return "attack";
       }
-      return cycle < BOSS_ATTACK_WINDUP_FRAMES ? "windup" : "idle";
+      return cycle < windupFrames ? "windup" : "idle";
     }
     if (snapshot.phase === "intro" && introProgress > 0.55 && Math.floor(this.simulation.tick / 18) % 2 === 1) return "windup";
     return "idle";

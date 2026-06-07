@@ -201,16 +201,19 @@ export type BossAttackSnapshot = Rect & {
 
 export type BossSnapshot = {
   id: string;
+  kind: BossKind;
   phase: BossPhase;
   health: number;
   introFrames: number;
   introTotalFrames: number;
   activeFrames: number;
   invulnerableFrames: number;
+  recoveryFrames: number;
   body: Rect;
   weakSpot: Rect;
   weakSpotKind: BossWeakSpot;
   attacks: BossAttackSnapshot[];
+  floorShocks: Rect[];
 };
 
 export type SoundtrackKey =

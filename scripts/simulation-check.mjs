@@ -406,16 +406,16 @@ try {
   const { backgroundForLevel, levelBackgrounds } = await server.ssrLoadModule("/src/game/backgrounds.ts");
   const { backgroundAmbienceForLevel, backgroundAmbienceIsActive } = await server.ssrLoadModule("/src/game/backgroundAmbience.ts");
   const { terrainMaterialForSolid } = await server.ssrLoadModule("/src/game/terrainMaterials.ts");
-  const { BOSS_ATTACK_ACTIVE_FRAMES, BOSS_ATTACK_CYCLE_FRAMES, BOSS_ATTACK_WINDUP_FRAMES, bossIsVulnerable } = await server.ssrLoadModule("/src/game/enemies.ts");
+  const { bossAttackActiveFramesFor, bossAttackCycleFramesFor, bossAttackWindupFramesFor, bossIsVulnerable } = await server.ssrLoadModule("/src/game/enemies.ts");
   const { SynthAudio } = await server.ssrLoadModule("/src/game/audio.ts");
 
   const runBossUntilVulnerable = (simulation, bossId) => {
-    for (let frameIndex = 0; frameIndex < BOSS_ATTACK_WINDUP_FRAMES + BOSS_ATTACK_ACTIVE_FRAMES + 90; frameIndex += 1) {
+    for (let frameIndex = 0; frameIndex < 420; frameIndex += 1) {
       const snapshots = simulation.bossSnapshots();
       const snapshot = snapshots.find((boss) => boss.id === bossId);
       if (snapshot && bossIsVulnerable(snapshot)) return snapshot;
       const danger = snapshots.find(
-        (boss) => boss.phase === "active" && boss.activeFrames >= BOSS_ATTACK_WINDUP_FRAMES - 1 && !bossIsVulnerable(boss)
+        (boss) => boss.phase === "active" && boss.activeFrames >= bossAttackWindupFramesFor(boss) - 1 && !bossIsVulnerable(boss)
       );
       if (danger) {
         const levelCenterX = simulation.level.bounds.x + simulation.level.bounds.w / 2;
@@ -432,10 +432,10 @@ try {
     for (let frameIndex = 0; frameIndex < 240; frameIndex += 1) {
       const snapshots = simulation.bossSnapshots();
       const snapshot = snapshots.find((boss) => boss.id === bossId);
-      const cycleFrame = snapshot ? snapshot.activeFrames % BOSS_ATTACK_CYCLE_FRAMES : 0;
-      if (snapshot?.attacks.length > 0 && cycleFrame < BOSS_ATTACK_WINDUP_FRAMES + BOSS_ATTACK_ACTIVE_FRAMES - 1) return snapshot;
+      const cycleFrame = snapshot ? snapshot.activeFrames % bossAttackCycleFramesFor(snapshot) : 0;
+      if (snapshot?.attacks.length > 0 && cycleFrame < bossAttackWindupFramesFor(snapshot) + bossAttackActiveFramesFor(snapshot) - 1) return snapshot;
       const danger = snapshots.find(
-        (boss) => boss.phase === "active" && boss.activeFrames >= BOSS_ATTACK_WINDUP_FRAMES - 1 && !bossIsVulnerable(boss)
+        (boss) => boss.phase === "active" && boss.activeFrames >= bossAttackWindupFramesFor(boss) - 1 && !bossIsVulnerable(boss)
       );
       if (danger) {
         const levelCenterX = simulation.level.bounds.x + simulation.level.bounds.w / 2;
@@ -463,6 +463,46 @@ try {
       onGround: false
     });
     return simulation.step(idle);
+  };
+
+  const jumpHitBoss = (simulation, snapshot) => {
+    const spot = snapshot.weakSpot;
+    const playerWidth = simulation.player.w || 24;
+    const floorTop = (simulation.level.solids || [])
+      .filter((solid) => solid.w >= playerWidth && solid.y >= spot.y)
+      .reduce((min, solid) => Math.min(min, solid.y), Number.POSITIVE_INFINITY);
+    assert(Number.isFinite(floorTop), `Expected a floor under boss weak spot for jump-hit test, got spot ${JSON.stringify(spot)}`);
+    Object.assign(simulation.player, {
+      x: spot.x + spot.w / 2 - playerWidth / 2,
+      y: floorTop - simulation.player.h,
+      vx: 0,
+      vy: 0,
+      onGround: true,
+      coyote: 7,
+      prevJump: false
+    });
+    for (let frameIndex = 0; frameIndex < 64; frameIndex += 1) {
+      const events = simulation.step(frameIndex < 44 ? jump : idle);
+      if (events.bossHit) return events;
+    }
+    return { bossHit: null };
+  };
+
+  const placePlayerAtShockEdge = (simulation, shock) => {
+    const playerWidth = simulation.player.w || 24;
+    const floorTop = (simulation.level.solids || [])
+      .filter((solid) => solidSupportsGameplay(solid) && solid.y >= shock.y + shock.h - 1 && solid.x < shock.x + shock.w && solid.x + solid.w > shock.x)
+      .reduce((min, solid) => Math.min(min, solid.y), Number.POSITIVE_INFINITY);
+    assert(Number.isFinite(floorTop), `Expected a floor under storm boss floor shock ${JSON.stringify(shock)}`);
+    Object.assign(simulation.player, {
+      x: shock.x - playerWidth + 4,
+      y: floorTop - simulation.player.h,
+      vx: 0,
+      vy: 0,
+      onGround: true,
+      coyote: 7,
+      prevJump: false
+    });
   };
 
   const assertAttackStartsFromBoss = (snapshot, label) => {
@@ -1382,6 +1422,35 @@ try {
     stormAttack.y + stormAttack.h >= stormLaneLevel.bosses[0].y + stormLaneLevel.bosses[0].h - 12,
     `Expected storm beam to reach the player lane floor, got ${JSON.stringify(stormAttack)}`
   );
+  assert(stormAttackSnapshot.floorShocks.length === 1, `Expected active storm beam to heat one floor tile, got ${stormAttackSnapshot.floorShocks.length}`);
+  const stormShock = stormAttackSnapshot.floorShocks[0];
+  const stormFloor = stormLaneLevel.solids.find((solid) => solid.id === "floor");
+  assert(stormFloor && stormShock.y + stormShock.h === stormFloor.y, `Expected storm floor shock to sit on top of the floor, got ${JSON.stringify(stormShock)}`);
+  assert(stormShock.w > stormAttack.w, `Expected storm floor shock to be wider than the beam, got shock ${JSON.stringify(stormShock)} and attack ${JSON.stringify(stormAttack)}`);
+
+  const stormShockDeathSim = new RoomSimulation(stormLaneLevel);
+  Object.assign(stormShockDeathSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
+  stormShockDeathSim.step(idle);
+  runFrames(stormShockDeathSim, 60, idle);
+  Object.assign(stormShockDeathSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  const stormShockDeathAttack = runBossUntilAttack(stormShockDeathSim, "boss-test");
+  placePlayerAtShockEdge(stormShockDeathSim, stormShockDeathAttack.floorShocks[0]);
+  const stormShockDeath = stormShockDeathSim.step(idle);
+  assert(stormShockDeath.died && stormShockDeathSim.dead, "Expected active storm floor shock edge to kill the player");
+
+  const stormShockSafeSim = new RoomSimulation(stormLaneLevel);
+  Object.assign(stormShockSafeSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
+  stormShockSafeSim.step(idle);
+  runFrames(stormShockSafeSim, 60, idle);
+  Object.assign(stormShockSafeSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  const stormShockSafeAttack = runBossUntilAttack(stormShockSafeSim, "boss-test");
+  const stormShockSafeRect = stormShockSafeAttack.floorShocks[0];
+  const stormShockSafeVulnerable = runBossUntilVulnerable(stormShockSafeSim, "boss-test");
+  assert(stormShockSafeVulnerable.floorShocks.length === 0, "Expected storm floor shock to clear after the beam active window");
+  placePlayerAtShockEdge(stormShockSafeSim, stormShockSafeRect);
+  const stormShockSafeStep = stormShockSafeSim.step(idle);
+  assert(!stormShockSafeStep.died && !stormShockSafeSim.dead, "Expected old storm floor shock tiles to be safe after the beam ends");
+
   const stormEdgeLaneSim = new RoomSimulation(stormLaneLevel);
   Object.assign(stormEdgeLaneSim.player, { x: 252, y: 86, vx: 0, vy: 0, onGround: true });
   stormEdgeLaneSim.step(idle);
@@ -1413,16 +1482,60 @@ try {
   stormRecoverySim.step(idle);
   runFrames(stormRecoverySim, 60, idle);
   const stormRecoveryVulnerable = runBossUntilVulnerable(stormRecoverySim, "boss-test");
-  const stormRecoveryLowY = stormRecoveryVulnerable.body.y;
+  const stormJumpHitSim = new RoomSimulation(stormLaneLevel);
+  Object.assign(stormJumpHitSim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });
+  stormJumpHitSim.step(idle);
+  runFrames(stormJumpHitSim, 60, idle);
+  const stormJumpVulnerable = runBossUntilVulnerable(stormJumpHitSim, "boss-test");
+  const stormJumpHit = jumpHitBoss(stormJumpHitSim, stormJumpVulnerable);
+  assert(stormJumpHit.bossHit?.id === "boss-test", "Expected a normal floor jump to hit the storm boss vulnerable underside");
   const stormRecoveryHit = upwardHitBoss(stormRecoverySim, stormRecoveryVulnerable);
   assert(stormRecoveryHit.bossHit?.health === 1, "Expected first storm boss hit to leave one health for the repeat cycle");
   assert(!stormRecoveryHit.bossDefeated, "Expected first storm boss hit not to defeat a two-health boss");
-  assert(!bossIsVulnerable(stormRecoverySim.bossSnapshots()[0]), "Expected storm boss to close its weak spot after a successful nonfatal hit");
-  runFrames(stormRecoverySim, 12, idle);
+  const stormAfterHit = stormRecoverySim.bossSnapshots()[0];
+  assert(stormAfterHit.recoveryFrames > 0, "Expected storm boss to enter recovery after a nonfatal hit");
+  assert(!bossIsVulnerable(stormAfterHit), "Expected storm boss to close its weak spot after a successful nonfatal hit");
+  assert(stormAfterHit.attacks.length === 0 && stormAfterHit.floorShocks.length === 0, "Expected storm boss recovery to clear beam and floor shock hazards");
+  const stormImmediateRetry = upwardHitBoss(stormRecoverySim, stormAfterHit);
+  assert(stormImmediateRetry.bossHit === null, "Expected storm boss to ignore an immediate repeat hit during recovery immunity");
+  assert(stormRecoverySim.bossSnapshots()[0].health === 1, "Expected storm boss health to stay unchanged after an immediate repeat hit attempt");
+  const stormRecoveryPauseStart = stormRecoverySim.bossSnapshots()[0];
+  runFrames(stormRecoverySim, 30, idle);
+  const stormRecoveryPause = stormRecoverySim.bossSnapshots()[0];
+  assert(stormRecoveryPause.recoveryFrames > 0, "Expected storm boss recovery pause to still be active");
+  assert(
+    Math.abs(stormRecoveryPause.body.y - stormRecoveryPauseStart.body.y) <= 6,
+    `Expected storm boss to pause before rising, from ${stormRecoveryPauseStart.body.y} to ${stormRecoveryPause.body.y}`
+  );
+  assert(stormRecoveryPause.attacks.length === 0 && stormRecoveryPause.floorShocks.length === 0, "Expected storm boss recovery pause to stay harmless");
+  runFrames(stormRecoverySim, 70, idle);
   const stormRecoveryRising = stormRecoverySim.bossSnapshots()[0];
   assert(
-    stormRecoveryRising.body.y < stormRecoveryLowY - 4,
-    `Expected storm boss to rise after a nonfatal hit, from ${stormRecoveryLowY} to ${stormRecoveryRising.body.y}`
+    stormRecoveryRising.body.y < stormRecoveryPause.body.y - 3,
+    `Expected storm boss to rise after its post-hit pause, from ${stormRecoveryPause.body.y} to ${stormRecoveryRising.body.y}`
+  );
+  runFrames(stormRecoverySim, 55, idle);
+  const stormRecoveryPatrolStart = stormRecoverySim.bossSnapshots()[0];
+  runFrames(stormRecoverySim, 24, idle);
+  const stormRecoveryPatrolLater = stormRecoverySim.bossSnapshots()[0];
+  assert(
+    Math.abs(stormRecoveryPatrolLater.body.x - stormRecoveryPatrolStart.body.x) > 0.5,
+    `Expected storm boss to patrol sideways during recovery lane selection, from ${stormRecoveryPatrolStart.body.x} to ${stormRecoveryPatrolLater.body.x}`
+  );
+  let recoveryFrames = 0;
+  while (stormRecoverySim.bossSnapshots()[0]?.recoveryFrames > 0 && recoveryFrames < 220) {
+    stormRecoverySim.step(idle);
+    recoveryFrames += 1;
+  }
+  const stormRecovered = stormRecoverySim.bossSnapshots()[0];
+  assert(stormRecovered.recoveryFrames === 0, `Expected storm boss recovery to finish, got ${stormRecovered.recoveryFrames}`);
+  assert(
+    stormRecovered.attacks.length === 0 && !bossIsVulnerable(stormRecovered),
+    "Expected storm boss to restart in a harmless windup after recovery"
+  );
+  assert(
+    stormRecovered.activeFrames % bossAttackCycleFramesFor(stormRecovered) < bossAttackWindupFramesFor(stormRecovered),
+    `Expected storm boss recovered cycle to restart before the beam window, got frame ${stormRecovered.activeFrames}`
   );
 
   const multiBossLevel = {
