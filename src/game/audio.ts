@@ -23,6 +23,8 @@ export type AudioMixSettings = {
 };
 
 const unlockEvents = ["pointerdown", "keydown", "touchstart"] as const;
+const windowRecoveryEvents = ["focus", "pageshow"] as const;
+const documentRecoveryEvents = ["visibilitychange"] as const;
 const effectPath = (file: string): string => `/assets/audio/effects/${file}`;
 const AUDIO_SETTINGS_KEY = "echo-shift-audio-settings-v1";
 const DEFAULT_AUDIO_SETTINGS: AudioMixSettings = {
@@ -84,6 +86,7 @@ export class SynthAudio {
   private musicMuted = false;
   private musicPaused = false;
   private unlockListenersInstalled = false;
+  private recoveryListenersInstalled = false;
   private settingsState = readAudioSettings();
   private readonly synthBaseVolume = 0.18;
   private readonly musicBaseVolume = 0.28;
@@ -112,6 +115,7 @@ export class SynthAudio {
 
   resume(): void {
     this.installUnlockListeners();
+    this.installRecoveryListeners();
     const context = this.ensureContext();
     if (context) {
       void context
@@ -125,17 +129,7 @@ export class SynthAudio {
   play(name: ToneName): void {
     this.resume();
     if (this.playSample(name)) return;
-    if (!this.context || !this.master) return;
-    if (this.context.state !== "running") {
-      void this.context
-        .resume()
-        .then(() => {
-          if (this.context?.state === "running" && !this.playSample(name)) this.playTone(name);
-        })
-        .catch(() => this.markAudioState("blocked"));
-      return;
-    }
-    this.playTone(name);
+    this.playToneWhenReady(name);
   }
 
   private playTone(name: ToneName): void {
@@ -192,6 +186,7 @@ export class SynthAudio {
 
   playMusic(key: SoundtrackKey, options: { restart?: boolean; fadeMs?: number } = {}): void {
     this.installUnlockListeners();
+    this.installRecoveryListeners();
     this.musicPaused = false;
     if (this.context) {
       void this.context
@@ -278,7 +273,21 @@ export class SynthAudio {
         window.removeEventListener(eventName, this.handleUnlockGesture, options);
       }
     }
+    if (this.recoveryListenersInstalled) {
+      const options = { capture: true };
+      if (typeof window !== "undefined") {
+        for (const eventName of windowRecoveryEvents) {
+          window.removeEventListener(eventName, this.handleRecoveryEvent, options);
+        }
+      }
+      if (typeof document !== "undefined") {
+        for (const eventName of documentRecoveryEvents) {
+          document.removeEventListener(eventName, this.handleRecoveryEvent, options);
+        }
+      }
+    }
     this.unlockListenersInstalled = false;
+    this.recoveryListenersInstalled = false;
     this.master?.disconnect();
     void this.context?.close().catch(() => undefined);
     this.master = null;
@@ -290,12 +299,33 @@ export class SynthAudio {
     this.resume();
   };
 
+  private handleRecoveryEvent = (): void => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+    this.resume();
+  };
+
   private installUnlockListeners(): void {
     if (this.unlockListenersInstalled || typeof window === "undefined") return;
     this.unlockListenersInstalled = true;
     const options = { capture: true, passive: true };
     for (const eventName of unlockEvents) {
       window.addEventListener(eventName, this.handleUnlockGesture, options);
+    }
+  }
+
+  private installRecoveryListeners(): void {
+    if (this.recoveryListenersInstalled) return;
+    this.recoveryListenersInstalled = true;
+    const options = { capture: true, passive: true };
+    if (typeof window !== "undefined") {
+      for (const eventName of windowRecoveryEvents) {
+        window.addEventListener(eventName, this.handleRecoveryEvent, options);
+      }
+    }
+    if (typeof document !== "undefined") {
+      for (const eventName of documentRecoveryEvents) {
+        document.addEventListener(eventName, this.handleRecoveryEvent, options);
+      }
     }
   }
 
@@ -316,7 +346,9 @@ export class SynthAudio {
   }
 
   private retryMusic(): void {
-    if (this.music && !this.musicPaused) this.playMusicElement(this.music);
+    if (!this.music || this.musicPaused) return;
+    this.prepareMusicElement(this.music);
+    this.playMusicElement(this.music);
   }
 
   private playSample(name: ToneName): boolean {
@@ -327,22 +359,52 @@ export class SynthAudio {
     element.preload = "auto";
     element.volume = settings.volume * this.fxOutputMultiplier();
     this.activeEffects.set(element, settings.volume);
+    let released = false;
+    let fallbackPlayed = false;
     const release = () => {
+      if (released) return;
+      released = true;
       element.pause();
       this.activeEffects.delete(element);
     };
+    const fallback = () => {
+      if (fallbackPlayed) return;
+      fallbackPlayed = true;
+      release();
+      this.playToneWhenReady(name);
+    };
     if (typeof element.addEventListener === "function") {
       element.addEventListener("ended", release, { once: true });
-      element.addEventListener("error", release, { once: true });
+      element.addEventListener("error", fallback, { once: true });
     }
 
-    void element
-      .play()
-      .then(() => {
-        if (typeof element.addEventListener !== "function") this.activeEffects.delete(element);
-      })
-      .catch(release);
+    try {
+      void element
+        .play()
+        .then(() => {
+          if (typeof element.addEventListener !== "function") this.activeEffects.delete(element);
+        })
+        .catch(fallback);
+    } catch {
+      fallback();
+    }
     return true;
+  }
+
+  private playToneWhenReady(name: ToneName): void {
+    const context = this.ensureContext();
+    if (!context || !this.master) return;
+    if (context.state === "running") {
+      this.playTone(name);
+      return;
+    }
+    void context
+      .resume()
+      .then(() => {
+        this.markContextState(context.state);
+        if (this.context === context && context.state === "running") this.playTone(name);
+      })
+      .catch(() => this.markAudioState("blocked"));
   }
 
   private playMusicElement(element: HTMLAudioElement): void {

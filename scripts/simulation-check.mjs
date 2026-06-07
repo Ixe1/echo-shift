@@ -199,9 +199,11 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   const startedTones = [];
   const pendingResumes = [];
   const pendingBlockedRejects = [];
+  const forceRejectedMedia = new Set();
   let disconnectedNodes = 0;
   let deferBlockedRejects = false;
   let mediaUnlocked = false;
+  let visibilityState = "visible";
 
   const fakeParam = () => ({
     value: 0,
@@ -264,6 +266,9 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
 
     play() {
       this.playCalls += 1;
+      if ([...forceRejectedMedia].some((fragment) => this.src.includes(fragment))) {
+        return Promise.reject(new Error("forced media rejection"));
+      }
       if (!mediaUnlocked) {
         if (deferBlockedRejects) {
           return new Promise((_, reject) => pendingBlockedRejects.push(reject));
@@ -278,26 +283,39 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       this.playing = false;
     }
   }
+  const addListener = (type, handler) => {
+    const handlers = listeners.get(type) || [];
+    handlers.push(handler);
+    listeners.set(type, handlers);
+  };
+  const removeListener = (type, handler) => {
+    const handlers = listeners.get(type) || [];
+    listeners.set(
+      type,
+      handlers.filter((candidate) => candidate !== handler)
+    );
+  };
   const fakeWindow = {
     AudioContext: FakeAudioContext,
-    addEventListener(type, handler) {
-      const handlers = listeners.get(type) || [];
-      handlers.push(handler);
-      listeners.set(type, handlers);
+    addEventListener: addListener,
+    removeEventListener: removeListener
+  };
+  const fakeDocument = {
+    documentElement: { dataset: {} },
+    get visibilityState() {
+      return visibilityState;
     },
-    removeEventListener(type, handler) {
-      const handlers = listeners.get(type) || [];
-      listeners.set(
-        type,
-        handlers.filter((candidate) => candidate !== handler)
-      );
+    addEventListener: addListener,
+    removeEventListener: removeListener
+  };
+  const dispatchEvent = (type) => {
+    for (const handler of listeners.get(type) || []) {
+      handler({ type, key: "Enter" });
     }
   };
   const dispatchUnlock = (type) => {
     mediaUnlocked = true;
-    for (const handler of listeners.get(type) || []) {
-      handler({ type, key: "Enter" });
-    }
+    dispatchEvent(type);
   };
   const resolveResumes = () => {
     for (const resolve of pendingResumes.splice(0)) resolve();
@@ -307,7 +325,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   };
 
   Object.defineProperty(globalThis, "window", { configurable: true, value: fakeWindow });
-  Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { dataset: {} } } });
+  Object.defineProperty(globalThis, "document", { configurable: true, value: fakeDocument });
   Object.defineProperty(globalThis, "Audio", { configurable: true, value: FakeAudioElement });
   Object.defineProperty(globalThis, "requestAnimationFrame", { configurable: true, value: () => 0 });
 
@@ -358,6 +376,16 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     assert(overlappingCoreEffects.length >= 2, "Expected repeated core SFX calls to create overlapping media elements");
     assert(mediaElements.length >= elementsBeforeSfx + 3, "Expected sampled SFX playback to allocate independent media elements");
 
+    const tonesBeforeRejectedSample = startedTones.length;
+    forceRejectedMedia.add("player_jump");
+    audio.play("jump");
+    await settlePromises();
+    forceRejectedMedia.clear();
+    assert(
+      startedTones.length > tonesBeforeRejectedSample,
+      "Expected rejected sampled jump SFX to fall back to a synth tone"
+    );
+
     audio.play("land");
     await settlePromises();
     assert(startedTones.length >= 1, "Expected synth fallback SFX tone to start after audio context unlock");
@@ -380,6 +408,31 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     await settlePromises();
     assert(levelOne.currentTime === 0, `Expected retry/replay music restart to seek level track to 0, got ${levelOne.currentTime}`);
     assert(levelOne.playCalls >= 2, `Expected restarted level music to play again, got ${levelOne.playCalls} calls`);
+
+    mediaUnlocked = false;
+    audio.playMusic("level-2");
+    await settlePromises();
+    const levelTwo = mediaElements.find((element) => element.src.includes("Level 2"));
+    assert(levelTwo?.playCalls === 1 && !levelTwo.playing, "Expected level switch music to be blocked before recovery");
+    mediaUnlocked = true;
+    dispatchEvent("focus");
+    await settlePromises();
+    assert(levelTwo.playCalls >= 2 && levelTwo.playing, "Expected focus recovery to retry and start blocked level music");
+
+    mediaUnlocked = false;
+    audio.playMusic("level-3");
+    await settlePromises();
+    const levelThree = mediaElements.find((element) => element.src.includes("Level 3"));
+    assert(levelThree?.playCalls === 1 && !levelThree.playing, "Expected next level music to be blocked before visibility recovery");
+    mediaUnlocked = true;
+    visibilityState = "hidden";
+    dispatchEvent("visibilitychange");
+    await settlePromises();
+    assert(levelThree.playCalls === 1, "Expected hidden visibilitychange not to retry music");
+    visibilityState = "visible";
+    dispatchEvent("visibilitychange");
+    await settlePromises();
+    assert(levelThree.playCalls >= 2 && levelThree.playing, "Expected visible recovery to retry and start blocked level music");
   } finally {
     restoreGlobal("window", previousWindow);
     restoreGlobal("document", previousDocument);
