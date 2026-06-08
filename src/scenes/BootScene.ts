@@ -6,6 +6,7 @@ import {
   BOSS_ATLAS_FRAME_HEIGHT,
   BOSS_ATLAS_FRAME_WIDTH,
   BOSS_ATLAS_KEY,
+  CRYO_BOSS_CLEAN_KEY,
   MONSTER_ATLAS_FRAME_HEIGHT,
   MONSTER_ATLAS_FRAME_WIDTH,
   MONSTER_ATLAS_KEY,
@@ -61,6 +62,10 @@ export class BootScene extends Phaser.Scene {
       frameHeight: BOSS_ATLAS_FRAME_HEIGHT
     });
     this.load.spritesheet(STORM_BOSS_CLEAN_KEY, "/assets/sprites/storm-relay-warden-clean.png", {
+      frameWidth: BOSS_ATLAS_FRAME_WIDTH,
+      frameHeight: BOSS_ATLAS_FRAME_HEIGHT
+    });
+    this.load.spritesheet(CRYO_BOSS_CLEAN_KEY, "/assets/sprites/cryo-conservator-clean.png", {
       frameWidth: BOSS_ATLAS_FRAME_WIDTH,
       frameHeight: BOSS_ATLAS_FRAME_HEIGHT
     });

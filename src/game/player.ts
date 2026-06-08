@@ -61,6 +61,7 @@ export type DynamicCollisionState = {
   conveyors?: Conveyor[];
   crates?: Map<string, Rect>;
   actorBlockers?: Rect[];
+  ice?: Rect[];
 };
 
 type CollisionRect = Rect & {
@@ -119,8 +120,10 @@ export const moveActor = (
   const launchFloatActive = actor.launchFloatFrames > 0;
   if (actor.launchFloatFrames > 0) actor.launchFloatFrames -= 1;
 
+  const slipperyGround = actor.onGround && (dynamic.ice || []).some((ice) => rectsOverlap(actorFoot(actor), ice));
   const launchAccelScale = launchControlLocked && !actor.onGround ? LAUNCH_CONTROL_ACCEL_SCALE : 1;
-  const accel = (actor.onGround ? GROUND_ACCEL : AIR_ACCEL) * launchAccelScale;
+  const groundAccelScale = slipperyGround ? 0.45 : 1;
+  const accel = (actor.onGround ? GROUND_ACCEL * groundAccelScale : AIR_ACCEL) * launchAccelScale;
   if (input.left && !input.right) {
     actor.vx -= accel;
     actor.facing = -1;
@@ -128,7 +131,7 @@ export const moveActor = (
     actor.vx += accel;
     actor.facing = 1;
   } else if (actor.onGround) {
-    actor.vx *= FRICTION;
+    actor.vx *= slipperyGround ? 0.94 : FRICTION;
   }
 
   actor.vx = clamp(actor.vx, -MAX_SPEED / 60, MAX_SPEED / 60);

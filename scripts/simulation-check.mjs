@@ -602,6 +602,30 @@ try {
     });
   };
 
+  const placePlayerOnFloorEffect = (simulation, floorEffect, xOffset = 8) => {
+    const playerWidth = simulation.player.w || 24;
+    const floorTop = (simulation.level.solids || [])
+      .filter(
+        (solid) =>
+          solidSupportsGameplay(solid) &&
+          solid.y >= floorEffect.y + floorEffect.h - 1 &&
+          solid.x < floorEffect.x + floorEffect.w &&
+          solid.x + solid.w > floorEffect.x
+      )
+      .reduce((min, solid) => Math.min(min, solid.y), Number.POSITIVE_INFINITY);
+    assert(Number.isFinite(floorTop), `Expected a floor under boss floor effect ${JSON.stringify(floorEffect)}`);
+    Object.assign(simulation.player, {
+      x: floorEffect.x + xOffset,
+      y: floorTop - simulation.player.h,
+      vx: 0,
+      vy: 0,
+      onGround: true,
+      coyote: 7,
+      prevJump: false
+    });
+    assert(simulation.player.x + playerWidth <= floorEffect.x + floorEffect.w, `Expected player to fit on floor effect ${JSON.stringify(floorEffect)}`);
+  };
+
   const assertAttackStartsFromBoss = (snapshot, label) => {
     assert(snapshot.attacks.length > 0, `${label}: expected an active boss attack`);
     const attack = snapshot.attacks[0];
@@ -1642,6 +1666,104 @@ try {
   assert(
     stormRecovered.activeFrames % bossAttackCycleFramesFor(stormRecovered) < bossAttackWindupFramesFor(stormRecovered),
     `Expected storm boss recovered cycle to restart before the beam window, got frame ${stormRecovered.activeFrames}`
+  );
+
+  const cryoLevel = {
+    ...bossLevel,
+    bosses: [{ ...bossLevel.bosses[0], kind: "cryo-conservator", introSeconds: 1, health: 2 }]
+  };
+  const cryoLaneSim = new RoomSimulation(cryoLevel);
+  Object.assign(cryoLaneSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
+  cryoLaneSim.step(idle);
+  runFrames(cryoLaneSim, 60, idle);
+  Object.assign(cryoLaneSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  const cryoAttackSnapshot = runBossUntilAttack(cryoLaneSim, "boss-test");
+  assertAttackStartsFromBoss(cryoAttackSnapshot, "cryo boss downward attack");
+  const cryoAttack = cryoAttackSnapshot.attacks[0];
+  assert(cryoAttack.kind === "vertical", `Expected cryo boss to fire downward, got ${cryoAttack.kind}`);
+  assert(cryoAttack.h > cryoAttack.w * 2, `Expected cryo beam to be a tall lane hazard, got ${JSON.stringify(cryoAttack)}`);
+  assert(
+    Math.abs(cryoAttack.originX - targetPlayerCenterX) <= 28,
+    `Expected cryo boss first attack lane to target player x ${targetPlayerCenterX}, got ${cryoAttack.originX}`
+  );
+  assert(cryoAttackSnapshot.floorIce.length === 1, `Expected active cryo beam to freeze one floor lane, got ${cryoAttackSnapshot.floorIce.length}`);
+  const cryoIce = cryoAttackSnapshot.floorIce[0];
+  assert(cryoIce.w === 128, `Expected cryo floor ice to cover a 128px lane, got ${JSON.stringify(cryoIce)}`);
+
+  const cryoBeamDeathSim = new RoomSimulation(cryoLevel);
+  Object.assign(cryoBeamDeathSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
+  cryoBeamDeathSim.step(idle);
+  runFrames(cryoBeamDeathSim, 60, idle);
+  Object.assign(cryoBeamDeathSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  const cryoBeamDeathAttack = runBossUntilAttack(cryoBeamDeathSim, "boss-test");
+  Object.assign(cryoBeamDeathSim.player, {
+    x: cryoBeamDeathAttack.attacks[0].x + cryoBeamDeathAttack.attacks[0].w / 2 - 12,
+    y: 86,
+    vx: 0,
+    vy: 0,
+    onGround: true
+  });
+  const cryoBeamDeath = cryoBeamDeathSim.step(idle);
+  assert(cryoBeamDeath.died && cryoBeamDeathSim.dead, "Expected active cryo beam to kill the player");
+
+  const cryoIceSim = new RoomSimulation(cryoLevel);
+  Object.assign(cryoIceSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
+  cryoIceSim.step(idle);
+  runFrames(cryoIceSim, 60, idle);
+  Object.assign(cryoIceSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  runBossUntilAttack(cryoIceSim, "boss-test");
+  const cryoIceVulnerable = runBossUntilVulnerable(cryoIceSim, "boss-test");
+  assert(cryoIceVulnerable.floorIce.length === 1, "Expected cryo floor ice to persist into the vulnerable cooldown");
+  placePlayerOnFloorEffect(cryoIceSim, cryoIceVulnerable.floorIce[0], 8);
+  cryoIceSim.player.vx = 2;
+  const cryoIceStep = cryoIceSim.step(idle);
+  assert(!cryoIceStep.died && !cryoIceSim.dead, "Expected post-beam cryo floor ice not to kill the player");
+  assert(cryoIceSim.player.vx > 1.75, `Expected cryo floor ice to preserve slide velocity, got ${cryoIceSim.player.vx}`);
+
+  const cryoStandingHitSim = new RoomSimulation(cryoLevel);
+  Object.assign(cryoStandingHitSim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });
+  cryoStandingHitSim.step(idle);
+  runFrames(cryoStandingHitSim, 60, idle);
+  const cryoStandingVulnerable = runBossUntilVulnerable(cryoStandingHitSim, "boss-test");
+  const cryoStandingHit = standUnderBossWeakSpot(cryoStandingHitSim, cryoStandingVulnerable);
+  assert(cryoStandingHit.bossHit === null, "Expected standing under the cryo boss vulnerable underside not to register without a jump");
+  assert(cryoStandingHitSim.bossSnapshots()[0].health === 2, "Expected cryo boss health to stay unchanged after standing under its weak spot");
+
+  const cryoJumpHitSim = new RoomSimulation(cryoLevel);
+  Object.assign(cryoJumpHitSim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });
+  cryoJumpHitSim.step(idle);
+  runFrames(cryoJumpHitSim, 60, idle);
+  const cryoJumpVulnerable = runBossUntilVulnerable(cryoJumpHitSim, "boss-test");
+  const cryoJumpHit = jumpHitBoss(cryoJumpHitSim, cryoJumpVulnerable);
+  assert(cryoJumpHit.bossHit?.id === "boss-test", "Expected a normal floor jump to hit the cryo boss vulnerable underside");
+
+  const cryoRecoverySim = new RoomSimulation(cryoLevel);
+  Object.assign(cryoRecoverySim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });
+  cryoRecoverySim.step(idle);
+  runFrames(cryoRecoverySim, 60, idle);
+  const cryoRecoveryVulnerable = runBossUntilVulnerable(cryoRecoverySim, "boss-test");
+  const cryoRecoveryHit = upwardHitBoss(cryoRecoverySim, cryoRecoveryVulnerable);
+  assert(cryoRecoveryHit.bossHit?.health === 1, "Expected first cryo boss hit to leave one health for the repeat cycle");
+  assert(!cryoRecoveryHit.bossDefeated, "Expected first cryo boss hit not to defeat a two-health boss");
+  const cryoAfterHit = cryoRecoverySim.bossSnapshots()[0];
+  assert(cryoAfterHit.recoveryFrames > 0, "Expected cryo boss to enter recovery after a nonfatal hit");
+  assert(!bossIsVulnerable(cryoAfterHit), "Expected cryo boss to close its weak spot after a successful nonfatal hit");
+  assert(cryoAfterHit.attacks.length === 0 && cryoAfterHit.floorIce.length === 0, "Expected cryo boss recovery to clear beam and floor ice effects");
+  const cryoImmediateRetry = upwardHitBoss(cryoRecoverySim, cryoAfterHit);
+  assert(cryoImmediateRetry.bossHit === null, "Expected cryo boss to ignore an immediate repeat hit during recovery immunity");
+  assert(cryoRecoverySim.bossSnapshots()[0].health === 1, "Expected cryo boss health to stay unchanged after an immediate repeat hit attempt");
+  const cryoRecoveryPauseStart = cryoRecoverySim.bossSnapshots()[0];
+  runFrames(cryoRecoverySim, 30, idle);
+  const cryoRecoveryPause = cryoRecoverySim.bossSnapshots()[0];
+  assert(
+    Math.abs(cryoRecoveryPause.body.y - cryoRecoveryPauseStart.body.y) <= 6,
+    `Expected cryo boss to pause before rising, from ${cryoRecoveryPauseStart.body.y} to ${cryoRecoveryPause.body.y}`
+  );
+  runFrames(cryoRecoverySim, 80, idle);
+  const cryoRecoveryRising = cryoRecoverySim.bossSnapshots()[0];
+  assert(
+    cryoRecoveryPause.body.y - cryoRecoveryRising.body.y > 0.5,
+    `Expected cryo boss to rise after its post-hit pause, from ${cryoRecoveryPause.body.y} to ${cryoRecoveryRising.body.y}`
   );
 
   const multiBossLevel = {

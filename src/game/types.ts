@@ -214,6 +214,7 @@ export type BossSnapshot = {
   weakSpotKind: BossWeakSpot;
   attacks: BossAttackSnapshot[];
   floorShocks: Rect[];
+  floorIce: Rect[];
 };
 
 export type SoundtrackKey =

@@ -41,25 +41,55 @@ const STORM_FLOOR_SHOCK_WIDTH = STORM_FLOOR_SHOCK_CORE_WIDTH + STORM_FLOOR_SHOCK
 const STORM_FLOOR_SHOCK_HEIGHT = 10;
 const STORM_VERTICAL_FLIGHT_EASE = 0.055;
 
+const CRYO_ATTACK_CYCLE_FRAMES = 336;
+const CRYO_ATTACK_WINDUP_FRAMES = 104;
+const CRYO_ATTACK_ACTIVE_FRAMES = 50;
+const CRYO_VULNERABLE_READY_FRAMES = 68;
+const CRYO_VULNERABLE_WEAK_SPOT_CLEARANCE = 86;
+const CRYO_HIT_PAUSE_FRAMES = 48;
+const CRYO_HIT_RISE_FRAMES = 126;
+const CRYO_HIT_PATROL_FRAMES = 60;
+const CRYO_HIT_RECOVERY_FRAMES = CRYO_HIT_PAUSE_FRAMES + CRYO_HIT_RISE_FRAMES + CRYO_HIT_PATROL_FRAMES;
+const CRYO_FLOOR_ICE_WIDTH = 128;
+const CRYO_FLOOR_ICE_HEIGHT = 8;
+const CRYO_FLOOR_ICE_PERSIST_FRAMES = 130;
+const CRYO_VERTICAL_FLIGHT_EASE = 0.045;
+
 type BossTimingSource = BossKind | { kind?: BossKind };
 
 const bossKindForTiming = (source?: BossTimingSource): BossKind | undefined => (typeof source === "string" ? source : source?.kind);
 
-export const bossAttackCycleFramesFor = (source?: BossTimingSource): number =>
-  bossKindForTiming(source) === "storm-relay-warden" ? STORM_ATTACK_CYCLE_FRAMES : BOSS_ATTACK_CYCLE_FRAMES;
+export const bossAttackCycleFramesFor = (source?: BossTimingSource): number => {
+  const kind = bossKindForTiming(source);
+  if (kind === "storm-relay-warden") return STORM_ATTACK_CYCLE_FRAMES;
+  if (kind === "cryo-conservator") return CRYO_ATTACK_CYCLE_FRAMES;
+  return BOSS_ATTACK_CYCLE_FRAMES;
+};
 
-export const bossAttackWindupFramesFor = (source?: BossTimingSource): number =>
-  bossKindForTiming(source) === "storm-relay-warden" ? STORM_ATTACK_WINDUP_FRAMES : BOSS_ATTACK_WINDUP_FRAMES;
+export const bossAttackWindupFramesFor = (source?: BossTimingSource): number => {
+  const kind = bossKindForTiming(source);
+  if (kind === "storm-relay-warden") return STORM_ATTACK_WINDUP_FRAMES;
+  if (kind === "cryo-conservator") return CRYO_ATTACK_WINDUP_FRAMES;
+  return BOSS_ATTACK_WINDUP_FRAMES;
+};
 
-export const bossAttackActiveFramesFor = (source?: BossTimingSource): number =>
-  bossKindForTiming(source) === "storm-relay-warden" ? STORM_ATTACK_ACTIVE_FRAMES : BOSS_ATTACK_ACTIVE_FRAMES;
+export const bossAttackActiveFramesFor = (source?: BossTimingSource): number => {
+  const kind = bossKindForTiming(source);
+  if (kind === "storm-relay-warden") return STORM_ATTACK_ACTIVE_FRAMES;
+  if (kind === "cryo-conservator") return CRYO_ATTACK_ACTIVE_FRAMES;
+  return BOSS_ATTACK_ACTIVE_FRAMES;
+};
 
 export const bossAttackEndFrameFor = (source?: BossTimingSource): number =>
   bossAttackWindupFramesFor(source) + bossAttackActiveFramesFor(source);
 
 export const bossVulnerableStartFrameFor = (source?: BossTimingSource): number =>
   bossAttackEndFrameFor(source) +
-  (bossKindForTiming(source) === "storm-relay-warden" ? STORM_VULNERABLE_READY_FRAMES : BOSS_VULNERABLE_READY_FRAMES);
+  (bossKindForTiming(source) === "storm-relay-warden"
+    ? STORM_VULNERABLE_READY_FRAMES
+    : bossKindForTiming(source) === "cryo-conservator"
+      ? CRYO_VULNERABLE_READY_FRAMES
+      : BOSS_VULNERABLE_READY_FRAMES);
 
 export const monsterKinds = [
   "sprout-hopper",
@@ -260,7 +290,7 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
   const playerCenterX = player.x + player.w / 2;
   const playerCenterY = player.y + player.h / 2;
   const arena = bossMovementBounds(boss, size);
-  if (boss.kind === "storm-relay-warden" && state.recoveryFrames <= 0) {
+  if ((boss.kind === "storm-relay-warden" || boss.kind === "cryo-conservator") && state.recoveryFrames <= 0) {
     const patrolFrames = bossAttackWindupFramesFor(boss.kind);
     const retargetFrame = Math.max(1, Math.floor(patrolFrames * 0.45));
     if (cycle === retargetFrame) {
@@ -270,15 +300,20 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
       state.attackY = clamp(playerCenterY, boss.y + 22, boss.y + boss.h - 22);
     }
   }
-  if ((boss.kind === "storm-relay-warden" && state.activeFrames === 1) || cycle === 0) {
-    const attackMinX = boss.kind === "storm-relay-warden" ? arena.minX + size.w / 2 : boss.x + 24;
-    const attackMaxX = boss.kind === "storm-relay-warden" ? arena.maxX + size.w / 2 : boss.x + boss.w - 24;
+  if (((boss.kind === "storm-relay-warden" || boss.kind === "cryo-conservator") && state.activeFrames === 1) || cycle === 0) {
+    const constrainedVerticalBoss = boss.kind === "storm-relay-warden" || boss.kind === "cryo-conservator";
+    const attackMinX = constrainedVerticalBoss ? arena.minX + size.w / 2 : boss.x + 24;
+    const attackMaxX = constrainedVerticalBoss ? arena.maxX + size.w / 2 : boss.x + boss.w - 24;
     state.attackX = clamp(playerCenterX, attackMinX, attackMaxX);
     state.attackY = clamp(playerCenterY, boss.y + 22, boss.y + boss.h - 22);
   }
 
   if (boss.kind === "storm-relay-warden") {
     advanceStormRelayMotion(boss, state, size, cycle, arena);
+    return;
+  }
+  if (boss.kind === "cryo-conservator") {
+    advanceCryoConservatorMotion(boss, state, size, cycle, arena);
     return;
   }
 
@@ -305,12 +340,13 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
 };
 
 export const recoverBossAfterHit = (boss: Boss, state: BossRuntimeState): void => {
-  if (boss.kind !== "storm-relay-warden" || state.phase !== "active" || state.health <= 0) return;
+  if ((boss.kind !== "storm-relay-warden" && boss.kind !== "cryo-conservator") || state.phase !== "active" || state.health <= 0) return;
   const cycle = state.activeFrames % bossAttackCycleFramesFor(boss.kind);
   if (cycle < bossVulnerableStartFrameFor(boss.kind)) return;
   state.activeFrames = 0;
-  state.recoveryFrames = STORM_HIT_RECOVERY_FRAMES;
-  state.invulnerableFrames = Math.max(state.invulnerableFrames, STORM_HIT_RECOVERY_FRAMES + 12);
+  const recoveryFrames = boss.kind === "cryo-conservator" ? CRYO_HIT_RECOVERY_FRAMES : STORM_HIT_RECOVERY_FRAMES;
+  state.recoveryFrames = recoveryFrames;
+  state.invulnerableFrames = Math.max(state.invulnerableFrames, recoveryFrames + 12);
 };
 
 export const bossBodyRectAt = (boss: Boss, state: BossRuntimeState, _tick: number): Rect => {
@@ -355,6 +391,22 @@ export const bossAttackRectsAt = (boss: Boss, state: BossRuntimeState, tick: num
         x: originX - 13,
         y: originY,
         w: 26,
+        h: Math.max(24, endY - originY),
+        kind: "vertical",
+        originX,
+        originY
+      }
+    ];
+  }
+  if (boss.kind === "cryo-conservator") {
+    const originX = clamp(finiteNumber(state.attackX, bodyCenter.x), body.x + body.w * 0.28, body.x + body.w * 0.72);
+    const originY = body.y + body.h * 0.74;
+    const endY = boss.y + boss.h - 12;
+    return [
+      {
+        x: originX - 17,
+        y: originY,
+        w: 34,
         h: Math.max(24, endY - originY),
         kind: "vertical",
         originX,
@@ -423,6 +475,35 @@ export const bossFloorShockRectsAt = (boss: Boss, state: BossRuntimeState, tick:
   return shocks;
 };
 
+export const bossFloorIceRectsAt = (boss: Boss, state: BossRuntimeState, tick: number, solids: Solid[]): Rect[] => {
+  if (boss.kind !== "cryo-conservator" || state.phase !== "active" || state.recoveryFrames > 0) return [];
+  const cycle = state.activeFrames % bossAttackCycleFramesFor(boss.kind);
+  const activeStart = bossAttackWindupFramesFor(boss.kind);
+  const iceEnd = bossAttackEndFrameFor(boss.kind) + CRYO_FLOOR_ICE_PERSIST_FRAMES;
+  if (cycle < activeStart || cycle >= iceEnd) return [];
+  const body = bossBodyRectAt(boss, state, tick);
+  const bodyCenter = rectCenter(body);
+  const centerX = clamp(finiteNumber(state.attackX, bodyCenter.x), body.x + body.w * 0.28, body.x + body.w * 0.72);
+  const floor = solids
+    .filter((solid) => {
+      if (solid.collision === "decorative") return false;
+      if (solid.w <= 0 || solid.h <= 0) return false;
+      if (centerX < solid.x - CRYO_FLOOR_ICE_WIDTH / 2 || centerX > solid.x + solid.w + CRYO_FLOOR_ICE_WIDTH / 2) return false;
+      return solid.y >= body.y && solid.y <= boss.y + boss.h + 4;
+    })
+    .sort((a, b) => a.y - b.y)[0];
+  if (!floor) return [];
+  const width = Math.min(CRYO_FLOOR_ICE_WIDTH, floor.w);
+  return [
+    {
+      x: clamp(centerX - width / 2, floor.x, floor.x + floor.w - width),
+      y: floor.y - CRYO_FLOOR_ICE_HEIGHT,
+      w: width,
+      h: CRYO_FLOOR_ICE_HEIGHT
+    }
+  ];
+};
+
 const advanceStormRelayMotion = (
   boss: Boss,
   state: BossRuntimeState,
@@ -480,6 +561,76 @@ const advanceStormRelayRecoveryMotion = (
     targetX = clamp(laneX + sway, arena.minX + size.w / 2, arena.maxX + size.w / 2);
     targetY = highY;
     ease = 0.1;
+  }
+
+  state.targetX = targetX;
+  state.targetY = targetY;
+  state.bodyX += (targetX - size.w / 2 - state.bodyX) * ease;
+  state.bodyY += (targetY - size.h / 2 - state.bodyY) * ease;
+  state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
+  state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
+  state.recoveryFrames = Math.max(0, state.recoveryFrames - 1);
+  if (state.recoveryFrames === 0) state.activeFrames = 0;
+};
+
+const advanceCryoConservatorMotion = (
+  boss: Boss,
+  state: BossRuntimeState,
+  size: { w: number; h: number },
+  cycle: number,
+  arena: { minX: number; minY: number; maxX: number; maxY: number }
+): void => {
+  const targetX = clamp(finiteNumber(state.attackX, state.targetX), arena.minX + size.w / 2, arena.maxX + size.w / 2);
+  const highY = arena.minY + size.h * 0.42;
+  const weakSpotHeight = clamp(size.h * 0.2, 16, 30);
+  const vulnerableBodyY = clamp(boss.y + boss.h - CRYO_VULNERABLE_WEAK_SPOT_CLEARANCE - size.h + weakSpotHeight + 4, arena.minY, arena.maxY);
+  const lowY = vulnerableBodyY + size.h / 2;
+  if (state.recoveryFrames > 0) {
+    advanceCryoConservatorRecoveryMotion(state, size, arena, targetX, highY, lowY);
+    return;
+  }
+
+  const activeEndFrame = bossAttackEndFrameFor("cryo-conservator");
+  const descentProgress =
+    cycle <= activeEndFrame ? 0 : clamp((cycle - activeEndFrame) / Math.max(1, CRYO_VULNERABLE_READY_FRAMES), 0, 1);
+  const targetY = highY + (lowY - highY) * descentProgress;
+  const windupFrames = bossAttackWindupFramesFor("cryo-conservator");
+  const patrolSway = cycle < windupFrames ? Math.sin(cycle / Math.max(1, windupFrames) * Math.PI * 2) * Math.min(24, (arena.maxX - arena.minX) * 0.08) : 0;
+
+  state.targetX = clamp(targetX + patrolSway, arena.minX + size.w / 2, arena.maxX + size.w / 2);
+  state.targetY = targetY;
+  const desiredX = state.targetX - size.w / 2;
+  const desiredY = targetY - size.h / 2;
+  const ease = cycle < windupFrames ? 0.055 : cycle < activeEndFrame ? 0.12 : CRYO_VERTICAL_FLIGHT_EASE;
+  state.bodyX += (desiredX - state.bodyX) * ease;
+  state.bodyY += (desiredY - state.bodyY) * ease;
+  state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
+  state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
+};
+
+const advanceCryoConservatorRecoveryMotion = (
+  state: BossRuntimeState,
+  size: { w: number; h: number },
+  arena: { minX: number; minY: number; maxX: number; maxY: number },
+  laneX: number,
+  highY: number,
+  lowY: number
+): void => {
+  const elapsed = CRYO_HIT_RECOVERY_FRAMES - state.recoveryFrames;
+  let targetX = laneX;
+  let targetY = lowY;
+  let ease = 0.14;
+
+  if (elapsed >= CRYO_HIT_PAUSE_FRAMES && elapsed < CRYO_HIT_PAUSE_FRAMES + CRYO_HIT_RISE_FRAMES) {
+    const riseProgress = (elapsed - CRYO_HIT_PAUSE_FRAMES) / Math.max(1, CRYO_HIT_RISE_FRAMES);
+    targetY = lowY + (highY - lowY) * riseProgress;
+    ease = CRYO_VERTICAL_FLIGHT_EASE;
+  } else if (elapsed >= CRYO_HIT_PAUSE_FRAMES + CRYO_HIT_RISE_FRAMES) {
+    const patrolElapsed = elapsed - CRYO_HIT_PAUSE_FRAMES - CRYO_HIT_RISE_FRAMES;
+    const sway = Math.sin((patrolElapsed / Math.max(1, CRYO_HIT_PATROL_FRAMES)) * Math.PI * 2) * Math.min(42, (arena.maxX - arena.minX) * 0.14);
+    targetX = clamp(laneX + sway, arena.minX + size.w / 2, arena.maxX + size.w / 2);
+    targetY = highY;
+    ease = 0.075;
   }
 
   state.targetX = targetX;
@@ -568,7 +719,7 @@ const bossRestingBodyRect = (boss: Boss): Rect => {
 const bossMovementBounds = (boss: Boss, size: { w: number; h: number }): { minX: number; minY: number; maxX: number; maxY: number } => {
   const marginX = Math.min(72, Math.max(18, boss.w * 0.08));
   const marginY = Math.min(24, Math.max(6, boss.h * 0.05));
-  const minY = boss.kind === "storm-relay-warden" ? boss.y : boss.y + marginY;
+  const minY = boss.kind === "storm-relay-warden" || boss.kind === "cryo-conservator" ? boss.y : boss.y + marginY;
   return {
     minX: boss.x + marginX,
     minY,

@@ -8,6 +8,7 @@ import {
   bossAttackRectsAt,
   bossBodyDamages,
   bossBodyRectAt,
+  bossFloorIceRectsAt,
   bossFloorShockRectsAt,
   bossIntroFrames,
   bossScore,
@@ -200,7 +201,8 @@ export class RoomSimulation {
     const baseDynamic = {
       oneWays: this.level.oneWays,
       conveyors: this.level.conveyors,
-      crates: this.objectState.crates
+      crates: this.objectState.crates,
+      ice: this.currentBossFloorIceRects()
     };
     const dynamicFor = (actor: ActorBody) => ({
       ...baseDynamic,
@@ -548,9 +550,17 @@ export class RoomSimulation {
           weakSpot,
           weakSpotKind: bossWeakSpot(boss),
           attacks: bossAttackRectsAt(boss, state, this.tick),
-          floorShocks: bossFloorShockRectsAt(boss, state, this.tick, this.level.solids)
+          floorShocks: bossFloorShockRectsAt(boss, state, this.tick, this.level.solids),
+          floorIce: bossFloorIceRectsAt(boss, state, this.tick, this.level.solids)
         }
       ];
+    });
+  }
+
+  private currentBossFloorIceRects(): Rect[] {
+    return (this.level.bosses || []).flatMap((boss) => {
+      const state = this.bossStates.get(boss.id);
+      return state ? bossFloorIceRectsAt(boss, state, this.tick, this.level.solids) : [];
     });
   }
 

@@ -15,6 +15,7 @@ import {
 import {
   BOSS_ATLAS_KEY,
   BOSS_STATE_FRAME_COUNT,
+  CRYO_BOSS_CLEAN_KEY,
   MONSTER_ATLAS_KEY,
   POOF_FRAME_COUNT,
   POOF_SHEET_KEY,
@@ -1373,6 +1374,9 @@ export class GameScene extends Phaser.Scene {
     if (this.textures.exists(STORM_BOSS_CLEAN_KEY)) {
       this.textures.get(STORM_BOSS_CLEAN_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
     }
+    if (this.textures.exists(CRYO_BOSS_CLEAN_KEY)) {
+      this.textures.get(CRYO_BOSS_CLEAN_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
+    }
     if (this.textures.exists(TERRAIN_TILE_KEY)) {
       this.textures.get(TERRAIN_TILE_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
       this.terrainTextureFilter = `${TERRAIN_TILE_KEY}:${Phaser.Textures.FilterMode.LINEAR}`;
@@ -1818,12 +1822,18 @@ export class GameScene extends Phaser.Scene {
       if (!snapshot || snapshot.phase === "defeated") continue;
 
       if (boss.kind === "storm-relay-warden") this.drawStormBossWindupEffect(boss, snapshot, color);
+      if (boss.kind === "cryo-conservator") this.drawCryoBossWindupEffect(boss, snapshot, color);
       for (const attack of snapshot.attacks) {
         this.drawBossAttackEffect(attack, color);
       }
       if (boss.kind === "storm-relay-warden") {
         for (const shock of snapshot.floorShocks) {
           this.drawStormBossFloorShockEffect(shock, color);
+        }
+      }
+      if (boss.kind === "cryo-conservator") {
+        for (const ice of snapshot.floorIce) {
+          this.drawCryoBossFloorIceEffect(ice, color);
         }
       }
 
@@ -1863,7 +1873,7 @@ export class GameScene extends Phaser.Scene {
     const horizontal = attack.kind === "horizontal";
     const endX = horizontal ? (attack.originX <= attack.x + attack.w / 2 ? attack.x + attack.w : attack.x) : attack.originX;
     const endY = horizontal ? attack.originY : attack.y + attack.h;
-    this.fx.fillStyle(0xff4f8b, 0.08);
+    this.fx.fillStyle(color, 0.08);
     this.fx.fillRoundedRect(attack.x - 3, attack.y - 3, attack.w + 6, attack.h + 6, horizontal ? 7 : 12);
     this.fx.lineStyle(10, color, 0.2);
     this.fx.lineBetween(attack.originX, attack.originY, endX, endY);
@@ -1920,6 +1930,55 @@ export class GameScene extends Phaser.Scene {
     this.fx.strokeCircle(originX, originY, 19 * pulse);
   }
 
+  private drawCryoBossWindupEffect(boss: Boss, snapshot: BossSnapshot, color: number): void {
+    if (snapshot.phase !== "active" || snapshot.recoveryFrames > 0 || bossIsVulnerable(snapshot) || snapshot.attacks.length > 0) return;
+    const windupFrames = bossAttackWindupFramesFor(boss.kind);
+    const cycle = snapshot.activeFrames % bossAttackCycleFramesFor(boss.kind);
+    if (cycle >= windupFrames) return;
+    const body = snapshot.body;
+    const progress = Math.max(0, Math.min(1, cycle / Math.max(1, windupFrames)));
+    const originX = body.x + body.w / 2;
+    const originY = body.y + body.h * 0.78;
+    const endY = boss.y + boss.h - 12;
+    const warningWidth = 18 + progress * 24;
+    if (this.diagnosticsEnabled) {
+      this.bossEffectFrames.push(`${boss.id}:cryo-windup:${Math.round(progress * 100)}:${snapshot.recoveryFrames}`);
+    }
+    this.fx.fillStyle(color, 0.04 + progress * 0.11);
+    this.fx.fillRoundedRect(originX - warningWidth / 2, originY, warningWidth, Math.max(16, endY - originY), 10);
+    this.fx.lineStyle(2, color, 0.18 + progress * 0.32);
+    this.fx.lineBetween(originX, originY, originX, endY);
+    this.fx.lineStyle(1, 0xffffff, 0.16 + progress * 0.26);
+    this.fx.lineBetween(originX - warningWidth * 0.42, originY + 4, originX - warningWidth * 0.42, endY);
+    this.fx.lineBetween(originX + warningWidth * 0.42, originY + 4, originX + warningWidth * 0.42, endY);
+    const pulse = 0.78 + Math.sin(this.simulation.tick / 9) * 0.08 + progress * 0.26;
+    this.fx.fillStyle(0xffffff, 0.16 + progress * 0.28);
+    this.fx.fillCircle(originX, originY, 4 + progress * 5);
+    this.fx.lineStyle(2, color, 0.18 + progress * 0.3);
+    this.fx.strokeCircle(originX, originY, 15 * pulse);
+    this.fx.strokeCircle(originX, originY, 25 * pulse);
+  }
+
+  private drawCryoBossFloorIceEffect(ice: Rect, color: number): void {
+    if (this.diagnosticsEnabled) {
+      this.bossEffectFrames.push(`cryo-floor-ice:${Math.round(ice.x)},${Math.round(ice.y)}:${Math.round(ice.w)}x${Math.round(ice.h)}`);
+    }
+    const pulse = Math.sin(this.simulation.tick / 10) * 0.5 + 0.5;
+    this.fx.fillStyle(color, 0.12 + pulse * 0.05);
+    this.fx.fillRoundedRect(ice.x - 4, ice.y - 2, ice.w + 8, ice.h + 6, 5);
+    this.fx.fillStyle(0xffffff, 0.18 + pulse * 0.12);
+    this.fx.fillRoundedRect(ice.x + 4, ice.y + ice.h * 0.35, Math.max(2, ice.w - 8), 2, 2);
+    const facets = Math.max(4, Math.floor(ice.w / 24));
+    this.fx.lineStyle(1.25, 0xffffff, 0.2 + pulse * 0.16);
+    for (let index = 0; index < facets; index += 1) {
+      const x = ice.x + ((index + 0.5) / facets) * ice.w;
+      this.fx.lineBetween(x - 8, ice.y + ice.h, x - 2, ice.y + 1);
+      this.fx.lineBetween(x - 2, ice.y + 1, x + 9, ice.y + ice.h * 0.7);
+    }
+    this.fx.lineStyle(2, color, 0.36 + pulse * 0.18);
+    this.fx.lineBetween(ice.x + 3, ice.y + ice.h, ice.x + ice.w - 3, ice.y + ice.h);
+  }
+
   private drawBossIntroEffect(body: Rect, color: number, progress: number): void {
     const bodyCenter = rectCenter(body);
     const alpha = 0.16 + progress * 0.22;
@@ -1939,14 +1998,16 @@ export class GameScene extends Phaser.Scene {
 
   private syncBossSprite(id: string, kind: BossKind, snapshot: BossSnapshot, flickerWhite: boolean, introProgress: number): void {
     const useCleanStormSprite = kind === "storm-relay-warden" && this.textures.exists(STORM_BOSS_CLEAN_KEY);
-    const textureKey = useCleanStormSprite ? STORM_BOSS_CLEAN_KEY : BOSS_ATLAS_KEY;
+    const useCleanCryoSprite = kind === "cryo-conservator" && this.textures.exists(CRYO_BOSS_CLEAN_KEY);
+    const textureKey = useCleanStormSprite ? STORM_BOSS_CLEAN_KEY : useCleanCryoSprite ? CRYO_BOSS_CLEAN_KEY : BOSS_ATLAS_KEY;
     if (!this.textures.exists(textureKey)) return;
     const body = snapshot.body;
     const center = rectCenter(body);
     const spriteState = this.bossSpriteState(kind, snapshot, introProgress);
     const stateFrame = this.bossStateAnimationFrame(kind, id, snapshot, spriteState, introProgress);
-    const frame = useCleanStormSprite ? 0 : bossFrameForKind(kind, spriteState, stateFrame);
-    const activePulse = snapshot.phase === "active" && kind !== "storm-relay-warden" ? Math.sin(this.simulation.tick / 18) * 0.015 : 0;
+    const useCleanSingleFrame = useCleanStormSprite || useCleanCryoSprite;
+    const frame = useCleanSingleFrame ? 0 : bossFrameForKind(kind, spriteState, stateFrame);
+    const activePulse = snapshot.phase === "active" && !useCleanSingleFrame ? Math.sin(this.simulation.tick / 18) * 0.015 : 0;
     const displayWidth = Math.max(148, body.w * 1.5) * (1 + activePulse);
     const displayHeight = Math.max(120, body.h * 1.42) * (1 + activePulse);
     const sprite = this.assetFor(`boss:${id}`, "image", frame, textureKey) as Phaser.GameObjects.Image;
@@ -1971,7 +2032,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private bossStateAnimationFrame(kind: BossKind, id: string, snapshot: BossSnapshot, state: BossSpriteState, introProgress: number): number {
-    if (kind === "storm-relay-warden") return 0;
+    if (kind === "storm-relay-warden" || kind === "cryo-conservator") return 0;
     if (snapshot.phase === "intro") return Math.min(BOSS_STATE_FRAME_COUNT - 1, Math.floor(introProgress * BOSS_STATE_FRAME_COUNT));
     if (snapshot.phase !== "active") return 0;
     const cycle = snapshot.activeFrames % bossAttackCycleFramesFor(snapshot);
@@ -1987,7 +2048,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private bossSpriteState(kind: BossKind, snapshot: BossSnapshot, introProgress: number): BossSpriteState {
-    if (kind === "storm-relay-warden") return "idle";
+    if (kind === "storm-relay-warden" || kind === "cryo-conservator") return "idle";
     if (snapshot.phase === "active") {
       if (bossIsVulnerable(snapshot)) return "vulnerable";
       const cycle = snapshot.activeFrames % bossAttackCycleFramesFor(snapshot);

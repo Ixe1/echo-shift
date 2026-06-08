@@ -2,6 +2,7 @@ import type { BossKind, MonsterKind } from "./types";
 
 export const BOSS_ATLAS_KEY = "boss-atlas";
 export const STORM_BOSS_CLEAN_KEY = "storm-relay-warden-clean";
+export const CRYO_BOSS_CLEAN_KEY = "cryo-conservator-clean";
 export const BOSS_ATLAS_FRAME_WIDTH = 256;
 export const BOSS_ATLAS_FRAME_HEIGHT = 256;
 export const BOSS_STATES_PER_KIND = 4;
