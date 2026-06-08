@@ -84,7 +84,8 @@ const RUN_FRAMES = [1, 2, 3, 4] as const;
 const LEVEL_INTRO_MS = 3000;
 const LEVEL_INTRO_OUTRO_MS = 820;
 const BOSS_MUSIC_FADE_MS = 620;
-const PLAYER_CAMERA_ZOOM = 1.44;
+const PLAYER_CAMERA_REFERENCE_HEIGHT = 540;
+const PLAYER_CAMERA_ZOOM = 1.152;
 const BOSS_ARENA_CAMERA_ZOOM = 1.2;
 const BOSS_DEFEAT_BURST_OFFSETS = [
   { x: 0.28, y: 0.34, start: 0, tint: 0xffe35a },
@@ -1047,7 +1048,7 @@ export class GameScene extends Phaser.Scene {
   };
 
   private baseCameraZoom(): number {
-    return Math.max(0.1, (this.scale.height / this.level.bounds.h) * PLAYER_CAMERA_ZOOM);
+    return Math.max(0.1, (this.scale.height / PLAYER_CAMERA_REFERENCE_HEIGHT) * PLAYER_CAMERA_ZOOM);
   }
 
   private bossArenaCameraZoom(arena: Rect): number {

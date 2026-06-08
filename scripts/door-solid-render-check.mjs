@@ -142,6 +142,20 @@ const cameraSample = async (page) => {
   return { raw, zoom: Number(zoom), x: Number(x), y: Number(y) };
 };
 
+const loadDraftCameraSample = async (page, draftLevel, clickPosition = { x: 480, y: 280 }) => {
+  await page.evaluate((snapshot) => {
+    window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
+  }, { motionModel: "anchored", currentIndex: 0, levels: [draftLevel] });
+  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+  await startAudioGate(page);
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await page.waitForFunction((name) => document.querySelector("[data-level]")?.textContent?.includes(name), draftLevel.name);
+  await waitForLevelIntro(page);
+  await page.locator("canvas").click({ position: clickPosition });
+  await waitForToastClear(page);
+  return cameraSample(page);
+};
+
 const paethPredictor = (left, up, upLeft) => {
   const estimate = left + up - upLeft;
   const leftDistance = Math.abs(estimate - left);
@@ -399,6 +413,20 @@ const cameraLevel = {
   doors: [{ id: "camera-core-gate", x: 2180, y: 360, w: 28, h: 100, opensWith: [], requiresCore: "camera-core" }],
   cores: [{ id: "camera-core", x: 1900, y: 340, w: 24, h: 24, label: "C" }],
   echoSensors: []
+};
+
+const cameraTallLevel = {
+  ...cameraLevel,
+  id: "camera-scroll-qa-tall",
+  name: "Camera Scroll QA Tall",
+  bounds: { ...cameraLevel.bounds, h: 900 }
+};
+
+const cameraShortLevel = {
+  ...cameraLevel,
+  id: "camera-scroll-qa-short",
+  name: "Camera Scroll QA Short",
+  bounds: { ...cameraLevel.bounds, h: 480 }
 };
 
 const launchOptions = {
@@ -672,6 +700,13 @@ try {
     right: assertStableWorldSamples("Desktop floor/wall shimmer probe after right scroll", pixelStart, pixelAfterRight),
     left: assertStableWorldSamples("Desktop floor/wall shimmer probe after left reversal", pixelAfterRight, pixelAfterLeft)
   };
+  const cameraTallStart = await loadDraftCameraSample(page, cameraTallLevel);
+  const cameraShortStart = await loadDraftCameraSample(page, cameraShortLevel);
+  const cameraZoomByBounds = { reference: cameraStart, tall: cameraTallStart, short: cameraShortStart };
+  assert(
+    Math.abs(cameraTallStart.zoom - cameraStart.zoom) < 0.0001 && Math.abs(cameraShortStart.zoom - cameraStart.zoom) < 0.0001,
+    `Expected base camera zoom to ignore level bounds height, got ${JSON.stringify(cameraZoomByBounds)}`
+  );
 
   await page.setViewportSize({ width: 640, height: 480 });
   await page.evaluate((snapshot) => {
