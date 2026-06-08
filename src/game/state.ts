@@ -2,8 +2,10 @@ import { rectsOverlap } from "./geometry";
 import {
   BOSS_HIT_BOUNCE_SPEED,
   BOSS_INVULNERABLE_FRAMES,
+  BOSS_DEFEAT_DEPARTURE_FRAMES,
   MONSTER_BOUNCE_SPEED,
   actorKillsMonster,
+  advanceBossDefeatDeparture,
   advanceBossActiveMotion,
   bossAttackWarningRectsAt,
   bossAttackRectsAt,
@@ -21,6 +23,7 @@ import {
   monsterScore,
   recoverBossAfterHit,
   settleBossAtIntroEnd,
+  startBossDefeatDeparture,
   type BossRuntimeState
 } from "./enemies";
 import {
@@ -334,7 +337,7 @@ export class RoomSimulation {
   }
 
   bossFightInProgress(): boolean {
-    return [...this.bossStates.values()].some((state) => state.phase === "intro" || state.phase === "active");
+    return [...this.bossStates.values()].some((state) => state.phase === "intro" || state.phase === "active" || state.phase === "departing");
   }
 
   replaySummary(): string {
@@ -370,7 +373,7 @@ export class RoomSimulation {
       currentRecording: [...this.currentRecording],
       objectState: cloneObjectState(this.objectState),
       killedMonsterIds: new Set(this.killedMonsterIds),
-      bossStates: cloneBossStates(this.bossStates),
+      bossStates: this.checkpointBossStates(),
       currentAttemptCollectedCoreIds: new Set(this.currentAttemptCollectedCoreIds),
       currentAttemptKilledMonsterIds: new Map(this.currentAttemptKilledMonsterIds),
       currentAttemptDefeatedBossIds: new Map(this.currentAttemptDefeatedBossIds),
@@ -392,6 +395,20 @@ export class RoomSimulation {
     if (setsMatch(this.objectState.openDoors, openDoors)) return;
     this.objectState = { ...this.objectState, openDoors };
     if (events) events.switched = true;
+  }
+
+  private checkpointBossStates(): Map<string, BossRuntimeState> {
+    const states = cloneBossStates(this.bossStates);
+    for (const id of this.currentAttemptDefeatedBossIds.keys()) {
+      const state = states.get(id);
+      if (!state) continue;
+      state.phase = "defeated";
+      state.departureFrames = Math.max(state.departureFrames, 0);
+      state.invulnerableFrames = 0;
+      state.recoveryFrames = 0;
+      state.floorIcePatches = [];
+    }
+    return states;
   }
 
   private restoreBossCheckpoint(): void {
@@ -458,6 +475,15 @@ export class RoomSimulation {
       const state = this.bossStates.get(boss.id);
       if (!state || state.phase === "defeated") continue;
 
+      if (state.phase === "departing") {
+        if (advanceBossDefeatDeparture(boss, state)) {
+          state.phase = "defeated";
+          state.departureFrames = state.departureFrames || 0;
+          if (this.exitUnlocked()) events.bossPortalUnlocked = true;
+        }
+        continue;
+      }
+
       if (state.phase === "idle" && rectsOverlap(this.player, boss)) {
         this.captureBossCheckpoint(boss, events, previousPlayerX, previousPlayerY);
         state.phase = "intro";
@@ -517,8 +543,7 @@ export class RoomSimulation {
     }
 
     const score = bossScore(boss);
-    state.phase = "defeated";
-    state.invulnerableFrames = 0;
+    startBossDefeatDeparture(boss, state, body);
     this.currentAttemptDefeatedBossIds.set(boss.id, score);
     this.score += score;
     this.refreshDoorStateForDefeatedBosses(events);
@@ -529,9 +554,6 @@ export class RoomSimulation {
       y: body.y + body.h / 2
     };
     this.refreshBossCheckpointAfterDefeat(boss.id);
-    if (this.exitUnlocked()) {
-      events.bossPortalUnlocked = true;
-    }
   }
 
   private refreshBossCheckpointAfterDefeat(defeatedBossId: string): void {
@@ -559,7 +581,7 @@ export class RoomSimulation {
         bossId: nextBossId,
         objectState,
         killedMonsterIds: new Set(this.killedMonsterIds),
-        bossStates: cloneBossStates(this.bossStates),
+        bossStates: this.checkpointBossStates(),
         currentAttemptCollectedCoreIds: new Set(this.currentAttemptCollectedCoreIds),
         currentAttemptKilledMonsterIds: new Map(this.currentAttemptKilledMonsterIds),
         currentAttemptDefeatedBossIds: new Map(this.currentAttemptDefeatedBossIds),
@@ -598,6 +620,8 @@ export class RoomSimulation {
           activeFrames: state.activeFrames,
           invulnerableFrames: state.invulnerableFrames,
           recoveryFrames: state.recoveryFrames,
+          departureFrames: state.departureFrames,
+          departureTotalFrames: BOSS_DEFEAT_DEPARTURE_FRAMES,
           body,
           weakSpot,
           weakSpotKind: bossWeakSpot(boss),

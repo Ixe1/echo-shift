@@ -85,6 +85,16 @@ const LEVEL_INTRO_OUTRO_MS = 820;
 const BOSS_MUSIC_FADE_MS = 620;
 const PLAYER_CAMERA_ZOOM = 1.44;
 const BOSS_ARENA_CAMERA_ZOOM = 1.2;
+const BOSS_DEFEAT_BURST_OFFSETS = [
+  { x: 0.28, y: 0.34, start: 0, tint: 0xffe35a },
+  { x: 0.62, y: 0.42, start: 18, tint: 0xff8b3d },
+  { x: 0.44, y: 0.22, start: 34, tint: 0xffffff },
+  { x: 0.76, y: 0.58, start: 52, tint: 0xffe35a },
+  { x: 0.2, y: 0.66, start: 70, tint: 0xff8b3d },
+  { x: 0.54, y: 0.72, start: 88, tint: 0xffffff },
+  { x: 0.35, y: 0.5, start: 108, tint: 0xffe35a },
+  { x: 0.68, y: 0.28, start: 128, tint: 0xff8b3d }
+] as const;
 const OBJECT_FRAME = {
   floor: 0,
   wall: 1,
@@ -698,7 +708,7 @@ export class GameScene extends Phaser.Scene {
       this.addFxBurst(kill.x, kill.y, 0xffe35a, `+${kill.score}`);
     }
     if (events.bossHit) {
-      audio.play(events.bossDefeated ? "bigCore" : "switch");
+      if (!events.bossDefeated) audio.play("switch");
       this.cameras.main.shake(events.bossDefeated ? 260 : 130, events.bossDefeated ? 0.007 : 0.003);
       this.addFxBurst(
         events.bossHit.x,
@@ -708,11 +718,12 @@ export class GameScene extends Phaser.Scene {
       );
     }
     if (events.bossDefeated) {
-      if (this.bossFightInProgress()) this.startBossMusic();
-      else this.restartLevelMusic();
+      if (this.activeBossForMusic()) this.startBossMusic();
+      else if (!this.bossFightInProgress()) this.restartLevelMusic();
     }
     if (events.bossPortalUnlocked) {
       const exitCenter = rectCenter(this.level.exit);
+      this.restartLevelMusic();
       audio.play("portal");
       this.addFxBurst(exitCenter.x, exitCenter.y, 0x43f7ff, "OPEN");
     }
@@ -1150,7 +1161,7 @@ export class GameScene extends Phaser.Scene {
         this.cameraTarget?.setPosition(focus.x, focus.y);
         this.cameras.main.centerOn(focus.x, focus.y);
       } else {
-        const activeBoss = snapshot.bosses.find((boss) => boss.phase === "active");
+        const activeBoss = snapshot.bosses.find((boss) => boss.phase === "active" || boss.phase === "departing");
         if (activeBoss) {
           const boss = (this.level.bosses || []).find((item) => item.id === activeBoss.id);
           const arena = boss || activeBoss.body;
@@ -1867,9 +1878,12 @@ export class GameScene extends Phaser.Scene {
 
       const body = snapshot.body;
       const introProgress = snapshot.phase === "intro" ? Math.min(1, snapshot.introFrames / Math.max(1, snapshot.introTotalFrames)) : 1;
-      const flickerWhite = snapshot.invulnerableFrames > 0 && Math.floor(this.simulation.tick / 4) % 2 === 0;
+      const flickerWhite =
+        (snapshot.invulnerableFrames > 0 && Math.floor(this.simulation.tick / 4) % 2 === 0) ||
+        (snapshot.phase === "departing" && Math.floor(this.simulation.tick / 5) % 2 === 0);
       if (snapshot.phase === "intro") this.drawBossIntroEffect(body, color, introProgress);
       this.syncBossSprite(boss.id, boss.kind, snapshot, flickerWhite, introProgress);
+      if (snapshot.phase === "departing") this.drawBossDefeatEffects(snapshot, color);
       if (snapshot.phase === "active" && bossIsVulnerable(snapshot)) this.drawBossWeakSpot(snapshot, color, flickerWhite);
     }
   }
@@ -2030,6 +2044,59 @@ export class GameScene extends Phaser.Scene {
     this.fx.fillRoundedRect(bodyCenter.x - body.w * 0.16, body.y + body.h * 0.78, body.w * 0.32, 3, 2);
   }
 
+  private drawBossDefeatEffects(snapshot: BossSnapshot, color: number): void {
+    const body = snapshot.body;
+    const total = Math.max(1, snapshot.departureTotalFrames);
+    const progress = Math.max(0, Math.min(1, snapshot.departureFrames / total));
+    let activeBursts = 0;
+    for (let index = 0; index < BOSS_DEFEAT_BURST_OFFSETS.length; index += 1) {
+      const burst = BOSS_DEFEAT_BURST_OFFSETS[index];
+      const duration = 72 + (index % 3) * 8;
+      const local = (snapshot.departureFrames - burst.start) / duration;
+      if (local < 0 || local >= 1) continue;
+      activeBursts += 1;
+      const alpha = Math.max(0, 1 - local);
+      const driftX = Math.sin(this.simulation.tick / 7 + index * 1.9) * body.w * 0.018;
+      const driftY = Math.cos(this.simulation.tick / 9 + index * 1.3) * body.h * 0.018;
+      const x = body.x + body.w * burst.x + driftX;
+      const y = body.y + body.h * burst.y + driftY;
+      const size = Math.max(36, Math.min(body.w, body.h) * (0.42 + local * 0.28));
+      const frame = Math.min(POOF_FRAME_COUNT - 1, Math.max(0, Math.floor(local * POOF_FRAME_COUNT)));
+      this.fx.fillStyle(0xff8b3d, alpha * 0.16);
+      this.fx.fillCircle(x, y, size * (0.36 + local * 0.2));
+      this.fx.lineStyle(2, index % 2 === 0 ? color : 0xffe35a, alpha * 0.36);
+      this.fx.strokeCircle(x, y, size * (0.42 + local * 0.36));
+      for (let spoke = 0; spoke < 4; spoke += 1) {
+        const angle = local * Math.PI * 1.5 + spoke * Math.PI * 0.5 + index * 0.4;
+        const inner = size * 0.18;
+        const outer = size * (0.34 + local * 0.25);
+        this.fx.lineStyle(1.5, spoke % 2 === 0 ? 0xffffff : 0xffe35a, alpha * 0.32);
+        this.fx.lineBetween(x + Math.cos(angle) * inner, y + Math.sin(angle) * inner, x + Math.cos(angle) * outer, y + Math.sin(angle) * outer);
+      }
+      if (this.textures.exists(POOF_SHEET_KEY)) {
+        const sprite = this.assetFor(`boss-defeat-fx:${snapshot.id}:${index}`, "image", frame, POOF_SHEET_KEY) as Phaser.GameObjects.Image;
+        sprite
+          .setVisible(true)
+          .setDepth(26)
+          .setAlpha(alpha * 0.9)
+          .setOrigin(0.5, 0.5)
+          .setPosition(Math.round(x), Math.round(y))
+          .setRotation((index % 2 === 0 ? 1 : -1) * local * 0.28)
+          .setFrame(frame)
+          .setDisplaySize(size, size)
+          .setTint(burst.tint);
+        this.activeObjectAssetIds.add(`boss-defeat-fx:${snapshot.id}:${index}`);
+      }
+    }
+    if (this.diagnosticsEnabled) {
+      this.bossEffectFrames.push(
+        `${snapshot.id}:defeat-depart:${Math.round(snapshot.departureFrames)}/${Math.round(total)}:bursts=${activeBursts}:x=${Math.round(body.x)}`
+      );
+    }
+    this.fx.lineStyle(2, color, 0.16 + (1 - progress) * 0.16);
+    this.fx.lineBetween(body.x + body.w * 0.16, body.y + body.h * 0.5, body.x + body.w * 0.86, body.y + body.h * 0.5 + Math.sin(this.simulation.tick / 8) * 8);
+  }
+
   private syncBossSprite(id: string, kind: BossKind, snapshot: BossSnapshot, flickerWhite: boolean, introProgress: number): void {
     const useCleanStormSprite = kind === "storm-relay-warden" && this.textures.exists(STORM_BOSS_CLEAN_KEY);
     const useCleanCryoSprite = kind === "cryo-conservator" && this.textures.exists(CRYO_BOSS_CLEAN_KEY);
@@ -2042,13 +2109,15 @@ export class GameScene extends Phaser.Scene {
     const useCleanSingleFrame = useCleanStormSprite || useCleanCryoSprite;
     const frame = useCleanSingleFrame ? 0 : bossFrameForKind(kind, spriteState, stateFrame);
     const activePulse = snapshot.phase === "active" && !useCleanSingleFrame ? Math.sin(this.simulation.tick / 18) * 0.015 : 0;
+    const departureProgress =
+      snapshot.phase === "departing" ? Math.max(0, Math.min(1, snapshot.departureFrames / Math.max(1, snapshot.departureTotalFrames))) : 0;
     const displayWidth = Math.max(148, body.w * 1.5) * (1 + activePulse);
     const displayHeight = Math.max(120, body.h * 1.42) * (1 + activePulse);
     const sprite = this.assetFor(`boss:${id}`, "image", frame, textureKey) as Phaser.GameObjects.Image;
     sprite
       .setVisible(true)
       .setDepth(13)
-      .setAlpha(snapshot.phase === "intro" ? 0.72 + introProgress * 0.24 : 0.98)
+      .setAlpha(snapshot.phase === "intro" ? 0.72 + introProgress * 0.24 : snapshot.phase === "departing" ? 0.96 - departureProgress * 0.18 : 0.98)
       .setOrigin(0.5, 0.5)
       .setPosition(Math.round(center.x), Math.round(center.y))
       .setRotation(0)

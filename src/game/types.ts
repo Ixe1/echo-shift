@@ -182,7 +182,7 @@ export type BossKind =
   | "clockwork-regent";
 
 export type BossEntrySide = "left" | "right" | "top" | "bottom" | "center";
-export type BossPhase = "idle" | "intro" | "active" | "defeated";
+export type BossPhase = "idle" | "intro" | "active" | "departing" | "defeated";
 export type BossWeakSpot = "top" | "bottom" | "core";
 
 export type Boss = Rect & {
@@ -218,6 +218,8 @@ export type BossSnapshot = {
   activeFrames: number;
   invulnerableFrames: number;
   recoveryFrames: number;
+  departureFrames: number;
+  departureTotalFrames: number;
   body: Rect;
   weakSpot: Rect;
   weakSpotKind: BossWeakSpot;

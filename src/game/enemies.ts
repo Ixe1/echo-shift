@@ -26,6 +26,7 @@ export const BOSS_ATTACK_WINDUP_FRAMES = 56;
 export const BOSS_ATTACK_ACTIVE_FRAMES = 48;
 export const BOSS_VULNERABLE_READY_FRAMES = 18;
 export const BOSS_VULNERABLE_FRAMES = BOSS_ATTACK_CYCLE_FRAMES - BOSS_ATTACK_WINDUP_FRAMES - BOSS_ATTACK_ACTIVE_FRAMES - BOSS_VULNERABLE_READY_FRAMES;
+export const BOSS_DEFEAT_DEPARTURE_FRAMES = 170;
 
 const STORM_ATTACK_CYCLE_FRAMES = 330;
 const STORM_ATTACK_WINDUP_FRAMES = 112;
@@ -137,6 +138,9 @@ export type BossRuntimeState = {
   attackX: number;
   attackY: number;
   recoveryFrames: number;
+  departureFrames: number;
+  departureStartX: number;
+  departureStartY: number;
   floorIcePatches: BossFloorIceSnapshot[];
 };
 
@@ -286,6 +290,9 @@ export const createBossRuntimeState = (boss: Boss): BossRuntimeState => {
     attackX: center.x,
     attackY: center.y,
     recoveryFrames: 0,
+    departureFrames: 0,
+    departureStartX: body.x,
+    departureStartY: body.y,
     floorIcePatches: []
   };
 };
@@ -385,6 +392,14 @@ export const recoverBossAfterHit = (boss: Boss, state: BossRuntimeState): void =
 
 export const bossBodyRectAt = (boss: Boss, state: BossRuntimeState, _tick: number): Rect => {
   const size = bossBodySize(boss);
+  if (state.phase === "departing") {
+    return {
+      x: finiteNumber(state.bodyX, bossRestingBodyRect(boss).x),
+      y: finiteNumber(state.bodyY, bossRestingBodyRect(boss).y),
+      w: size.w,
+      h: size.h
+    };
+  }
   if (state.phase === "active") {
     const arena = bossMovementBounds(boss, size);
     return {
@@ -408,6 +423,37 @@ export const bossBodyRectAt = (boss: Boss, state: BossRuntimeState, _tick: numbe
     w: size.w,
     h: size.h
   };
+};
+
+export const startBossDefeatDeparture = (boss: Boss, state: BossRuntimeState, body: Rect): void => {
+  state.phase = "departing";
+  state.departureFrames = 0;
+  state.invulnerableFrames = 0;
+  state.recoveryFrames = 0;
+  state.activeFrames = 0;
+  state.floorIcePatches = [];
+  state.bodyX = body.x;
+  state.bodyY = body.y;
+  state.departureStartX = body.x;
+  state.departureStartY = body.y;
+  state.targetX = boss.x + boss.w + body.w * 1.6;
+  state.targetY = body.y - Math.max(8, body.h * 0.12);
+  state.attackX = body.x + body.w / 2;
+  state.attackY = body.y + body.h / 2;
+};
+
+export const advanceBossDefeatDeparture = (boss: Boss, state: BossRuntimeState): boolean => {
+  if (state.phase !== "departing") return false;
+  state.departureFrames = Math.min(BOSS_DEFEAT_DEPARTURE_FRAMES, state.departureFrames + 1);
+  const progress = state.departureFrames / BOSS_DEFEAT_DEPARTURE_FRAMES;
+  const eased = 0.5 - Math.cos(progress * Math.PI) / 2;
+  const startX = finiteNumber(state.departureStartX, bossRestingBodyRect(boss).x);
+  const startY = finiteNumber(state.departureStartY, bossRestingBodyRect(boss).y);
+  const targetX = finiteNumber(state.targetX, boss.x + boss.w + bossBodySize(boss).w * 1.6);
+  const targetY = finiteNumber(state.targetY, state.bodyY);
+  state.bodyX = startX + (targetX - startX) * eased;
+  state.bodyY = startY + (targetY - startY) * eased + Math.sin(state.departureFrames / 11) * 1.8;
+  return state.departureFrames >= BOSS_DEFEAT_DEPARTURE_FRAMES;
 };
 
 export const bossAttackRectsAt = (boss: Boss, state: BossRuntimeState, tick: number): BossAttackSnapshot[] => {

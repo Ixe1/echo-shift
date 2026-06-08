@@ -1673,14 +1673,35 @@ try {
   const bossHit = upwardHitBoss(bossIntroSim, bossVulnerableSnapshot);
   assert(bossHit.bossHit?.id === "boss-test", "Expected upward weak-point hit to damage active boss");
   assert(bossHit.bossDefeated?.score === 1200, `Expected boss defeat score event, got ${JSON.stringify(bossHit.bossDefeated)}`);
-  assert(bossHit.bossPortalUnlocked, "Expected boss defeat to unlock the exit portal");
+  assert(!bossHit.bossPortalUnlocked, "Expected boss defeat to delay exit portal unlock until departure finishes");
   assert(bossHit.switched, "Expected boss defeat to emit switched when boss-dependent doors change");
   assert(bossIntroSim.objectState.openDoors.has("boss-door"), "Expected boss-dependent door to open on the boss defeat step");
   assert(!bossIntroSim.objectState.openDoors.has("boss-inverted-door"), "Expected inverted boss-dependent door to close on the boss defeat step");
   assert(bossIntroSim.objectState.openDoors.has("boss-hatch"), "Expected horizontal boss-dependent hatch to open on the boss defeat step");
   assert(!bossIntroSim.objectState.openDoors.has("boss-inverted-hatch"), "Expected inverted horizontal boss hatch to close on the boss defeat step");
-  assert(bossIntroSim.exitUnlocked(), "Expected boss level exit to unlock after boss defeat");
+  const departingBoss = bossIntroSim.bossSnapshots().find((boss) => boss.id === "boss-test");
+  assert(departingBoss?.phase === "departing", `Expected boss defeat to start departure phase, got ${departingBoss?.phase}`);
+  assert(departingBoss.departureFrames === 0, `Expected boss departure to start at frame 0, got ${departingBoss.departureFrames}`);
+  assert(!bossIntroSim.exitUnlocked(), "Expected boss level exit to stay locked while defeated boss departs");
   assert(bossIntroSim.score === 1200, `Expected boss defeat score to apply, got ${bossIntroSim.score}`);
+  const departureStartX = departingBoss.body.x;
+  let portalUnlockEvent = null;
+  let departingMidpoint = null;
+  for (let guard = 0; guard < departingBoss.departureTotalFrames + 20; guard += 1) {
+    const event = bossIntroSim.step(idle);
+    const snapshot = bossIntroSim.bossSnapshots().find((boss) => boss.id === "boss-test");
+    if (!departingMidpoint && snapshot?.phase === "departing" && snapshot.departureFrames >= Math.floor(departingBoss.departureTotalFrames / 2)) {
+      departingMidpoint = snapshot;
+    }
+    if (event.bossPortalUnlocked) {
+      portalUnlockEvent = event;
+      break;
+    }
+  }
+  assert(departingMidpoint?.body.x > departureStartX + 20, `Expected departing boss to drift right before portal unlock, got ${JSON.stringify(departingMidpoint?.body)}`);
+  assert(portalUnlockEvent?.bossPortalUnlocked, "Expected exit portal to unlock after boss departure finishes");
+  assert(bossIntroSim.exitUnlocked(), "Expected boss level exit to unlock after boss departure");
+  assert(bossIntroSim.bossStates.get("boss-test")?.phase === "defeated", "Expected boss to be marked defeated after departure finishes");
   const stormRecoverySim = new RoomSimulation(stormLaneLevel);
   Object.assign(stormRecoverySim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });
   stormRecoverySim.step(idle);
