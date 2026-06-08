@@ -29,14 +29,17 @@ export const BOSS_VULNERABLE_FRAMES = BOSS_ATTACK_CYCLE_FRAMES - BOSS_ATTACK_WIN
 const STORM_ATTACK_CYCLE_FRAMES = 330;
 const STORM_ATTACK_WINDUP_FRAMES = 112;
 const STORM_ATTACK_ACTIVE_FRAMES = 54;
-const STORM_VULNERABLE_READY_FRAMES = 42;
-const STORM_VULNERABLE_WEAK_SPOT_CLEARANCE = 76;
+const STORM_VULNERABLE_READY_FRAMES = 72;
+const STORM_VULNERABLE_WEAK_SPOT_CLEARANCE = 88;
 const STORM_HIT_PAUSE_FRAMES = 48;
-const STORM_HIT_RISE_FRAMES = 90;
+const STORM_HIT_RISE_FRAMES = 120;
 const STORM_HIT_PATROL_FRAMES = 54;
 const STORM_HIT_RECOVERY_FRAMES = STORM_HIT_PAUSE_FRAMES + STORM_HIT_RISE_FRAMES + STORM_HIT_PATROL_FRAMES;
-const STORM_FLOOR_SHOCK_WIDTH = 72;
+const STORM_FLOOR_SHOCK_CORE_WIDTH = 72;
+const STORM_FLOOR_SHOCK_TILE_WIDTH = 32;
+const STORM_FLOOR_SHOCK_WIDTH = STORM_FLOOR_SHOCK_CORE_WIDTH + STORM_FLOOR_SHOCK_TILE_WIDTH * 2;
 const STORM_FLOOR_SHOCK_HEIGHT = 10;
+const STORM_VERTICAL_FLIGHT_EASE = 0.055;
 
 type BossTimingSource = BossKind | { kind?: BossKind };
 
@@ -437,15 +440,17 @@ const advanceStormRelayMotion = (
     return;
   }
 
-  const targetY = cycle >= bossAttackEndFrameFor("storm-relay-warden") ? lowY : highY;
+  const activeEndFrame = bossAttackEndFrameFor("storm-relay-warden");
+  const descentProgress =
+    cycle <= activeEndFrame ? 0 : clamp((cycle - activeEndFrame) / Math.max(1, STORM_VULNERABLE_READY_FRAMES), 0, 1);
+  const targetY = highY + (lowY - highY) * descentProgress;
 
   state.targetX = targetX;
   state.targetY = targetY;
   const desiredX = targetX - size.w / 2;
   const desiredY = targetY - size.h / 2;
   const windupFrames = bossAttackWindupFramesFor("storm-relay-warden");
-  const activeEndFrame = bossAttackEndFrameFor("storm-relay-warden");
-  const ease = cycle < windupFrames ? 0.08 : cycle < activeEndFrame ? 0.14 : 0.16;
+  const ease = cycle < windupFrames ? 0.08 : cycle < activeEndFrame ? 0.14 : STORM_VERTICAL_FLIGHT_EASE;
   state.bodyX += (desiredX - state.bodyX) * ease;
   state.bodyY += (desiredY - state.bodyY) * ease;
   state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
@@ -468,7 +473,7 @@ const advanceStormRelayRecoveryMotion = (
   if (elapsed >= STORM_HIT_PAUSE_FRAMES && elapsed < STORM_HIT_PAUSE_FRAMES + STORM_HIT_RISE_FRAMES) {
     const riseProgress = (elapsed - STORM_HIT_PAUSE_FRAMES) / Math.max(1, STORM_HIT_RISE_FRAMES);
     targetY = lowY + (highY - lowY) * riseProgress;
-    ease = 0.08;
+    ease = STORM_VERTICAL_FLIGHT_EASE;
   } else if (elapsed >= STORM_HIT_PAUSE_FRAMES + STORM_HIT_RISE_FRAMES) {
     const patrolElapsed = elapsed - STORM_HIT_PAUSE_FRAMES - STORM_HIT_RISE_FRAMES;
     const sway = Math.sin((patrolElapsed / Math.max(1, STORM_HIT_PATROL_FRAMES)) * Math.PI * 2) * Math.min(54, (arena.maxX - arena.minX) * 0.18);
@@ -563,11 +568,12 @@ const bossRestingBodyRect = (boss: Boss): Rect => {
 const bossMovementBounds = (boss: Boss, size: { w: number; h: number }): { minX: number; minY: number; maxX: number; maxY: number } => {
   const marginX = Math.min(72, Math.max(18, boss.w * 0.08));
   const marginY = Math.min(24, Math.max(6, boss.h * 0.05));
+  const minY = boss.kind === "storm-relay-warden" ? boss.y : boss.y + marginY;
   return {
     minX: boss.x + marginX,
-    minY: boss.y + marginY,
+    minY,
     maxX: Math.max(boss.x + marginX, boss.x + boss.w - marginX - size.w),
-    maxY: Math.max(boss.y + marginY, boss.y + boss.h - marginY - size.h)
+    maxY: Math.max(minY, boss.y + boss.h - marginY - size.h)
   };
 };
 

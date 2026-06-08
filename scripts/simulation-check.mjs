@@ -563,6 +563,28 @@ try {
     return { bossHit: null };
   };
 
+  const standUnderBossWeakSpot = (simulation, snapshot) => {
+    const spot = snapshot.weakSpot;
+    const playerWidth = simulation.player.w || 24;
+    const floorTop = (simulation.level.solids || [])
+      .filter((solid) => solidSupportsGameplay(solid) && solid.w >= playerWidth && solid.y >= spot.y && solid.x < spot.x + spot.w && solid.x + solid.w > spot.x)
+      .reduce((min, solid) => Math.min(min, solid.y), Number.POSITIVE_INFINITY);
+    assert(Number.isFinite(floorTop), `Expected a floor under boss weak spot for standing-hit test, got spot ${JSON.stringify(spot)}`);
+    const standingTop = floorTop - simulation.player.h;
+    const standingGap = standingTop - (spot.y + spot.h);
+    assert(standingGap >= 6, `Expected boss weak spot to stay clearly above a standing player, got gap ${standingGap}`);
+    Object.assign(simulation.player, {
+      x: spot.x + spot.w / 2 - playerWidth / 2,
+      y: standingTop,
+      vx: 0,
+      vy: 0,
+      onGround: true,
+      coyote: 7,
+      prevJump: false
+    });
+    return simulation.step(idle);
+  };
+
   const placePlayerAtShockEdge = (simulation, shock) => {
     const playerWidth = simulation.player.w || 24;
     const floorTop = (simulation.level.solids || [])
@@ -1501,7 +1523,7 @@ try {
   const stormShock = stormAttackSnapshot.floorShocks[0];
   const stormFloor = stormLaneLevel.solids.find((solid) => solid.id === "floor");
   assert(stormFloor && stormShock.y + stormShock.h === stormFloor.y, `Expected storm floor shock to sit on top of the floor, got ${JSON.stringify(stormShock)}`);
-  assert(stormShock.w > stormAttack.w, `Expected storm floor shock to be wider than the beam, got shock ${JSON.stringify(stormShock)} and attack ${JSON.stringify(stormAttack)}`);
+  assert(stormShock.w === 136, `Expected storm floor shock to include one extra 32px tile on each side, got ${JSON.stringify(stormShock)}`);
 
   const stormShockDeathSim = new RoomSimulation(stormLaneLevel);
   Object.assign(stormShockDeathSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
@@ -1557,6 +1579,14 @@ try {
   stormRecoverySim.step(idle);
   runFrames(stormRecoverySim, 60, idle);
   const stormRecoveryVulnerable = runBossUntilVulnerable(stormRecoverySim, "boss-test");
+  const stormStandingHitSim = new RoomSimulation(stormLaneLevel);
+  Object.assign(stormStandingHitSim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });
+  stormStandingHitSim.step(idle);
+  runFrames(stormStandingHitSim, 60, idle);
+  const stormStandingVulnerable = runBossUntilVulnerable(stormStandingHitSim, "boss-test");
+  const stormStandingHit = standUnderBossWeakSpot(stormStandingHitSim, stormStandingVulnerable);
+  assert(stormStandingHit.bossHit === null, "Expected standing under the storm boss vulnerable underside not to register without a jump");
+  assert(stormStandingHitSim.bossSnapshots()[0].health === 2, "Expected storm boss health to stay unchanged after standing under its weak spot");
   const stormJumpHitSim = new RoomSimulation(stormLaneLevel);
   Object.assign(stormJumpHitSim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });
   stormJumpHitSim.step(idle);
@@ -1585,8 +1615,9 @@ try {
   assert(stormRecoveryPause.attacks.length === 0 && stormRecoveryPause.floorShocks.length === 0, "Expected storm boss recovery pause to stay harmless");
   runFrames(stormRecoverySim, 70, idle);
   const stormRecoveryRising = stormRecoverySim.bossSnapshots()[0];
+  const stormRecoveryRiseDelta = stormRecoveryPause.body.y - stormRecoveryRising.body.y;
   assert(
-    stormRecoveryRising.body.y < stormRecoveryPause.body.y - 3,
+    stormRecoveryRiseDelta > 0.5,
     `Expected storm boss to rise after its post-hit pause, from ${stormRecoveryPause.body.y} to ${stormRecoveryRising.body.y}`
   );
   runFrames(stormRecoverySim, 55, idle);

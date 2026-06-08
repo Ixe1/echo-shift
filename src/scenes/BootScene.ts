@@ -11,7 +11,8 @@ import {
   MONSTER_ATLAS_KEY,
   POOF_FRAME_HEIGHT,
   POOF_FRAME_WIDTH,
-  POOF_SHEET_KEY
+  POOF_SHEET_KEY,
+  STORM_BOSS_CLEAN_KEY
 } from "../game/enemySprites";
 import { soundtrackForLevel } from "../game/soundtracks";
 import { TERRAIN_TILE_KEY, TERRAIN_TILE_SIZE } from "../game/terrainMaterials";
@@ -56,6 +57,10 @@ export class BootScene extends Phaser.Scene {
       frameHeight: 288
     });
     this.load.spritesheet(BOSS_ATLAS_KEY, "/assets/sprites/boss-atlas.png", {
+      frameWidth: BOSS_ATLAS_FRAME_WIDTH,
+      frameHeight: BOSS_ATLAS_FRAME_HEIGHT
+    });
+    this.load.spritesheet(STORM_BOSS_CLEAN_KEY, "/assets/sprites/storm-relay-warden-clean.png", {
       frameWidth: BOSS_ATLAS_FRAME_WIDTH,
       frameHeight: BOSS_ATLAS_FRAME_HEIGHT
     });

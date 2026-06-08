@@ -18,6 +18,7 @@ import {
   MONSTER_ATLAS_KEY,
   POOF_FRAME_COUNT,
   POOF_SHEET_KEY,
+  STORM_BOSS_CLEAN_KEY,
   bossFrameForKind,
   monsterFrameForKind,
   type BossSpriteState
@@ -80,7 +81,8 @@ const RUN_FRAMES = [1, 2, 3, 4] as const;
 const LEVEL_INTRO_MS = 3000;
 const LEVEL_INTRO_OUTRO_MS = 820;
 const BOSS_MUSIC_FADE_MS = 620;
-const PLAYER_CAMERA_ZOOM = 1.2;
+const PLAYER_CAMERA_ZOOM = 1.44;
+const BOSS_ARENA_CAMERA_ZOOM = 1.2;
 const OBJECT_FRAME = {
   floor: 0,
   wall: 1,
@@ -1010,7 +1012,8 @@ export class GameScene extends Phaser.Scene {
   private bossArenaCameraZoom(arena: Rect): number {
     const paddedWidth = Math.max(1, arena.w + 96);
     const paddedHeight = Math.max(1, arena.h + 80);
-    return Math.max(0.1, Math.min(this.baseCameraZoom(), this.scale.width / paddedWidth, this.scale.height / paddedHeight));
+    const fitZoom = Math.min(this.scale.width / paddedWidth, this.scale.height / paddedHeight) * BOSS_ARENA_CAMERA_ZOOM;
+    return Math.max(0.1, Math.min(this.baseCameraZoom(), fitZoom));
   }
 
   private recordCameraDiagnostics = (): void => {
@@ -1366,6 +1369,9 @@ export class GameScene extends Phaser.Scene {
     if (this.textures.exists(BOSS_ATLAS_KEY)) {
       this.textures.get(BOSS_ATLAS_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
       this.bossAtlasTextureFilter = `${BOSS_ATLAS_KEY}:${Phaser.Textures.FilterMode.LINEAR}`;
+    }
+    if (this.textures.exists(STORM_BOSS_CLEAN_KEY)) {
+      this.textures.get(STORM_BOSS_CLEAN_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
     }
     if (this.textures.exists(TERRAIN_TILE_KEY)) {
       this.textures.get(TERRAIN_TILE_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
@@ -1932,16 +1938,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncBossSprite(id: string, kind: BossKind, snapshot: BossSnapshot, flickerWhite: boolean, introProgress: number): void {
-    if (!this.textures.exists(BOSS_ATLAS_KEY)) return;
+    const useCleanStormSprite = kind === "storm-relay-warden" && this.textures.exists(STORM_BOSS_CLEAN_KEY);
+    const textureKey = useCleanStormSprite ? STORM_BOSS_CLEAN_KEY : BOSS_ATLAS_KEY;
+    if (!this.textures.exists(textureKey)) return;
     const body = snapshot.body;
     const center = rectCenter(body);
     const spriteState = this.bossSpriteState(kind, snapshot, introProgress);
     const stateFrame = this.bossStateAnimationFrame(kind, id, snapshot, spriteState, introProgress);
-    const frame = bossFrameForKind(kind, spriteState, stateFrame);
+    const frame = useCleanStormSprite ? 0 : bossFrameForKind(kind, spriteState, stateFrame);
     const activePulse = snapshot.phase === "active" && kind !== "storm-relay-warden" ? Math.sin(this.simulation.tick / 18) * 0.015 : 0;
     const displayWidth = Math.max(148, body.w * 1.5) * (1 + activePulse);
     const displayHeight = Math.max(120, body.h * 1.42) * (1 + activePulse);
-    const sprite = this.assetFor(`boss:${id}`, "image", frame, BOSS_ATLAS_KEY) as Phaser.GameObjects.Image;
+    const sprite = this.assetFor(`boss:${id}`, "image", frame, textureKey) as Phaser.GameObjects.Image;
     sprite
       .setVisible(true)
       .setDepth(13)
@@ -1957,7 +1965,7 @@ export class GameScene extends Phaser.Scene {
     this.activeObjectAssetIds.add(`boss:${id}`);
     if (this.diagnosticsEnabled) {
       this.bossSpriteFrames.push(
-        `${id}:${BOSS_ATLAS_KEY}:${frame}:${spriteState}:anim${stateFrame}:${snapshot.phase}:${bossIsVulnerable(snapshot) ? "vulnerable" : "guarded"}:${Math.round(displayWidth)}x${Math.round(displayHeight)}`
+        `${id}:${textureKey}:${frame}:${spriteState}:anim${stateFrame}:${snapshot.phase}:${bossIsVulnerable(snapshot) ? "vulnerable" : "guarded"}:${Math.round(displayWidth)}x${Math.round(displayHeight)}`
       );
     }
   }
