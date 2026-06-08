@@ -1936,28 +1936,31 @@ export class GameScene extends Phaser.Scene {
     const windupFrames = bossAttackWindupFramesFor(boss.kind);
     const cycle = snapshot.activeFrames % bossAttackCycleFramesFor(boss.kind);
     if (cycle >= windupFrames) return;
-    const body = snapshot.body;
+    if (snapshot.attackWarnings.length === 0) return;
     const progress = Math.max(0, Math.min(1, cycle / Math.max(1, windupFrames)));
-    const originX = body.x + body.w / 2;
-    const originY = body.y + body.h * 0.78;
-    const endY = boss.y + boss.h - 12;
     const warningWidth = 18 + progress * 24;
     if (this.diagnosticsEnabled) {
-      this.bossEffectFrames.push(`${boss.id}:cryo-windup:${Math.round(progress * 100)}:${snapshot.recoveryFrames}`);
+      const lanes = snapshot.attackWarnings.map((warning) => Math.round(warning.originX)).join(",");
+      this.bossEffectFrames.push(`${boss.id}:cryo-windup:${Math.round(progress * 100)}:${snapshot.recoveryFrames}:lanes=${lanes}`);
     }
-    this.fx.fillStyle(color, 0.04 + progress * 0.11);
-    this.fx.fillRoundedRect(originX - warningWidth / 2, originY, warningWidth, Math.max(16, endY - originY), 10);
-    this.fx.lineStyle(2, color, 0.18 + progress * 0.32);
-    this.fx.lineBetween(originX, originY, originX, endY);
-    this.fx.lineStyle(1, 0xffffff, 0.16 + progress * 0.26);
-    this.fx.lineBetween(originX - warningWidth * 0.42, originY + 4, originX - warningWidth * 0.42, endY);
-    this.fx.lineBetween(originX + warningWidth * 0.42, originY + 4, originX + warningWidth * 0.42, endY);
-    const pulse = 0.78 + Math.sin(this.simulation.tick / 9) * 0.08 + progress * 0.26;
-    this.fx.fillStyle(0xffffff, 0.16 + progress * 0.28);
-    this.fx.fillCircle(originX, originY, 4 + progress * 5);
-    this.fx.lineStyle(2, color, 0.18 + progress * 0.3);
-    this.fx.strokeCircle(originX, originY, 15 * pulse);
-    this.fx.strokeCircle(originX, originY, 25 * pulse);
+    for (const warning of snapshot.attackWarnings) {
+      const originX = warning.originX;
+      const originY = warning.originY;
+      const endY = warning.y + warning.h;
+      this.fx.fillStyle(color, 0.04 + progress * 0.11);
+      this.fx.fillRoundedRect(originX - warningWidth / 2, originY, warningWidth, Math.max(16, endY - originY), 10);
+      this.fx.lineStyle(2, color, 0.18 + progress * 0.32);
+      this.fx.lineBetween(originX, originY, originX, endY);
+      this.fx.lineStyle(1, 0xffffff, 0.16 + progress * 0.26);
+      this.fx.lineBetween(originX - warningWidth * 0.42, originY + 4, originX - warningWidth * 0.42, endY);
+      this.fx.lineBetween(originX + warningWidth * 0.42, originY + 4, originX + warningWidth * 0.42, endY);
+      const pulse = 0.78 + Math.sin(this.simulation.tick / 9) * 0.08 + progress * 0.26;
+      this.fx.fillStyle(0xffffff, 0.16 + progress * 0.28);
+      this.fx.fillCircle(originX, originY, 4 + progress * 5);
+      this.fx.lineStyle(2, color, 0.18 + progress * 0.3);
+      this.fx.strokeCircle(originX, originY, 15 * pulse);
+      this.fx.strokeCircle(originX, originY, 25 * pulse);
+    }
   }
 
   private drawCryoBossFloorIceEffect(ice: BossFloorIceSnapshot, color: number): void {

@@ -5,6 +5,7 @@ import {
   MONSTER_BOUNCE_SPEED,
   actorKillsMonster,
   advanceBossActiveMotion,
+  bossAttackWarningRectsAt,
   bossAttackRectsAt,
   bossBodyDamages,
   bossBodyRectAt,
@@ -549,6 +550,7 @@ export class RoomSimulation {
           body,
           weakSpot,
           weakSpotKind: bossWeakSpot(boss),
+          attackWarnings: bossAttackWarningRectsAt(boss, state, this.tick),
           attacks: bossAttackRectsAt(boss, state, this.tick),
           floorShocks: bossFloorShockRectsAt(boss, state, this.tick, this.level.solids),
           floorIce: bossFloorIceRectsAt(boss, state, this.tick, this.level.solids)

@@ -217,6 +217,7 @@ export type BossSnapshot = {
   body: Rect;
   weakSpot: Rect;
   weakSpotKind: BossWeakSpot;
+  attackWarnings: BossAttackSnapshot[];
   attacks: BossAttackSnapshot[];
   floorShocks: Rect[];
   floorIce: BossFloorIceSnapshot[];

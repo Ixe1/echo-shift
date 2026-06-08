@@ -484,14 +484,17 @@ try {
   const { bossAttackActiveFramesFor, bossAttackCycleFramesFor, bossAttackWindupFramesFor, bossIsVulnerable } = await server.ssrLoadModule("/src/game/enemies.ts");
   const { SynthAudio } = await server.ssrLoadModule("/src/game/audio.ts");
 
+  const bossNeedsAttackDodge = (boss) => {
+    const cycleFrame = boss.activeFrames % bossAttackCycleFramesFor(boss);
+    return boss.phase === "active" && cycleFrame >= bossAttackWindupFramesFor(boss) - 1 && !bossIsVulnerable(boss);
+  };
+
   const runBossUntilVulnerable = (simulation, bossId) => {
     for (let frameIndex = 0; frameIndex < 420; frameIndex += 1) {
       const snapshots = simulation.bossSnapshots();
       const snapshot = snapshots.find((boss) => boss.id === bossId);
       if (snapshot && bossIsVulnerable(snapshot)) return snapshot;
-      const danger = snapshots.find(
-        (boss) => boss.phase === "active" && boss.activeFrames >= bossAttackWindupFramesFor(boss) - 1 && !bossIsVulnerable(boss)
-      );
+      const danger = snapshots.find(bossNeedsAttackDodge);
       if (danger) {
         const levelCenterX = simulation.level.bounds.x + simulation.level.bounds.w / 2;
         const bodyCenterX = danger.body.x + danger.body.w / 2;
@@ -509,9 +512,7 @@ try {
       const snapshot = snapshots.find((boss) => boss.id === bossId);
       const cycleFrame = snapshot ? snapshot.activeFrames % bossAttackCycleFramesFor(snapshot) : 0;
       if (snapshot?.attacks.length > 0 && cycleFrame < bossAttackWindupFramesFor(snapshot) + bossAttackActiveFramesFor(snapshot) - 1) return snapshot;
-      const danger = snapshots.find(
-        (boss) => boss.phase === "active" && boss.activeFrames >= bossAttackWindupFramesFor(boss) - 1 && !bossIsVulnerable(boss)
-      );
+      const danger = snapshots.find(bossNeedsAttackDodge);
       if (danger) {
         const levelCenterX = simulation.level.bounds.x + simulation.level.bounds.w / 2;
         const bodyCenterX = danger.body.x + danger.body.w / 2;
@@ -521,6 +522,23 @@ try {
       simulation.step(idle);
     }
     throw new Error(`Expected boss ${bossId} to start an attack window`);
+  };
+
+  const runBossUntilWarning = (simulation, bossId) => {
+    for (let frameIndex = 0; frameIndex < 160; frameIndex += 1) {
+      const snapshots = simulation.bossSnapshots();
+      const snapshot = snapshots.find((boss) => boss.id === bossId);
+      if (snapshot && snapshot.activeFrames > 0 && snapshot.attackWarnings.length > 0 && snapshot.attacks.length === 0) return snapshot;
+      const danger = snapshots.find(bossNeedsAttackDodge);
+      if (danger) {
+        const levelCenterX = simulation.level.bounds.x + simulation.level.bounds.w / 2;
+        const bodyCenterX = danger.body.x + danger.body.w / 2;
+        const dodgeX = bodyCenterX < levelCenterX ? simulation.level.bounds.x + simulation.level.bounds.w - 56 : simulation.level.bounds.x + 32;
+        Object.assign(simulation.player, { x: dodgeX, y: 18, vx: 0, vy: 0, onGround: false });
+      }
+      simulation.step(idle);
+    }
+    throw new Error(`Expected boss ${bossId} to show an attack warning`);
   };
 
   const upwardHitBoss = (simulation, snapshot) => {
@@ -1672,6 +1690,36 @@ try {
     ...bossLevel,
     bosses: [{ ...bossLevel.bosses[0], kind: "cryo-conservator", introSeconds: 1, health: 2 }]
   };
+  assert(
+    bossAttackWindupFramesFor("cryo-conservator") < bossAttackWindupFramesFor("storm-relay-warden"),
+    `Expected cryo wind-up to be faster than storm, got cryo ${bossAttackWindupFramesFor("cryo-conservator")} and storm ${bossAttackWindupFramesFor("storm-relay-warden")}`
+  );
+  assert(
+    bossAttackWindupFramesFor("cryo-conservator") <= 96,
+    `Expected cryo wind-up to be noticeably tighter than before, got ${bossAttackWindupFramesFor("cryo-conservator")}`
+  );
+  const cryoWarningSim = new RoomSimulation(cryoLevel);
+  Object.assign(cryoWarningSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
+  cryoWarningSim.step(idle);
+  runFrames(cryoWarningSim, 60, idle);
+  Object.assign(cryoWarningSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  const cryoWarning = runBossUntilWarning(cryoWarningSim, "boss-test");
+  assert(cryoWarning.attackWarnings.length === 1, `Expected full-health cryo warm-up to warn one lane, got ${cryoWarning.attackWarnings.length}`);
+  assert(cryoWarning.attacks.length === 0, "Expected cryo warm-up warning not to create active damage");
+  assert(
+    Math.abs(cryoWarning.attackWarnings[0].originX - targetPlayerCenterX) <= 28,
+    `Expected cryo warm-up lane to target player x ${targetPlayerCenterX}, got ${cryoWarning.attackWarnings[0].originX}`
+  );
+  Object.assign(cryoWarningSim.player, {
+    x: cryoWarning.attackWarnings[0].x + cryoWarning.attackWarnings[0].w / 2 - 12,
+    y: 86,
+    vx: 0,
+    vy: 0,
+    onGround: true
+  });
+  const cryoWarningStep = cryoWarningSim.step(idle);
+  assert(!cryoWarningStep.died && !cryoWarningSim.dead, "Expected cryo warning beam to be non-damaging before the active fire window");
+
   const cryoLaneSim = new RoomSimulation(cryoLevel);
   Object.assign(cryoLaneSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
   cryoLaneSim.step(idle);
@@ -1679,6 +1727,7 @@ try {
   Object.assign(cryoLaneSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
   const cryoAttackSnapshot = runBossUntilAttack(cryoLaneSim, "boss-test");
   assertAttackStartsFromBoss(cryoAttackSnapshot, "cryo boss downward attack");
+  assert(cryoAttackSnapshot.attackWarnings.length === 0, "Expected cryo warning lanes to clear once active beams fire");
   const cryoAttack = cryoAttackSnapshot.attacks[0];
   assert(cryoAttack.kind === "vertical", `Expected cryo boss to fire downward, got ${cryoAttack.kind}`);
   assert(cryoAttack.h > cryoAttack.w * 2, `Expected cryo beam to be a tall lane hazard, got ${JSON.stringify(cryoAttack)}`);
@@ -1689,7 +1738,7 @@ try {
   assert(cryoAttackSnapshot.floorIce.length === 1, `Expected active cryo beam to freeze one floor lane, got ${cryoAttackSnapshot.floorIce.length}`);
   const cryoIce = cryoAttackSnapshot.floorIce[0];
   assert(cryoIce.w === 128, `Expected cryo floor ice to cover a 128px lane, got ${JSON.stringify(cryoIce)}`);
-  assert(cryoIce.lifeFrames === 420, `Expected cryo floor ice to last 7 seconds, got ${JSON.stringify(cryoIce)}`);
+  assert(cryoIce.lifeFrames === 1260, `Expected cryo floor ice to last 21 seconds, got ${JSON.stringify(cryoIce)}`);
 
   const cryoBeamDeathSim = new RoomSimulation(cryoLevel);
   Object.assign(cryoBeamDeathSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
@@ -1715,7 +1764,7 @@ try {
   runBossUntilAttack(cryoIceSim, "boss-test");
   const cryoIceVulnerable = runBossUntilVulnerable(cryoIceSim, "boss-test");
   assert(cryoIceVulnerable.floorIce.length === 1, "Expected cryo floor ice to persist into the vulnerable cooldown");
-  assert(cryoIceVulnerable.floorIce[0].remainingFrames > 260, `Expected cryo ice to retain several seconds during cooldown, got ${JSON.stringify(cryoIceVulnerable.floorIce[0])}`);
+  assert(cryoIceVulnerable.floorIce[0].remainingFrames > 1040, `Expected cryo ice to retain most of its 21 second life during cooldown, got ${JSON.stringify(cryoIceVulnerable.floorIce[0])}`);
   placePlayerOnFloorEffect(cryoIceSim, cryoIceVulnerable.floorIce[0], 8);
   cryoIceSim.player.vx = 2;
   const cryoIceStep = cryoIceSim.step(idle);
@@ -1780,27 +1829,75 @@ try {
     ],
     bosses: [{ ...cryoLevel.bosses[0], x: 20, y: 20, w: 700, h: 130 }]
   };
+  const cryoDualSim = new RoomSimulation(cryoStackLevel);
+  Object.assign(cryoDualSim.player, { x: 100 - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  cryoDualSim.step(idle);
+  runFrames(cryoDualSim, 60, idle);
+  const cryoDualOpeningAttack = runBossUntilAttack(cryoDualSim, "boss-test");
+  assert(cryoDualOpeningAttack.attacks.length === 1, `Expected full-health cryo boss to fire one beam, got ${cryoDualOpeningAttack.attacks.length}`);
+  const cryoDualVulnerable = runBossUntilVulnerable(cryoDualSim, "boss-test");
+  const cryoDualHit = upwardHitBoss(cryoDualSim, cryoDualVulnerable);
+  assert(cryoDualHit.bossHit?.health === 1, "Expected cryo boss to reach half health after first hit");
+  Object.assign(cryoDualSim.player, { x: 80, y: 86, vx: 0, vy: 0, onGround: true });
+  for (let guard = 0; guard < 260 && cryoDualSim.bossSnapshots()[0]?.recoveryFrames > 0; guard += 1) {
+    cryoDualSim.step(idle);
+  }
+  const cryoDualReady = cryoDualSim.bossSnapshots()[0];
+  assert(cryoDualReady.health === 1 && cryoDualReady.recoveryFrames === 0, `Expected cryo boss ready at half health, got ${JSON.stringify({ health: cryoDualReady.health, recoveryFrames: cryoDualReady.recoveryFrames })}`);
+  Object.assign(cryoDualSim.player, { x: 554 - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  const cryoDualWarning = runBossUntilWarning(cryoDualSim, "boss-test");
+  const cryoDualWarningLanes = cryoDualWarning.attackWarnings.map((warning) => Math.round(warning.originX)).sort((a, b) => a - b);
+  assert(cryoDualWarning.attackWarnings.length === 2, `Expected half-health cryo warm-up to warn two lanes, got ${cryoDualWarning.attackWarnings.length}`);
+  assert(
+    cryoDualWarningLanes[1] - cryoDualWarningLanes[0] > 100,
+    `Expected half-health cryo warning lanes to be visibly separated, got ${cryoDualWarningLanes.join(",")}`
+  );
+  const cryoDualAttack = runBossUntilAttack(cryoDualSim, "boss-test");
+  const cryoDualAttackLanes = cryoDualAttack.attacks.map((attack) => Math.round(attack.originX)).sort((a, b) => a - b);
+  assert(cryoDualAttack.attacks.length === 2, `Expected half-health cryo boss to fire two beams, got ${cryoDualAttack.attacks.length}`);
+  assert(
+    cryoDualAttackLanes.every((lane, index) => Math.abs(lane - cryoDualWarningLanes[index]) <= 2),
+    `Expected active cryo beams to match warned lanes ${cryoDualWarningLanes.join(",")}, got ${cryoDualAttackLanes.join(",")}`
+  );
+  const cryoDualIceCenters = cryoDualAttack.floorIce.map((ice) => Math.round(ice.x + ice.w / 2));
+  for (const lane of cryoDualAttackLanes) {
+    assert(
+      cryoDualIceCenters.some((center) => Math.abs(center - lane) <= 70),
+      `Expected half-health cryo beam lane ${lane} to create or refresh floor ice, got centers ${cryoDualIceCenters.join(",")}`
+    );
+  }
+
   const cryoStackSim = new RoomSimulation(cryoStackLevel);
   Object.assign(cryoStackSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
   cryoStackSim.step(idle);
   runFrames(cryoStackSim, 60, idle);
-  const cryoStackTargets = [190, 330, 470, 610];
-  const cryoStackCenters = [];
+  const cryoStackTargets = [100, 250, 400, 554];
+  const cryoStackCenters = new Set();
+  const cryoStackCounts = [];
+  const cryoStackDetails = [];
   let cryoMaxStack = 0;
   for (const targetX of cryoStackTargets) {
     Object.assign(cryoStackSim.player, { x: targetX - 12, y: 86, vx: 0, vy: 0, onGround: true });
     const stackAttack = runBossUntilAttack(cryoStackSim, "boss-test");
     cryoMaxStack = Math.max(cryoMaxStack, stackAttack.floorIce.length);
-    cryoStackCenters.push(Math.round(stackAttack.floorIce[stackAttack.floorIce.length - 1].x + stackAttack.floorIce[stackAttack.floorIce.length - 1].w / 2));
-    assert(stackAttack.floorIce.length <= 3, `Expected cryo ice stack to stay capped at 3 patches, got ${stackAttack.floorIce.length}`);
+    cryoStackCounts.push(stackAttack.floorIce.length);
+    cryoStackDetails.push(stackAttack.floorIce.map((ice) => `${Math.round(ice.x + ice.w / 2)}:${Math.round(ice.remainingFrames)}`).join("/"));
+    for (const ice of stackAttack.floorIce) {
+      cryoStackCenters.add(Math.round(ice.x + ice.w / 2));
+    }
+    assert(stackAttack.floorIce.length <= 4, `Expected cryo ice stack to stay capped at 4 patches, got ${stackAttack.floorIce.length}`);
     runBossUntilVulnerable(cryoStackSim, "boss-test");
   }
   const cryoStackSnapshot = cryoStackSim.bossSnapshots()[0];
-  assert(cryoMaxStack >= 2, `Expected cryo ice to overlap across attack cycles, got max stack ${cryoMaxStack}`);
-  assert(cryoStackSnapshot.floorIce.length <= 3, `Expected cryo ice to cap at 3 active patches, got ${cryoStackSnapshot.floorIce.length}`);
   assert(
-    new Set(cryoStackCenters).size >= 2,
-    `Expected stacked cryo ice sequence to preserve multiple lanes, got centers ${cryoStackCenters.join(",")}`
+    cryoMaxStack >= 4,
+    `Expected cryo ice to allow four consecutive overlapping lanes, got max stack ${cryoMaxStack}, counts ${cryoStackCounts.join(",")}, centers ${[...cryoStackCenters].join(",")}, details ${cryoStackDetails.join(",")}`
+  );
+  assert(cryoStackSnapshot.floorIce.length >= 3, `Expected cryo ice to preserve at least three active patches after repeated attacks, got ${cryoStackSnapshot.floorIce.length}`);
+  assert(cryoStackSnapshot.floorIce.length <= 4, `Expected cryo ice to cap at 4 active patches, got ${cryoStackSnapshot.floorIce.length}`);
+  assert(
+    cryoStackCenters.size >= 4,
+    `Expected stacked cryo ice sequence to preserve four lanes, got centers ${[...cryoStackCenters].join(",")}`
   );
 
   const multiBossLevel = {
