@@ -480,6 +480,7 @@ try {
   const { soundtrackForBoss, soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
   const { backgroundForLevel, levelBackgrounds } = await server.ssrLoadModule("/src/game/backgrounds.ts");
   const { backgroundAmbienceForLevel, backgroundAmbienceIsActive } = await server.ssrLoadModule("/src/game/backgroundAmbience.ts");
+  const { selectBossCameraFocus } = await server.ssrLoadModule("/src/game/bossCamera.ts");
   const { terrainMaterialForSolid } = await server.ssrLoadModule("/src/game/terrainMaterials.ts");
   const { bossAttackActiveFramesFor, bossAttackCycleFramesFor, bossAttackWindupFramesFor, bossIsVulnerable, monsterRectAt } = await server.ssrLoadModule("/src/game/enemies.ts");
   const { SynthAudio } = await server.ssrLoadModule("/src/game/audio.ts");
@@ -748,6 +749,14 @@ try {
   assert(
     terrainMaterialForSolid({ id: "explicit-sand", tone: "steel", sprite: "floor", material: "sand-ruin" }) === "sand-ruin",
     "Expected explicit terrain material to override legacy tone"
+  );
+  assert(
+    selectBossCameraFocus([{ id: "departing-first", phase: "departing" }, { id: "active-second", phase: "active" }])?.id === "active-second",
+    "Expected boss camera focus to prefer active bosses over earlier departing bosses"
+  );
+  assert(
+    selectBossCameraFocus([{ id: "departing-first", phase: "departing" }, { id: "idle-second", phase: "idle" }])?.id === "departing-first",
+    "Expected boss camera focus to fall back to a departing boss when no boss is active"
   );
 
   await verifyAudioUnlockRetry(SynthAudio, soundtracks);

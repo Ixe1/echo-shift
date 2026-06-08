@@ -3,6 +3,7 @@ import { updateEditorDraftCurrentIndex } from "../data/editorDraft";
 import { getLevel, isDraftPlaytestActive, levels } from "../data/levels";
 import { tutorialLevel } from "../data/tutorialLevel";
 import { audio } from "../game/audio";
+import { selectBossCameraFocus } from "../game/bossCamera";
 import { backgroundAmbienceForLevel, backgroundAmbienceIsActive, type NormalizedBackgroundAmbience } from "../game/backgroundAmbience";
 import { backgroundForLevel } from "../game/backgrounds";
 import {
@@ -1163,10 +1164,10 @@ export class GameScene extends Phaser.Scene {
         this.cameraTarget?.setPosition(focus.x, focus.y);
         this.cameras.main.centerOn(focus.x, focus.y);
       } else {
-        const activeBoss = snapshot.bosses.find((boss) => boss.phase === "active" || boss.phase === "departing");
-        if (activeBoss) {
-          const boss = (this.level.bosses || []).find((item) => item.id === activeBoss.id);
-          const arena = boss || activeBoss.body;
+        const cameraBoss = selectBossCameraFocus(snapshot.bosses);
+        if (cameraBoss) {
+          const boss = (this.level.bosses || []).find((item) => item.id === cameraBoss.id);
+          const arena = boss || cameraBoss.body;
           const focus = rectCenter(arena);
           this.cameras.main.setZoom(this.bossArenaCameraZoom(arena));
           this.cameraTarget?.setPosition(focus.x, focus.y);
