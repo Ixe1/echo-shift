@@ -2075,6 +2075,18 @@ try {
   assert(!multiBossDefeatA.bossPortalUnlocked, "Expected first multi-boss defeat to keep portal locked");
   assert(!multiBossSim.exitUnlocked(), "Expected multi-boss exit to remain locked after first boss");
   assert(!multiBossSim.bossCheckpointActive(), "Expected first boss checkpoint to clear after first boss defeat");
+  let multiBossDepartureA = null;
+  for (let guard = 0; guard < 220; guard += 1) {
+    const event = multiBossSim.step(idle);
+    if (event.bossDepartureFinished) {
+      multiBossDepartureA = event;
+      break;
+    }
+  }
+  assert(multiBossDepartureA?.bossDepartureFinished === "boss-a", "Expected first sequential boss to emit departure finished before second boss starts");
+  assert(!multiBossDepartureA.bossPortalUnlocked, "Expected first sequential boss departure not to unlock the portal while boss-b is idle");
+  assert(!multiBossSim.bossFightInProgress(), "Expected boss fight to end after first boss departure while remaining boss is idle");
+  assert(!multiBossSim.exitUnlocked(), "Expected multi-boss exit to remain locked after first boss departure");
   Object.assign(multiBossSim.player, { x: 332, y: 86, vx: 0, vy: 0, onGround: true });
   const multiBossStartB = multiBossSim.step(idle);
   assert(multiBossStartB.bossCheckpointActivated === "boss-b", "Expected second boss to create a fresh checkpoint");

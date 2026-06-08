@@ -366,6 +366,7 @@ export type StepEvents = {
   bossCheckpointActivated: string | null;
   bossHit: BossHitEvent | null;
   bossDefeated: BossDefeatEvent | null;
+  bossDepartureFinished: string | null;
   bossPortalUnlocked: boolean;
   won: boolean;
 };

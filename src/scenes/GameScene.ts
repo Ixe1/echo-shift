@@ -726,6 +726,8 @@ export class GameScene extends Phaser.Scene {
       this.restartLevelMusic();
       audio.play("portal");
       this.addFxBurst(exitCenter.x, exitCenter.y, 0x43f7ff, "OPEN");
+    } else if (events.bossDepartureFinished && !this.activeBossForMusic() && !this.bossFightInProgress()) {
+      this.restartLevelMusic();
     }
     if (events.died) {
       this.startDeathPresentation(events.livesExhausted, events.playerLaserVaporized);

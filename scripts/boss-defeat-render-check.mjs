@@ -50,6 +50,22 @@ const readDepartureEffect = async (page) =>
       : { raw, frame: 0, total: 0, bursts: 0, x: 0 };
   });
 
+const readCameraWorldView = async (page) =>
+  page.evaluate(() => {
+    const raw = document.documentElement.dataset.echoShiftCameraWorldView || "";
+    const [x = "0", y = "0", w = "1", h = "1"] = raw.split(",");
+    return { raw, x: Number(x), y: Number(y), w: Number(w), h: Number(h) };
+  });
+
+const readBossSpriteWidth = async (page) =>
+  page.evaluate(() => {
+    const entry = (document.documentElement.dataset.echoShiftBossSpriteFrames || "")
+      .split("|")
+      .find((item) => item.startsWith("render-boss:") && item.includes(":departing:"));
+    const size = entry?.split(":").at(-1) || "0x0";
+    return Number(size.split("x")[0]);
+  });
+
 const draftLevel = {
   id: "boss-defeat-render-qa",
   index: 0,
@@ -185,6 +201,24 @@ try {
   const mid = await readDepartureEffect(page);
   assert(mid.x > early.x + 60, `Expected departing boss to move right, got early ${JSON.stringify(early)} and mid ${JSON.stringify(mid)}`);
 
+  await page.waitForFunction(
+    () => {
+      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+      const match = effects.match(/render-boss:defeat-depart:(\d+)\/(\d+):bursts=(\d+):x=(-?\d+)/);
+      return match && Number(match[1]) >= 160;
+    },
+    null,
+    { timeout: 3500 }
+  );
+  const late = await readDepartureEffect(page);
+  const camera = await readCameraWorldView(page);
+  const spriteWidth = await readBossSpriteWidth(page);
+  const spriteLeft = late.x - spriteWidth / 6;
+  assert(
+    spriteLeft > camera.x + camera.w,
+    `Expected departing boss sprite to be off the right side of the camera before portal unlock, got ${JSON.stringify({ late, camera, spriteWidth, spriteLeft })}`
+  );
+
   await page.waitForFunction(() => document.documentElement.dataset.echoShiftExitUnlocked === "true", null, { timeout: 5000 });
   const finalSprites = await page.evaluate(() => document.documentElement.dataset.echoShiftBossSpriteFrames || "");
   assert(!finalSprites.includes(":departing:"), `Expected boss sprite to stop rendering after departure, got ${finalSprites}`);
@@ -198,7 +232,7 @@ try {
     JSON.stringify(
       {
         ok: true,
-        departure: { early, mid },
+        departure: { early, mid, late, camera, spriteWidth },
         screenshots: {
           departure: departureScreenshot,
           portal: portalScreenshot

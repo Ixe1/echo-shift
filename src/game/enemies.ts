@@ -436,7 +436,7 @@ export const startBossDefeatDeparture = (boss: Boss, state: BossRuntimeState, bo
   state.bodyY = body.y;
   state.departureStartX = body.x;
   state.departureStartY = body.y;
-  state.targetX = boss.x + boss.w + body.w * 1.6;
+  state.targetX = boss.x + boss.w + body.w * 4.2;
   state.targetY = body.y - Math.max(8, body.h * 0.12);
   state.attackX = body.x + body.w / 2;
   state.attackY = body.y + body.h / 2;
@@ -449,7 +449,10 @@ export const advanceBossDefeatDeparture = (boss: Boss, state: BossRuntimeState):
   const eased = 0.5 - Math.cos(progress * Math.PI) / 2;
   const startX = finiteNumber(state.departureStartX, bossRestingBodyRect(boss).x);
   const startY = finiteNumber(state.departureStartY, bossRestingBodyRect(boss).y);
-  const targetX = finiteNumber(state.targetX, boss.x + boss.w + bossBodySize(boss).w * 1.6);
+  const targetX = Math.max(
+    finiteNumber(state.targetX, boss.x + boss.w + bossBodySize(boss).w * 4.2),
+    boss.x + boss.w + bossBodySize(boss).w * 4.2
+  );
   const targetY = finiteNumber(state.targetY, state.bodyY);
   state.bodyX = startX + (targetX - startX) * eased;
   state.bodyY = startY + (targetY - startY) * eased + Math.sin(state.departureFrames / 11) * 1.8;

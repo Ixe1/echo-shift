@@ -202,6 +202,7 @@ export class RoomSimulation {
       bossCheckpointActivated: null,
       bossHit: null,
       bossDefeated: null,
+      bossDepartureFinished: null,
       bossPortalUnlocked: false,
       won: false
     };
@@ -479,6 +480,7 @@ export class RoomSimulation {
         if (advanceBossDefeatDeparture(boss, state)) {
           state.phase = "defeated";
           state.departureFrames = state.departureFrames || 0;
+          events.bossDepartureFinished = boss.id;
           if (this.exitUnlocked()) events.bossPortalUnlocked = true;
         }
         continue;
