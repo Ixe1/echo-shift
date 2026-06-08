@@ -11,6 +11,7 @@ import {
   bossAttackCycleFramesFor,
   bossAttackWindupFramesFor,
   bossIsVulnerable,
+  monsterAnimationProfileForKind,
   monsterRectAt
 } from "../game/enemies";
 import {
@@ -53,7 +54,6 @@ import type {
   Level,
   LevelScore,
   Monster,
-  MonsterKind,
   MovingPlatform,
   Rect,
   Solid,
@@ -1810,11 +1810,12 @@ export class GameScene extends Phaser.Scene {
   private syncMonsterSprite(monster: Monster, rect: Rect, tick: number): void {
     if (!this.textures.exists(MONSTER_ATLAS_KEY)) return;
     const { id, kind } = monster;
-    const frameInterval = this.monsterAnimationFrameInterval(kind);
+    const animation = monsterAnimationProfileForKind(kind);
+    const frameInterval = animation.frameInterval;
     const animationFrame = Math.floor((tick + id.length * 7) / frameInterval) % 4;
     const frame = monsterFrameForKind(kind, animationFrame);
     const center = rectCenter(rect);
-    const bob = Math.sin((tick + frame * 17) / 11) * 1.8;
+    const bob = Math.sin((tick + frame * 17) / animation.bobPeriod) * animation.bobAmplitude;
     const width = Math.max(44, rect.w * 2.15);
     const height = Math.max(44, rect.h * 2.25);
     const facingLeft = this.monsterFacingLeft(monster, rect, tick);
@@ -1847,13 +1848,6 @@ export class GameScene extends Phaser.Scene {
     const nextDx = next.x - rect.x;
     if (Math.abs(nextDx) > 0.05) return nextDx < 0;
     return false;
-  }
-
-  private monsterAnimationFrameInterval(kind: MonsterKind): number {
-    if (kind === "glasswing-wisp") return 4;
-    if (kind === "shard-wisp" || kind === "page-mote" || kind === "pendulum-drone") return 6;
-    if (kind === "gear-tick" || kind === "root-roller") return 7;
-    return 9;
   }
 
   private drawBosses(bosses: BossSnapshot[]): void {

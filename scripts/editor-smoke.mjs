@@ -909,6 +909,16 @@ try {
   const movingLaserHandleCleanupValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
   await dragToolToWorld(page, "monsters", { x: 1280, y: 500 });
+  const monsterDefaultKind = await page.locator("[data-object-field='kind']").inputValue();
+  const monsterDefaultAxis = await page.locator("[data-object-field='axis']").inputValue();
+  const monsterDefaultSpeed = Number(await page.locator("[data-object-field='speed']").inputValue());
+  const monsterDefaultPathStart = await objectNumber(page, "pathStart");
+  const monsterDefaultPathEnd = await objectNumber(page, "pathEnd");
+  await page.locator("[data-object-field='kind']").selectOption("glasswing-wisp");
+  const monsterWispAxis = await page.locator("[data-object-field='axis']").inputValue();
+  const monsterWispSpeed = Number(await page.locator("[data-object-field='speed']").inputValue());
+  const monsterWispPathStart = await objectNumber(page, "pathStart");
+  const monsterWispPathEnd = await objectNumber(page, "pathEnd");
   await page.locator("[data-object-field='id']").fill("smoke-monster");
   await dispatchChange(page.locator("[data-object-field='id']"));
   await page.locator("[data-object-field='axis']").selectOption("y");
@@ -1509,7 +1519,27 @@ try {
   assert(movingLaserHandleCleanupValidation === "clean", `Expected clean validation after moving laser handle cleanup, got ${movingLaserHandleCleanupValidation}`);
   assert(toolkitCrate && toolkitCrateBottom === 480, `Expected crate to export and snap flush to floor, got ${JSON.stringify(toolkitCrate)} bottom ${toolkitCrateBottom}`);
   assert(
-    toolkitMonster?.axis === "y" && toolkitMonster?.distance === 60 && Number.isFinite(toolkitMonster?.period),
+    monsterDefaultKind === "sprout-hopper" &&
+      monsterDefaultAxis === "x" &&
+      monsterDefaultSpeed === 80 &&
+      monsterDefaultPathEnd - monsterDefaultPathStart === 120,
+    `Expected new monsters to use sprout defaults, got ${JSON.stringify({
+      monsterDefaultKind,
+      monsterDefaultAxis,
+      monsterDefaultSpeed,
+      path: [monsterDefaultPathStart, monsterDefaultPathEnd]
+    })}`
+  );
+  assert(
+    monsterWispAxis === "y" && monsterWispSpeed === 58 && monsterWispPathEnd - monsterWispPathStart === 96,
+    `Expected changing monster kind to glasswing-wisp to apply wisp motion defaults, got ${JSON.stringify({
+      monsterWispAxis,
+      monsterWispSpeed,
+      path: [monsterWispPathStart, monsterWispPathEnd]
+    })}`
+  );
+  assert(
+    toolkitMonster?.kind === "glasswing-wisp" && toolkitMonster?.axis === "y" && toolkitMonster?.distance === 60 && Number.isFinite(toolkitMonster?.period),
     `Expected monster path settings to export, got ${JSON.stringify(toolkitMonster)}`
   );
   assert(bossStormWeakSpot === "bottom", `Expected new storm boss weak spot to default to bottom, got ${bossStormWeakSpot}`);

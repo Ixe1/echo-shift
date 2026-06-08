@@ -148,25 +148,155 @@ type MonsterDefinition = {
   score: number;
   killable: boolean;
   vulnerableFrom: MonsterVulnerability;
+  defaultMotion: {
+    axis: "x" | "y";
+    distance: number;
+    speed: number;
+    phase?: number;
+  };
+  animation: {
+    frameInterval: number;
+    bobAmplitude: number;
+    bobPeriod: number;
+  };
 };
 
 const monsterDefinitions: Record<MonsterKind, MonsterDefinition> = {
-  "sprout-hopper": { score: 100, killable: true, vulnerableFrom: "top" },
-  "glasswing-wisp": { score: 150, killable: true, vulnerableFrom: "bottom" },
-  "root-roller": { score: 200, killable: true, vulnerableFrom: "top" },
-  "gutter-skimmer": { score: 150, killable: true, vulnerableFrom: "top" },
-  "copper-leech": { score: 200, killable: true, vulnerableFrom: "bottom" },
-  "storm-snail": { score: 300, killable: true, vulnerableFrom: "top" },
-  "frost-crawler": { score: 150, killable: true, vulnerableFrom: "top" },
-  "cryo-puffer": { score: 250, killable: true, vulnerableFrom: "bottom" },
-  "shard-wisp": { score: 200, killable: true, vulnerableFrom: "both" },
-  bookbeetle: { score: 150, killable: true, vulnerableFrom: "top" },
-  "page-mote": { score: 200, killable: true, vulnerableFrom: "both" },
-  "index-mimic": { score: 400, killable: true, vulnerableFrom: "top" },
-  "gear-tick": { score: 200, killable: true, vulnerableFrom: "top" },
-  "pendulum-drone": { score: 300, killable: true, vulnerableFrom: "top" },
-  "sand-winder": { score: 400, killable: true, vulnerableFrom: "top" }
+  "sprout-hopper": {
+    score: 100,
+    killable: true,
+    vulnerableFrom: "top",
+    defaultMotion: { axis: "x", distance: 120, speed: 80 },
+    animation: { frameInterval: 8, bobAmplitude: 3.2, bobPeriod: 10 }
+  },
+  "glasswing-wisp": {
+    score: 150,
+    killable: true,
+    vulnerableFrom: "bottom",
+    defaultMotion: { axis: "y", distance: 96, speed: 58, phase: 0.3 },
+    animation: { frameInterval: 4, bobAmplitude: 4.8, bobPeriod: 9 }
+  },
+  "root-roller": {
+    score: 200,
+    killable: true,
+    vulnerableFrom: "top",
+    defaultMotion: { axis: "x", distance: 160, speed: 112 },
+    animation: { frameInterval: 6, bobAmplitude: 0.8, bobPeriod: 14 }
+  },
+  "gutter-skimmer": {
+    score: 150,
+    killable: true,
+    vulnerableFrom: "top",
+    defaultMotion: { axis: "x", distance: 180, speed: 132 },
+    animation: { frameInterval: 5, bobAmplitude: 1.2, bobPeriod: 8 }
+  },
+  "copper-leech": {
+    score: 200,
+    killable: true,
+    vulnerableFrom: "bottom",
+    defaultMotion: { axis: "y", distance: 72, speed: 44 },
+    animation: { frameInterval: 10, bobAmplitude: 0.5, bobPeriod: 16 }
+  },
+  "storm-snail": {
+    score: 300,
+    killable: true,
+    vulnerableFrom: "top",
+    defaultMotion: { axis: "x", distance: 72, speed: 32 },
+    animation: { frameInterval: 12, bobAmplitude: 0.4, bobPeriod: 18 }
+  },
+  "frost-crawler": {
+    score: 150,
+    killable: true,
+    vulnerableFrom: "top",
+    defaultMotion: { axis: "x", distance: 118, speed: 64 },
+    animation: { frameInterval: 9, bobAmplitude: 0.6, bobPeriod: 15 }
+  },
+  "cryo-puffer": {
+    score: 250,
+    killable: true,
+    vulnerableFrom: "bottom",
+    defaultMotion: { axis: "y", distance: 120, speed: 48, phase: 0.15 },
+    animation: { frameInterval: 7, bobAmplitude: 5.5, bobPeriod: 11 }
+  },
+  "shard-wisp": {
+    score: 200,
+    killable: true,
+    vulnerableFrom: "both",
+    defaultMotion: { axis: "y", distance: 130, speed: 104, phase: 0.5 },
+    animation: { frameInterval: 5, bobAmplitude: 4.1, bobPeriod: 8 }
+  },
+  bookbeetle: {
+    score: 150,
+    killable: true,
+    vulnerableFrom: "top",
+    defaultMotion: { axis: "x", distance: 132, speed: 74 },
+    animation: { frameInterval: 8, bobAmplitude: 1, bobPeriod: 13 }
+  },
+  "page-mote": {
+    score: 200,
+    killable: true,
+    vulnerableFrom: "both",
+    defaultMotion: { axis: "y", distance: 110, speed: 92, phase: 0.2 },
+    animation: { frameInterval: 5, bobAmplitude: 3.5, bobPeriod: 8 }
+  },
+  "index-mimic": {
+    score: 400,
+    killable: true,
+    vulnerableFrom: "top",
+    defaultMotion: { axis: "x", distance: 64, speed: 36 },
+    animation: { frameInterval: 11, bobAmplitude: 0.2, bobPeriod: 20 }
+  },
+  "gear-tick": {
+    score: 200,
+    killable: true,
+    vulnerableFrom: "top",
+    defaultMotion: { axis: "x", distance: 150, speed: 122 },
+    animation: { frameInterval: 6, bobAmplitude: 0, bobPeriod: 12 }
+  },
+  "pendulum-drone": {
+    score: 300,
+    killable: true,
+    vulnerableFrom: "top",
+    defaultMotion: { axis: "y", distance: 160, speed: 68, phase: 0.4 },
+    animation: { frameInterval: 6, bobAmplitude: 2.4, bobPeriod: 10 }
+  },
+  "sand-winder": {
+    score: 400,
+    killable: true,
+    vulnerableFrom: "top",
+    defaultMotion: { axis: "x", distance: 220, speed: 86 },
+    animation: { frameInterval: 7, bobAmplitude: 1.6, bobPeriod: 12 }
+  }
 };
+
+type MonsterDefinitionSource = MonsterKind | { kind?: MonsterKind };
+
+const monsterKindForDefinition = (source?: MonsterDefinitionSource): MonsterKind => {
+  const kind = typeof source === "string" ? source : source?.kind;
+  return monsterKinds.includes(kind as MonsterKind) ? (kind as MonsterKind) : "sprout-hopper";
+};
+
+const monsterMotionPeriod = (distance: number, speed: number): number =>
+  Math.max(1, Math.round((120 * Math.max(1, distance)) / Math.max(1, speed)));
+
+export const defaultMonsterSpeedForKind = (source?: MonsterDefinitionSource): number =>
+  monsterDefinitions[monsterKindForDefinition(source)].defaultMotion.speed;
+
+export const defaultMonsterMotionForKind = (
+  source?: MonsterDefinitionSource
+): Required<Pick<Monster, "axis" | "distance" | "period" | "phase">> => {
+  const motion = monsterDefinitions[monsterKindForDefinition(source)].defaultMotion;
+  return {
+    axis: motion.axis,
+    distance: motion.distance,
+    period: monsterMotionPeriod(motion.distance, motion.speed),
+    phase: motion.phase || 0
+  };
+};
+
+export const monsterAnimationProfileForKind = (
+  source?: MonsterDefinitionSource
+): Readonly<MonsterDefinition["animation"]> => monsterDefinitions[monsterKindForDefinition(source)].animation;
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 

@@ -482,7 +482,17 @@ try {
   const { backgroundAmbienceForLevel, backgroundAmbienceIsActive } = await server.ssrLoadModule("/src/game/backgroundAmbience.ts");
   const { selectBossCameraFocus } = await server.ssrLoadModule("/src/game/bossCamera.ts");
   const { terrainMaterialForSolid } = await server.ssrLoadModule("/src/game/terrainMaterials.ts");
-  const { bossAttackActiveFramesFor, bossAttackCycleFramesFor, bossAttackWindupFramesFor, bossIsVulnerable, monsterRectAt } = await server.ssrLoadModule("/src/game/enemies.ts");
+  const {
+    bossAttackActiveFramesFor,
+    bossAttackCycleFramesFor,
+    bossAttackWindupFramesFor,
+    bossIsVulnerable,
+    defaultMonsterMotionForKind,
+    defaultMonsterSpeedForKind,
+    monsterAnimationProfileForKind,
+    monsterKinds,
+    monsterRectAt
+  } = await server.ssrLoadModule("/src/game/enemies.ts");
   const { SynthAudio } = await server.ssrLoadModule("/src/game/audio.ts");
 
   const bossNeedsAttackDodge = (boss) => {
@@ -1545,6 +1555,36 @@ try {
   const movingMonster = { id: "moving-monster-test", kind: "sprout-hopper", x: 20, y: 86, w: 28, h: 34, axis: "x", distance: 80, period: 120, phase: 0 };
   assert(monsterRectAt(movingMonster, 0).x === 20, `Expected moving monster to start at authored x, got ${JSON.stringify(monsterRectAt(movingMonster, 0))}`);
   assert(Math.round(monsterRectAt(movingMonster, 60).x) === 100, `Expected moving monster to reach path end halfway through cycle, got ${JSON.stringify(monsterRectAt(movingMonster, 60))}`);
+  const defaultMonsterSpeeds = monsterKinds.map((kind) => defaultMonsterSpeedForKind(kind));
+  assert(
+    new Set(defaultMonsterSpeeds).size === monsterKinds.length,
+    `Expected each monster kind to define a distinct default speed, got ${JSON.stringify(Object.fromEntries(monsterKinds.map((kind) => [kind, defaultMonsterSpeedForKind(kind)])))}`
+  );
+  const sproutDefaults = defaultMonsterMotionForKind("sprout-hopper");
+  assert(
+    sproutDefaults.axis === "x" && sproutDefaults.distance === 120 && sproutDefaults.period === 180,
+    `Expected sprout default motion to preserve the editor baseline, got ${JSON.stringify(sproutDefaults)}`
+  );
+  const glasswingDefaults = defaultMonsterMotionForKind("glasswing-wisp");
+  assert(
+    glasswingDefaults.axis === "y" && glasswingDefaults.distance === 96 && glasswingDefaults.period !== sproutDefaults.period,
+    `Expected glasswing defaults to use a distinct vertical motion profile, got ${JSON.stringify(glasswingDefaults)}`
+  );
+  const defaultRootMonster = { id: "root-default-test", kind: "root-roller", x: 30, y: 86, w: 28, h: 34, ...defaultMonsterMotionForKind("root-roller") };
+  const defaultRootHalfway = monsterRectAt(defaultRootMonster, Math.round(defaultRootMonster.period / 2));
+  assert(
+    Math.round(defaultRootHalfway.x) === defaultRootMonster.x + defaultRootMonster.distance,
+    `Expected applied default monster motion to move along its default path, got ${JSON.stringify({ defaultRootMonster, defaultRootHalfway })}`
+  );
+  const staticRootMonster = { id: "root-static-test", kind: "root-roller", x: 30, y: 86, w: 28, h: 34 };
+  assert(
+    monsterRectAt(staticRootMonster, 120).x === 30 && monsterRectAt(staticRootMonster, 120).y === 86,
+    `Expected static monsters without authored motion to stay static, got ${JSON.stringify(monsterRectAt(staticRootMonster, 120))}`
+  );
+  assert(
+    monsterAnimationProfileForKind("glasswing-wisp").frameInterval !== monsterAnimationProfileForKind("storm-snail").frameInterval,
+    "Expected monster animation profiles to vary by kind"
+  );
 
   const undersideMonsterSim = new RoomSimulation({
     ...baseLevel,
@@ -2329,6 +2369,7 @@ try {
           "death-freeze",
           "unlimited-lives",
           "monster-combat",
+          "monster-defaults",
           "boss-intro-combat",
           "drone-disable-vaporization",
           "fall-death-freeze",

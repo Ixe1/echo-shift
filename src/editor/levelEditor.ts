@@ -14,6 +14,7 @@ import {
   bossEntrySides,
   bossKinds,
   bossWeakSpots,
+  defaultMonsterMotionForKind,
   defaultBossWeakSpotForKind,
   monsterKinds,
   normalizeBossEntrySide,
@@ -490,6 +491,33 @@ const ensureMovingPathDefaults = (item: PathableObject): void => {
   item.period = positiveInteger(item.period, 180);
 };
 
+const monsterHasCompleteMotion = (monster: Monster): boolean =>
+  (monster.axis === "x" || monster.axis === "y") &&
+  typeof monster.distance === "number" &&
+  Number.isFinite(monster.distance) &&
+  typeof monster.period === "number" &&
+  Number.isFinite(monster.period) &&
+  monster.period > 0;
+
+const monsterMotionMatchesDefault = (monster: Monster, kind: MonsterKind): boolean => {
+  if (!monsterHasCompleteMotion(monster)) return false;
+  const defaults = defaultMonsterMotionForKind(kind);
+  return (
+    monster.axis === defaults.axis &&
+    Math.round(monster.distance || 0) === defaults.distance &&
+    Math.round(monster.period || 0) === defaults.period &&
+    Math.abs((monster.phase || 0) - defaults.phase) < 0.000001
+  );
+};
+
+const applyDefaultMonsterMotion = (monster: Monster, kind = normalizeMonsterKind(monster.kind)): void => {
+  const defaults = defaultMonsterMotionForKind(kind);
+  monster.axis = defaults.axis;
+  monster.distance = defaults.distance;
+  monster.period = defaults.period;
+  monster.phase = defaults.phase;
+};
+
 const alignMovingLaserRectToBeam = <T extends MovingLaser>(laser: T): T => {
   const centerX = laser.x + laser.w / 2;
   const centerY = laser.y + laser.h / 2;
@@ -757,14 +785,17 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
     } as Core;
   }
   if (kind === "monsters") {
+    const monsterKind = normalizeMonsterKind(record.kind);
+    const hasMotion = record.axis === "x" || record.axis === "y";
+    const defaults = defaultMonsterMotionForKind(monsterKind);
     return {
       ...base,
       id,
-      kind: normalizeMonsterKind(record.kind),
-      axis: record.axis === "x" || record.axis === "y" ? record.axis : undefined,
-      distance: record.axis === "x" || record.axis === "y" ? nonNegativeNumber(record.distance, 100) : undefined,
-      period: record.axis === "x" || record.axis === "y" ? positiveInteger(record.period, 180) : undefined,
-      phase: record.axis === "x" || record.axis === "y" ? positiveNumber(record.phase, 0) : undefined,
+      kind: monsterKind,
+      axis: hasMotion ? record.axis : undefined,
+      distance: hasMotion ? nonNegativeNumber(record.distance, defaults.distance) : undefined,
+      period: hasMotion ? positiveInteger(record.period, defaults.period) : undefined,
+      phase: hasMotion ? positiveNumber(record.phase, defaults.phase) : undefined,
       score: Number.isFinite(Number(record.score)) ? nonNegativeInteger(record.score, 0) : undefined,
       killable: record.killable === false ? false : undefined,
       vulnerableFrom: normalizeMonsterVulnerability(record.vulnerableFrom)
@@ -1243,8 +1274,14 @@ class LevelEditor {
       return;
     }
     if (field === "kind") {
-      if (this.selection?.kind === "monsters") record.kind = normalizeMonsterKind(value);
-      else if (this.selection?.kind === "bosses") {
+      if (this.selection?.kind === "monsters") {
+        const monster = target as Monster;
+        const previousKind = normalizeMonsterKind(record.kind);
+        const shouldApplyDefaults = !monsterHasCompleteMotion(monster) || monsterMotionMatchesDefault(monster, previousKind);
+        const nextKind = normalizeMonsterKind(value);
+        record.kind = nextKind;
+        if (shouldApplyDefaults) applyDefaultMonsterMotion(monster, nextKind);
+      } else if (this.selection?.kind === "bosses") {
         const previousKind = normalizeBossKind(record.kind);
         const previousWeakSpot = record.weakSpot === undefined ? defaultBossWeakSpotForKind(previousKind) : normalizeBossWeakSpot(record.weakSpot);
         const nextKind = normalizeBossKind(value);
@@ -1941,7 +1978,7 @@ class LevelEditor {
     if (kind === "movingLasers") return { ...base, startsOn: true, axis: "x", distance: 100, period: 180, phase: 0 } as MovingLaser;
     if (kind === "cores") return { ...base, label: id.split("-").at(-1)?.toUpperCase() } as Core;
     if (kind === "drones") return { ...base, axis: "x", distance: 120, period: 200, phase: 0 } as PatrolDrone;
-    if (kind === "monsters") return { ...base, kind: "sprout-hopper", axis: "x", distance: 120, period: 180, phase: 0 } as Monster;
+    if (kind === "monsters") return { ...base, kind: "sprout-hopper", ...defaultMonsterMotionForKind("sprout-hopper") } as Monster;
     if (kind === "bosses") {
       const kindValue = "storm-relay-warden";
       return {
