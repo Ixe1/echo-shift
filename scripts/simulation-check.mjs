@@ -524,11 +524,15 @@ try {
     throw new Error(`Expected boss ${bossId} to start an attack window`);
   };
 
-  const runBossUntilWarning = (simulation, bossId) => {
+  const runBossUntilWarning = (simulation, bossId, minProgress = 0.85) => {
     for (let frameIndex = 0; frameIndex < 160; frameIndex += 1) {
       const snapshots = simulation.bossSnapshots();
       const snapshot = snapshots.find((boss) => boss.id === bossId);
-      if (snapshot && snapshot.activeFrames > 0 && snapshot.attackWarnings.length > 0 && snapshot.attacks.length === 0) return snapshot;
+      if (snapshot && snapshot.activeFrames > 0 && snapshot.attackWarnings.length > 0 && snapshot.attacks.length === 0) {
+        const cycleFrame = snapshot.activeFrames % bossAttackCycleFramesFor(snapshot);
+        const progress = cycleFrame / Math.max(1, bossAttackWindupFramesFor(snapshot));
+        if (progress >= minProgress) return snapshot;
+      }
       const danger = snapshots.find(bossNeedsAttackDodge);
       if (danger) {
         const levelCenterX = simulation.level.bounds.x + simulation.level.bounds.w / 2;
@@ -1707,7 +1711,11 @@ try {
   assert(cryoWarning.attackWarnings.length === 1, `Expected full-health cryo warm-up to warn one lane, got ${cryoWarning.attackWarnings.length}`);
   assert(cryoWarning.attacks.length === 0, "Expected cryo warm-up warning not to create active damage");
   assert(
-    Math.abs(cryoWarning.attackWarnings[0].originX - targetPlayerCenterX) <= 28,
+    cryoWarning.attackWarnings.every((warning) => warning.originX >= cryoWarning.body.x && warning.originX <= cryoWarning.body.x + cryoWarning.body.w),
+    `Expected cryo warning lane to stay within the boss body, got body ${JSON.stringify(cryoWarning.body)} and warnings ${JSON.stringify(cryoWarning.attackWarnings)}`
+  );
+  assert(
+    Math.abs(cryoWarning.attackWarnings[0].originX - targetPlayerCenterX) <= 36,
     `Expected cryo warm-up lane to target player x ${targetPlayerCenterX}, got ${cryoWarning.attackWarnings[0].originX}`
   );
   Object.assign(cryoWarningSim.player, {
@@ -1731,6 +1739,10 @@ try {
   const cryoAttack = cryoAttackSnapshot.attacks[0];
   assert(cryoAttack.kind === "vertical", `Expected cryo boss to fire downward, got ${cryoAttack.kind}`);
   assert(cryoAttack.h > cryoAttack.w * 2, `Expected cryo beam to be a tall lane hazard, got ${JSON.stringify(cryoAttack)}`);
+  assert(
+    cryoAttack.originX >= cryoAttackSnapshot.body.x && cryoAttack.originX <= cryoAttackSnapshot.body.x + cryoAttackSnapshot.body.w,
+    `Expected cryo beam origin to stay within the boss body, got body ${JSON.stringify(cryoAttackSnapshot.body)} and attack ${JSON.stringify(cryoAttack)}`
+  );
   assert(
     Math.abs(cryoAttack.originX - targetPlayerCenterX) <= 28,
     `Expected cryo boss first attack lane to target player x ${targetPlayerCenterX}, got ${cryoAttack.originX}`
@@ -1818,6 +1830,49 @@ try {
     `Expected cryo boss to rise after its post-hit pause, from ${cryoRecoveryPause.body.y} to ${cryoRecoveryRising.body.y}`
   );
 
+  const cryoNarrowDualSim = new RoomSimulation(cryoLevel);
+  Object.assign(cryoNarrowDualSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  cryoNarrowDualSim.step(idle);
+  runFrames(cryoNarrowDualSim, 60, idle);
+  const cryoNarrowOpeningAttack = runBossUntilAttack(cryoNarrowDualSim, "boss-test");
+  assert(cryoNarrowOpeningAttack.attacks.length === 1, `Expected full-health narrow cryo fixture to fire one beam, got ${cryoNarrowOpeningAttack.attacks.length}`);
+  const cryoNarrowVulnerable = runBossUntilVulnerable(cryoNarrowDualSim, "boss-test");
+  const cryoNarrowHit = upwardHitBoss(cryoNarrowDualSim, cryoNarrowVulnerable);
+  assert(cryoNarrowHit.bossHit?.health === 1, "Expected narrow cryo fixture to reach half health after first hit");
+  for (let guard = 0; guard < 260 && cryoNarrowDualSim.bossSnapshots()[0]?.recoveryFrames > 0; guard += 1) {
+    cryoNarrowDualSim.step(idle);
+  }
+  Object.assign(cryoNarrowDualSim.player, { x: 240 - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  const cryoNarrowWarning = runBossUntilWarning(cryoNarrowDualSim, "boss-test");
+  const cryoNarrowWarningLanes = cryoNarrowWarning.attackWarnings.map((warning) => Math.round(warning.originX)).sort((a, b) => a - b);
+  assert(cryoNarrowWarning.attackWarnings.length === 2, `Expected half-health narrow cryo warm-up to warn two lanes, got ${cryoNarrowWarning.attackWarnings.length}`);
+  assert(
+    cryoNarrowWarning.attackWarnings.every((warning) => warning.originX >= cryoNarrowWarning.body.x && warning.originX <= cryoNarrowWarning.body.x + cryoNarrowWarning.body.w),
+    `Expected half-health narrow cryo warnings to stay within the boss body, got body ${JSON.stringify(cryoNarrowWarning.body)} and warnings ${JSON.stringify(cryoNarrowWarning.attackWarnings)}`
+  );
+  assert(
+    cryoNarrowWarningLanes[1] - cryoNarrowWarningLanes[0] > 70,
+    `Expected half-health narrow cryo warning lanes to stay separated, got ${cryoNarrowWarningLanes.join(",")}`
+  );
+  const cryoNarrowAttack = runBossUntilAttack(cryoNarrowDualSim, "boss-test");
+  const cryoNarrowAttackLanes = cryoNarrowAttack.attacks.map((attack) => Math.round(attack.originX)).sort((a, b) => a - b);
+  assert(cryoNarrowAttack.attacks.length === 2, `Expected half-health narrow cryo boss to fire two beams, got ${cryoNarrowAttack.attacks.length}`);
+  assert(
+    cryoNarrowAttack.attacks.every((attack) => attack.originX >= cryoNarrowAttack.body.x && attack.originX <= cryoNarrowAttack.body.x + cryoNarrowAttack.body.w),
+    `Expected half-health narrow cryo beams to stay within the boss body, got body ${JSON.stringify(cryoNarrowAttack.body)} and attacks ${JSON.stringify(cryoNarrowAttack.attacks)}`
+  );
+  assert(
+    cryoNarrowAttackLanes.every((lane, index) => Math.abs(lane - cryoNarrowWarningLanes[index]) <= 12),
+    `Expected narrow cryo beams to match warned lanes ${cryoNarrowWarningLanes.join(",")}, got ${cryoNarrowAttackLanes.join(",")}`
+  );
+  const cryoNarrowIceCenters = cryoNarrowAttack.floorIce.map((ice) => Math.round(ice.x + ice.w / 2));
+  for (const lane of cryoNarrowAttackLanes) {
+    assert(
+      cryoNarrowIceCenters.some((center) => Math.abs(center - lane) <= 36),
+      `Expected narrow half-health cryo lane ${lane} to preserve its own floor ice, got centers ${cryoNarrowIceCenters.join(",")}`
+    );
+  }
+
   const cryoStackLevel = {
     ...cryoLevel,
     exit: { x: 700, y: 82, w: 28, h: 38 },
@@ -1849,6 +1904,10 @@ try {
   const cryoDualWarningLanes = cryoDualWarning.attackWarnings.map((warning) => Math.round(warning.originX)).sort((a, b) => a - b);
   assert(cryoDualWarning.attackWarnings.length === 2, `Expected half-health cryo warm-up to warn two lanes, got ${cryoDualWarning.attackWarnings.length}`);
   assert(
+    cryoDualWarning.attackWarnings.every((warning) => warning.originX >= cryoDualWarning.body.x && warning.originX <= cryoDualWarning.body.x + cryoDualWarning.body.w),
+    `Expected half-health cryo warning lanes to stay within the boss body, got body ${JSON.stringify(cryoDualWarning.body)} and warnings ${JSON.stringify(cryoDualWarning.attackWarnings)}`
+  );
+  assert(
     cryoDualWarningLanes[1] - cryoDualWarningLanes[0] > 100,
     `Expected half-health cryo warning lanes to be visibly separated, got ${cryoDualWarningLanes.join(",")}`
   );
@@ -1856,7 +1915,11 @@ try {
   const cryoDualAttackLanes = cryoDualAttack.attacks.map((attack) => Math.round(attack.originX)).sort((a, b) => a - b);
   assert(cryoDualAttack.attacks.length === 2, `Expected half-health cryo boss to fire two beams, got ${cryoDualAttack.attacks.length}`);
   assert(
-    cryoDualAttackLanes.every((lane, index) => Math.abs(lane - cryoDualWarningLanes[index]) <= 2),
+    cryoDualAttack.attacks.every((attack) => attack.originX >= cryoDualAttack.body.x && attack.originX <= cryoDualAttack.body.x + cryoDualAttack.body.w),
+    `Expected half-health cryo beams to stay within the boss body, got body ${JSON.stringify(cryoDualAttack.body)} and attacks ${JSON.stringify(cryoDualAttack.attacks)}`
+  );
+  assert(
+    cryoDualAttackLanes.every((lane, index) => Math.abs(lane - cryoDualWarningLanes[index]) <= 12),
     `Expected active cryo beams to match warned lanes ${cryoDualWarningLanes.join(",")}, got ${cryoDualAttackLanes.join(",")}`
   );
   const cryoDualIceCenters = cryoDualAttack.floorIce.map((ice) => Math.round(ice.x + ice.w / 2));

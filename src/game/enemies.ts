@@ -51,6 +51,7 @@ const CRYO_HIT_PAUSE_FRAMES = 48;
 const CRYO_HIT_RISE_FRAMES = 126;
 const CRYO_HIT_PATROL_FRAMES = 60;
 const CRYO_HIT_RECOVERY_FRAMES = CRYO_HIT_PAUSE_FRAMES + CRYO_HIT_RISE_FRAMES + CRYO_HIT_PATROL_FRAMES;
+const CRYO_BEAM_WIDTH = 34;
 const CRYO_FLOOR_ICE_WIDTH = 128;
 const CRYO_FLOOR_ICE_HEIGHT = 8;
 const CRYO_FLOOR_ICE_LIFE_FRAMES = 21 * 60;
@@ -170,52 +171,33 @@ const finiteNumber = (value: unknown, fallback: number): number => {
   return Number.isFinite(numeric) ? numeric : fallback;
 };
 
-const cryoAttackLaneBounds = (boss: Boss): { minX: number; maxX: number } => {
-  const halfPatchWidth = Math.min(CRYO_FLOOR_ICE_WIDTH / 2, boss.w / 2);
-  return {
-    minX: boss.x + halfPatchWidth,
-    maxX: boss.x + boss.w - halfPatchWidth
-  };
-};
-
-const cryoAttackLaneX = (boss: Boss, state: BossRuntimeState, fallbackX: number): number => {
-  const bounds = cryoAttackLaneBounds(boss);
-  return clamp(finiteNumber(state.attackX, fallbackX), bounds.minX, bounds.maxX);
+const cryoAttackLaneX = (body: Rect, state: BossRuntimeState, fallbackX: number): number => {
+  return clamp(finiteNumber(state.attackX, fallbackX), body.x + body.w * 0.2, body.x + body.w * 0.8);
 };
 
 const cryoUsesDualBeams = (boss: Boss, state: BossRuntimeState): boolean =>
   state.health > 0 && state.health <= bossHealth(boss) / 2;
 
-const cryoAttackLaneXs = (boss: Boss, state: BossRuntimeState, fallbackX: number): number[] => {
-  const primary = cryoAttackLaneX(boss, state, fallbackX);
-  if (!cryoUsesDualBeams(boss, state)) return [primary];
-
-  const bounds = cryoAttackLaneBounds(boss);
-  const arenaCenterX = (bounds.minX + bounds.maxX) / 2;
-  const preferredDirection = primary <= arenaCenterX ? 1 : -1;
-  const minimumSpacing = CRYO_FLOOR_ICE_WIDTH * 0.9;
-  const desiredSpacing = CRYO_FLOOR_ICE_WIDTH * 1.2;
-  let secondary = clamp(primary + preferredDirection * desiredSpacing, bounds.minX, bounds.maxX);
-  if (Math.abs(secondary - primary) < minimumSpacing) {
-    secondary = primary <= arenaCenterX ? bounds.maxX : bounds.minX;
-  }
-  if (Math.abs(secondary - primary) < minimumSpacing) return [primary];
-  return [primary, secondary].sort((a, b) => a - b);
+const cryoAttackLaneXs = (boss: Boss, state: BossRuntimeState, body: Rect): number[] => {
+  if (!cryoUsesDualBeams(boss, state)) return [cryoAttackLaneX(body, state, rectCenter(body).x)];
+  return [body.x + body.w * 0.12, body.x + body.w * 0.88];
 };
 
 const cryoBeamRectForLane = (boss: Boss, body: Rect, originX: number): BossAttackSnapshot => {
   const originY = body.y + body.h * 0.74;
   const endY = boss.y + boss.h - 12;
   return {
-    x: originX - 17,
+    x: originX - CRYO_BEAM_WIDTH / 2,
     y: originY,
-    w: 34,
+    w: CRYO_BEAM_WIDTH,
     h: Math.max(24, endY - originY),
     kind: "vertical",
     originX,
     originY
   };
 };
+
+const floorIceCenterX = (ice: Rect): number => ice.x + ice.w / 2;
 
 export const normalizeMonsterKind = (value: unknown): MonsterKind =>
   monsterKinds.includes(value as MonsterKind) ? (value as MonsterKind) : "sprout-hopper";
@@ -346,19 +328,15 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
     const patrolFrames = bossAttackWindupFramesFor(boss.kind);
     const retargetFrame = Math.max(1, Math.floor(patrolFrames * 0.45));
     if (cycle === retargetFrame) {
-      const attackBounds =
-        boss.kind === "cryo-conservator"
-          ? cryoAttackLaneBounds(boss)
-          : { minX: arena.minX + size.w / 2, maxX: arena.maxX + size.w / 2 };
+      const attackBounds = { minX: arena.minX + size.w / 2, maxX: arena.maxX + size.w / 2 };
       state.attackX = clamp(playerCenterX, attackBounds.minX, attackBounds.maxX);
       state.attackY = clamp(playerCenterY, boss.y + 22, boss.y + boss.h - 22);
     }
   }
   if (((boss.kind === "storm-relay-warden" || boss.kind === "cryo-conservator") && state.activeFrames === 1) || cycle === 0) {
     const constrainedVerticalBoss = boss.kind === "storm-relay-warden" || boss.kind === "cryo-conservator";
-    const cryoBounds = boss.kind === "cryo-conservator" ? cryoAttackLaneBounds(boss) : null;
-    const attackMinX = cryoBounds ? cryoBounds.minX : constrainedVerticalBoss ? arena.minX + size.w / 2 : boss.x + 24;
-    const attackMaxX = cryoBounds ? cryoBounds.maxX : constrainedVerticalBoss ? arena.maxX + size.w / 2 : boss.x + boss.w - 24;
+    const attackMinX = constrainedVerticalBoss ? arena.minX + size.w / 2 : boss.x + 24;
+    const attackMaxX = constrainedVerticalBoss ? arena.maxX + size.w / 2 : boss.x + boss.w - 24;
     state.attackX = clamp(playerCenterX, attackMinX, attackMaxX);
     state.attackY = clamp(playerCenterY, boss.y + 22, boss.y + boss.h - 22);
   }
@@ -455,7 +433,7 @@ export const bossAttackRectsAt = (boss: Boss, state: BossRuntimeState, tick: num
     ];
   }
   if (boss.kind === "cryo-conservator") {
-    return cryoAttackLaneXs(boss, state, bodyCenter.x).map((originX) => cryoBeamRectForLane(boss, body, originX));
+    return cryoAttackLaneXs(boss, state, body).map((originX) => cryoBeamRectForLane(boss, body, originX));
   }
   if (boss.kind !== "clockwork-regent") {
     const direction = finiteNumber(state.attackX, bodyCenter.x) >= bodyCenter.x ? 1 : -1;
@@ -496,8 +474,7 @@ export const bossAttackWarningRectsAt = (boss: Boss, state: BossRuntimeState, ti
   const cycle = state.activeFrames % bossAttackCycleFramesFor(boss.kind);
   if (cycle >= bossAttackWindupFramesFor(boss.kind) || bossIsVulnerable(state)) return [];
   const body = bossBodyRectAt(boss, state, tick);
-  const bodyCenter = rectCenter(body);
-  return cryoAttackLaneXs(boss, state, bodyCenter.x).map((originX) => cryoBeamRectForLane(boss, body, originX));
+  return cryoAttackLaneXs(boss, state, body).map((originX) => cryoBeamRectForLane(boss, body, originX));
 };
 
 export const bossFloorShockRectsAt = (boss: Boss, state: BossRuntimeState, tick: number, solids: Solid[]): Rect[] => {
@@ -559,7 +536,8 @@ const advanceCryoConservatorFloorIce = (boss: Boss, state: BossRuntimeState, cyc
     .filter((patch) => patch.remainingFrames > 0);
 
   if (state.recoveryFrames > 0 || cycle !== bossAttackWindupFramesFor("cryo-conservator")) return;
-  for (const laneX of cryoAttackLaneXs(boss, state, state.targetX)) {
+  const body = bossBodyRectAt(boss, state, 0);
+  for (const laneX of cryoAttackLaneXs(boss, state, body)) {
     const patchRect = cryoFloorIceRectForLane(boss, state, 0, solids, laneX);
     if (!patchRect) continue;
     const patch: BossFloorIceSnapshot = {
@@ -567,7 +545,7 @@ const advanceCryoConservatorFloorIce = (boss: Boss, state: BossRuntimeState, cyc
       remainingFrames: CRYO_FLOOR_ICE_LIFE_FRAMES,
       lifeFrames: CRYO_FLOOR_ICE_LIFE_FRAMES
     };
-    const refreshedIndex = state.floorIcePatches.findIndex((existing) => rectsOverlap(existing, patch));
+    const refreshedIndex = state.floorIcePatches.findIndex((existing) => Math.abs(floorIceCenterX(existing) - floorIceCenterX(patch)) <= CRYO_BEAM_WIDTH);
     if (refreshedIndex >= 0) {
       state.floorIcePatches[refreshedIndex] = patch;
     } else {
@@ -675,7 +653,7 @@ const advanceCryoConservatorMotion = (
   state.targetY = targetY;
   const desiredX = state.targetX - size.w / 2;
   const desiredY = targetY - size.h / 2;
-  const ease = cycle < windupFrames ? 0.055 : cycle < activeEndFrame ? 0.12 : CRYO_VERTICAL_FLIGHT_EASE;
+  const ease = cycle < windupFrames ? 0.075 : cycle < activeEndFrame ? 0.12 : CRYO_VERTICAL_FLIGHT_EASE;
   state.bodyX += (desiredX - state.bodyX) * ease;
   state.bodyY += (desiredY - state.bodyY) * ease;
   state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
