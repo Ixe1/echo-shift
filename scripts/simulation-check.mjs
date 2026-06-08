@@ -477,11 +477,11 @@ try {
   const { doorRequiredCoreIds, isMajorCore, movingLaserRectAt } = await server.ssrLoadModule("/src/game/objects.ts");
   const { EDITOR_DRAFT_STORAGE_KEY, readEditorDraftSnapshot } = await server.ssrLoadModule("/src/data/editorDraft.ts");
   const { getBestScores, isBetterLevelScore, recordLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
-  const { soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
+  const { soundtrackForBoss, soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
   const { backgroundForLevel, levelBackgrounds } = await server.ssrLoadModule("/src/game/backgrounds.ts");
   const { backgroundAmbienceForLevel, backgroundAmbienceIsActive } = await server.ssrLoadModule("/src/game/backgroundAmbience.ts");
   const { terrainMaterialForSolid } = await server.ssrLoadModule("/src/game/terrainMaterials.ts");
-  const { bossAttackActiveFramesFor, bossAttackCycleFramesFor, bossAttackWindupFramesFor, bossIsVulnerable } = await server.ssrLoadModule("/src/game/enemies.ts");
+  const { bossAttackActiveFramesFor, bossAttackCycleFramesFor, bossAttackWindupFramesFor, bossIsVulnerable, monsterRectAt } = await server.ssrLoadModule("/src/game/enemies.ts");
   const { SynthAudio } = await server.ssrLoadModule("/src/game/audio.ts");
 
   const bossNeedsAttackDodge = (boss) => {
@@ -733,6 +733,10 @@ try {
   assert(soundtrackForLevel({ ...levels[4], soundtrackKey: "menu" }, 5).key === "level-1", "Expected menu soundtrack key to be ignored for levels");
   assert(soundtrackForLevel({ ...levels[4], soundtrackKey: "boss" }, 5).key === "level-1", "Expected boss music key to be ignored for level music");
   assert(soundtrackForLevel({ ...levels[0], index: 9, soundtrackKey: undefined }, 1).key === "level-2", "Expected auto soundtrack fallback to use runtime level slot, not authored index");
+  assert(soundtrackForBoss({ soundtrackKey: "level-3" }).key === "level-3", "Expected boss soundtrack override to allow level MP3 keys");
+  assert(soundtrackForBoss({ soundtrackKey: "tutorial" }).key === "tutorial", "Expected boss soundtrack override to allow tutorial MP3");
+  assert(soundtrackForBoss({ soundtrackKey: "menu" }).key === "boss", "Expected menu soundtrack key to be ignored for bosses");
+  assert(soundtrackForBoss({ soundtrackKey: "missing-track" }).key === "boss", "Expected unknown boss soundtrack key to use boss fallback");
   assert(
     terrainMaterialForSolid({ id: "legacy-floor", tone: "steel", sprite: "floor" }) === "metal-lab",
     "Expected legacy steel solids to fall back to metal-lab terrain"
@@ -785,6 +789,32 @@ try {
       Math.abs((migratedDraftDrone?.phase || 0) - (0.25 + Math.PI / 2)) < 0.000001,
     `Expected runtime draft reader to migrate legacy center/radius drone motion, got ${JSON.stringify(migratedDraftDrone)}`
   );
+
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      localStorage: {
+        getItem: (key) =>
+          key === EDITOR_DRAFT_STORAGE_KEY
+            ? JSON.stringify({
+                currentIndex: 0,
+                levels: [
+                  {
+                    ...baseLevel,
+                    id: "bad-draft-monster-motion",
+                    name: "Bad Draft Monster Motion",
+                    monsters: [{ id: "partial-motion-monster", kind: "sprout-hopper", x: 120, y: 86, w: 28, h: 34, axis: "x", distance: 120 }]
+                  }
+                ]
+              })
+            : null
+      }
+    }
+  });
+  const malformedMonsterDraft = readEditorDraftSnapshot();
+  if (previousWindow === undefined) delete globalThis.window;
+  else Object.defineProperty(globalThis, "window", { configurable: true, value: previousWindow });
+  assert(malformedMonsterDraft === null, "Expected draft reader to reject incomplete monster movement tuples");
 
   const levelIds = levels.map((level) => level.id);
   const levelIndexes = levels.map((level) => level.index);
@@ -1503,6 +1533,9 @@ try {
   });
   const monsterSide = monsterSideSim.step(idle);
   assert(monsterSide.died && monsterSideSim.dead, "Expected side monster collision to kill player");
+  const movingMonster = { id: "moving-monster-test", kind: "sprout-hopper", x: 20, y: 86, w: 28, h: 34, axis: "x", distance: 80, period: 120, phase: 0 };
+  assert(monsterRectAt(movingMonster, 0).x === 20, `Expected moving monster to start at authored x, got ${JSON.stringify(monsterRectAt(movingMonster, 0))}`);
+  assert(Math.round(monsterRectAt(movingMonster, 60).x) === 100, `Expected moving monster to reach path end halfway through cycle, got ${JSON.stringify(monsterRectAt(movingMonster, 60))}`);
 
   const undersideMonsterSim = new RoomSimulation({
     ...baseLevel,
@@ -1514,6 +1547,12 @@ try {
 
   const bossLevel = {
     ...baseLevel,
+    doors: [
+      { id: "boss-door", x: 4, y: 4, w: 12, h: 12, opensWith: ["boss-test"] },
+      { id: "boss-inverted-door", x: 22, y: 4, w: 12, h: 12, opensWith: ["boss-test"], inverted: true },
+      { id: "boss-hatch", x: 40, y: 4, w: 48, h: 12, opensWith: ["boss-test"], orientation: "horizontal" },
+      { id: "boss-inverted-hatch", x: 96, y: 4, w: 48, h: 12, opensWith: ["boss-test"], orientation: "horizontal", inverted: true }
+    ],
     bosses: [{ id: "boss-test", kind: "storm-relay-warden", x: 40, y: 20, w: 220, h: 130, entrySide: "right", introSeconds: 17, health: 1, score: 1200 }]
   };
   const bossGateSim = new RoomSimulation(bossLevel);
@@ -1521,6 +1560,23 @@ try {
   bossGateSim.step(idle);
   assert(!bossGateSim.won, "Boss level exit should stay locked before boss defeat");
   assert(!bossGateSim.exitUnlocked(), "Boss level exit unlock state should be false before boss defeat");
+  const initialInvertedHatchLevel = {
+    ...baseLevel,
+    start: { x: 20, y: 86 },
+    bounds: { x: 0, y: 0, w: 320, h: 220 },
+    solids: [
+      { id: "lower-floor", x: 0, y: 160, w: 320, h: 40 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 220 },
+      { id: "right-wall", x: 320, y: 0, w: 20, h: 220 }
+    ],
+    doors: [{ id: "initial-inverted-hatch", x: 0, y: 120, w: 120, h: 12, opensWith: ["boss-test"], orientation: "horizontal", inverted: true }],
+    bosses: [{ id: "boss-test", kind: "storm-relay-warden", x: 220, y: 20, w: 80, h: 80, entrySide: "right", introSeconds: 1, health: 1, score: 1200 }]
+  };
+  const initialInvertedHatchSim = new RoomSimulation(initialInvertedHatchLevel);
+  assert(initialInvertedHatchSim.objectState.openDoors.has("initial-inverted-hatch"), "Expected inverted boss hatch to start open before the first frame");
+  initialInvertedHatchSim.step(idle);
+  assert(!initialInvertedHatchSim.player.onGround, "Expected initially open inverted boss hatch not to catch the player on frame one");
+  assert(initialInvertedHatchSim.player.y > initialInvertedHatchLevel.start.y, "Expected player to begin falling through initially open inverted boss hatch");
   const bossIntroSim = new RoomSimulation(bossLevel);
   bossIntroSim.player.x = 260;
   assert(bossIntroSim.bossSnapshots().length === 0, "Idle boss should not expose a visible body snapshot before intro");
@@ -1618,6 +1674,11 @@ try {
   assert(bossHit.bossHit?.id === "boss-test", "Expected upward weak-point hit to damage active boss");
   assert(bossHit.bossDefeated?.score === 1200, `Expected boss defeat score event, got ${JSON.stringify(bossHit.bossDefeated)}`);
   assert(bossHit.bossPortalUnlocked, "Expected boss defeat to unlock the exit portal");
+  assert(bossHit.switched, "Expected boss defeat to emit switched when boss-dependent doors change");
+  assert(bossIntroSim.objectState.openDoors.has("boss-door"), "Expected boss-dependent door to open on the boss defeat step");
+  assert(!bossIntroSim.objectState.openDoors.has("boss-inverted-door"), "Expected inverted boss-dependent door to close on the boss defeat step");
+  assert(bossIntroSim.objectState.openDoors.has("boss-hatch"), "Expected horizontal boss-dependent hatch to open on the boss defeat step");
+  assert(!bossIntroSim.objectState.openDoors.has("boss-inverted-hatch"), "Expected inverted horizontal boss hatch to close on the boss defeat step");
   assert(bossIntroSim.exitUnlocked(), "Expected boss level exit to unlock after boss defeat");
   assert(bossIntroSim.score === 1200, `Expected boss defeat score to apply, got ${bossIntroSim.score}`);
   const stormRecoverySim = new RoomSimulation(stormLaneLevel);
@@ -1972,6 +2033,10 @@ try {
       { id: "left-wall", x: -20, y: 0, w: 20, h: 180 },
       { id: "right-wall", x: 640, y: 0, w: 20, h: 180 }
     ],
+    doors: [
+      { id: "boss-a-door", x: 4, y: 4, w: 12, h: 12, opensWith: ["boss-a"] },
+      { id: "boss-b-door", x: 22, y: 4, w: 12, h: 12, opensWith: ["boss-b"] }
+    ],
     bosses: [
       { id: "boss-a", kind: "storm-relay-warden", x: 60, y: 20, w: 220, h: 130, entrySide: "right", introSeconds: 1, health: 1, score: 700 },
       { id: "boss-b", kind: "storm-relay-warden", x: 330, y: 20, w: 220, h: 130, entrySide: "left", introSeconds: 1, health: 1, score: 900 }
@@ -1994,6 +2059,20 @@ try {
   assert(multiBossStartB.bossCheckpointActivated === "boss-b", "Expected second boss to create a fresh checkpoint");
   assert(multiBossSim.bossCheckpointActive(), "Expected second boss checkpoint to be active during intro");
 
+  const overlappingBossLevel = {
+    ...multiBossLevel,
+    bosses: [
+      { id: "music-boss-a", kind: "storm-relay-warden", x: 60, y: 20, w: 220, h: 130, entrySide: "right", introSeconds: 1, health: 1, soundtrackKey: "level-2" },
+      { id: "music-boss-b", kind: "storm-relay-warden", x: 60, y: 20, w: 220, h: 130, entrySide: "left", introSeconds: 1, health: 1, soundtrackKey: "level-3" }
+    ]
+  };
+  const overlappingBossSim = new RoomSimulation(overlappingBossLevel);
+  Object.assign(overlappingBossSim.player, { x: 62, y: 86, vx: 0, vy: 0, onGround: true });
+  const overlappingBossStart = overlappingBossSim.step(idle);
+  assert(overlappingBossStart.bossIntroStarted === "music-boss-b", "Expected simultaneous boss intro event to match the final checkpoint owner");
+  assert(overlappingBossStart.bossCheckpointActivated === "music-boss-b", "Expected simultaneous boss checkpoint event to match the final checkpoint owner");
+  assert(overlappingBossSim.bossCheckpointBossId() === "music-boss-b", "Expected later overlapping boss to own the active checkpoint");
+
   const simultaneousBossSim = new RoomSimulation(multiBossLevel);
   Object.assign(simultaneousBossSim.player, { x: 62, y: 86, vx: 0, vy: 0, onGround: true });
   simultaneousBossSim.step(idle);
@@ -2006,6 +2085,22 @@ try {
   assert(simultaneousBossDefeatA.bossDefeated?.id === "boss-a", "Expected first simultaneous boss defeat");
   assert(!simultaneousBossDefeatA.bossPortalUnlocked, "Expected simultaneous first boss defeat to keep portal locked");
   assert(simultaneousBossSim.bossFightInProgress(), "Expected boss fight to remain in progress while second boss is still active");
+  simultaneousBossSim.step(idle);
+  assert(simultaneousBossSim.objectState.openDoors.has("boss-a-door"), "Expected boss-a door to open before checkpoint death");
+  const simultaneousBossAttackB = runBossUntilAttack(simultaneousBossSim, "boss-b");
+  const simultaneousAttackB = simultaneousBossAttackB.attacks[0];
+  Object.assign(simultaneousBossSim.player, {
+    x: simultaneousAttackB.x + simultaneousAttackB.w / 2 - 12,
+    y: simultaneousAttackB.y + simultaneousAttackB.h / 2 - 16,
+    vx: 0,
+    vy: 0,
+    onGround: false
+  });
+  const simultaneousBossBDeath = simultaneousBossSim.step(idle);
+  assert(simultaneousBossBDeath.died, "Expected second simultaneous boss attack collision to kill player");
+  simultaneousBossSim.resetLifeAttempt();
+  assert(simultaneousBossSim.bossStates.get("boss-a")?.phase === "defeated", "Expected checkpoint restore to preserve defeated non-owner boss");
+  assert(simultaneousBossSim.objectState.openDoors.has("boss-a-door"), "Expected checkpoint restore to preserve door opened by defeated non-owner boss");
 
   const simultaneousCheckpointSim = new RoomSimulation(multiBossLevel);
   Object.assign(simultaneousCheckpointSim.player, { x: 62, y: 86, vx: 0, vy: 0, onGround: true });
@@ -2014,6 +2109,7 @@ try {
   Object.assign(simultaneousCheckpointSim.player, { x: 332, y: 86, vx: 0, vy: 0, onGround: true });
   simultaneousCheckpointSim.step(idle);
   assert(simultaneousCheckpointSim.bossCheckpointActive(), "Expected second simultaneous boss to create a checkpoint");
+  assert(simultaneousCheckpointSim.bossCheckpointBossId() === "boss-b", "Expected second simultaneous boss to own the active checkpoint");
   runFrames(simultaneousCheckpointSim, 60, idle);
   const simultaneousBossVulnerableB = runBossUntilVulnerable(simultaneousCheckpointSim, "boss-b");
   const simultaneousCheckpointDefeatB = upwardHitBoss(simultaneousCheckpointSim, simultaneousBossVulnerableB);
@@ -2035,6 +2131,9 @@ try {
   assert(simultaneousCheckpointDeath.died, "Expected simultaneous checkpoint boss attack collision to kill player");
   simultaneousCheckpointSim.resetLifeAttempt();
   assert(simultaneousCheckpointSim.bossFightInProgress(), "Expected checkpoint restore to preserve an in-progress simultaneous boss fight");
+  assert(simultaneousCheckpointSim.bossCheckpointBossId() === "boss-a", "Expected checkpoint restore to reassign checkpoint ownership to remaining boss");
+  assert(simultaneousCheckpointSim.bossStates.get("boss-b")?.phase === "defeated", "Expected checkpoint restore to preserve defeated second boss");
+  assert(simultaneousCheckpointSim.objectState.openDoors.has("boss-b-door"), "Expected checkpoint restore to preserve door opened by defeated second boss");
 
   const bossCheckpointLevel = {
     ...baseLevel,

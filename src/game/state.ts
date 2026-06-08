@@ -27,6 +27,7 @@ import {
   actorTouchesLaser,
   actorTouchesHazard,
   closedDoorRects,
+  collectOpenDoors,
   createObjectState,
   playerTouchesHazard,
   updateObjects,
@@ -79,6 +80,14 @@ const cloneObjectState = (state: ObjectState): ObjectState => ({
   blockedLasers: new Set(state.blockedLasers),
   crates: new Map([...state.crates.entries()].map(([id, rect]) => [id, { ...rect }]))
 });
+
+const setsMatch = (a: Set<string>, b: Set<string>): boolean => {
+  if (a.size !== b.size) return false;
+  for (const item of a) {
+    if (!b.has(item)) return false;
+  }
+  return true;
+};
 
 const cloneBossStates = (states: Map<string, BossRuntimeState>): Map<string, BossRuntimeState> =>
   new Map([...states.entries()].map(([id, state]) => [id, { ...state, floorIcePatches: state.floorIcePatches.map((patch) => ({ ...patch })) }]));
@@ -234,14 +243,15 @@ export class RoomSimulation {
     }
 
     const previousObjectState = this.objectState;
-    let objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick);
+    const defeatedBossIds = new Set(this.currentAttemptDefeatedBossIds.keys());
+    let objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick, defeatedBossIds);
     this.objectState = objectUpdate.state;
 
     for (;;) {
       const echoVaporization = this.vaporizeHazardousEchoes();
       if (!echoVaporization.vaporized) break;
       events.echoLaserVaporized += echoVaporization.laserVaporized;
-      objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick);
+      objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick, defeatedBossIds);
       this.objectState = objectUpdate.state;
     }
 
@@ -285,6 +295,7 @@ export class RoomSimulation {
       bosses: this.bossSnapshots(),
       exitUnlocked: this.exitUnlocked(),
       bossCheckpointActive: this.bossCheckpoint !== null,
+      bossCheckpointBossId: this.bossCheckpoint?.bossId || null,
       tick: this.tick,
       totalFrames: this.totalFrames,
       score: this.score,
@@ -316,6 +327,10 @@ export class RoomSimulation {
 
   bossCheckpointActive(): boolean {
     return this.bossCheckpoint !== null;
+  }
+
+  bossCheckpointBossId(): string | null {
+    return this.bossCheckpoint?.bossId || null;
   }
 
   bossFightInProgress(): boolean {
@@ -364,7 +379,19 @@ export class RoomSimulation {
       score: this.score,
       deaths: this.deaths
     };
-    events.bossCheckpointActivated ||= boss.id;
+    events.bossCheckpointActivated = boss.id;
+  }
+
+  private refreshDoorStateForDefeatedBosses(events?: StepEvents): void {
+    const openDoors = collectOpenDoors(
+      this.level.doors || [],
+      this.objectState.activePlates,
+      this.objectState.collectedCores,
+      new Set(this.currentAttemptDefeatedBossIds.keys())
+    );
+    if (setsMatch(this.objectState.openDoors, openDoors)) return;
+    this.objectState = { ...this.objectState, openDoors };
+    if (events) events.switched = true;
   }
 
   private restoreBossCheckpoint(): void {
@@ -435,7 +462,7 @@ export class RoomSimulation {
         this.captureBossCheckpoint(boss, events, previousPlayerX, previousPlayerY);
         state.phase = "intro";
         state.introFrames = 0;
-        events.bossIntroStarted ||= boss.id;
+        events.bossIntroStarted = boss.id;
       }
 
       if (state.phase === "intro") {
@@ -494,27 +521,51 @@ export class RoomSimulation {
     state.invulnerableFrames = 0;
     this.currentAttemptDefeatedBossIds.set(boss.id, score);
     this.score += score;
+    this.refreshDoorStateForDefeatedBosses(events);
     events.bossDefeated = {
       id: boss.id,
       score,
       x: body.x + body.w / 2,
       y: body.y + body.h / 2
     };
-    if (this.bossCheckpoint?.bossId === boss.id) this.reassignBossCheckpointAfterDefeat(boss.id);
+    this.refreshBossCheckpointAfterDefeat(boss.id);
     if (this.exitUnlocked()) {
       events.bossPortalUnlocked = true;
     }
   }
 
-  private reassignBossCheckpointAfterDefeat(defeatedBossId: string): void {
+  private refreshBossCheckpointAfterDefeat(defeatedBossId: string): void {
     if (!this.bossCheckpoint) return;
-    const nextBossId = (this.level.bosses || [])
-      .filter((boss) => boss.id !== defeatedBossId)
-      .find((boss) => {
-        const state = this.bossStates.get(boss.id);
-        return state?.phase === "intro" || state?.phase === "active";
-      })?.id;
-    if (nextBossId) this.bossCheckpoint = { ...this.bossCheckpoint, bossId: nextBossId };
+    const checkpointBossState = this.bossStates.get(this.bossCheckpoint.bossId);
+    const checkpointBossActive = checkpointBossState?.phase === "intro" || checkpointBossState?.phase === "active";
+    const nextBossId = checkpointBossActive
+      ? this.bossCheckpoint.bossId
+      : (this.level.bosses || [])
+          .filter((boss) => boss.id !== defeatedBossId)
+          .find((boss) => {
+            const state = this.bossStates.get(boss.id);
+            return state?.phase === "intro" || state?.phase === "active";
+          })?.id;
+    if (nextBossId) {
+      const objectState = cloneObjectState(this.objectState);
+      objectState.openDoors = collectOpenDoors(
+        this.level.doors || [],
+        objectState.activePlates,
+        objectState.collectedCores,
+        new Set(this.currentAttemptDefeatedBossIds.keys())
+      );
+      this.bossCheckpoint = {
+        ...this.bossCheckpoint,
+        bossId: nextBossId,
+        objectState,
+        killedMonsterIds: new Set(this.killedMonsterIds),
+        bossStates: cloneBossStates(this.bossStates),
+        currentAttemptCollectedCoreIds: new Set(this.currentAttemptCollectedCoreIds),
+        currentAttemptKilledMonsterIds: new Map(this.currentAttemptKilledMonsterIds),
+        currentAttemptDefeatedBossIds: new Map(this.currentAttemptDefeatedBossIds),
+        score: this.score
+      };
+    }
     else this.bossCheckpoint = null;
   }
 

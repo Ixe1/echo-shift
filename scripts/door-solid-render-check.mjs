@@ -123,10 +123,12 @@ const runInputRouteAtHudFrames = async (page, route) =>
   }, route);
 
 const shimmerSamplePoints = [
+  { id: "floor-480", x: 480, y: 486 },
   { id: "floor-520", x: 520, y: 486 },
   { id: "floor-640", x: 640, y: 486 },
   { id: "floor-760", x: 760, y: 486 },
   { id: "floor-880", x: 880, y: 486 },
+  { id: "wall-480", x: 480, y: 220 },
   { id: "wall-520", x: 520, y: 220 },
   { id: "wall-640", x: 640, y: 220 },
   { id: "wall-760", x: 760, y: 220 },
@@ -295,10 +297,12 @@ const assertStableWorldSamples = (label, before, after) => {
     if (!a?.visible || !b?.visible || a.a < 80 || b.a < 80) return [];
     return [{ id: point.id, delta: colorDelta(a, b), before: a, after: b }];
   });
-  const floor = comparable.filter((sample) => sample.id.startsWith("floor-"));
-  const wall = comparable.filter((sample) => sample.id.startsWith("wall-"));
-  assert(floor.length > 0, `${label} did not sample any visible floor pixels: ${JSON.stringify({ before, after })}`);
-  assert(wall.length > 0, `${label} did not sample any visible wall pixels: ${JSON.stringify({ before, after })}`);
+  const visibleBefore = shimmerSamplePoints.filter((point) => before.samples[point.id]?.visible && before.samples[point.id]?.a >= 80);
+  const visibleAfter = shimmerSamplePoints.filter((point) => after.samples[point.id]?.visible && after.samples[point.id]?.a >= 80);
+  assert(visibleBefore.some((sample) => sample.id.startsWith("floor-")), `${label} did not sample any visible floor pixels before camera movement: ${JSON.stringify({ before, after })}`);
+  assert(visibleBefore.some((sample) => sample.id.startsWith("wall-")), `${label} did not sample any visible wall pixels before camera movement: ${JSON.stringify({ before, after })}`);
+  assert(visibleAfter.some((sample) => sample.id.startsWith("floor-")), `${label} did not sample any visible floor pixels after camera movement: ${JSON.stringify({ before, after })}`);
+  assert(visibleAfter.some((sample) => sample.id.startsWith("wall-")), `${label} did not sample any visible wall pixels after camera movement: ${JSON.stringify({ before, after })}`);
   for (const sample of comparable) {
     assert(
       sample.delta <= 42,
@@ -348,7 +352,9 @@ const level = {
     { id: "tall-closed-26", x: 468, y: 180, w: 26, h: 300, opensWith: ["missing-tall-26"] },
     { id: "tall-open-26", x: 548, y: 180, w: 26, h: 300 },
     { id: "tall-closed-28", x: 628, y: 180, w: 28, h: 300, opensWith: ["missing-tall-28"] },
-    { id: "tall-open-28", x: 708, y: 180, w: 28, h: 300 }
+    { id: "tall-open-28", x: 708, y: 180, w: 28, h: 300 },
+    { id: "hatch-closed", x: 120, y: 270, w: 120, h: 20, orientation: "horizontal", opensWith: ["missing-hatch"] },
+    { id: "hatch-open", x: 300, y: 270, w: 120, h: 20, orientation: "horizontal" }
   ],
   plates: [],
   timedSwitches: [],
@@ -459,7 +465,7 @@ try {
     }];
   }));
   const parseDoorEntry = (entry) => {
-    const match = entry.match(/^door:([^:]+):(\d+):logic:([\d-]+),([\d-]+),([\d-]+),([\d-]+):pos:([\d-]+),([\d-]+):origin:([.\d-]+),([.\d-]+):box:([\d-]+),([\d-]+),([\d-]+),([\d-]+)$/);
+    const match = entry.match(/^door:([^:]+):(\d+):logic:([\d-]+),([\d-]+),([\d-]+),([\d-]+):pos:([\d-]+),([\d-]+):origin:([.\d-]+),([.\d-]+):box:([\d-]+),([\d-]+),([\d-]+),([\d-]+):orientation:(vertical|horizontal):rotation:([\d-]+)$/);
     assert(match, `Malformed door diagnostic entry: ${entry}`);
     return {
       id: match[1],
@@ -467,7 +473,9 @@ try {
       logic: [Number(match[3]), Number(match[4]), Number(match[5]), Number(match[6])],
       pos: [Number(match[7]), Number(match[8])],
       origin: [Number(match[9]), Number(match[10])],
-      box: [Number(match[11]), Number(match[12]), Number(match[13]), Number(match[14])]
+      box: [Number(match[11]), Number(match[12]), Number(match[13]), Number(match[14])],
+      orientation: match[15],
+      rotation: Number(match[16])
     };
   };
   const doorsById = new Map(doorEntries.map((entry) => {
@@ -480,11 +488,13 @@ try {
     assert(door.frame === expected.frame, `Expected ${id} frame ${expected.frame}, got ${door.frame}`);
     assert(JSON.stringify(door.logic) === JSON.stringify(expected.logic), `Expected ${id} logic ${expected.logic}, got ${door.logic}`);
     assert(JSON.stringify(door.pos) === JSON.stringify(expected.pos), `Expected ${id} render position ${expected.pos}, got ${door.pos}`);
-    assert(JSON.stringify(door.origin) === JSON.stringify([0.5, 0]), `Expected ${id} origin 0.5,0, got ${door.origin}`);
+    assert(JSON.stringify(door.origin) === JSON.stringify(expected.origin || [0.5, 0]), `Expected ${id} origin ${expected.origin || [0.5, 0]}, got ${door.origin}`);
     assert(JSON.stringify(door.box) === JSON.stringify(expected.box), `Expected ${id} render box ${expected.box}, got ${door.box}`);
+    assert(door.orientation === (expected.orientation || "vertical"), `Expected ${id} orientation ${expected.orientation || "vertical"}, got ${door.orientation}`);
+    assert(door.rotation === (expected.rotation || 0), `Expected ${id} rotation ${expected.rotation || 0}, got ${door.rotation}`);
   };
 
-  assert(doorEntries.length === 8, `Expected 8 door diagnostic entries, got ${doorEntries.length}: ${diagnostics.doors}`);
+  assert(doorEntries.length === 10, `Expected 10 door diagnostic entries, got ${doorEntries.length}: ${diagnostics.doors}`);
   assertDoor("closed-a", { frame: 8, logic: [145, 400, 20, 80], pos: [155, 400], box: [138, 400, 34, 80] });
   assertDoor("closed-b", { frame: 8, logic: [218, 393, 20, 80], pos: [228, 393], box: [211, 393, 34, 80] });
   assertDoor("open-a", { frame: 9, logic: [305, 400, 20, 80], pos: [315, 400], box: [298, 400, 34, 80] });
@@ -493,6 +503,24 @@ try {
   assertDoor("tall-open-26", { frame: 9, logic: [548, 180, 26, 300], pos: [561, 180], box: [539, 180, 45, 300] });
   assertDoor("tall-closed-28", { frame: 8, logic: [628, 180, 28, 300], pos: [642, 180], box: [618, 180, 48, 300] });
   assertDoor("tall-open-28", { frame: 9, logic: [708, 180, 28, 300], pos: [722, 180], box: [698, 180, 48, 300] });
+  assertDoor("hatch-closed", {
+    frame: 8,
+    logic: [120, 270, 120, 20],
+    pos: [180, 280],
+    origin: [0.5, 0.5],
+    box: [120, 263, 120, 34],
+    orientation: "horizontal",
+    rotation: 90
+  });
+  assertDoor("hatch-open", {
+    frame: 9,
+    logic: [300, 270, 120, 20],
+    pos: [360, 280],
+    origin: [0.5, 0.5],
+    box: [300, 263, 120, 34],
+    orientation: "horizontal",
+    rotation: 90
+  });
 
   const parseOutlineEntry = (entry) => {
     const match = entry.match(/^([^:]+):([\d-]+),([\d-]+):([\d-]+)x([\d-]+):([0-9a-f]+):(\d+):(.+)$/);
@@ -605,7 +633,7 @@ try {
     sensors: document.documentElement.dataset.echoShiftEchoSensorAssetFrames || "",
     hazards: document.documentElement.dataset.echoShiftHazardVentSpriteFrames || ""
   }));
-  assert(lowChurnDiagnostics.doors.includes("door:tall-closed-26:8:logic:468,180,26,300:pos:481,180:origin:0.5,0:box:459,180,45,300"), `Expected low-churn door diagnostics, got ${lowChurnDiagnostics.doors}`);
+  assert(lowChurnDiagnostics.doors.includes("door:tall-closed-26:8:logic:468,180,26,300:pos:481,180:origin:0.5,0:box:459,180,45,300:orientation:vertical:rotation:0"), `Expected low-churn door diagnostics, got ${lowChurnDiagnostics.doors}`);
   assert(lowChurnDiagnostics.outlines.includes("floor-b:300,480:300x40:43f7ff:2:top:300-410;top:538-600;bottom:300-600"), `Expected low-churn merged floor outline diagnostics, got ${lowChurnDiagnostics.outlines}`);
   assert(lowChurnDiagnostics.sensors.includes("echo-sensor:active-sensor:hidden:active"), `Expected low-churn hidden sensor diagnostics, got ${lowChurnDiagnostics.sensors}`);
   assert(lowChurnDiagnostics.hazards.includes("hazard-vent:qa-vent:0:"), `Expected low-churn hazard vent diagnostics, got ${lowChurnDiagnostics.hazards}`);

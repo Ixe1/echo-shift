@@ -5,7 +5,7 @@ import { bossEntrySides, bossKinds, bossWeakSpots, monsterKinds } from "../game/
 import { normalizeScoreSettings } from "../game/scoring";
 import { solidCollisionValues } from "../game/solidCollision";
 import { normalizeSolid, solidSpriteValues } from "../game/solidSprites";
-import { isLevelSoundtrackKey } from "../game/soundtracks";
+import { isBossSoundtrackKey, isLevelSoundtrackKey } from "../game/soundtracks";
 import { ANCHORED_MOTION_MODEL, normalizeLevelMotionModel, usesAnchoredMotionModel } from "./motionModel";
 
 export const EDITOR_DRAFT_STORAGE_KEY = "echo-shift-level-editor-draft-v1";
@@ -37,6 +37,7 @@ const stringValue = (value: unknown): value is string => typeof value === "strin
 const optionalString = (value: unknown): boolean => value === undefined || stringValue(value);
 const optionalCoreSize = (value: unknown): boolean => value === undefined || value === "small" || value === "large";
 const optionalLevelSoundtrackKey = (value: unknown): boolean => value === undefined || isLevelSoundtrackKey(value);
+const optionalBossSoundtrackKey = (value: unknown): boolean => value === undefined || isBossSoundtrackKey(value);
 const optionalLevelBackgroundKey = (value: unknown): boolean => value === undefined || isLevelBackgroundKey(value);
 const optionalBackgroundAmbience = (value: unknown): boolean =>
   value === undefined ||
@@ -51,6 +52,7 @@ const optionalBackgroundAmbience = (value: unknown): boolean =>
 const optionalBoolean = (value: unknown): boolean => value === undefined || typeof value === "boolean";
 
 const optionalStringArray = (value: unknown): boolean => value === undefined || (Array.isArray(value) && value.every(stringValue));
+const optionalDoorOrientation = (value: unknown): boolean => value === undefined || value === "vertical" || value === "horizontal";
 
 const scoreSettingsLike = (value: unknown): boolean =>
   isRecord(value) &&
@@ -106,19 +108,32 @@ const echoSensorLike = (value: unknown): boolean =>
   optionalString(value.label);
 const coreLike = (value: unknown): boolean => objectRectLike(value) && optionalString(value.label) && optionalCoreSize(value.size);
 const doorLike = (value: unknown): boolean =>
-  objectRectLike(value) && optionalStringArray(value.opensWith) && optionalString(value.requiresCore) && optionalBoolean(value.inverted);
+  objectRectLike(value) &&
+  optionalStringArray(value.opensWith) &&
+  optionalString(value.requiresCore) &&
+  optionalBoolean(value.inverted) &&
+  optionalDoorOrientation(value.orientation);
 const laserLike = (value: unknown): boolean =>
   objectRectLike(value) && optionalStringArray(value.disabledBy) && optionalBoolean(value.startsOn);
 const droneLike = (value: unknown): boolean => movingObjectLike(value) && optionalStringArray((value as Record<string, unknown>).disabledBy);
 const movingLaserLike = (value: unknown): boolean => movingObjectLike(value) && optionalStringArray((value as Record<string, unknown>).disabledBy) && optionalBoolean((value as Record<string, unknown>).startsOn);
 const crateLike = (value: unknown): boolean => objectRectLike(value);
+const monsterMovementLike = (value: Record<string, unknown>): boolean => {
+  const hasMotionField =
+    value.axis !== undefined || value.distance !== undefined || value.period !== undefined || value.phase !== undefined;
+  if (!hasMotionField) return true;
+  return (
+    (value.axis === "x" || value.axis === "y") &&
+    finiteValue(value.distance) &&
+    value.distance >= 0 &&
+    positiveIntegerValue(value.period) &&
+    (value.phase === undefined || finiteValue(value.phase))
+  );
+};
 const monsterLike = (value: unknown): boolean =>
   objectRectLike(value) &&
   monsterKinds.includes((value as Record<string, unknown>).kind as (typeof monsterKinds)[number]) &&
-  ((value as Record<string, unknown>).axis === undefined || (value as Record<string, unknown>).axis === "x" || (value as Record<string, unknown>).axis === "y") &&
-  ((value as Record<string, unknown>).distance === undefined || finiteValue((value as Record<string, unknown>).distance)) &&
-  ((value as Record<string, unknown>).period === undefined || positiveIntegerValue((value as Record<string, unknown>).period)) &&
-  ((value as Record<string, unknown>).phase === undefined || finiteValue((value as Record<string, unknown>).phase)) &&
+  monsterMovementLike(value) &&
   ((value as Record<string, unknown>).score === undefined || nonNegativeIntegerValue((value as Record<string, unknown>).score)) &&
   optionalBoolean((value as Record<string, unknown>).killable) &&
   ((value as Record<string, unknown>).vulnerableFrom === undefined ||
@@ -133,6 +148,7 @@ const bossLike = (value: unknown): boolean =>
   ((value as Record<string, unknown>).weakSpot === undefined ||
     bossWeakSpots.includes((value as Record<string, unknown>).weakSpot as (typeof bossWeakSpots)[number])) &&
   ((value as Record<string, unknown>).checkpoint === undefined || vec2Like((value as Record<string, unknown>).checkpoint)) &&
+  optionalBossSoundtrackKey((value as Record<string, unknown>).soundtrackKey) &&
   ((value as Record<string, unknown>).introSeconds === undefined || positiveIntegerValue((value as Record<string, unknown>).introSeconds)) &&
   ((value as Record<string, unknown>).health === undefined || positiveIntegerValue((value as Record<string, unknown>).health)) &&
   ((value as Record<string, unknown>).score === undefined || nonNegativeIntegerValue((value as Record<string, unknown>).score));

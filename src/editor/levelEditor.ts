@@ -27,7 +27,7 @@ import { normalizeScoreSettings } from "../game/scoring";
 import { normalizeSolidCollision, solidCollisionFor, solidCollisionValues, solidHasGameplayCollision } from "../game/solidCollision";
 import { solidRenderDepth } from "../game/solidRenderOrder";
 import { normalizeSolid, normalizeSolidSprite, solidSpriteValues } from "../game/solidSprites";
-import { defaultSoundtrackKeyForLevel, isLevelSoundtrackKey, levelSoundtrackKeys, soundtracks } from "../game/soundtracks";
+import { bossSoundtrackKeys, defaultSoundtrackKeyForLevel, isBossSoundtrackKey, isLevelSoundtrackKey, levelSoundtrackKeys, soundtracks } from "../game/soundtracks";
 import { normalizeTerrainMaterial, terrainMaterialForSolid, terrainMaterialLabels, terrainMaterialValues } from "../game/terrainMaterials";
 import type {
   Conveyor,
@@ -36,6 +36,7 @@ import type {
   BossWeakSpot,
   Core,
   Door,
+  DoorOrientation,
   EchoSensor,
   Hazard,
   LaunchPad,
@@ -108,7 +109,7 @@ type PalettePlacement = {
 type EditorPanel = "inspect" | "objects" | "validation" | "export";
 type ValidationSeverity = "error" | "warning";
 type ResizeHandle = "n" | "s" | "e" | "w" | "nw" | "ne" | "sw" | "se";
-type MovingKind = "platforms" | "drones" | "movingLasers";
+type MovingKind = "platforms" | "drones" | "movingLasers" | "monsters";
 type PathableObject = MovingPlatform | PatrolDrone | MovingLaser | Monster;
 type PathEndpoint = "start" | "end";
 type SelectOption = string | { value: string; label: string };
@@ -468,18 +469,25 @@ const movingPath = (item: PathableObject): { start: number; end: number; center:
   };
 };
 
-const movingPathPoints = (item: MovingPlatform | PatrolDrone | MovingLaser): { start: Vec2; end: Vec2 } => {
+const movingPathPoints = (item: PathableObject): { start: Vec2; end: Vec2 } => {
+  const axis = item.axis === "y" ? "y" : "x";
   const distance = nonNegativeNumber(item.distance, 0);
   return {
     start:
-      item.axis === "x"
+      axis === "x"
         ? { x: item.x, y: item.y + item.h / 2 }
         : { x: item.x + item.w / 2, y: item.y },
     end:
-      item.axis === "x"
+      axis === "x"
         ? { x: item.x + distance, y: item.y + item.h / 2 }
         : { x: item.x + item.w / 2, y: item.y + distance }
   };
+};
+
+const ensureMovingPathDefaults = (item: PathableObject): void => {
+  if (item.axis !== "x" && item.axis !== "y") item.axis = "x";
+  item.distance = nonNegativeNumber(item.distance, 0);
+  item.period = positiveInteger(item.period, 180);
 };
 
 const alignMovingLaserRectToBeam = <T extends MovingLaser>(laser: T): T => {
@@ -500,6 +508,7 @@ const setMovingPath = (
   nextStart: number,
   nextEnd: number
 ): void => {
+  ensureMovingPathDefaults(item);
   const snappedStart = snap(nextStart);
   const snappedEnd = snap(nextEnd);
   const start = Math.min(snappedStart, snappedEnd);
@@ -719,12 +728,16 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
     } as EchoSensor;
   }
   if (kind === "doors") {
+    const orientation: DoorOrientation | undefined =
+      record.orientation === "horizontal" || record.orientation === "vertical" ? record.orientation : undefined;
+    const rect = orientation === "horizontal" && base.h > base.w ? { ...base, w: base.h, h: base.w } : base;
     return {
-      ...base,
+      ...rect,
       id,
       opensWith: Array.isArray(record.opensWith) ? record.opensWith.map(String) : undefined,
       requiresCore: typeof record.requiresCore === "string" ? record.requiresCore : undefined,
-      inverted: record.inverted === true ? true : undefined
+      inverted: record.inverted === true ? true : undefined,
+      orientation
     } as Door;
   }
   if (kind === "lasers") {
@@ -767,6 +780,7 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
       kind: bossKind,
       entrySide: normalizeBossEntrySide(record.entrySide),
       weakSpot: record.weakSpot === undefined ? defaultBossWeakSpotForKind(bossKind) : normalizeBossWeakSpot(record.weakSpot),
+      soundtrackKey: isBossSoundtrackKey(record.soundtrackKey) ? record.soundtrackKey : undefined,
       checkpoint: checkpointRecord
         ? { x: numberValue(checkpointRecord.x, checkpointFallback.x), y: numberValue(checkpointRecord.y, checkpointFallback.y) }
         : checkpointFallback,
@@ -1213,6 +1227,21 @@ class LevelEditor {
       else delete record[field];
       return;
     }
+    if (field === "orientation") {
+      if (value === "horizontal") {
+        record.orientation = "horizontal";
+        if (target.h > target.w) [target.w, target.h] = [target.h, target.w];
+      } else {
+        delete record.orientation;
+        if (target.w > target.h) [target.w, target.h] = [target.h, target.w];
+      }
+      return;
+    }
+    if (field === "soundtrackKey") {
+      if (isBossSoundtrackKey(value)) record.soundtrackKey = value;
+      else delete record.soundtrackKey;
+      return;
+    }
     if (field === "kind") {
       if (this.selection?.kind === "monsters") record.kind = normalizeMonsterKind(value);
       else if (this.selection?.kind === "bosses") {
@@ -1277,6 +1306,7 @@ class LevelEditor {
     }
     if (field === "axis") {
       record.axis = value === "y" ? "y" : "x";
+      if (this.selection?.kind === "monsters") ensureMovingPathDefaults(target as PathableObject);
       if (this.selection?.kind === "movingLasers") this.alignMovingLaserRectToBeam(target as MovingLaser);
       return;
     }
@@ -1316,11 +1346,13 @@ class LevelEditor {
     }
     if (field === "speed") {
       const moving = target as PathableObject;
+      ensureMovingPathDefaults(moving);
       const speed = Math.max(1, Number(value));
       moving.period = Math.max(1, Math.round((120 * Math.max(1, moving.distance || 0)) / speed));
       return;
     }
     if (field === "distance" || field === "period" || field === "phase") {
+      if (this.selection?.kind === "monsters") ensureMovingPathDefaults(target as PathableObject);
       if (field === "distance") record.distance = nonNegativeNumber(value, 0);
       else if (field === "period") record.period = positiveInteger(value, 1);
       else record.phase = Number(value);
@@ -1564,8 +1596,9 @@ class LevelEditor {
     if (this.drag.mode === "path") {
       const target = this.findObject(this.drag.selection.kind, this.drag.selection.id);
       if (!target) return;
-      const moving = target as MovingPlatform | PatrolDrone | MovingLaser;
-      const axisValue = moving.axis === "x" ? world.x : world.y;
+      const moving = target as PathableObject;
+      const axis = moving.axis === "y" ? "y" : "x";
+      const axisValue = axis === "x" ? world.x : world.y;
       const path = movingPath(moving);
       setMovingPath(moving, this.drag.endpoint === "start" ? axisValue : path.start, this.drag.endpoint === "end" ? axisValue : path.end);
       this.renderObjectList();
@@ -1662,16 +1695,16 @@ class LevelEditor {
 
   private hitMotionEndpoint(point: Vec2): { selection: { kind: MovingKind; id: string }; endpoint: PathEndpoint; distance: number } | null {
     const tolerance = Math.max(HIT_TOLERANCE_PX / this.view.w, 6);
-    const candidates: Array<{ kind: MovingKind; object: MovingPlatform | PatrolDrone | MovingLaser }> = [];
+    const candidates: Array<{ kind: MovingKind; object: PathableObject }> = [];
     const selected = this.selection;
 
-    if (selected && (selected.kind === "platforms" || selected.kind === "drones" || selected.kind === "movingLasers")) {
+    if (selected && (selected.kind === "platforms" || selected.kind === "drones" || selected.kind === "movingLasers" || selected.kind === "monsters")) {
       const object = this.findObject(selected.kind, selected.id);
-      if (object) candidates.push({ kind: selected.kind, object: object as MovingPlatform | PatrolDrone | MovingLaser });
+      if (object) candidates.push({ kind: selected.kind, object: object as PathableObject });
     }
 
-    for (const kind of ["drones", "movingLasers", "platforms"] as MovingKind[]) {
-      const objects = [...readCollection(this.level, kind)].reverse() as Array<MovingPlatform | PatrolDrone | MovingLaser>;
+    for (const kind of ["monsters", "drones", "movingLasers", "platforms"] as MovingKind[]) {
+      const objects = [...readCollection(this.level, kind)].reverse() as PathableObject[];
       for (const object of objects) candidates.push({ kind, object });
     }
 
@@ -1837,10 +1870,12 @@ class LevelEditor {
   }
 
   private removeDeletedObjectReferences(kind: RectCollection, id: string): void {
-    if (kind === "plates" || kind === "timedSwitches" || kind === "echoSensors") {
+    if (kind === "plates" || kind === "timedSwitches" || kind === "echoSensors" || kind === "bosses") {
       for (const door of readCollection(this.level, "doors") as Door[]) {
         door.opensWith = (door.opensWith || []).filter((triggerId) => triggerId !== id);
       }
+    }
+    if (kind === "plates" || kind === "timedSwitches" || kind === "echoSensors") {
       for (const laser of [...readCollection(this.level, "lasers"), ...readCollection(this.level, "movingLasers")] as Array<Laser | MovingLaser>) {
         const next = (laser.disabledBy || []).filter((triggerId) => triggerId !== id);
         if (next.length > 0) laser.disabledBy = next;
@@ -1861,10 +1896,12 @@ class LevelEditor {
 
   private replaceObjectReferences(kind: RectCollection, previousId: string, nextId: string): void {
     if (previousId === nextId) return;
-    if (kind === "plates" || kind === "timedSwitches" || kind === "echoSensors") {
+    if (kind === "plates" || kind === "timedSwitches" || kind === "echoSensors" || kind === "bosses") {
       for (const door of readCollection(this.level, "doors") as Door[]) {
         door.opensWith = replaceReferenceList(door.opensWith, previousId, nextId);
       }
+    }
+    if (kind === "plates" || kind === "timedSwitches" || kind === "echoSensors") {
       for (const laser of [...readCollection(this.level, "lasers"), ...readCollection(this.level, "movingLasers")] as Array<Laser | MovingLaser>) {
         const next = replaceReferenceList(laser.disabledBy, previousId, nextId);
         if (next.length > 0) laser.disabledBy = next;
@@ -2247,9 +2284,15 @@ class LevelEditor {
     }
     if (kind === "doors") {
       return `
+        <div class="inspector-grid two">
+          ${this.selectField("Orientation", "orientation", String(record.orientation || "vertical"), [
+            { value: "vertical", label: "Vertical" },
+            { value: "horizontal", label: "Horizontal" }
+          ])}
+          ${this.checkboxField("Inverted", "inverted", record.inverted === true)}
+        </div>
         ${this.textField("Opens With", "opensWith", listToCsv(record.opensWith as string[] | undefined), "object")}
         ${this.textField("Requires Core", "requiresCore", String(record.requiresCore || ""), "object")}
-        ${this.checkboxField("Inverted", "inverted", record.inverted === true)}
       `;
     }
     if (kind === "lasers") {
@@ -2314,6 +2357,7 @@ class LevelEditor {
           ${this.selectField("Kind", "kind", bossKind, bossKinds.map((value) => ({ value, label: value })))}
           ${this.selectField("Entry", "entrySide", String(record.entrySide || "right"), bossEntrySides.map((value) => ({ value, label: value })))}
           ${this.selectField("Weak Spot", "weakSpot", String(record.weakSpot || defaultBossWeakSpotForKind(bossKind)), bossWeakSpots.map((value) => ({ value, label: value })))}
+          ${this.bossSoundtrackField(record as Boss)}
           ${this.numberField("Intro Seconds", "introSeconds", Number(record.introSeconds || 17), "object", 1)}
           ${this.numberField("Health", "health", Number(record.health || 3), "object", 1)}
           ${this.numberField("Score", "scoreValue", Number(record.score || 0), "object", 100)}
@@ -2346,6 +2390,17 @@ class LevelEditor {
       }))
     ];
     return this.selectField("Level MP3", "soundtrackKey", level.soundtrackKey || "", options, "level");
+  }
+
+  private bossSoundtrackField(boss: Boss): string {
+    const options: SelectOption[] = [
+      { value: "", label: `Auto: ${soundtracks.boss.title}` },
+      ...bossSoundtrackKeys.map((key) => ({
+        value: key,
+        label: `${soundtracks[key].title} (${Math.round(soundtracks[key].durationSeconds)}s)`
+      }))
+    ];
+    return this.selectField("Boss MP3", "soundtrackKey", boss.soundtrackKey || "", options, "object");
   }
 
   private backgroundField(level: Level): string {
@@ -2542,11 +2597,24 @@ class LevelEditor {
           if (monster.vulnerableFrom && !(["top", "bottom", "both"] as MonsterVulnerability[]).includes(monster.vulnerableFrom)) {
             messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid monster vulnerability.` });
           }
-          if (monster.distance !== undefined && (!Number.isFinite(monster.distance) || monster.distance < 0)) {
-            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid monster movement distance.` });
-          }
-          if (monster.period !== undefined && (!Number.isFinite(monster.period) || monster.period <= 0)) {
-            messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid monster movement period.` });
+          const hasMonsterMotion =
+            monster.axis !== undefined || monster.distance !== undefined || monster.period !== undefined || monster.phase !== undefined;
+          if (hasMonsterMotion) {
+            const distance = monster.distance;
+            const period = monster.period;
+            const phase = monster.phase;
+            if (monster.axis !== "x" && monster.axis !== "y") {
+              messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid monster movement axis.` });
+            }
+            if (typeof distance !== "number" || !Number.isFinite(distance) || distance < 0) {
+              messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid monster movement distance.` });
+            }
+            if (typeof period !== "number" || !Number.isFinite(period) || period <= 0) {
+              messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid monster movement period.` });
+            }
+            if (phase !== undefined && !Number.isFinite(phase)) {
+              messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid monster movement phase.` });
+            }
           }
         }
         if (kind === "bosses") {
@@ -2559,6 +2627,9 @@ class LevelEditor {
           }
           if (!bossWeakSpots.includes((boss.weakSpot || defaultBossWeakSpotForKind(boss.kind)) as BossWeakSpot)) {
             messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid boss weak spot.` });
+          }
+          if (boss.soundtrackKey && !isBossSoundtrackKey(boss.soundtrackKey)) {
+            messages.push({ severity: "error", text: `${level.name}:${object.id} references an unknown boss soundtrack ${boss.soundtrackKey}.` });
           }
           if (boss.introSeconds !== undefined && (!Number.isFinite(boss.introSeconds) || boss.introSeconds <= 0)) {
             messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid boss intro seconds.` });
@@ -2612,36 +2683,46 @@ class LevelEditor {
       }
     }
 
-    const triggerIds = new Set([
+    const controlTriggerIds = new Set([
       ...readCollection(level, "plates").map((plate) => plate.id),
       ...readCollection(level, "timedSwitches").map((timedSwitch) => timedSwitch.id),
       ...readCollection(level, "echoSensors").map((sensor) => sensor.id)
     ]);
+    const doorDependencyIds = new Set([
+      ...controlTriggerIds,
+      ...readCollection(level, "bosses").map((boss) => boss.id)
+    ]);
     const coreIds = new Set(readCollection(level, "cores").map((core) => core.id));
     for (const door of readCollection(level, "doors") as Door[]) {
       for (const triggerId of door.opensWith || []) {
-        if (!triggerIds.has(triggerId)) {
+        if (!doorDependencyIds.has(triggerId)) {
           messages.push({ severity: "error", text: `${level.name}:${door.id} references missing trigger ${triggerId}.` });
         }
+      }
+      if (door.orientation && door.orientation !== "vertical" && door.orientation !== "horizontal") {
+        messages.push({ severity: "error", text: `${level.name}:${door.id} has invalid door orientation.` });
+      }
+      if (door.orientation === "horizontal" && door.h > door.w) {
+        messages.push({ severity: "error", text: `${level.name}:${door.id} horizontal door must be wider than it is tall.` });
       }
       if (door.requiresCore && !coreIds.has(door.requiresCore)) {
         messages.push({ severity: "error", text: `${level.name}:${door.id} references missing core ${door.requiresCore}.` });
       }
       const floorThreshold = level.bounds.y + level.bounds.h - 50;
-      if (door.y + door.h >= floorThreshold && door.y > level.bounds.y + CLOSED_GATE_MAX_TOP) {
+      if (door.orientation !== "horizontal" && door.y + door.h >= floorThreshold && door.y > level.bounds.y + CLOSED_GATE_MAX_TOP) {
         messages.push({ severity: "warning", text: `${level.name}:${door.id} may be short enough to jump over.` });
       }
     }
     for (const laser of [...readCollection(level, "lasers"), ...readCollection(level, "movingLasers")] as Array<Laser | MovingLaser>) {
       for (const triggerId of laser.disabledBy || []) {
-        if (!triggerIds.has(triggerId)) {
+        if (!controlTriggerIds.has(triggerId)) {
           messages.push({ severity: "error", text: `${level.name}:${laser.id} references missing trigger ${triggerId}.` });
         }
       }
     }
     for (const drone of readCollection(level, "drones") as PatrolDrone[]) {
       for (const triggerId of drone.disabledBy || []) {
-        if (!triggerIds.has(triggerId)) {
+        if (!controlTriggerIds.has(triggerId)) {
           messages.push({ severity: "error", text: `${level.name}:${drone.id} references missing trigger ${triggerId}.` });
         }
       }
@@ -2757,8 +2838,8 @@ class LevelEditor {
     const style = styleForKind(kind, object);
     const selected = this.selectionMatches({ kind, id: object.id });
     const drawMotionPath = (): void => {
-      if (kind === "platforms" || kind === "drones" || kind === "movingLasers") {
-        this.drawMotionPath(kind, object as MovingPlatform | PatrolDrone | MovingLaser, selected);
+      if (kind === "platforms" || kind === "drones" || kind === "movingLasers" || kind === "monsters") {
+        this.drawMotionPath(kind, object as PathableObject, selected);
       }
     };
 
@@ -3082,14 +3163,26 @@ class LevelEditor {
     this.drawObjectLabel(exit, "exit", exitStyle.text);
   }
 
-  private drawMotionPath(kind: MovingKind, object: MovingPlatform | PatrolDrone | MovingLaser, selected: boolean): void {
+  private drawMotionPath(kind: MovingKind, object: PathableObject, selected: boolean): void {
     const ctx = this.context;
     const { start, end } = movingPathPoints(object);
-    const color = kind === "platforms" ? "#ffe35a" : "#ff4f8b";
-    const fill = kind === "platforms" ? "rgba(255, 227, 90, 0.95)" : "rgba(255, 79, 139, 0.95)";
+    const color = kind === "platforms" ? "#ffe35a" : kind === "monsters" ? "#50ffc2" : "#ff4f8b";
+    const fill =
+      kind === "platforms"
+        ? "rgba(255, 227, 90, 0.95)"
+        : kind === "monsters"
+          ? "rgba(80, 255, 194, 0.95)"
+          : "rgba(255, 79, 139, 0.95)";
     const radius = selected ? 6 / this.view.w : 4 / this.view.w;
 
-    ctx.strokeStyle = selected ? color : kind === "platforms" ? "rgba(255, 227, 90, 0.38)" : "rgba(255, 79, 139, 0.34)";
+    ctx.strokeStyle =
+      selected
+        ? color
+        : kind === "platforms"
+          ? "rgba(255, 227, 90, 0.38)"
+          : kind === "monsters"
+            ? "rgba(80, 255, 194, 0.34)"
+            : "rgba(255, 79, 139, 0.34)";
     ctx.lineWidth = selected ? 3 / this.view.w : 2 / this.view.w;
     ctx.beginPath();
     ctx.moveTo(start.x, start.y);

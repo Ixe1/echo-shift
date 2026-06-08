@@ -30,7 +30,7 @@ import { platformRectAt } from "../game/player";
 import { recordLevelScore } from "../game/progress";
 import { solidCollisionFor } from "../game/solidCollision";
 import { solidRenderDepth, solidVisualRoleFor } from "../game/solidRenderOrder";
-import { soundtrackForLevel } from "../game/soundtracks";
+import { soundtrackForBoss, soundtrackForLevel } from "../game/soundtracks";
 import { RoomSimulation } from "../game/state";
 import {
   terrainMaterialForSolid,
@@ -140,6 +140,7 @@ type RenderView = {
   bosses: BossSnapshot[];
   exitUnlocked: boolean;
   bossCheckpointActive: boolean;
+  bossCheckpointBossId: string | null;
   tick: number;
   totalFrames: number;
   score: number;
@@ -254,6 +255,7 @@ export class GameScene extends Phaser.Scene {
     bosses: [],
     exitUnlocked: true,
     bossCheckpointActive: false,
+    bossCheckpointBossId: null,
     tick: 0,
     totalFrames: 0,
     score: 0,
@@ -281,6 +283,7 @@ export class GameScene extends Phaser.Scene {
   private readonly fxBursts: FxBurst[] = [];
   private fxBurstSerial = 0;
   private bossMusicActive = false;
+  private bossMusicKey: ReturnType<typeof soundtrackForBoss>["key"] | null = null;
   private sceneCleanupRegistered = false;
   private readonly handleWindowKeyDown = (event: KeyboardEvent): void => {
     if (event.key !== "Escape" || event.repeat) return;
@@ -427,6 +430,7 @@ export class GameScene extends Phaser.Scene {
     this.fxBursts.length = 0;
     this.fxBurstSerial = 0;
     this.bossMusicActive = false;
+    this.bossMusicKey = null;
   }
 
   create(): void {
@@ -552,7 +556,27 @@ export class GameScene extends Phaser.Scene {
 
   private restartLevelMusic(): void {
     this.bossMusicActive = false;
+    this.bossMusicKey = null;
     audio.playMusic(this.currentLevelSoundtrackKey(), { restart: true, fadeMs: BOSS_MUSIC_FADE_MS });
+  }
+
+  private currentBossSoundtrackKey(bossId?: string | null): ReturnType<typeof soundtrackForBoss>["key"] {
+    const boss = this.activeBossForMusic(bossId);
+    return soundtrackForBoss(boss).key;
+  }
+
+  private activeBossForMusic(preferredBossId?: string | null): Boss | undefined {
+    const snapshots = this.simulation.bossSnapshots().filter((boss) => boss.phase === "intro" || boss.phase === "active");
+    const snapshot = (preferredBossId ? snapshots.find((boss) => boss.id === preferredBossId) : undefined) || snapshots[0];
+    return snapshot ? (this.level.bosses || []).find((boss) => boss.id === snapshot.id) : undefined;
+  }
+
+  private startBossMusic(bossId?: string | null): void {
+    const key = this.currentBossSoundtrackKey(bossId);
+    const restart = !this.bossMusicActive || this.bossMusicKey !== key;
+    this.bossMusicActive = true;
+    this.bossMusicKey = key;
+    audio.playMusic(key, { restart, fadeMs: BOSS_MUSIC_FADE_MS });
   }
 
   private bossFightInProgress(): boolean {
@@ -665,9 +689,8 @@ export class GameScene extends Phaser.Scene {
       }
     }
     for (let index = 0; index < events.echoLaserVaporized; index += 1) audio.play("echoLaserVaporized");
-    if (events.bossIntroStarted && !this.bossMusicActive) {
-      this.bossMusicActive = true;
-      audio.playMusic("boss", { restart: true, fadeMs: BOSS_MUSIC_FADE_MS });
+    if (events.bossIntroStarted) {
+      this.startBossMusic(events.bossIntroStarted);
       this.hud.toast(events.bossCheckpointActivated ? "Boss checkpoint anchored" : "Boss approaching");
     }
     for (const kill of events.monsterKills) {
@@ -684,7 +707,10 @@ export class GameScene extends Phaser.Scene {
         events.bossDefeated ? `+${events.bossDefeated.score}` : `${events.bossHit.health}`
       );
     }
-    if (events.bossDefeated && !this.bossFightInProgress()) this.restartLevelMusic();
+    if (events.bossDefeated) {
+      if (this.bossFightInProgress()) this.startBossMusic();
+      else this.restartLevelMusic();
+    }
     if (events.bossPortalUnlocked) {
       const exitCenter = rectCenter(this.level.exit);
       audio.play("portal");
@@ -782,8 +808,7 @@ export class GameScene extends Phaser.Scene {
     this.playerCastUntil = 0;
     this.cameraTarget?.setPosition(this.simulation.player.x + this.simulation.player.w / 2, this.simulation.player.y + this.simulation.player.h / 2);
     if (this.bossFightInProgress()) {
-      this.bossMusicActive = true;
-      audio.playMusic("boss", { restart: true, fadeMs: BOSS_MUSIC_FADE_MS });
+      this.startBossMusic(this.simulation.bossCheckpointBossId());
     } else {
       this.restartLevelMusic();
     }
@@ -1110,6 +1135,7 @@ export class GameScene extends Phaser.Scene {
     this.fxBurstSerial = 0;
     this.fxBursts.length = 0;
     this.bossMusicActive = false;
+    this.bossMusicKey = null;
   };
 
   private renderWorld(): void {
@@ -1187,6 +1213,7 @@ export class GameScene extends Phaser.Scene {
     view.bosses = simulation.bossSnapshots();
     view.exitUnlocked = simulation.exitUnlocked();
     view.bossCheckpointActive = simulation.bossCheckpointActive();
+    view.bossCheckpointBossId = simulation.bossCheckpointBossId();
     view.tick = simulation.tick;
     view.totalFrames = simulation.totalFrames;
     view.score = simulation.score;
@@ -2649,23 +2676,30 @@ export class GameScene extends Phaser.Scene {
     if (!this.textures.exists(OBJECT_ATLAS_KEY) || door.w <= 0 || door.h <= 0) return;
     const frame = open ? OBJECT_FRAME.doorOpen : OBJECT_FRAME.doorClosed;
     const asset = this.assetFor(`door:${door.id}`, "image", frame) as Phaser.GameObjects.Image;
-    const width = Math.max(34, door.w * 1.72);
-    const height = Math.max(44, door.h);
+    const orientation = door.orientation === "horizontal" ? "horizontal" : "vertical";
+    const width = orientation === "horizontal" ? Math.max(44, door.w) : Math.max(34, door.w * 1.72);
+    const height = orientation === "horizontal" ? Math.max(34, door.h * 1.72) : Math.max(44, door.h);
+    const displayWidth = orientation === "horizontal" ? height : width;
+    const displayHeight = orientation === "horizontal" ? width : height;
+    const originX = 0.5;
+    const originY = orientation === "horizontal" ? 0.5 : 0;
+    const x = door.x + door.w / 2;
+    const y = orientation === "horizontal" ? door.y + door.h / 2 : door.y;
     asset
       .setVisible(true)
       .setDepth(4)
       .setAlpha(open ? 0.76 : 0.98)
-      .setOrigin(0.5, 0)
-      .setPosition(door.x + door.w / 2, door.y)
-      .setRotation(0)
+      .setOrigin(originX, originY)
+      .setPosition(x, y)
+      .setRotation(orientation === "horizontal" ? Math.PI / 2 : 0)
       .setFrame(frame)
-      .setDisplaySize(width, height);
+      .setDisplaySize(displayWidth, displayHeight);
     this.activeObjectAssetIds.add(`door:${door.id}`);
     if (this.diagnosticsEnabled) {
-      const left = asset.x - asset.displayWidth * asset.originX;
-      const top = asset.y - asset.displayHeight * asset.originY;
+      const left = orientation === "horizontal" ? asset.x - width / 2 : asset.x - asset.displayWidth * asset.originX;
+      const top = orientation === "horizontal" ? asset.y - height / 2 : asset.y - asset.displayHeight * asset.originY;
       this.doorAssetTransforms.push(
-        `door:${door.id}:${frame}:logic:${Math.round(door.x)},${Math.round(door.y)},${Math.round(door.w)},${Math.round(door.h)}:pos:${Math.round(asset.x)},${Math.round(asset.y)}:origin:${asset.originX},${asset.originY}:box:${Math.round(left)},${Math.round(top)},${Math.round(asset.displayWidth)},${Math.round(asset.displayHeight)}`
+        `door:${door.id}:${frame}:logic:${Math.round(door.x)},${Math.round(door.y)},${Math.round(door.w)},${Math.round(door.h)}:pos:${Math.round(asset.x)},${Math.round(asset.y)}:origin:${asset.originX},${asset.originY}:box:${Math.round(left)},${Math.round(top)},${Math.round(width)},${Math.round(height)}:orientation:${orientation}:rotation:${Math.round(Phaser.Math.RadToDeg(asset.rotation))}`
       );
     }
   }

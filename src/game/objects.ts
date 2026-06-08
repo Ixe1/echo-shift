@@ -25,21 +25,26 @@ export type ObjectState = {
   crates: Map<string, Rect>;
 };
 
-export const createObjectState = (level?: Level): ObjectState => ({
-  activePlates: new Set(),
-  latchedPlates: new Set(),
-  timedSwitchTimers: new Map(),
-  openDoors: new Set(),
-  collectedCores: new Set(),
-  blockedLasers: new Set(),
-  crates: new Map((level?.crates || []).map((crate) => [crate.id, { x: crate.x, y: crate.y, w: crate.w, h: crate.h }]))
-});
+export const createObjectState = (level?: Level): ObjectState => {
+  const activePlates = new Set<string>();
+  const collectedCores = new Set<string>();
+  return {
+    activePlates,
+    latchedPlates: new Set(),
+    timedSwitchTimers: new Map(),
+    openDoors: collectOpenDoors(level?.doors || [], activePlates, collectedCores, new Set()),
+    collectedCores,
+    blockedLasers: new Set(),
+    crates: new Map((level?.crates || []).map((crate) => [crate.id, { x: crate.x, y: crate.y, w: crate.w, h: crate.h }]))
+  };
+};
 
 export const updateObjects = (
   level: Level,
   actors: ActorBody[],
   previous: ObjectState,
-  tick = 0
+  tick = 0,
+  defeatedBossIds: ReadonlySet<string> = new Set()
 ): { state: ObjectState; switched: boolean; core: CorePickupEvent | null; cores: CorePickupEvent[] } => {
   const crateRects = [...previous.crates.values()];
   const timedSwitchTimers = updateTimedSwitchTimers(level, actors, crateRects, previous.timedSwitchTimers);
@@ -65,7 +70,7 @@ export const updateObjects = (
     }
   }
 
-  const openDoors = collectOpenDoors(level.doors || [], activePlates, collectedCores);
+  const openDoors = collectOpenDoors(level.doors || [], activePlates, collectedCores, defeatedBossIds);
   const blockedLasers = collectBlockedLasers([...(level.lasers || []), ...(level.movingLasers || [])], crateRects, activePlates, tick);
   const switched =
     setChanged(previous.activePlates, activePlates) ||
@@ -233,16 +238,17 @@ const collectActiveEchoSensors = (sensors: EchoSensor[], actors: ActorBody[], ac
   }
 };
 
-const collectOpenDoors = (
+export const collectOpenDoors = (
   doors: Door[],
   activePlates: Set<string>,
-  collectedCores: Set<string>
+  collectedCores: Set<string>,
+  defeatedBossIds: ReadonlySet<string>
 ): Set<string> => {
   const open = new Set<string>();
   for (const door of doors) {
-    const platesSatisfied = (door.opensWith || []).every((id) => activePlates.has(id));
+    const dependenciesSatisfied = (door.opensWith || []).every((id) => activePlates.has(id) || defeatedBossIds.has(id));
     const coreSatisfied = !door.requiresCore || collectedCores.has(door.requiresCore);
-    const shouldOpen = platesSatisfied && coreSatisfied;
+    const shouldOpen = dependenciesSatisfied && coreSatisfied;
     if (door.inverted ? !shouldOpen : shouldOpen) open.add(door.id);
   }
   return open;

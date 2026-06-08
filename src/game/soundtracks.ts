@@ -1,4 +1,4 @@
-import type { Level, LevelSoundtrackKey, SoundtrackKey } from "./types";
+import type { Boss, BossSoundtrackKey, Level, LevelSoundtrackKey, SoundtrackKey } from "./types";
 
 export const soundtrackKeys = [
   "menu",
@@ -93,12 +93,16 @@ export const soundtracks: Record<SoundtrackKey, Soundtrack> = {
 };
 
 export const levelSoundtrackKeys = soundtrackKeys.filter((key): key is LevelSoundtrackKey => key !== "menu" && key !== "boss");
+export const bossSoundtrackKeys = soundtrackKeys.filter((key): key is BossSoundtrackKey => key !== "menu");
 
 export const isSoundtrackKey = (value: unknown): value is SoundtrackKey =>
   typeof value === "string" && Object.prototype.hasOwnProperty.call(soundtracks, value);
 
 export const isLevelSoundtrackKey = (value: unknown): value is LevelSoundtrackKey =>
   isSoundtrackKey(value) && value !== "menu" && value !== "boss";
+
+export const isBossSoundtrackKey = (value: unknown): value is BossSoundtrackKey =>
+  isSoundtrackKey(value) && value !== "menu";
 
 export const defaultSoundtrackKeyForLevel = (level: Pick<Level, "index">, levelSlot = level.index): LevelSoundtrackKey => {
   const key = `level-${levelSlot + 1}` as SoundtrackKey;
@@ -108,4 +112,10 @@ export const defaultSoundtrackKeyForLevel = (level: Pick<Level, "index">, levelS
 export const soundtrackForLevel = (level: Level, levelSlot = level.index): Soundtrack => {
   if (isLevelSoundtrackKey(level.soundtrackKey)) return soundtracks[level.soundtrackKey];
   return soundtracks[defaultSoundtrackKeyForLevel(level, levelSlot)];
+};
+
+export const soundtrackForBoss = (boss?: Pick<Boss, "soundtrackKey">): Soundtrack => {
+  const key = boss?.soundtrackKey;
+  if (isBossSoundtrackKey(key)) return soundtracks[key];
+  return soundtracks.boss;
 };

@@ -861,6 +861,8 @@ try {
   await page.locator("[data-object-field='id']").fill("smoke-required-door");
   await dispatchChange(page.locator("[data-object-field='id']"));
   await setObjectField(page, "requiresCore", "smoke-required-core");
+  await page.locator("[data-object-field='orientation']").selectOption("horizontal");
+  const requiredDoorOrientation = await page.locator("[data-object-field='orientation']").inputValue();
   await openTab(page, "objects");
   await page.locator("[data-object-list] [data-kind='cores'][data-id='smoke-required-core']").click();
   const inferredRequiredCoreSize = await page.locator("[data-object-field='size']").inputValue();
@@ -906,6 +908,14 @@ try {
   await page.locator("[data-delete-object]").click();
   const movingLaserHandleCleanupValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
+  await dragToolToWorld(page, "monsters", { x: 1280, y: 500 });
+  await page.locator("[data-object-field='id']").fill("smoke-monster");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await page.locator("[data-object-field='axis']").selectOption("y");
+  await setObjectField(page, "pathStart", 440);
+  await setObjectField(page, "pathEnd", 500);
+  await setObjectField(page, "speed", 120);
+
   await dragToolToWorld(page, "crates", { x: 1220, y: 470 });
   await page.locator("[data-object-field='id']").fill("smoke-crate");
   await dispatchChange(page.locator("[data-object-field='id']"));
@@ -916,6 +926,8 @@ try {
   await page.locator("[data-object-field='id']").fill("smoke-boss");
   await dispatchChange(page.locator("[data-object-field='id']"));
   const bossStormWeakSpot = await page.locator("[data-object-field='weakSpot']").inputValue();
+  const bossSoundtrackOptions = await page.locator("[data-object-field='soundtrackKey'] option").allTextContents();
+  await page.locator("[data-object-field='soundtrackKey']").selectOption("level-3");
   await page.locator("[data-object-field='kind']").selectOption("cryo-conservator");
   const bossCryoWeakSpot = await page.locator("[data-object-field='weakSpot']").inputValue();
   const bossCheckpointXBeforeDrag = await objectNumber(page, "checkpointX");
@@ -938,6 +950,11 @@ try {
   const duplicatedBossCheckpointX = await objectNumber(page, "checkpointX");
   const duplicatedBossCheckpointY = await objectNumber(page, "checkpointY");
   const duplicatedBossId = await page.locator("[data-object-field='id']").inputValue();
+  await openTab(page, "objects");
+  await page.locator("[data-object-list] [data-kind='doors'][data-id='smoke-required-door']").click();
+  await page.locator("[data-object-field='opensWith']").fill("smoke-boss");
+  await dispatchChange(page.locator("[data-object-field='opensWith']"));
+  const bossDoorDependencyValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
   const toolkitLevel = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
   const toolkitValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
@@ -951,6 +968,7 @@ try {
   const toolkitRequiredCore = toolkitLevel.cores.find((item) => item.id === "smoke-required-core");
   const toolkitRequiredDoor = toolkitLevel.doors.find((item) => item.id === "smoke-required-door");
   const toolkitCrate = toolkitLevel.crates.find((item) => item.id === "smoke-crate");
+  const toolkitMonster = toolkitLevel.monsters.find((item) => item.id === "smoke-monster");
   const toolkitBoss = toolkitLevel.bosses.find((item) => item.id === "smoke-boss");
   const toolkitDuplicatedBoss = toolkitLevel.bosses.find((item) => item.id === duplicatedBossId);
 
@@ -1147,6 +1165,14 @@ try {
   const droneExportJson = await page.locator("[data-export-json]").inputValue();
   const droneExport = JSON.parse(droneExportJson)[0].drones.find((drone) => drone.id === "smoke-drone-lock");
 
+  await openTab(page, "objects");
+  await page.locator("[data-object-list] [data-id='smoke-monster']").click();
+  const monsterHandleX = (await objectNumber(page, "x")) + (await objectNumber(page, "w")) / 2;
+  await page.locator("[data-tool='select']").click();
+  await dragWorld(page, { x: monsterHandleX, y: 440 }, { x: monsterHandleX, y: 420 });
+  const monsterPathStartAfterDrag = Number(await page.locator("[data-object-field='pathStart']").inputValue());
+  const monsterExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0].monsters.find((monster) => monster.id === "smoke-monster");
+
   await page.locator("[data-level-select]").selectOption("4");
   await openTab(page, "objects");
   await page.locator("[data-object-list] [data-id='lift-a']").click();
@@ -1189,6 +1215,7 @@ try {
     solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
     platforms: [{ id: "bad-lift", x: 420, y: 450, w: 120, h: 18, axis: "x", distance: -80, period: -12 }],
     drones: [{ id: "legacy-import-drone", x: 260, y: 420, w: 30, h: 24, axis: "y", distance: 50, period: 150, phase: 0.2 }],
+    monsters: [{ id: "static-import-monster", kind: "sprout-hopper", x: 140, y: 430, w: 36, h: 30 }],
     hazards: [
       { x: 200, y: 496, w: 58, h: 4 },
       { id: "", x: 300, y: 496, w: 58, h: 4 }
@@ -1207,11 +1234,19 @@ try {
   const fallbackImportObjectIds = objectKinds.flatMap((kind) => (fallbackImportExport[kind] || []).map((object) => object.id));
   const fallbackImportValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   const fallbackImportValidationText = await page.locator("[data-validation]").textContent();
+  await openTab(page, "objects");
+  await page.locator("[data-object-list] [data-id='static-import-monster']").click();
+  await setObjectField(page, "pathEnd", 220);
+  const staticMonsterPathValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
+  const staticMonsterPathExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0].monsters.find(
+    (monster) => monster.id === "static-import-monster"
+  );
   const sourceDerivedImportLevel = {
     ...parsedExport[0],
     name: "Smoke Edited",
     platforms: [{ id: "source-anchored-platform", x: 420, y: 360, w: 100, h: 20, axis: "x", distance: 80, period: 120, phase: 0.4 }]
   };
+  await openTab(page, "export");
   await page.locator("[data-import-json]").fill(JSON.stringify(sourceDerivedImportLevel, null, 2));
   await page.locator("[data-apply-import]").click();
   await page.waitForFunction(() => document.querySelector("[data-level-select] option")?.textContent?.includes("Smoke Edited"));
@@ -1445,6 +1480,12 @@ try {
   assert(inferredRequiredCoreAfterSmall === "large", `Expected door-required core inspector to keep showing inferred large after selecting small, got ${inferredRequiredCoreAfterSmall}`);
   assert(toolkitRequiredCore && toolkitRequiredCore.size === undefined, `Expected inferred large core to omit explicit size, got ${JSON.stringify(toolkitRequiredCore)}`);
   assert(toolkitRequiredDoor?.requiresCore === "smoke-required-core", `Expected door to export required core link, got ${JSON.stringify(toolkitRequiredDoor)}`);
+  assert(requiredDoorOrientation === "horizontal", `Expected door orientation selector to switch to horizontal, got ${requiredDoorOrientation}`);
+  assert(
+    toolkitRequiredDoor?.orientation === "horizontal" && toolkitRequiredDoor?.opensWith?.includes("smoke-boss"),
+    `Expected door to export horizontal boss dependency, got ${JSON.stringify(toolkitRequiredDoor)}`
+  );
+  assert(bossDoorDependencyValidation === "clean", `Expected boss-dependent door validation to be clean, got ${bossDoorDependencyValidation}`);
   assert(
     missingDroneTriggerValidation === "issues" && missingDroneTriggerText?.includes("smoke-disabled-drone references missing trigger missing-drone-trigger"),
     `Expected missing drone trigger validation, got ${missingDroneTriggerValidation}: ${missingDroneTriggerText}`
@@ -1467,10 +1508,16 @@ try {
   );
   assert(movingLaserHandleCleanupValidation === "clean", `Expected clean validation after moving laser handle cleanup, got ${movingLaserHandleCleanupValidation}`);
   assert(toolkitCrate && toolkitCrateBottom === 480, `Expected crate to export and snap flush to floor, got ${JSON.stringify(toolkitCrate)} bottom ${toolkitCrateBottom}`);
+  assert(
+    toolkitMonster?.axis === "y" && toolkitMonster?.distance === 60 && Number.isFinite(toolkitMonster?.period),
+    `Expected monster path settings to export, got ${JSON.stringify(toolkitMonster)}`
+  );
   assert(bossStormWeakSpot === "bottom", `Expected new storm boss weak spot to default to bottom, got ${bossStormWeakSpot}`);
+  assert(bossSoundtrackOptions.some((option) => option.includes("Auto: Echo Shift - Boss")), `Expected boss auto soundtrack option, got ${bossSoundtrackOptions.join(", ")}`);
+  assert(bossSoundtrackOptions.some((option) => option.includes("Echo Shift - Level 3")), `Expected boss soundtrack options to include level tracks, got ${bossSoundtrackOptions.join(", ")}`);
   assert(bossCryoWeakSpot === "bottom", `Expected cryo boss weak spot to switch to bottom, got ${bossCryoWeakSpot}`);
   assert(
-    toolkitBoss?.kind === "cryo-conservator" && toolkitBoss?.weakSpot === "bottom",
+    toolkitBoss?.kind === "cryo-conservator" && toolkitBoss?.weakSpot === "bottom" && toolkitBoss?.soundtrackKey === "level-3",
     `Expected boss kind and weak spot to export, got ${JSON.stringify(toolkitBoss)}`
   );
   assert(
@@ -1596,6 +1643,11 @@ try {
   assert(droneExportJson.includes('"axis": "y"'), "Expected drone export JSON to include vertical axis");
   assert(droneExport.y === 340, `Expected exported drone origin y to match anchored path start 340, got ${droneExport.y}`);
   assert(droneExport.distance === 120, `Expected exported drone travel distance 120 after snapped endpoint edit, got ${droneExport.distance}`);
+  assert(monsterPathStartAfterDrag === 420, `Expected draggable monster path endpoint to set start to 420, got ${monsterPathStartAfterDrag}`);
+  assert(
+    monsterExport.y === 420 && monsterExport.distance === 80,
+    `Expected exported monster origin/distance to follow dragged path start, got ${JSON.stringify(monsterExport)}`
+  );
   assert(platformPathStartAfterDrag === 320, `Expected draggable platform endpoint to set start to 320, got ${platformPathStartAfterDrag}`);
   assert(platformExport.y === 320, `Expected exported platform origin y to match anchored path start 320, got ${platformExport.y}`);
   assert(platformExport.distance === 200, `Expected exported platform travel distance 200 after endpoint edit, got ${platformExport.distance}`);
@@ -1621,6 +1673,7 @@ try {
     fallbackImportValidation === "clean",
     `Expected clean validation after fallback import, got ${fallbackImportValidation}: ${fallbackImportValidationText}`
   );
+  assert(staticMonsterPathValidation === "clean", `Expected clean validation after static monster endpoint edit, got ${staticMonsterPathValidation}`);
   assert(fallbackImportExport.score?.lives === 3, `Expected imported legacy score lives to default to 3, got ${JSON.stringify(fallbackImportExport.score)}`);
   assert(fallbackImportExport.score?.coreScore === 100, `Expected imported legacy core score to default to 100, got ${JSON.stringify(fallbackImportExport.score)}`);
   assert(fallbackImportExport.score?.deathPenalty === 500, `Expected imported legacy death penalty to default to 500, got ${JSON.stringify(fallbackImportExport.score)}`);
@@ -1642,6 +1695,10 @@ try {
       fallbackImportDrone?.distance === 100 &&
       Math.abs((fallbackImportDrone?.phase || 0) - (0.2 + Math.PI / 2)) < 0.000001,
     `Expected legacy imported drone to migrate to anchored motion, got ${JSON.stringify(fallbackImportDrone)}`
+  );
+  assert(
+    staticMonsterPathExport?.axis === "x" && staticMonsterPathExport?.distance === 80 && staticMonsterPathExport?.period === 180,
+    `Expected endpoint-only edit on static monster to export a complete movement tuple, got ${JSON.stringify(staticMonsterPathExport)}`
   );
   assert(
     !("perfectEchoes" in fallbackImportExport) && !("medalFrames" in fallbackImportExport),

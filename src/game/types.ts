@@ -104,11 +104,14 @@ export type EchoSensor = Rect & {
   label?: string;
 };
 
+export type DoorOrientation = "vertical" | "horizontal";
+
 export type Door = Rect & {
   id: string;
   opensWith?: string[];
   requiresCore?: string;
   inverted?: boolean;
+  orientation?: DoorOrientation;
 };
 
 export type Laser = Rect & {
@@ -187,6 +190,7 @@ export type Boss = Rect & {
   kind: BossKind;
   entrySide?: BossEntrySide;
   weakSpot?: BossWeakSpot;
+  soundtrackKey?: BossSoundtrackKey;
   checkpoint?: Vec2;
   introSeconds?: number;
   health?: number;
@@ -237,6 +241,7 @@ export type SoundtrackKey =
   | "level-10";
 
 export type LevelSoundtrackKey = Exclude<SoundtrackKey, "menu" | "boss">;
+export type BossSoundtrackKey = Exclude<SoundtrackKey, "menu">;
 
 export type LevelBackgroundKey =
   | "time-lab-prototype"
@@ -375,6 +380,7 @@ export type SimulationSnapshot = {
   bosses: BossSnapshot[];
   exitUnlocked: boolean;
   bossCheckpointActive: boolean;
+  bossCheckpointBossId: string | null;
   tick: number;
   totalFrames: number;
   score: number;
