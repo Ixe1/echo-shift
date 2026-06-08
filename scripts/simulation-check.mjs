@@ -487,11 +487,13 @@ try {
     bossAttackCycleFramesFor,
     bossAttackWindupFramesFor,
     bossIsVulnerable,
+    DEFAULT_MONSTER_SCORE,
     defaultMonsterMotionForKind,
     defaultMonsterSpeedForKind,
     monsterAnimationProfileForKind,
     monsterKinds,
-    monsterRectAt
+    monsterRectAt,
+    monsterScore
   } = await server.ssrLoadModule("/src/game/enemies.ts");
   const { SynthAudio } = await server.ssrLoadModule("/src/game/audio.ts");
 
@@ -1559,6 +1561,11 @@ try {
   assert(
     new Set(defaultMonsterSpeeds).size === monsterKinds.length,
     `Expected each monster kind to define a distinct default speed, got ${JSON.stringify(Object.fromEntries(monsterKinds.map((kind) => [kind, defaultMonsterSpeedForKind(kind)])))}`
+  );
+  const defaultMonsterScores = Object.fromEntries(monsterKinds.map((kind) => [kind, monsterScore({ kind })]));
+  assert(
+    Object.values(defaultMonsterScores).every((score) => score === DEFAULT_MONSTER_SCORE),
+    `Expected every monster kind to default to ${DEFAULT_MONSTER_SCORE} score, got ${JSON.stringify(defaultMonsterScores)}`
   );
   const sproutDefaults = defaultMonsterMotionForKind("sprout-hopper");
   assert(

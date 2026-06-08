@@ -27,6 +27,7 @@ export const BOSS_ATTACK_ACTIVE_FRAMES = 48;
 export const BOSS_VULNERABLE_READY_FRAMES = 18;
 export const BOSS_VULNERABLE_FRAMES = BOSS_ATTACK_CYCLE_FRAMES - BOSS_ATTACK_WINDUP_FRAMES - BOSS_ATTACK_ACTIVE_FRAMES - BOSS_VULNERABLE_READY_FRAMES;
 export const BOSS_DEFEAT_DEPARTURE_FRAMES = 170;
+export const DEFAULT_MONSTER_SCORE = 200;
 
 const STORM_ATTACK_CYCLE_FRAMES = 330;
 const STORM_ATTACK_WINDUP_FRAMES = 112;
@@ -163,105 +164,105 @@ type MonsterDefinition = {
 
 const monsterDefinitions: Record<MonsterKind, MonsterDefinition> = {
   "sprout-hopper": {
-    score: 100,
+    score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 120, speed: 80 },
     animation: { frameInterval: 8, bobAmplitude: 3.2, bobPeriod: 10 }
   },
   "glasswing-wisp": {
-    score: 150,
+    score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "bottom",
     defaultMotion: { axis: "y", distance: 96, speed: 58, phase: 0.3 },
     animation: { frameInterval: 4, bobAmplitude: 4.8, bobPeriod: 9 }
   },
   "root-roller": {
-    score: 200,
+    score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 160, speed: 112 },
     animation: { frameInterval: 6, bobAmplitude: 0.8, bobPeriod: 14 }
   },
   "gutter-skimmer": {
-    score: 150,
+    score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 180, speed: 132 },
     animation: { frameInterval: 5, bobAmplitude: 1.2, bobPeriod: 8 }
   },
   "copper-leech": {
-    score: 200,
+    score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "bottom",
     defaultMotion: { axis: "y", distance: 72, speed: 44 },
     animation: { frameInterval: 10, bobAmplitude: 0.5, bobPeriod: 16 }
   },
   "storm-snail": {
-    score: 300,
+    score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 72, speed: 32 },
     animation: { frameInterval: 12, bobAmplitude: 0.4, bobPeriod: 18 }
   },
   "frost-crawler": {
-    score: 150,
+    score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 118, speed: 64 },
     animation: { frameInterval: 9, bobAmplitude: 0.6, bobPeriod: 15 }
   },
   "cryo-puffer": {
-    score: 250,
+    score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "bottom",
     defaultMotion: { axis: "y", distance: 120, speed: 48, phase: 0.15 },
     animation: { frameInterval: 7, bobAmplitude: 5.5, bobPeriod: 11 }
   },
   "shard-wisp": {
-    score: 200,
+    score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "both",
     defaultMotion: { axis: "y", distance: 130, speed: 104, phase: 0.5 },
     animation: { frameInterval: 5, bobAmplitude: 4.1, bobPeriod: 8 }
   },
   bookbeetle: {
-    score: 150,
+    score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 132, speed: 74 },
     animation: { frameInterval: 8, bobAmplitude: 1, bobPeriod: 13 }
   },
   "page-mote": {
-    score: 200,
+    score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "both",
     defaultMotion: { axis: "y", distance: 110, speed: 92, phase: 0.2 },
     animation: { frameInterval: 5, bobAmplitude: 3.5, bobPeriod: 8 }
   },
   "index-mimic": {
-    score: 400,
+    score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 64, speed: 36 },
     animation: { frameInterval: 11, bobAmplitude: 0.2, bobPeriod: 20 }
   },
   "gear-tick": {
-    score: 200,
+    score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 150, speed: 122 },
     animation: { frameInterval: 6, bobAmplitude: 0, bobPeriod: 12 }
   },
   "pendulum-drone": {
-    score: 300,
+    score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "y", distance: 160, speed: 68, phase: 0.4 },
     animation: { frameInterval: 6, bobAmplitude: 2.4, bobPeriod: 10 }
   },
   "sand-winder": {
-    score: 400,
+    score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 220, speed: 86 },
