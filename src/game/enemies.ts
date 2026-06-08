@@ -5,6 +5,7 @@ import type {
   Boss,
   BossAttackSnapshot,
   BossEntrySide,
+  BossFloorIceSnapshot,
   BossKind,
   BossPhase,
   BossWeakSpot,
@@ -52,7 +53,8 @@ const CRYO_HIT_PATROL_FRAMES = 60;
 const CRYO_HIT_RECOVERY_FRAMES = CRYO_HIT_PAUSE_FRAMES + CRYO_HIT_RISE_FRAMES + CRYO_HIT_PATROL_FRAMES;
 const CRYO_FLOOR_ICE_WIDTH = 128;
 const CRYO_FLOOR_ICE_HEIGHT = 8;
-const CRYO_FLOOR_ICE_PERSIST_FRAMES = 130;
+const CRYO_FLOOR_ICE_LIFE_FRAMES = 7 * 60;
+const CRYO_FLOOR_ICE_MAX_PATCHES = 3;
 const CRYO_VERTICAL_FLIGHT_EASE = 0.045;
 
 type BossTimingSource = BossKind | { kind?: BossKind };
@@ -134,6 +136,7 @@ export type BossRuntimeState = {
   attackX: number;
   attackY: number;
   recoveryFrames: number;
+  floorIcePatches: BossFloorIceSnapshot[];
 };
 
 type MonsterDefinition = {
@@ -253,7 +256,8 @@ export const createBossRuntimeState = (boss: Boss): BossRuntimeState => {
     targetY: center.y,
     attackX: center.x,
     attackY: center.y,
-    recoveryFrames: 0
+    recoveryFrames: 0,
+    floorIcePatches: []
   };
 };
 
@@ -281,9 +285,10 @@ export const settleBossAtIntroEnd = (boss: Boss, state: BossRuntimeState): void 
   state.attackX = center.x;
   state.attackY = center.y;
   state.recoveryFrames = 0;
+  state.floorIcePatches = [];
 };
 
-export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, player: ActorBody): void => {
+export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, player: ActorBody, solids: Solid[]): void => {
   if (state.phase !== "active") return;
   const size = bossBodySize(boss);
   const cycle = state.activeFrames % bossAttackCycleFramesFor(boss.kind);
@@ -314,6 +319,7 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
   }
   if (boss.kind === "cryo-conservator") {
     advanceCryoConservatorMotion(boss, state, size, cycle, arena);
+    advanceCryoConservatorFloorIce(boss, state, cycle, solids);
     return;
   }
 
@@ -475,12 +481,12 @@ export const bossFloorShockRectsAt = (boss: Boss, state: BossRuntimeState, tick:
   return shocks;
 };
 
-export const bossFloorIceRectsAt = (boss: Boss, state: BossRuntimeState, tick: number, solids: Solid[]): Rect[] => {
-  if (boss.kind !== "cryo-conservator" || state.phase !== "active" || state.recoveryFrames > 0) return [];
-  const cycle = state.activeFrames % bossAttackCycleFramesFor(boss.kind);
-  const activeStart = bossAttackWindupFramesFor(boss.kind);
-  const iceEnd = bossAttackEndFrameFor(boss.kind) + CRYO_FLOOR_ICE_PERSIST_FRAMES;
-  if (cycle < activeStart || cycle >= iceEnd) return [];
+export const bossFloorIceRectsAt = (boss: Boss, state: BossRuntimeState, _tick: number, _solids: Solid[]): BossFloorIceSnapshot[] => {
+  if (boss.kind !== "cryo-conservator" || state.phase !== "active") return [];
+  return state.floorIcePatches.filter((patch) => patch.remainingFrames > 0).map((patch) => ({ ...patch }));
+};
+
+const cryoFloorIceRectForLane = (boss: Boss, state: BossRuntimeState, tick: number, solids: Solid[]): Rect | null => {
   const body = bossBodyRectAt(boss, state, tick);
   const bodyCenter = rectCenter(body);
   const centerX = clamp(finiteNumber(state.attackX, bodyCenter.x), body.x + body.w * 0.28, body.x + body.w * 0.72);
@@ -492,16 +498,37 @@ export const bossFloorIceRectsAt = (boss: Boss, state: BossRuntimeState, tick: n
       return solid.y >= body.y && solid.y <= boss.y + boss.h + 4;
     })
     .sort((a, b) => a.y - b.y)[0];
-  if (!floor) return [];
+  if (!floor) return null;
   const width = Math.min(CRYO_FLOOR_ICE_WIDTH, floor.w);
-  return [
-    {
-      x: clamp(centerX - width / 2, floor.x, floor.x + floor.w - width),
-      y: floor.y - CRYO_FLOOR_ICE_HEIGHT,
-      w: width,
-      h: CRYO_FLOOR_ICE_HEIGHT
-    }
-  ];
+  return {
+    x: clamp(centerX - width / 2, floor.x, floor.x + floor.w - width),
+    y: floor.y - CRYO_FLOOR_ICE_HEIGHT,
+    w: width,
+    h: CRYO_FLOOR_ICE_HEIGHT
+  };
+};
+
+const advanceCryoConservatorFloorIce = (boss: Boss, state: BossRuntimeState, cycle: number, solids: Solid[]): void => {
+  state.floorIcePatches = state.floorIcePatches
+    .map((patch) => ({ ...patch, remainingFrames: patch.remainingFrames - 1 }))
+    .filter((patch) => patch.remainingFrames > 0);
+
+  if (state.recoveryFrames > 0 || cycle !== bossAttackWindupFramesFor("cryo-conservator")) return;
+  const patchRect = cryoFloorIceRectForLane(boss, state, 0, solids);
+  if (!patchRect) return;
+  const patch: BossFloorIceSnapshot = {
+    ...patchRect,
+    remainingFrames: CRYO_FLOOR_ICE_LIFE_FRAMES,
+    lifeFrames: CRYO_FLOOR_ICE_LIFE_FRAMES
+  };
+  const refreshedIndex = state.floorIcePatches.findIndex((existing) => rectsOverlap(existing, patch));
+  if (refreshedIndex >= 0) {
+    state.floorIcePatches[refreshedIndex] = patch;
+  } else {
+    state.floorIcePatches.push(patch);
+  }
+  state.floorIcePatches.sort((a, b) => b.remainingFrames - a.remainingFrames);
+  state.floorIcePatches = state.floorIcePatches.slice(0, CRYO_FLOOR_ICE_MAX_PATCHES);
 };
 
 const advanceStormRelayMotion = (

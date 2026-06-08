@@ -43,6 +43,7 @@ import type {
   ActorBody,
   Boss,
   BossAttackSnapshot,
+  BossFloorIceSnapshot,
   BossKind,
   BossSnapshot,
   Core,
@@ -1959,23 +1960,26 @@ export class GameScene extends Phaser.Scene {
     this.fx.strokeCircle(originX, originY, 25 * pulse);
   }
 
-  private drawCryoBossFloorIceEffect(ice: Rect, color: number): void {
+  private drawCryoBossFloorIceEffect(ice: BossFloorIceSnapshot, color: number): void {
     if (this.diagnosticsEnabled) {
-      this.bossEffectFrames.push(`cryo-floor-ice:${Math.round(ice.x)},${Math.round(ice.y)}:${Math.round(ice.w)}x${Math.round(ice.h)}`);
+      this.bossEffectFrames.push(
+        `cryo-floor-ice:${Math.round(ice.x)},${Math.round(ice.y)}:${Math.round(ice.w)}x${Math.round(ice.h)}:${Math.round(ice.remainingFrames)}/${Math.round(ice.lifeFrames)}`
+      );
     }
     const pulse = Math.sin(this.simulation.tick / 10) * 0.5 + 0.5;
-    this.fx.fillStyle(color, 0.12 + pulse * 0.05);
+    const lifeRatio = Math.max(0.18, Math.min(1, ice.remainingFrames / Math.max(1, ice.lifeFrames)));
+    this.fx.fillStyle(color, (0.1 + pulse * 0.05) * lifeRatio);
     this.fx.fillRoundedRect(ice.x - 4, ice.y - 2, ice.w + 8, ice.h + 6, 5);
-    this.fx.fillStyle(0xffffff, 0.18 + pulse * 0.12);
+    this.fx.fillStyle(0xffffff, (0.16 + pulse * 0.12) * lifeRatio);
     this.fx.fillRoundedRect(ice.x + 4, ice.y + ice.h * 0.35, Math.max(2, ice.w - 8), 2, 2);
     const facets = Math.max(4, Math.floor(ice.w / 24));
-    this.fx.lineStyle(1.25, 0xffffff, 0.2 + pulse * 0.16);
+    this.fx.lineStyle(1.25, 0xffffff, (0.18 + pulse * 0.16) * lifeRatio);
     for (let index = 0; index < facets; index += 1) {
       const x = ice.x + ((index + 0.5) / facets) * ice.w;
       this.fx.lineBetween(x - 8, ice.y + ice.h, x - 2, ice.y + 1);
       this.fx.lineBetween(x - 2, ice.y + 1, x + 9, ice.y + ice.h * 0.7);
     }
-    this.fx.lineStyle(2, color, 0.36 + pulse * 0.18);
+    this.fx.lineStyle(2, color, (0.32 + pulse * 0.18) * lifeRatio);
     this.fx.lineBetween(ice.x + 3, ice.y + ice.h, ice.x + ice.w - 3, ice.y + ice.h);
   }
 

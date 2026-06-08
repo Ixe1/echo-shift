@@ -80,7 +80,7 @@ const cloneObjectState = (state: ObjectState): ObjectState => ({
 });
 
 const cloneBossStates = (states: Map<string, BossRuntimeState>): Map<string, BossRuntimeState> =>
-  new Map([...states.entries()].map(([id, state]) => [id, { ...state }]));
+  new Map([...states.entries()].map(([id, state]) => [id, { ...state, floorIcePatches: state.floorIcePatches.map((patch) => ({ ...patch })) }]));
 
 const cloneEchoRecordings = (recordings: EchoRecording[]): EchoRecording[] =>
   recordings.map((recording) => ({
@@ -448,7 +448,7 @@ export class RoomSimulation {
       } else if (state.phase === "active") {
         state.activeFrames += 1;
         state.invulnerableFrames = Math.max(0, state.invulnerableFrames - 1);
-        advanceBossActiveMotion(boss, state, this.player);
+        advanceBossActiveMotion(boss, state, this.player, this.level.solids);
       }
 
       if (state.phase !== "active") continue;

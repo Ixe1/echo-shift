@@ -1689,6 +1689,7 @@ try {
   assert(cryoAttackSnapshot.floorIce.length === 1, `Expected active cryo beam to freeze one floor lane, got ${cryoAttackSnapshot.floorIce.length}`);
   const cryoIce = cryoAttackSnapshot.floorIce[0];
   assert(cryoIce.w === 128, `Expected cryo floor ice to cover a 128px lane, got ${JSON.stringify(cryoIce)}`);
+  assert(cryoIce.lifeFrames === 420, `Expected cryo floor ice to last 7 seconds, got ${JSON.stringify(cryoIce)}`);
 
   const cryoBeamDeathSim = new RoomSimulation(cryoLevel);
   Object.assign(cryoBeamDeathSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
@@ -1714,11 +1715,12 @@ try {
   runBossUntilAttack(cryoIceSim, "boss-test");
   const cryoIceVulnerable = runBossUntilVulnerable(cryoIceSim, "boss-test");
   assert(cryoIceVulnerable.floorIce.length === 1, "Expected cryo floor ice to persist into the vulnerable cooldown");
+  assert(cryoIceVulnerable.floorIce[0].remainingFrames > 260, `Expected cryo ice to retain several seconds during cooldown, got ${JSON.stringify(cryoIceVulnerable.floorIce[0])}`);
   placePlayerOnFloorEffect(cryoIceSim, cryoIceVulnerable.floorIce[0], 8);
   cryoIceSim.player.vx = 2;
   const cryoIceStep = cryoIceSim.step(idle);
   assert(!cryoIceStep.died && !cryoIceSim.dead, "Expected post-beam cryo floor ice not to kill the player");
-  assert(cryoIceSim.player.vx > 1.75, `Expected cryo floor ice to preserve slide velocity, got ${cryoIceSim.player.vx}`);
+  assert(cryoIceSim.player.vx > 1.9, `Expected cryo floor ice to preserve slide velocity, got ${cryoIceSim.player.vx}`);
 
   const cryoStandingHitSim = new RoomSimulation(cryoLevel);
   Object.assign(cryoStandingHitSim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });
@@ -1748,7 +1750,8 @@ try {
   const cryoAfterHit = cryoRecoverySim.bossSnapshots()[0];
   assert(cryoAfterHit.recoveryFrames > 0, "Expected cryo boss to enter recovery after a nonfatal hit");
   assert(!bossIsVulnerable(cryoAfterHit), "Expected cryo boss to close its weak spot after a successful nonfatal hit");
-  assert(cryoAfterHit.attacks.length === 0 && cryoAfterHit.floorIce.length === 0, "Expected cryo boss recovery to clear beam and floor ice effects");
+  assert(cryoAfterHit.attacks.length === 0, "Expected cryo boss recovery to clear beam hazards");
+  assert(cryoAfterHit.floorIce.length === 1, "Expected cryo boss recovery to keep existing floor ice terrain control");
   const cryoImmediateRetry = upwardHitBoss(cryoRecoverySim, cryoAfterHit);
   assert(cryoImmediateRetry.bossHit === null, "Expected cryo boss to ignore an immediate repeat hit during recovery immunity");
   assert(cryoRecoverySim.bossSnapshots()[0].health === 1, "Expected cryo boss health to stay unchanged after an immediate repeat hit attempt");
@@ -1764,6 +1767,40 @@ try {
   assert(
     cryoRecoveryPause.body.y - cryoRecoveryRising.body.y > 0.5,
     `Expected cryo boss to rise after its post-hit pause, from ${cryoRecoveryPause.body.y} to ${cryoRecoveryRising.body.y}`
+  );
+
+  const cryoStackLevel = {
+    ...cryoLevel,
+    exit: { x: 700, y: 82, w: 28, h: 38 },
+    bounds: { x: 0, y: 0, w: 760, h: 180 },
+    solids: [
+      { id: "floor", x: 0, y: 120, w: 760, h: 40 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 180 },
+      { id: "right-wall", x: 760, y: 0, w: 20, h: 180 }
+    ],
+    bosses: [{ ...cryoLevel.bosses[0], x: 20, y: 20, w: 700, h: 130 }]
+  };
+  const cryoStackSim = new RoomSimulation(cryoStackLevel);
+  Object.assign(cryoStackSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
+  cryoStackSim.step(idle);
+  runFrames(cryoStackSim, 60, idle);
+  const cryoStackTargets = [190, 330, 470, 610];
+  const cryoStackCenters = [];
+  let cryoMaxStack = 0;
+  for (const targetX of cryoStackTargets) {
+    Object.assign(cryoStackSim.player, { x: targetX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+    const stackAttack = runBossUntilAttack(cryoStackSim, "boss-test");
+    cryoMaxStack = Math.max(cryoMaxStack, stackAttack.floorIce.length);
+    cryoStackCenters.push(Math.round(stackAttack.floorIce[stackAttack.floorIce.length - 1].x + stackAttack.floorIce[stackAttack.floorIce.length - 1].w / 2));
+    assert(stackAttack.floorIce.length <= 3, `Expected cryo ice stack to stay capped at 3 patches, got ${stackAttack.floorIce.length}`);
+    runBossUntilVulnerable(cryoStackSim, "boss-test");
+  }
+  const cryoStackSnapshot = cryoStackSim.bossSnapshots()[0];
+  assert(cryoMaxStack >= 2, `Expected cryo ice to overlap across attack cycles, got max stack ${cryoMaxStack}`);
+  assert(cryoStackSnapshot.floorIce.length <= 3, `Expected cryo ice to cap at 3 active patches, got ${cryoStackSnapshot.floorIce.length}`);
+  assert(
+    new Set(cryoStackCenters).size >= 2,
+    `Expected stacked cryo ice sequence to preserve multiple lanes, got centers ${cryoStackCenters.join(",")}`
   );
 
   const multiBossLevel = {

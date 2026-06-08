@@ -199,6 +199,11 @@ export type BossAttackSnapshot = Rect & {
   originY: number;
 };
 
+export type BossFloorIceSnapshot = Rect & {
+  remainingFrames: number;
+  lifeFrames: number;
+};
+
 export type BossSnapshot = {
   id: string;
   kind: BossKind;
@@ -214,7 +219,7 @@ export type BossSnapshot = {
   weakSpotKind: BossWeakSpot;
   attacks: BossAttackSnapshot[];
   floorShocks: Rect[];
-  floorIce: Rect[];
+  floorIce: BossFloorIceSnapshot[];
 };
 
 export type SoundtrackKey =
