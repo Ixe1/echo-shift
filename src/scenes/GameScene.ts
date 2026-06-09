@@ -1527,7 +1527,7 @@ export class GameScene extends Phaser.Scene {
           w: width,
           h: TERRAIN_TILE_SIZE
         };
-        if (decorRect.w <= 12 || !this.terrainDecorHasClearance(decorRect)) continue;
+        if (decorRect.w <= 12 || !this.terrainDecorHasClearance(solid, decorRect)) continue;
         const decorVariant = this.terrainTileVariant(solid, material, "surfaceDecor", segmentIndex, column);
         const decorId = `solid:${solid.id}:decor:${segmentIndex}:${column}`;
         this.syncTerrainTileAsset(
@@ -1601,11 +1601,14 @@ export class GameScene extends Phaser.Scene {
     return this.terrainTileVariant(solid, terrainMaterialForSolid(solid), "decor-placement", 0, column) === 0;
   }
 
-  private terrainDecorHasClearance(rect: Rect): boolean {
+  private terrainDecorHasClearance(solid: Solid, rect: Rect): boolean {
     const padded = { x: rect.x - 10, y: rect.y - 10, w: rect.w + 20, h: rect.h + 22 };
     const startClearance = { x: this.level.start.x - 30, y: this.level.start.y - 64, w: 72, h: 92 };
     if (rectsOverlap(padded, startClearance) || rectsOverlap(padded, this.level.exit)) return false;
     const blockers: Rect[] = [
+      ...this.level.solids.filter(
+        (blocker) => blocker !== solid && solidCollisionFor(blocker) !== "decorative" && blocker.y < rect.y + rect.h - 0.01
+      ),
       ...(this.level.platforms || []),
       ...(this.level.oneWays || []),
       ...(this.level.conveyors || []),

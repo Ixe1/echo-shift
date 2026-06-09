@@ -354,6 +354,8 @@ const level = {
     { id: "upper-top-only-cover", x: 328, y: 120, w: 88, h: 158, sprite: "floor", tone: "steel", collision: "top-only" },
     { id: "stepped-decor-base", x: 100, y: 80, w: 260, h: 60, sprite: "floor", material: "grass-organic" },
     { id: "stepped-decor-cover", x: 100, y: 48, w: 34, h: 32, sprite: "block", material: "wood-archive" },
+    { id: "ceiling-decor-base", x: 430, y: 80, w: 260, h: 60, sprite: "floor", material: "grass-organic" },
+    { id: "ceiling-decor-overhang", x: 462, y: 47, w: 32, h: 32, sprite: "block", material: "wood-archive" },
     { id: "enclosed-top", x: 800, y: 400, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-left", x: 780, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-center", x: 800, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
@@ -652,6 +654,19 @@ try {
   assert(
     diagnostics.terrainDecor.includes("solid:stepped-decor-base:decor:0:6:decor:grass-organic:"),
     `Expected stepped terrain decor to still render on fully exposed eligible column, got ${diagnostics.terrainDecor}`
+  );
+  assert(
+    diagnostics.terrainDecor.includes("solid:ceiling-decor-base:surface:0:1:cap:grass-organic:") &&
+      diagnostics.terrainDecor.includes(":462,64:32x32"),
+    `Expected low-overhang terrain cap to remain visible, got ${diagnostics.terrainDecor}`
+  );
+  assert(
+    !diagnostics.terrainDecor.includes("solid:ceiling-decor-base:decor:0:1:"),
+    `Expected low-overhang terrain decor to skip blocked column, got ${diagnostics.terrainDecor}`
+  );
+  assert(
+    diagnostics.terrainDecor.includes("solid:ceiling-decor-base:decor:0:4:decor:grass-organic:"),
+    `Expected low-overhang terrain decor to still render on clear eligible column, got ${diagnostics.terrainDecor}`
   );
   assert(diagnostics.objectCount >= 25, `Expected synced object sprites, got ${diagnostics.objectCount}`);
   assert(diagnostics.backgroundFilter === "time-lab-prototype:0", `Expected background texture to use linear filtering, got ${diagnostics.backgroundFilter}`);
