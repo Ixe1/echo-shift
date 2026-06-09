@@ -2,10 +2,11 @@ import { writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 
 const FRAME = 32;
-const COLUMNS = 8;
+const COLUMNS = 12;
 const PAD = 1;
 const CELL = FRAME + PAD * 2;
 const BYTES_PER_PIXEL = 4;
+const VARIANTS = 3;
 const MATERIALS = [
   {
     key: "metal-lab",
@@ -80,8 +81,8 @@ const MATERIALS = [
     light: "#efb17c"
   }
 ];
-const ROLES = ["floorTop", "floorFace", "wallFace", "blockFace"];
-const TOTAL_FRAMES = MATERIALS.length * ROLES.length;
+const ROLES = ["floorTop", "floorFace", "wallFace", "blockFace", "surfaceCap", "surfaceDecor"];
+const TOTAL_FRAMES = MATERIALS.length * ROLES.length * VARIANTS;
 const ROWS = Math.ceil(TOTAL_FRAMES / COLUMNS);
 const WIDTH = COLUMNS * CELL;
 const HEIGHT = ROWS * CELL;
@@ -163,25 +164,51 @@ const dot = (frameIndex, x, y, color) => {
   setPixel(frameIndex, x + 1, y + 1, color);
 };
 
+const fillCircle = (frameIndex, cx, cy, radius, color) => {
+  for (let y = cy - radius; y <= cy + radius; y += 1) {
+    for (let x = cx - radius; x <= cx + radius; x += 1) {
+      if ((x - cx) ** 2 + (y - cy) ** 2 <= radius ** 2) setPixel(frameIndex, x, y, color);
+    }
+  }
+};
+
+const fillTriangle = (frameIndex, a, b, c, color) => {
+  const minX = Math.floor(Math.min(a.x, b.x, c.x));
+  const maxX = Math.ceil(Math.max(a.x, b.x, c.x));
+  const minY = Math.floor(Math.min(a.y, b.y, c.y));
+  const maxY = Math.ceil(Math.max(a.y, b.y, c.y));
+  const area = (p1, p2, p3) => (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+  const total = area(a, b, c);
+  for (let y = minY; y <= maxY; y += 1) {
+    for (let x = minX; x <= maxX; x += 1) {
+      const point = { x, y };
+      const w1 = area(point, b, c);
+      const w2 = area(a, point, c);
+      const w3 = area(a, b, point);
+      if ((total >= 0 && w1 >= 0 && w2 >= 0 && w3 >= 0) || (total < 0 && w1 <= 0 && w2 <= 0 && w3 <= 0)) setPixel(frameIndex, x, y, color);
+    }
+  }
+};
+
 const noise = (x, y, seed) => {
   const value = Math.sin((x + 17) * 12.9898 + (y + 31) * 78.233 + seed * 37.719) * 43758.5453;
   return value - Math.floor(value);
 };
 
-const paintBase = (frameIndex, palette, role) => {
+const paintBase = (frameIndex, palette, role, variant) => {
   const face = rgba(palette.face);
   const surface = rgba(palette.surface);
   const dark = rgba(palette.dark);
-  const seed = MATERIALS.findIndex((item) => item.key === palette.key) + ROLES.indexOf(role) * 11;
+  const seed = MATERIALS.findIndex((item) => item.key === palette.key) + ROLES.indexOf(role) * 11 + variant * 29;
   for (let y = 0; y < FRAME; y += 1) {
     for (let x = 0; x < FRAME; x += 1) {
       const isTop = role === "floorTop" && y < 10;
       const base = isTop ? surface : role === "wallFace" ? mix(face, dark, 0.08) : face;
       const grain = noise(x, y, seed) - 0.5;
       const verticalShade = y / FRAME;
-      const grainStrength = role === "wallFace" ? 0.015 : 0.07;
-      const verticalStrength = role === "wallFace" ? 0.02 : 0.05;
-      const color = shade(base, clamp(grain * grainStrength - verticalShade * verticalStrength, -0.08, 0.08));
+      const grainStrength = role === "wallFace" ? 0.015 : 0.06 + variant * 0.012;
+      const verticalStrength = role === "wallFace" ? 0.02 : 0.045 + variant * 0.005;
+      const color = shade(base, clamp(grain * grainStrength - verticalShade * verticalStrength, -0.09, 0.09));
       setPixel(frameIndex, x, y, color);
     }
   }
@@ -200,12 +227,13 @@ const drawWarningStripes = (frameIndex, palette) => {
   fillRect(frameIndex, 0, 12, FRAME, 1, rgba(palette.accent));
 };
 
-const drawGrassTufts = (frameIndex, palette) => {
+const drawGrassTufts = (frameIndex, palette, variant) => {
   const grass = rgba(palette.accent);
   const darkGrass = shade(rgba(palette.surface), -0.24);
-  for (let x = 1; x < FRAME; x += 4) {
-    drawLine(frameIndex, x, 8, x + 1, 2 + (x % 3), grass);
-    drawLine(frameIndex, x + 2, 9, x + 1, 4 + (x % 4), darkGrass);
+  for (let x = 0; x < FRAME; x += 3) {
+    const lift = 2 + ((x + variant * 5) % 5);
+    drawLine(frameIndex, x, 9, x + 1, lift, (x + variant) % 2 === 0 ? grass : darkGrass);
+    drawLine(frameIndex, x + 2, 9, x + 1, 4 + ((x + variant * 3) % 4), darkGrass);
   }
   fillRect(frameIndex, 0, 10, FRAME, 2, shade(rgba(palette.face), -0.22));
 };
@@ -284,10 +312,148 @@ const drawSharedPanelLines = (frameIndex, palette, role) => {
   dot(frameIndex, 24, 24, shade(dark, 0.12));
 };
 
-const drawTile = (material, role, frameIndex) => {
-  paintBase(frameIndex, material, role);
+const drawRigidSurfaceCap = (frameIndex, palette, variant) => {
+  const surface = rgba(palette.surface);
+  const face = rgba(palette.face);
+  const line = rgba(palette.line);
+  const dark = rgba(palette.dark);
+  const light = rgba(palette.light);
+  fillRect(frameIndex, 0, 15, FRAME, 6, shade(surface, 0.08));
+  fillRect(frameIndex, 0, 21, FRAME, 3, shade(face, -0.12));
+  fillRect(frameIndex, 0, 24, FRAME, 6, shade(face, -0.02));
+  fillRect(frameIndex, 0, 30, FRAME, 2, shade(dark, 0.06));
+  drawLine(frameIndex, 0, 14, FRAME - 1, 14, shade(light, -0.08));
+  drawLine(frameIndex, 0, 20, FRAME - 1, 20, shade(line, -0.04));
+  for (let x = 6 + variant; x < FRAME; x += 12) dot(frameIndex, x, 17, shade(light, -0.12));
+};
+
+const drawSurfaceCap = (frameIndex, palette, variant) => {
+  if (palette.key === "grass-organic") {
+    const grass = rgba(palette.accent);
+    const midGrass = rgba(palette.surface);
+    const darkGrass = shade(rgba(palette.surface), -0.28);
+    const soil = rgba(palette.face);
+    const root = rgba(palette.dark);
+    fillRect(frameIndex, 0, 22, FRAME, 6, shade(soil, -0.05));
+    fillRect(frameIndex, 0, 28, FRAME, 4, shade(root, 0.12));
+    for (let x = 0; x < FRAME; x += 2) {
+      const height = 7 + ((x * 5 + variant * 9) % 11);
+      const top = 22 - height;
+      const color = (x + variant) % 3 === 0 ? grass : (x + variant) % 3 === 1 ? midGrass : darkGrass;
+      drawLine(frameIndex, x, 24, Math.min(FRAME - 1, x + 1), top, color);
+      if ((x + variant) % 4 === 0) drawLine(frameIndex, Math.min(FRAME - 1, x + 1), 25, Math.max(0, x - 1), top + 4, darkGrass);
+    }
+    for (let x = 1 + variant; x < FRAME; x += 8) drawLine(frameIndex, x, 28, x + 2, 31, shade(root, 0.18));
+    return;
+  }
+
+  drawRigidSurfaceCap(frameIndex, palette, variant);
+  if (palette.key === "warning-industrial") {
+    for (let x = -8 + variant * 3; x < FRAME + 8; x += 10) {
+      drawLine(frameIndex, x, 15, x + 8, 23, rgba(palette.dark));
+      drawLine(frameIndex, x + 1, 15, x + 9, 23, rgba(palette.dark));
+    }
+    fillRect(frameIndex, 0, 23, FRAME, 2, rgba(palette.accent));
+    return;
+  }
+  if (palette.key === "glass-energy") {
+    drawLine(frameIndex, 2, 18, 14, 18, rgba(palette.light));
+    drawLine(frameIndex, 18, 25, 30, 17, shade(rgba(palette.accent), 0.2));
+    return;
+  }
+  if (palette.key === "sand-ruin") {
+    for (let x = variant; x < FRAME; x += 9) fillRect(frameIndex, x, 13 + (x % 3), 4, 2, shade(rgba(palette.light), -0.05));
+    return;
+  }
+  if (palette.key === "ice-cryo") {
+    fillTriangle(frameIndex, { x: 5 + variant, y: 14 }, { x: 10 + variant, y: 6 }, { x: 15 + variant, y: 14 }, shade(rgba(palette.light), -0.04));
+    drawLine(frameIndex, 5, 25, 19, 20, rgba(palette.line));
+    return;
+  }
+  if (palette.key === "wood-archive") {
+    for (let x = 5 + variant * 2; x < FRAME; x += 10) drawLine(frameIndex, x, 15, x, 31, shade(rgba(palette.line), -0.08));
+    drawLine(frameIndex, 2, 18, 14, 17, shade(rgba(palette.light), -0.12));
+    return;
+  }
+  if (palette.key === "copper-corrode") {
+    fillRect(frameIndex, 0, 22, FRAME, 2, rgba(palette.accent));
+    for (let x = 4 + variant; x < FRAME; x += 13) dot(frameIndex, x, 16 + (x % 3), shade(rgba(palette.accent), 0.12));
+  }
+};
+
+const drawSurfaceDecor = (frameIndex, palette, variant) => {
+  if (palette.key === "grass-organic") {
+    const stem = shade(rgba(palette.surface), -0.18);
+    const leaf = rgba(palette.accent);
+    const petal = variant === 0 ? [255, 227, 90, 255] : variant === 1 ? [255, 112, 169, 255] : [184, 242, 255, 255];
+    const cx = 12 + variant * 4;
+    drawLine(frameIndex, cx, 29, cx + 1, 16, stem);
+    drawLine(frameIndex, cx, 24, cx - 5, 20, leaf);
+    drawLine(frameIndex, cx + 1, 25, cx + 6, 21, shade(leaf, -0.16));
+    fillCircle(frameIndex, cx, 13, 2, petal);
+    fillCircle(frameIndex, cx - 3, 15, 2, petal);
+    fillCircle(frameIndex, cx + 3, 15, 2, petal);
+    fillCircle(frameIndex, cx, 16, 2, [255, 248, 191, 255]);
+    return;
+  }
+  if (palette.key === "metal-lab") {
+    fillRect(frameIndex, 4, 24, 24, 3, shade(rgba(palette.line), -0.1));
+    drawLine(frameIndex, 5, 25, 14, 22, rgba(palette.accent));
+    drawLine(frameIndex, 14, 22, 26, 24, shade(rgba(palette.accent), -0.14));
+    dot(frameIndex, 8 + variant * 6, 20, rgba(palette.light));
+    return;
+  }
+  if (palette.key === "glass-energy") {
+    fillTriangle(frameIndex, { x: 9, y: 27 }, { x: 15 + variant, y: 10 }, { x: 22, y: 27 }, shade(rgba(palette.accent), 0.16));
+    drawLine(frameIndex, 15 + variant, 10, 15, 26, rgba(palette.light));
+    return;
+  }
+  if (palette.key === "warning-industrial") {
+    fillRect(frameIndex, 11, 18, 10, 10, rgba(palette.dark));
+    fillRect(frameIndex, 13, 14, 6, 5, rgba(palette.accent));
+    drawLine(frameIndex, 10, 28, 22, 28, rgba(palette.surface));
+    return;
+  }
+  if (palette.key === "sand-ruin") {
+    fillRect(frameIndex, 8, 22, 16, 6, shade(rgba(palette.face), -0.08));
+    fillRect(frameIndex, 10, 18, 12, 4, rgba(palette.surface));
+    drawLine(frameIndex, 7, 28, 25, 28, rgba(palette.dark));
+    return;
+  }
+  if (palette.key === "ice-cryo") {
+    fillTriangle(frameIndex, { x: 8, y: 28 }, { x: 13, y: 8 }, { x: 18, y: 28 }, shade(rgba(palette.light), -0.02));
+    fillTriangle(frameIndex, { x: 16, y: 28 }, { x: 22 + variant, y: 13 }, { x: 27, y: 28 }, rgba(palette.accent));
+    drawLine(frameIndex, 13, 8, 16, 27, rgba(palette.line));
+    return;
+  }
+  if (palette.key === "wood-archive") {
+    fillRect(frameIndex, 8, 18, 15, 10, shade(rgba(palette.surface), 0.05));
+    drawLine(frameIndex, 8, 18, 23, 28, rgba(palette.line));
+    drawLine(frameIndex, 8, 28, 23, 18, rgba(palette.line));
+    fillRect(frameIndex, 11, 14, 9, 4, shade(rgba(palette.light), -0.05));
+    return;
+  }
+  if (palette.key === "copper-corrode") {
+    drawLine(frameIndex, 5, 23, 13, 15, rgba(palette.accent));
+    drawLine(frameIndex, 13, 15, 24, 15, rgba(palette.accent));
+    drawLine(frameIndex, 24, 15, 29, 24, shade(rgba(palette.accent), -0.18));
+    dot(frameIndex, 10 + variant * 5, 21, rgba(palette.light));
+  }
+};
+
+const drawTile = (material, role, variant, frameIndex) => {
+  if (role === "surfaceCap") {
+    drawSurfaceCap(frameIndex, material, variant);
+    return;
+  }
+  if (role === "surfaceDecor") {
+    drawSurfaceDecor(frameIndex, material, variant);
+    return;
+  }
+
+  paintBase(frameIndex, material, role, variant);
   if (material.key === "warning-industrial" && role === "floorTop") drawWarningStripes(frameIndex, material);
-  else if (material.key === "grass-organic" && role === "floorTop") drawGrassTufts(frameIndex, material);
+  else if (material.key === "grass-organic" && role === "floorTop") drawGrassTufts(frameIndex, material, variant);
   else if (material.key === "glass-energy" && role === "wallFace") {
     fillRect(frameIndex, 0, 0, FRAME, FRAME, rgba(material.face));
     fillRect(frameIndex, 0, 0, FRAME, 1, shade(rgba(material.face), 0.08));
@@ -301,13 +467,18 @@ const drawTile = (material, role, frameIndex) => {
   if (material.key === "wood-archive") drawWoodGrain(frameIndex, material, role);
   if (material.key === "copper-corrode") drawCopperPatina(frameIndex, material, role);
 
+  if (role !== "wallFace" && variant === 1) drawLine(frameIndex, 2, 27, 18, 27, shade(rgba(material.line), 0.06));
+  if (role !== "floorTop" && variant === 2) strokeRect(frameIndex, 8, 7, 16, 16, shade(rgba(material.line), -0.14));
+
   if (role === "floorFace" || role === "blockFace") fillRect(frameIndex, 0, 0, FRAME, 1, shade(rgba(material.dark), 0.06));
   if (role === "wallFace") fillRect(frameIndex, 0, 0, 1, FRAME, shade(rgba(material.dark), 0.03));
 };
 
 for (let materialIndex = 0; materialIndex < MATERIALS.length; materialIndex += 1) {
   for (let roleIndex = 0; roleIndex < ROLES.length; roleIndex += 1) {
-    drawTile(MATERIALS[materialIndex], ROLES[roleIndex], materialIndex * ROLES.length + roleIndex);
+    for (let variant = 0; variant < VARIANTS; variant += 1) {
+      drawTile(MATERIALS[materialIndex], ROLES[roleIndex], variant, materialIndex * ROLES.length * VARIANTS + roleIndex * VARIANTS + variant);
+    }
   }
 }
 

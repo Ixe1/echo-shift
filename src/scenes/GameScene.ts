@@ -27,7 +27,7 @@ import {
   monsterFrameForKind,
   type BossSpriteState
 } from "../game/enemySprites";
-import { rectCenter } from "../game/geometry";
+import { rectCenter, rectsOverlap } from "../game/geometry";
 import { doorRequiredCoreIds, droneIsActive, droneRectAt, isMajorCore, laserIsActive, movingLaserRectAt } from "../game/objects";
 import { platformRectAt } from "../game/player";
 import { recordLevelScore } from "../game/progress";
@@ -40,7 +40,8 @@ import {
   terrainTileFrame,
   TERRAIN_TILE_KEY,
   TERRAIN_TILE_SIZE,
-  type TerrainTileRole
+  TERRAIN_TILE_VARIANT_COUNT,
+  type TerrainBaseTileRole
 } from "../game/terrainMaterials";
 import type {
   ActorBody,
@@ -88,6 +89,9 @@ const BOSS_MUSIC_FADE_MS = 620;
 const PLAYER_CAMERA_REFERENCE_HEIGHT = 540;
 const PLAYER_CAMERA_ZOOM = 1.152;
 const BOSS_ARENA_CAMERA_ZOOM = 1.2;
+const TERRAIN_SURFACE_CAP_OVERLAP = 16;
+const TERRAIN_DECOR_MIN_SOLID_HEIGHT = 28;
+const TERRAIN_DECOR_MIN_SEGMENT_WIDTH = 96;
 const BOSS_DEFEAT_BURST_OFFSETS = [
   { x: 0.28, y: 0.34, start: 0, tint: 0xffe35a },
   { x: 0.62, y: 0.42, start: 18, tint: 0xff8b3d },
@@ -227,6 +231,7 @@ export class GameScene extends Phaser.Scene {
   private readonly activeActorSpriteIds = new Set<string>();
   private readonly activeCoreSpriteIds = new Set<string>();
   private staticSolidAssetFrames: string[] = [];
+  private staticTerrainDecorFrames: string[] = [];
   private tileAssetPhases: string[] = [];
   private tileAssetOrigins: string[] = [];
   private laserAssetTransforms: string[] = [];
@@ -1430,6 +1435,7 @@ export class GameScene extends Phaser.Scene {
   private syncStaticLevelAssets(): void {
     this.staticObjectAssetIds.clear();
     this.staticSolidAssetFrames = [];
+    this.staticTerrainDecorFrames = [];
     this.staticSolidOutlineRects = [];
     this.structureOutlines.clear();
     this.syncStaticSolids();
@@ -1443,8 +1449,10 @@ export class GameScene extends Phaser.Scene {
       const material = terrainMaterialForSolid(solid);
       const depth = solidRenderDepth(solid);
       const tileIds = this.syncStaticSolidAsset(solid, frame, material, depth);
+      const surfaceIds = this.syncStaticSolidSurfaceAssets(solid, material, depth);
       this.staticSolidAssetFrames.push(`${solid.id}:${frame}:${material}:${tileIds.length}:${solidCollisionFor(solid)}:${depth.toFixed(3)}`);
       for (const tileId of tileIds) this.markStaticObjectAsset(tileId);
+      for (const surfaceId of surfaceIds) this.markStaticObjectAsset(surfaceId);
       this.drawSolidReadabilityOutline(solid);
     }
   }
@@ -1468,13 +1476,89 @@ export class GameScene extends Phaser.Scene {
         const tileW = Math.min(TERRAIN_TILE_SIZE, solid.x + solid.w - tileX);
         if (tileW <= 0) continue;
         const role = this.terrainTileRole(frame, row);
-        const tileFrame = terrainTileFrame(material, role);
+        const tileFrame = terrainTileFrame(material, role, this.terrainTileVariant(solid, material, role, row, column));
         const id = `solid:${solid.id}:tile:${row}:${column}`;
         this.syncTerrainTileAsset(id, tileFrame, tileX, tileY, tileW, tileH, depth);
         ids.push(id);
       }
     }
     return ids;
+  }
+
+  private syncStaticSolidSurfaceAssets(solid: Solid, material: TerrainMaterial, depth: number): string[] {
+    if (!this.textures.exists(TERRAIN_TILE_KEY) || solid.w <= 0 || solid.h <= 0) return [];
+    const ids: string[] = [];
+    const topSegments = this.solidSurfaceTopSegments(solid);
+    for (let segmentIndex = 0; segmentIndex < topSegments.length; segmentIndex += 1) {
+      const segment = topSegments[segmentIndex];
+      const startColumn = Math.max(0, Math.floor((segment.from - solid.x) / TERRAIN_TILE_SIZE));
+      const endColumn = Math.max(startColumn, Math.ceil((segment.to - solid.x) / TERRAIN_TILE_SIZE) - 1);
+      const segmentWidth = segment.to - segment.from;
+      for (let column = startColumn; column <= endColumn; column += 1) {
+        const tileX = solid.x + column * TERRAIN_TILE_SIZE;
+        const from = Math.max(segment.from, tileX);
+        const to = Math.min(segment.to, tileX + TERRAIN_TILE_SIZE, solid.x + solid.w);
+        const width = to - from;
+        if (width <= 4) continue;
+
+        const capVariant = this.terrainTileVariant(solid, material, "surfaceCap", segmentIndex, column);
+        const capId = `solid:${solid.id}:surface:${segmentIndex}:${column}`;
+        this.syncTerrainTileAsset(
+          capId,
+          terrainTileFrame(material, "surfaceCap", capVariant),
+          from,
+          solid.y - TERRAIN_SURFACE_CAP_OVERLAP,
+          width,
+          TERRAIN_TILE_SIZE,
+          depth + 0.12
+        );
+        ids.push(capId);
+        if (this.diagnosticsEnabled) {
+          this.staticTerrainDecorFrames.push(
+            `${capId}:cap:${material}:${capVariant}:${Math.round(from)},${Math.round(solid.y - TERRAIN_SURFACE_CAP_OVERLAP)}:${Math.round(width)}x${TERRAIN_TILE_SIZE}`
+          );
+        }
+
+        if (!this.shouldPlaceTerrainDecor(solid, segmentWidth, column)) continue;
+        const decorRect = {
+          x: tileX,
+          y: solid.y - TERRAIN_TILE_SIZE,
+          w: Math.min(TERRAIN_TILE_SIZE, solid.x + solid.w - tileX),
+          h: TERRAIN_TILE_SIZE
+        };
+        if (decorRect.w <= 12 || !this.terrainDecorHasClearance(decorRect)) continue;
+        const decorVariant = this.terrainTileVariant(solid, material, "surfaceDecor", segmentIndex, column);
+        const decorId = `solid:${solid.id}:decor:${segmentIndex}:${column}`;
+        this.syncTerrainTileAsset(
+          decorId,
+          terrainTileFrame(material, "surfaceDecor", decorVariant),
+          decorRect.x,
+          decorRect.y,
+          decorRect.w,
+          decorRect.h,
+          depth + 0.16
+        );
+        ids.push(decorId);
+        if (this.diagnosticsEnabled) {
+          this.staticTerrainDecorFrames.push(
+            `${decorId}:decor:${material}:${decorVariant}:${Math.round(decorRect.x)},${Math.round(decorRect.y)}:${Math.round(decorRect.w)}x${Math.round(decorRect.h)}`
+          );
+        }
+      }
+    }
+    return ids;
+  }
+
+  private solidSurfaceTopSegments(solid: Solid): Array<{ side: "top"; from: number; to: number }> {
+    let segments: Array<{ from: number; to: number }> = [{ from: solid.x, to: solid.x + solid.w }];
+    for (const neighbor of this.level.solids) {
+      if (neighbor === solid) continue;
+      const horizontalOverlap = this.overlapSpan(solid.x, solid.x + solid.w, neighbor.x, neighbor.x + neighbor.w);
+      if (horizontalOverlap && this.sameCoordinate(neighbor.y + neighbor.h, solid.y)) {
+        segments = this.subtractSolidOutlineSpan(segments, horizontalOverlap.from, horizontalOverlap.to);
+      }
+    }
+    return segments.map((segment) => ({ side: "top", ...segment }));
   }
 
   private syncFallbackSolidAsset(solid: Solid, frame: number, depth: number): void {
@@ -1493,11 +1577,52 @@ export class GameScene extends Phaser.Scene {
     this.activeObjectAssetIds.add(`solid:${solid.id}`);
   }
 
-  private terrainTileRole(frame: number, row: number): TerrainTileRole {
+  private terrainTileRole(frame: number, row: number): TerrainBaseTileRole {
     if (frame === OBJECT_FRAME.wall) return "wallFace";
     if (row === 0) return "floorTop";
     if (frame === OBJECT_FRAME.floor || frame === OBJECT_FRAME.warning) return "floorFace";
     return "blockFace";
+  }
+
+  private terrainTileVariant(solid: Solid, material: TerrainMaterial, role: string, row: number, column: number): number {
+    let hash = 2166136261;
+    const key = `${this.level.id}:${solid.id}:${material}:${role}:${row}:${column}`;
+    for (let index = 0; index < key.length; index += 1) {
+      hash ^= key.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0) % TERRAIN_TILE_VARIANT_COUNT;
+  }
+
+  private shouldPlaceTerrainDecor(solid: Solid, segmentWidth: number, column: number): boolean {
+    if (solid.h < TERRAIN_DECOR_MIN_SOLID_HEIGHT || segmentWidth < TERRAIN_DECOR_MIN_SEGMENT_WIDTH) return false;
+    if (solidCollisionFor(solid) === "top-only") return false;
+    return this.terrainTileVariant(solid, terrainMaterialForSolid(solid), "decor-placement", 0, column) === 0;
+  }
+
+  private terrainDecorHasClearance(rect: Rect): boolean {
+    const padded = { x: rect.x - 10, y: rect.y - 10, w: rect.w + 20, h: rect.h + 22 };
+    const startClearance = { x: this.level.start.x - 30, y: this.level.start.y - 64, w: 72, h: 92 };
+    if (rectsOverlap(padded, startClearance) || rectsOverlap(padded, this.level.exit)) return false;
+    const blockers: Rect[] = [
+      ...(this.level.platforms || []),
+      ...(this.level.oneWays || []),
+      ...(this.level.conveyors || []),
+      ...(this.level.launchPads || []),
+      ...(this.level.drones || []),
+      ...(this.level.plates || []),
+      ...(this.level.timedSwitches || []),
+      ...(this.level.echoSensors || []),
+      ...(this.level.doors || []),
+      ...(this.level.lasers || []),
+      ...(this.level.movingLasers || []),
+      ...(this.level.cores || []),
+      ...(this.level.hazards || []),
+      ...(this.level.crates || []),
+      ...(this.level.monsters || []),
+      ...(this.level.bosses || [])
+    ];
+    return blockers.every((blocker) => !rectsOverlap(padded, blocker));
   }
 
   private syncTerrainTileAsset(id: string, frame: number, x: number, y: number, width: number, height: number, depth: number): void {
@@ -2400,6 +2525,7 @@ export class GameScene extends Phaser.Scene {
       .join(",");
     document.documentElement.dataset.echoShiftObjectAssetCount = String(this.activeObjectAssetIds.size + this.staticObjectAssetIds.size);
     document.documentElement.dataset.echoShiftSolidAssetFrames = this.staticSolidAssetFrames.join(",");
+    document.documentElement.dataset.echoShiftTerrainDecorFrames = this.staticTerrainDecorFrames.join("|");
     document.documentElement.dataset.echoShiftTileAssetPhases = this.tileAssetPhases.join("|");
     document.documentElement.dataset.echoShiftTileAssetOrigins = this.tileAssetOrigins.join("|");
     document.documentElement.dataset.echoShiftLaserAssetTransforms = this.laserAssetTransforms.join("|");

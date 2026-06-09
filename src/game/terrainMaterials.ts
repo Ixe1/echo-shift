@@ -3,6 +3,7 @@ import type { Solid, TerrainMaterial } from "./types";
 
 export const TERRAIN_TILE_KEY = "terrain-tiles";
 export const TERRAIN_TILE_SIZE = 32;
+export const TERRAIN_TILE_VARIANT_COUNT = 3;
 
 export const terrainMaterialValues = [
   "metal-lab",
@@ -26,8 +27,11 @@ export const terrainMaterialLabels: Record<TerrainMaterial, string> = {
   "copper-corrode": "Copper Corrosion"
 };
 
-export const terrainTileRoles = ["floorTop", "floorFace", "wallFace", "blockFace"] as const;
+export const terrainBaseTileRoles = ["floorTop", "floorFace", "wallFace", "blockFace"] as const;
+export const terrainSurfaceTileRoles = ["surfaceCap", "surfaceDecor"] as const;
+export const terrainTileRoles = [...terrainBaseTileRoles, ...terrainSurfaceTileRoles] as const;
 
+export type TerrainBaseTileRole = (typeof terrainBaseTileRoles)[number];
 export type TerrainTileRole = (typeof terrainTileRoles)[number];
 
 export const TERRAIN_TILE_ROLE_COUNT = terrainTileRoles.length;
@@ -47,8 +51,9 @@ export const terrainMaterialForSolid = (
   return "metal-lab";
 };
 
-export const terrainTileFrame = (material: TerrainMaterial, role: TerrainTileRole): number => {
+export const terrainTileFrame = (material: TerrainMaterial, role: TerrainTileRole, variant = 0): number => {
   const materialIndex = terrainMaterialValues.indexOf(material);
   const roleIndex = terrainTileRoles.indexOf(role);
-  return materialIndex * TERRAIN_TILE_ROLE_COUNT + roleIndex;
+  const variantIndex = Math.max(0, Math.min(TERRAIN_TILE_VARIANT_COUNT - 1, Math.floor(variant)));
+  return materialIndex * TERRAIN_TILE_ROLE_COUNT * TERRAIN_TILE_VARIANT_COUNT + roleIndex * TERRAIN_TILE_VARIANT_COUNT + variantIndex;
 };
