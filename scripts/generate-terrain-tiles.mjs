@@ -312,6 +312,121 @@ const drawSharedPanelLines = (frameIndex, palette, role) => {
   dot(frameIndex, 24, 24, shade(dark, 0.12));
 };
 
+const drawChip = (frameIndex, x, y, color) => {
+  setPixel(frameIndex, x, y, color);
+  setPixel(frameIndex, x + 1, y, shade(color, -0.08));
+  setPixel(frameIndex, x, y + 1, shade(color, 0.08));
+};
+
+const drawInteriorMaterialTexture = (frameIndex, palette, role, variant) => {
+  if (role !== "floorFace" && role !== "wallFace" && role !== "blockFace") return;
+
+  const face = rgba(palette.face);
+  const surface = rgba(palette.surface);
+  const line = rgba(palette.line);
+  const dark = rgba(palette.dark);
+  const accent = rgba(palette.accent);
+  const light = rgba(palette.light);
+  const seam = shade(line, -0.08);
+  const shadow = shade(dark, 0.12);
+
+  if (palette.key === "metal-lab") {
+    fillRect(frameIndex, 0, 6 + variant * 2, FRAME, 1, shade(seam, -0.06));
+    fillRect(frameIndex, 0, 18 - variant, FRAME, 1, shade(seam, -0.04));
+    strokeRect(frameIndex, 4 + variant * 2, 4, 10, 9, shade(line, -0.03));
+    strokeRect(frameIndex, 19 - variant, 18, 9, 8, shade(line, -0.02));
+    fillRect(frameIndex, 6, 24, 10, 2, shade(accent, -0.18));
+    fillRect(frameIndex, 21, 8 + variant, 6, 2, shade(light, -0.18));
+    for (let x = 3 + variant; x < FRAME; x += 10) setPixel(frameIndex, x, 14 + ((x + variant) % 5), shade(light, -0.22));
+    for (let x = 2; x < FRAME; x += 9) setPixel(frameIndex, x, 28 - ((x + variant) % 6), shadow);
+    return;
+  }
+
+  if (palette.key === "glass-energy") {
+    strokeRect(frameIndex, 3 + variant, 3, 13, 11, shade(accent, -0.22));
+    strokeRect(frameIndex, 15, 17 - variant, 13, 10, shade(accent, -0.26));
+    drawLine(frameIndex, 5, 25, 17, 5, shade(light, -0.12));
+    drawLine(frameIndex, 19, 29, 29, 15, shade(accent, 0.12));
+    fillRect(frameIndex, 0, 15, FRAME, 1, shade(face, 0.14));
+    fillRect(frameIndex, 16, 0, 1, FRAME, shade(face, -0.1));
+    for (let y = 5 + variant; y < FRAME; y += 9) setPixel(frameIndex, 9 + ((y + variant) % 11), y, shade(light, -0.08));
+    return;
+  }
+
+  if (palette.key === "warning-industrial") {
+    fillRect(frameIndex, 2, 4, 12, 8, shade(face, 0.08));
+    fillRect(frameIndex, 17, 17, 12, 9, shade(face, 0.06));
+    strokeRect(frameIndex, 2, 4, 12, 8, shade(line, 0.04));
+    strokeRect(frameIndex, 17, 17, 12, 9, shade(line, 0.04));
+    for (let x = -6 + variant * 3; x < FRAME; x += 11) {
+      drawLine(frameIndex, x, 13, x + 8, 21, shade(surface, -0.2));
+      drawLine(frameIndex, x + 1, 13, x + 9, 21, shade(surface, -0.2));
+    }
+    fillRect(frameIndex, 21, 7, 6, 2, shade(accent, 0.04));
+    fillRect(frameIndex, 6, 27, 8, 1, shade(surface, -0.08));
+    return;
+  }
+
+  if (palette.key === "grass-organic") {
+    drawLine(frameIndex, 0, 7 + variant, FRAME - 1, 5 + variant, shade(line, -0.04));
+    drawLine(frameIndex, 0, 17, FRAME - 1, 18 + variant, shade(line, 0.03));
+    drawLine(frameIndex, 0, 25 - variant, FRAME - 1, 24, shade(dark, 0.1));
+    drawLine(frameIndex, 7, 0, 9, 12, shade(surface, -0.22));
+    drawLine(frameIndex, 9, 12, 5, 22, shade(surface, -0.28));
+    drawLine(frameIndex, 23, 3, 20, 17, shade(surface, -0.24));
+    drawLine(frameIndex, 20, 17, 26, 28, shade(surface, -0.3));
+    drawChip(frameIndex, 13, 11, shade(light, -0.34));
+    drawChip(frameIndex, 28, 21, shade(surface, -0.32));
+    return;
+  }
+
+  if (palette.key === "sand-ruin") {
+    fillRect(frameIndex, 0, 9 + variant, FRAME, 1, shade(line, -0.02));
+    fillRect(frameIndex, 0, 21 - variant, FRAME, 1, shade(line, -0.06));
+    for (let x = 8 - variant; x < FRAME; x += 13) drawLine(frameIndex, x, 0, x, 9 + variant, shade(line, -0.02));
+    for (let x = 4 + variant; x < FRAME; x += 14) drawLine(frameIndex, x, 21 - variant, x, FRAME - 1, shade(line, -0.04));
+    drawLine(frameIndex, 5, 15, 13, 12, shade(dark, 0.05));
+    drawLine(frameIndex, 13, 12, 18, 17, shade(dark, 0.04));
+    drawChip(frameIndex, 24, 6, shade(light, -0.24));
+    drawChip(frameIndex, 10, 26, shade(surface, 0.08));
+    return;
+  }
+
+  if (palette.key === "ice-cryo") {
+    fillRect(frameIndex, 0, 8, FRAME, 1, shade(light, -0.18));
+    fillRect(frameIndex, 13 + variant, 0, 1, FRAME, shade(accent, -0.14));
+    drawLine(frameIndex, 4, 26, 12, 12, shade(light, -0.05));
+    drawLine(frameIndex, 12, 12, 18, 19, shade(line, 0.04));
+    drawLine(frameIndex, 21, 4, 28, 15, shade(line, 0.02));
+    drawLine(frameIndex, 28, 15, 24, 30, shade(light, -0.12));
+    drawChip(frameIndex, 6 + variant * 4, 6, shade(accent, 0.04));
+    return;
+  }
+
+  if (palette.key === "wood-archive") {
+    for (let y = 6 + variant; y < FRAME; y += 9) fillRect(frameIndex, 0, y, FRAME, 1, shade(line, -0.06));
+    for (let x = 7 + variant * 2; x < FRAME; x += 12) drawLine(frameIndex, x, 0, x + (x % 2), FRAME - 1, shade(line, -0.02));
+    fillCircle(frameIndex, 11, 18 - variant, 3, shade(surface, -0.18));
+    fillCircle(frameIndex, 11, 18 - variant, 1, shade(dark, 0.08));
+    drawLine(frameIndex, 3, 11, 18, 10, shade(light, -0.24));
+    drawLine(frameIndex, 16, 25, 29, 24, shade(light, -0.26));
+    for (let x = 5; x < FRAME; x += 13) setPixel(frameIndex, x, 4 + ((x + variant) % 20), shade(dark, 0.08));
+    return;
+  }
+
+  if (palette.key === "copper-corrode") {
+    strokeRect(frameIndex, 3, 3, 13, 11, shade(line, -0.02));
+    strokeRect(frameIndex, 16, 16, 13, 11, shade(line, -0.02));
+    fillRect(frameIndex, 0, 10 + variant, FRAME, 3, shade(light, -0.2));
+    fillRect(frameIndex, 2, 11 + variant, FRAME - 4, 1, shade(surface, -0.05));
+    fillRect(frameIndex, 22, 4, 4, 22, shade(light, -0.18));
+    fillRect(frameIndex, 23, 5, 2, 20, shade(surface, -0.08));
+    drawLine(frameIndex, 6, 25, 15, 21, shade(accent, -0.18));
+    drawLine(frameIndex, 15, 21, 21, 24, shade(accent, -0.12));
+    drawChip(frameIndex, 8 + variant * 5, 6, shade(accent, -0.08));
+  }
+};
+
 const drawRigidSurfaceCap = (frameIndex, palette, variant) => {
   const surface = rgba(palette.surface);
   const face = rgba(palette.face);
@@ -517,6 +632,7 @@ const drawTile = (material, role, variant, frameIndex) => {
   if (material.key === "ice-cryo") drawIceCracks(frameIndex, material);
   if (material.key === "wood-archive") drawWoodGrain(frameIndex, material, role);
   if (material.key === "copper-corrode") drawCopperPatina(frameIndex, material, role);
+  drawInteriorMaterialTexture(frameIndex, material, role, variant);
 
   if (role !== "wallFace" && variant === 1) drawLine(frameIndex, 2, 27, 18, 27, shade(rgba(material.line), 0.06));
   if (role !== "floorTop" && variant === 2) strokeRect(frameIndex, 8, 7, 16, 16, shade(rgba(material.line), -0.14));
