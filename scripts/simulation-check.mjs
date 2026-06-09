@@ -493,7 +493,8 @@ try {
     monsterAnimationProfileForKind,
     monsterKinds,
     monsterRectAt,
-    monsterScore
+    monsterScore,
+    monsterVisualTransformForKind
   } = await server.ssrLoadModule("/src/game/enemies.ts");
   const { SynthAudio } = await server.ssrLoadModule("/src/game/audio.ts");
 
@@ -1591,6 +1592,43 @@ try {
   assert(
     monsterAnimationProfileForKind("glasswing-wisp").frameInterval !== monsterAnimationProfileForKind("storm-snail").frameInterval,
     "Expected monster animation profiles to vary by kind"
+  );
+  const expectedMonsterAnimationStyles = {
+    "sprout-hopper": "hop",
+    "glasswing-wisp": "hover",
+    "root-roller": "grounded-roll",
+    "gutter-skimmer": "grounded-glide",
+    "copper-leech": "hanging-sway",
+    "storm-snail": "heavy-grounded",
+    "frost-crawler": "grounded-crawl",
+    "cryo-puffer": "pulse-float",
+    "shard-wisp": "hover",
+    bookbeetle: "grounded-crawl",
+    "page-mote": "hover",
+    "index-mimic": "heavy-grounded",
+    "gear-tick": "mechanical-step",
+    "pendulum-drone": "pendulum-sway",
+    "sand-winder": "slither"
+  };
+  const monsterAnimationStyles = Object.fromEntries(monsterKinds.map((kind) => [kind, monsterAnimationProfileForKind(kind).style]));
+  assert(
+    JSON.stringify(monsterAnimationStyles) === JSON.stringify(expectedMonsterAnimationStyles),
+    `Expected monster animation styles to keep distinct archetypes, got ${JSON.stringify(monsterAnimationStyles)}`
+  );
+  const groundedNoLiftKinds = ["root-roller", "gutter-skimmer", "storm-snail", "frost-crawler", "bookbeetle", "index-mimic", "gear-tick", "sand-winder"];
+  for (const kind of groundedNoLiftKinds) {
+    const profile = monsterAnimationProfileForKind(kind);
+    const transform = monsterVisualTransformForKind(kind, 11, 1);
+    assert(profile.liftAmplitude === 0, `Expected ${kind} to have no vertical lift in its grounded profile, got ${JSON.stringify(profile)}`);
+    assert(transform.yOffset === 0, `Expected ${kind} visual transform to stay foot-locked, got ${JSON.stringify(transform)}`);
+  }
+  assert(
+    monsterVisualTransformForKind("sprout-hopper", 7, 1).yOffset <= -9,
+    `Expected sprout hopper to have a visible sprite-only hop, got ${JSON.stringify(monsterVisualTransformForKind("sprout-hopper", 7, 1))}`
+  );
+  assert(
+    monsterAnimationProfileForKind("sprout-hopper").style !== monsterAnimationProfileForKind("root-roller").style,
+    "Expected sprout hopper and root roller to use different visual animation archetypes"
   );
 
   const undersideMonsterSim = new RoomSimulation({

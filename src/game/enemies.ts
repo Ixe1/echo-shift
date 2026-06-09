@@ -155,12 +155,53 @@ type MonsterDefinition = {
     speed: number;
     phase?: number;
   };
-  animation: {
-    frameInterval: number;
-    bobAmplitude: number;
-    bobPeriod: number;
-  };
+  animation: MonsterAnimationProfile;
 };
+
+export type MonsterAnimationStyle =
+  | "hop"
+  | "hover"
+  | "grounded-roll"
+  | "grounded-glide"
+  | "grounded-crawl"
+  | "hanging-sway"
+  | "heavy-grounded"
+  | "mechanical-step"
+  | "pendulum-sway"
+  | "pulse-float"
+  | "slither";
+
+export type MonsterAnimationProfile = {
+  frameInterval: number;
+  style: MonsterAnimationStyle;
+  liftAmplitude: number;
+  liftPeriod: number;
+  tiltAmplitude: number;
+  stretchAmplitude: number;
+  squashAmplitude: number;
+};
+
+export type MonsterVisualTransform = {
+  yOffset: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+};
+
+const monsterAnimation = (
+  style: MonsterAnimationStyle,
+  frameInterval: number,
+  options: Partial<Omit<MonsterAnimationProfile, "frameInterval" | "style">> = {}
+): MonsterAnimationProfile => ({
+  frameInterval,
+  style,
+  liftAmplitude: 0,
+  liftPeriod: 48,
+  tiltAmplitude: 0,
+  stretchAmplitude: 0,
+  squashAmplitude: 0,
+  ...options
+});
 
 const monsterDefinitions: Record<MonsterKind, MonsterDefinition> = {
   "sprout-hopper": {
@@ -168,105 +209,105 @@ const monsterDefinitions: Record<MonsterKind, MonsterDefinition> = {
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 120, speed: 80 },
-    animation: { frameInterval: 8, bobAmplitude: 3.2, bobPeriod: 10 }
+    animation: monsterAnimation("hop", 5, { liftAmplitude: 10, liftPeriod: 28, tiltAmplitude: 0.05, stretchAmplitude: 0.05, squashAmplitude: 0.1 })
   },
   "glasswing-wisp": {
     score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "bottom",
     defaultMotion: { axis: "y", distance: 96, speed: 58, phase: 0.3 },
-    animation: { frameInterval: 4, bobAmplitude: 4.8, bobPeriod: 9 }
+    animation: monsterAnimation("hover", 4, { liftAmplitude: 5.2, liftPeriod: 54, tiltAmplitude: 0.07, stretchAmplitude: 0.015, squashAmplitude: 0.015 })
   },
   "root-roller": {
     score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 160, speed: 112 },
-    animation: { frameInterval: 6, bobAmplitude: 0.8, bobPeriod: 14 }
+    animation: monsterAnimation("grounded-roll", 4, { liftPeriod: 20, tiltAmplitude: 0.055, stretchAmplitude: 0.018, squashAmplitude: 0.018 })
   },
   "gutter-skimmer": {
     score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 180, speed: 132 },
-    animation: { frameInterval: 5, bobAmplitude: 1.2, bobPeriod: 8 }
+    animation: monsterAnimation("grounded-glide", 3, { liftPeriod: 18, tiltAmplitude: 0.025, stretchAmplitude: 0.07, squashAmplitude: 0.025 })
   },
   "copper-leech": {
     score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "bottom",
     defaultMotion: { axis: "y", distance: 72, speed: 44 },
-    animation: { frameInterval: 10, bobAmplitude: 0.5, bobPeriod: 16 }
+    animation: monsterAnimation("hanging-sway", 9, { liftPeriod: 64, tiltAmplitude: 0.08, stretchAmplitude: 0.01, squashAmplitude: 0.05 })
   },
   "storm-snail": {
     score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 72, speed: 32 },
-    animation: { frameInterval: 12, bobAmplitude: 0.4, bobPeriod: 18 }
+    animation: monsterAnimation("heavy-grounded", 14, { liftPeriod: 80, tiltAmplitude: 0.01, stretchAmplitude: 0.005, squashAmplitude: 0.025 })
   },
   "frost-crawler": {
     score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 118, speed: 64 },
-    animation: { frameInterval: 9, bobAmplitude: 0.6, bobPeriod: 15 }
+    animation: monsterAnimation("grounded-crawl", 7, { liftPeriod: 34, tiltAmplitude: 0.025, stretchAmplitude: 0.04, squashAmplitude: 0.025 })
   },
   "cryo-puffer": {
     score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "bottom",
     defaultMotion: { axis: "y", distance: 120, speed: 48, phase: 0.15 },
-    animation: { frameInterval: 7, bobAmplitude: 5.5, bobPeriod: 11 }
+    animation: monsterAnimation("pulse-float", 6, { liftAmplitude: 3.5, liftPeriod: 52, tiltAmplitude: 0.035, stretchAmplitude: 0.05, squashAmplitude: 0.05 })
   },
   "shard-wisp": {
     score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "both",
     defaultMotion: { axis: "y", distance: 130, speed: 104, phase: 0.5 },
-    animation: { frameInterval: 5, bobAmplitude: 4.1, bobPeriod: 8 }
+    animation: monsterAnimation("hover", 4, { liftAmplitude: 6, liftPeriod: 38, tiltAmplitude: 0.1, stretchAmplitude: 0.025, squashAmplitude: 0.015 })
   },
   bookbeetle: {
     score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 132, speed: 74 },
-    animation: { frameInterval: 8, bobAmplitude: 1, bobPeriod: 13 }
+    animation: monsterAnimation("grounded-crawl", 8, { liftPeriod: 42, tiltAmplitude: 0.03, stretchAmplitude: 0.035, squashAmplitude: 0.02 })
   },
   "page-mote": {
     score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "both",
     defaultMotion: { axis: "y", distance: 110, speed: 92, phase: 0.2 },
-    animation: { frameInterval: 5, bobAmplitude: 3.5, bobPeriod: 8 }
+    animation: monsterAnimation("hover", 5, { liftAmplitude: 4.2, liftPeriod: 46, tiltAmplitude: 0.09, stretchAmplitude: 0.02, squashAmplitude: 0.015 })
   },
   "index-mimic": {
     score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 64, speed: 36 },
-    animation: { frameInterval: 11, bobAmplitude: 0.2, bobPeriod: 20 }
+    animation: monsterAnimation("heavy-grounded", 13, { liftPeriod: 96, tiltAmplitude: 0.02, stretchAmplitude: 0.01, squashAmplitude: 0.03 })
   },
   "gear-tick": {
     score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 150, speed: 122 },
-    animation: { frameInterval: 6, bobAmplitude: 0, bobPeriod: 12 }
+    animation: monsterAnimation("mechanical-step", 4, { liftPeriod: 16, tiltAmplitude: 0.08, stretchAmplitude: 0.035, squashAmplitude: 0.035 })
   },
   "pendulum-drone": {
     score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "y", distance: 160, speed: 68, phase: 0.4 },
-    animation: { frameInterval: 6, bobAmplitude: 2.4, bobPeriod: 10 }
+    animation: monsterAnimation("pendulum-sway", 5, { liftAmplitude: 1.5, liftPeriod: 70, tiltAmplitude: 0.13, stretchAmplitude: 0.01, squashAmplitude: 0.01 })
   },
   "sand-winder": {
     score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 220, speed: 86 },
-    animation: { frameInterval: 7, bobAmplitude: 1.6, bobPeriod: 12 }
+    animation: monsterAnimation("slither", 5, { liftPeriod: 30, tiltAmplitude: 0.04, stretchAmplitude: 0.06, squashAmplitude: 0.015 })
   }
 };
 
@@ -297,7 +338,105 @@ export const defaultMonsterMotionForKind = (
 
 export const monsterAnimationProfileForKind = (
   source?: MonsterDefinitionSource
-): Readonly<MonsterDefinition["animation"]> => monsterDefinitions[monsterKindForDefinition(source)].animation;
+): Readonly<MonsterAnimationProfile> => monsterDefinitions[monsterKindForDefinition(source)].animation;
+
+const animationPhase = (tick: number, period: number): number =>
+  (tick / Math.max(1, period)) * Math.PI * 2;
+
+export const monsterVisualTransformForKind = (
+  source: MonsterDefinitionSource | undefined,
+  tick: number,
+  animationFrame = 0
+): MonsterVisualTransform => {
+  const profile = monsterAnimationProfileForKind(source);
+  const phase = animationPhase(tick, profile.liftPeriod);
+  const wave = Math.sin(phase);
+  const counterWave = Math.cos(phase);
+  const step = animationFrame % 2 === 0 ? -1 : 1;
+
+  switch (profile.style) {
+    case "hop": {
+      const hop = Math.max(0, Math.sin(phase));
+      const landingSquash = hop < 0.25 ? Math.max(0, Math.cos(phase * 2)) : 0;
+      return {
+        yOffset: -profile.liftAmplitude * hop,
+        rotation: Math.sin(phase * 2) * profile.tiltAmplitude,
+        scaleX: 1 + profile.squashAmplitude * landingSquash,
+        scaleY: 1 - profile.squashAmplitude * landingSquash + profile.stretchAmplitude * hop
+      };
+    }
+    case "hover":
+      return {
+        yOffset: wave * profile.liftAmplitude,
+        rotation: Math.sin(phase * 0.7) * profile.tiltAmplitude,
+        scaleX: 1 + counterWave * profile.stretchAmplitude,
+        scaleY: 1 - counterWave * profile.squashAmplitude
+      };
+    case "pulse-float":
+      return {
+        yOffset: wave * profile.liftAmplitude,
+        rotation: wave * profile.tiltAmplitude,
+        scaleX: 1 + counterWave * profile.stretchAmplitude,
+        scaleY: 1 + wave * profile.squashAmplitude
+      };
+    case "grounded-roll":
+      return {
+        yOffset: 0,
+        rotation: wave * profile.tiltAmplitude,
+        scaleX: 1 + counterWave * profile.stretchAmplitude,
+        scaleY: 1 - counterWave * profile.squashAmplitude
+      };
+    case "grounded-glide":
+      return {
+        yOffset: 0,
+        rotation: wave * profile.tiltAmplitude,
+        scaleX: 1 + profile.stretchAmplitude,
+        scaleY: 1 - profile.squashAmplitude
+      };
+    case "grounded-crawl":
+      return {
+        yOffset: 0,
+        rotation: wave * profile.tiltAmplitude,
+        scaleX: 1 + Math.abs(wave) * profile.stretchAmplitude,
+        scaleY: 1 - Math.abs(wave) * profile.squashAmplitude
+      };
+    case "hanging-sway":
+      return {
+        yOffset: 0,
+        rotation: wave * profile.tiltAmplitude,
+        scaleX: 1 + counterWave * profile.stretchAmplitude,
+        scaleY: 1 + Math.abs(wave) * profile.squashAmplitude
+      };
+    case "heavy-grounded":
+      return {
+        yOffset: 0,
+        rotation: wave * profile.tiltAmplitude,
+        scaleX: 1 + Math.max(0, counterWave) * profile.stretchAmplitude,
+        scaleY: 1 - Math.max(0, counterWave) * profile.squashAmplitude
+      };
+    case "mechanical-step":
+      return {
+        yOffset: 0,
+        rotation: step * profile.tiltAmplitude,
+        scaleX: 1 + step * profile.stretchAmplitude,
+        scaleY: 1 - step * profile.squashAmplitude
+      };
+    case "pendulum-sway":
+      return {
+        yOffset: wave * profile.liftAmplitude,
+        rotation: wave * profile.tiltAmplitude,
+        scaleX: 1 + counterWave * profile.stretchAmplitude,
+        scaleY: 1 - counterWave * profile.squashAmplitude
+      };
+    case "slither":
+      return {
+        yOffset: 0,
+        rotation: wave * profile.tiltAmplitude,
+        scaleX: 1 + wave * profile.stretchAmplitude,
+        scaleY: 1 - Math.abs(wave) * profile.squashAmplitude
+      };
+  }
+};
 
 const clamp = (value: number, min: number, max: number): number => Math.max(min, Math.min(max, value));
 

@@ -12,7 +12,8 @@ import {
   bossAttackWindupFramesFor,
   bossIsVulnerable,
   monsterAnimationProfileForKind,
-  monsterRectAt
+  monsterRectAt,
+  monsterVisualTransformForKind
 } from "../game/enemies";
 import {
   BOSS_ATLAS_KEY,
@@ -1811,11 +1812,11 @@ export class GameScene extends Phaser.Scene {
     if (!this.textures.exists(MONSTER_ATLAS_KEY)) return;
     const { id, kind } = monster;
     const animation = monsterAnimationProfileForKind(kind);
-    const frameInterval = animation.frameInterval;
-    const animationFrame = Math.floor((tick + id.length * 7) / frameInterval) % 4;
+    const animationTick = tick + id.length * 7;
+    const animationFrame = Math.floor(animationTick / animation.frameInterval) % 4;
     const frame = monsterFrameForKind(kind, animationFrame);
     const center = rectCenter(rect);
-    const bob = Math.sin((tick + frame * 17) / animation.bobPeriod) * animation.bobAmplitude;
+    const visual = monsterVisualTransformForKind(kind, animationTick, animationFrame);
     const width = Math.max(44, rect.w * 2.15);
     const height = Math.max(44, rect.h * 2.25);
     const facingLeft = this.monsterFacingLeft(monster, rect, tick);
@@ -1825,16 +1826,16 @@ export class GameScene extends Phaser.Scene {
       .setDepth(9)
       .setAlpha(0.98)
       .setOrigin(0.5, 1)
-      .setPosition(Math.round(center.x), Math.round(rect.y + rect.h + 3 + bob))
-      .setRotation(0)
+      .setPosition(Math.round(center.x), Math.round(rect.y + rect.h + 3 + visual.yOffset))
+      .setRotation(visual.rotation * (facingLeft ? -1 : 1))
       .setFrame(frame)
-      .setDisplaySize(width, height)
+      .setDisplaySize(width * visual.scaleX, height * visual.scaleY)
       .setFlipX(facingLeft)
       .clearTint();
     this.activeObjectAssetIds.add(`monster:${id}`);
     if (this.diagnosticsEnabled) {
       this.monsterSpriteFrames.push(
-        `${id}:${MONSTER_ATLAS_KEY}:${frame}:anim${animationFrame}:${facingLeft ? "left" : "right"}:${Math.round(width)}x${Math.round(height)}`
+        `${id}:${MONSTER_ATLAS_KEY}:${frame}:anim${animationFrame}:${facingLeft ? "left" : "right"}:${Math.round(width)}x${Math.round(height)}:${animation.style}:y${Math.round(visual.yOffset)}`
       );
     }
   }
