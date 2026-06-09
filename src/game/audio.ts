@@ -106,6 +106,8 @@ export class SynthAudio {
   private musicKey: SoundtrackKey | null = null;
   private mediaMusicKey: SoundtrackKey | null = null;
   private musicCache = new Map<SoundtrackKey, HTMLAudioElement>();
+  private mediaMusicReadyKeys = new Set<SoundtrackKey>();
+  private mediaMusicReadyPromises = new Map<SoundtrackKey, Promise<boolean>>();
   private webMusicBufferCache = new Map<SoundtrackKey, Promise<AudioBuffer>>();
   private webMusicReadyKeys = new Set<SoundtrackKey>();
   private activeEffects = new Map<HTMLAudioElement, number>();
@@ -225,18 +227,16 @@ export class SynthAudio {
       return this.webMusicBufferFor(key)
         .then(() => true)
         .catch(() => {
-          this.prepareMusicElement(this.musicElementFor(key));
-          return false;
+          return this.preloadMediaMusic(key);
         });
     }
 
-    this.prepareMusicElement(this.musicElementFor(key));
-    return Promise.resolve(true);
+    return this.preloadMediaMusic(key);
   }
 
   isMusicReady(key: SoundtrackKey): boolean {
     const loop = musicLoopRegionFor(key);
-    if (!loop || !this.canUseWebMusic()) return true;
+    if (!loop || !this.canUseWebMusic()) return this.mediaMusicReadyKeys.has(key);
     return this.webMusicReadyKeys.has(key);
   }
 
@@ -332,7 +332,11 @@ export class SynthAudio {
     this.stopMusicLoopWatch();
     const currentMediaKey = this.mediaMusicKey;
     if (this.music) this.unloadMusicElement(this.music);
-    if (currentMediaKey) this.musicCache.delete(currentMediaKey);
+    if (currentMediaKey) {
+      this.musicCache.delete(currentMediaKey);
+      this.mediaMusicReadyKeys.delete(currentMediaKey);
+      this.mediaMusicReadyPromises.delete(currentMediaKey);
+    }
     this.music = null;
     this.mediaMusicKey = null;
     if (this.webMusic) this.stopWebMusic(this.webMusic);
@@ -366,6 +370,8 @@ export class SynthAudio {
       this.unloadMusicElement(element);
     }
     this.musicCache.clear();
+    this.mediaMusicReadyKeys.clear();
+    this.mediaMusicReadyPromises.clear();
     this.webMusicBufferCache.clear();
     this.webMusicReadyKeys.clear();
     if (this.unlockListenersInstalled && typeof window !== "undefined") {
@@ -458,6 +464,63 @@ export class SynthAudio {
     this.startMusicLoopWatch();
   }
 
+  private preloadMediaMusic(key: SoundtrackKey): Promise<boolean> {
+    const element = this.musicElementFor(key);
+    if (this.mediaMusicIsReady(element)) {
+      this.mediaMusicReadyKeys.add(key);
+      return Promise.resolve(true);
+    }
+
+    const cached = this.mediaMusicReadyPromises.get(key);
+    if (cached) return cached;
+
+    const promise = new Promise<boolean>((resolve) => {
+      let settled = false;
+      let timeoutId: number | null = null;
+      const finish = (ready: boolean) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId !== null && typeof window !== "undefined") window.clearTimeout(timeoutId);
+        if (typeof element.removeEventListener === "function") {
+          element.removeEventListener("canplay", handleReady);
+          element.removeEventListener("loadeddata", handleReady);
+          element.removeEventListener("error", handleError);
+        }
+        this.mediaMusicReadyPromises.delete(key);
+        if (ready) this.mediaMusicReadyKeys.add(key);
+        else this.mediaMusicReadyKeys.delete(key);
+        resolve(ready);
+      };
+      const handleReady = () => finish(true);
+      const handleError = () => finish(false);
+
+      if (typeof element.addEventListener === "function") {
+        element.addEventListener("canplay", handleReady, { once: true });
+        element.addEventListener("loadeddata", handleReady, { once: true });
+        element.addEventListener("error", handleError, { once: true });
+      }
+      this.prepareMusicElement(element);
+      if (this.mediaMusicIsReady(element)) {
+        finish(true);
+        return;
+      }
+      if (typeof element.addEventListener !== "function") {
+        finish(true);
+        return;
+      }
+      if (typeof window !== "undefined") timeoutId = window.setTimeout(() => finish(this.mediaMusicIsReady(element)), 4000);
+    });
+
+    this.mediaMusicReadyPromises.set(key, promise);
+    return promise;
+  }
+
+  private mediaMusicIsReady(element: HTMLAudioElement): boolean {
+    if (typeof element.readyState !== "number") return true;
+    const haveCurrentData = typeof HTMLMediaElement === "undefined" ? 2 : HTMLMediaElement.HAVE_CURRENT_DATA;
+    return element.readyState >= haveCurrentData;
+  }
+
   private canUseWebMusic(): boolean {
     if (typeof fetch !== "function") return false;
     const context = this.ensureContext();
@@ -500,11 +563,19 @@ export class SynthAudio {
       return;
     }
     const restartSameTrack = Boolean(current && current.key === key && options.restart);
+    const sameMediaTrack = Boolean(this.music && this.mediaMusicKey === key);
 
     const attempt = ++this.webMusicPlayAttempt;
     this.musicPaused = false;
     this.musicKey = key;
-    if (!restartSameTrack && (this.music || (this.webMusic && this.webMusic.key !== key))) {
+    if (sameMediaTrack && options.restart && this.music) {
+      this.music.pause();
+      this.music.currentTime = 0;
+      this.applyMusicVolume(this.music);
+      this.playMusicElement(this.music);
+      this.startMusicLoopWatch();
+    }
+    if (!restartSameTrack && ((this.music && !sameMediaTrack) || (this.webMusic && this.webMusic.key !== key))) {
       const token = ++this.fadeToken;
       this.fadeOutCurrentMusic(token, Math.min(options.fadeMs ?? 260, 420));
     }
@@ -631,7 +702,10 @@ export class SynthAudio {
     void element
       .play()
       .then(() => {
-        if (this.music === element && attempt === this.musicPlayAttempt) this.markAudioState("playing");
+        if (this.music === element && attempt === this.musicPlayAttempt) {
+          if (this.mediaMusicKey) this.mediaMusicReadyKeys.add(this.mediaMusicKey);
+          this.markAudioState("playing");
+        }
       })
       .catch(() => {
         if (this.music === element && attempt === this.musicPlayAttempt) {
@@ -942,6 +1016,8 @@ export class SynthAudio {
       if (key === keep) continue;
       this.unloadMusicElement(element);
       this.musicCache.delete(key);
+      this.mediaMusicReadyKeys.delete(key);
+      this.mediaMusicReadyPromises.delete(key);
     }
   }
 

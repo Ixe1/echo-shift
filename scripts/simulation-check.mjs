@@ -203,10 +203,12 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   const pendingResumes = [];
   const pendingBlockedRejects = [];
   const pendingFetchResponses = [];
+  const pendingMediaLoads = [];
   const forceRejectedMedia = new Set();
   let disconnectedNodes = 0;
   let deferBlockedRejects = false;
   let deferNextFetch = false;
+  let deferNextMediaLoad = false;
   let failNextFetch = false;
   let mediaUnlocked = false;
   let visibilityState = "visible";
@@ -299,6 +301,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       this.loop = false;
       this.preload = "";
       this.volume = 1;
+      this.readyState = 0;
       this.playCalls = 0;
       this.playing = false;
       this.listeners = new Map();
@@ -315,7 +318,25 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       for (const handler of this.listeners.get(type) || []) handler({ type });
     }
 
-    load() {}
+    removeEventListener(type, handler) {
+      const handlers = this.listeners.get(type) || [];
+      this.listeners.set(
+        type,
+        handlers.filter((candidate) => candidate !== handler)
+      );
+    }
+
+    load() {
+      if (this.readyState >= 4) return;
+      if (deferNextMediaLoad) {
+        deferNextMediaLoad = false;
+        pendingMediaLoads.push(this);
+        return;
+      }
+      this.readyState = 4;
+      this.dispatchEvent("loadeddata");
+      this.dispatchEvent("canplay");
+    }
 
     removeAttribute(name) {
       if (name === "src") this.src = "";
@@ -355,7 +376,9 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   const fakeWindow = {
     AudioContext: FakeAudioContext,
     addEventListener: addListener,
-    removeEventListener: removeListener
+    removeEventListener: removeListener,
+    setTimeout: globalThis.setTimeout.bind(globalThis),
+    clearTimeout: globalThis.clearTimeout.bind(globalThis)
   };
   const fakeDocument = {
     documentElement: { dataset: {} },
@@ -383,6 +406,13 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   const makeFetchResponse = () => ({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) });
   const resolvePendingFetches = () => {
     for (const resolve of pendingFetchResponses.splice(0)) resolve(makeFetchResponse());
+  };
+  const resolvePendingMediaLoads = () => {
+    for (const element of pendingMediaLoads.splice(0)) {
+      element.readyState = 4;
+      element.dispatchEvent("loadeddata");
+      element.dispatchEvent("canplay");
+    }
   };
 
   Object.defineProperty(globalThis, "window", { configurable: true, value: fakeWindow });
@@ -493,6 +523,15 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     await settlePromises();
     assert(menu.playing, "Expected menu music restart to recover after pending boss music test");
 
+    deferNextMediaLoad = true;
+    const tutorialPreload = audio.preloadMusic("tutorial");
+    await settlePromises();
+    assert(!audio.isMusicReady("tutorial"), "Expected deferred tutorial media preload not to be ready immediately");
+    assert(pendingMediaLoads.length === 1, "Expected deferred media load for tutorial soundtrack");
+    resolvePendingMediaLoads();
+    await tutorialPreload;
+    assert(audio.isMusicReady("tutorial"), "Expected tutorial media soundtrack to be ready after media load resolves");
+
     runAnimationFrames = false;
     audio.playMusic("level-1");
     await settlePromises();
@@ -516,6 +555,17 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       levelFourFallback?.playing,
       "Expected failed Web Audio soundtrack load to fall back to the requested media soundtrack"
     );
+    deferNextFetch = true;
+    const levelFourFallbackPlayCalls = levelFourFallback.playCalls;
+    audio.playMusic("level-4", { restart: true });
+    await settlePromises();
+    assert(pendingFetchResponses.length === 1, "Expected same-key fallback restart to retry Web Audio in the background");
+    assert(
+      levelFourFallback.playing && levelFourFallback.playCalls > levelFourFallbackPlayCalls,
+      "Expected same-key HTML fallback restart to keep playing while Web Audio retry is pending"
+    );
+    resolvePendingFetches();
+    await settlePromises();
     audio.stopMusic();
     runAnimationFrames = true;
 
