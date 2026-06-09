@@ -467,8 +467,21 @@ const movingPath = (item: PathableObject): { start: number; end: number; center:
     start,
     end,
     center: start,
-    speed: period > 0 ? Math.round((120 * distance) / period) : 0
+    speed: Math.round(movingSpeedForPeriod(distance, period))
   };
+};
+
+const movingSpeedForPeriod = (distance: number, period: number): number => {
+  const travel = nonNegativeNumber(distance, 0);
+  const cycle = positiveNumber(period, 0);
+  return travel > 0 && cycle > 0 ? (120 * travel) / cycle : 0;
+};
+
+const movingPeriodForSpeed = (distance: number, speed: number, fallbackPeriod: number): number => {
+  const travel = nonNegativeNumber(distance, 0);
+  const pace = positiveNumber(speed, 0);
+  if (travel <= 0 || pace <= 0) return positiveInteger(fallbackPeriod, 1);
+  return Math.max(1, Math.round((120 * travel) / pace));
 };
 
 const movingPathPoints = (item: PathableObject): { start: Vec2; end: Vec2 } => {
@@ -538,6 +551,9 @@ const setMovingPath = (
   nextEnd: number
 ): void => {
   ensureMovingPathDefaults(item);
+  const previousDistance = nonNegativeNumber(item.distance, 0);
+  const previousPeriod = positiveInteger(item.period, 180);
+  const previousSpeed = movingSpeedForPeriod(previousDistance, previousPeriod);
   const snappedStart = snap(nextStart);
   const snappedEnd = snap(nextEnd);
   const start = Math.min(snappedStart, snappedEnd);
@@ -545,6 +561,7 @@ const setMovingPath = (
   item.distance = Math.max(0, end - start);
   if (item.axis !== "y") item.x = start;
   else item.y = start;
+  item.period = movingPeriodForSpeed(item.distance, previousSpeed, previousPeriod);
 };
 
 const resizeHandlesForRect = (rect: Rect): Array<{ handle: ResizeHandle; point: Vec2 }> => [
@@ -1386,7 +1403,7 @@ class LevelEditor {
       const moving = target as PathableObject;
       ensureMovingPathDefaults(moving);
       const speed = Math.max(1, Number(value));
-      moving.period = Math.max(1, Math.round((120 * Math.max(1, moving.distance || 0)) / speed));
+      moving.period = movingPeriodForSpeed(nonNegativeNumber(moving.distance, 0), speed, positiveInteger(moving.period, 180));
       return;
     }
     if (field === "distance" || field === "period" || field === "phase") {

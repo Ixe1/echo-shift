@@ -831,6 +831,11 @@ try {
   await setObjectField(page, "pathStart", 300);
   await setObjectField(page, "pathEnd", 420);
   await setObjectField(page, "speed", 160);
+  const movingLaserSpeedBeforePathResize = Number(await page.locator("[data-object-field='speed']").inputValue());
+  const movingLaserPeriodBeforePathResize = Number(await page.locator("[data-object-field='period']").inputValue());
+  await setObjectField(page, "pathEnd", 460);
+  const movingLaserSpeedAfterPathResize = Number(await page.locator("[data-object-field='speed']").inputValue());
+  const movingLaserPeriodAfterPathResize = Number(await page.locator("[data-object-field='period']").inputValue());
   await page.locator("[data-object-field='disabledBy']").fill("smoke-timer");
   await dispatchChange(page.locator("[data-object-field='disabledBy']"));
 
@@ -882,6 +887,8 @@ try {
   const movingLaserPathHeightBeforeDrag = await objectNumber(page, "h");
   const movingLaserPathStartBeforeDrag = await objectNumber(page, "pathStart");
   const movingLaserPathEndBeforeDrag = await objectNumber(page, "pathEnd");
+  const movingLaserSpeedBeforeDrag = Number(await page.locator("[data-object-field='speed']").inputValue());
+  const movingLaserPeriodBeforeDrag = Number(await page.locator("[data-object-field='period']").inputValue());
   await page.locator("[data-tool='select']").click();
   await dragWorld(
     page,
@@ -892,6 +899,8 @@ try {
   const movingLaserPathHeightAfterDrag = await objectNumber(page, "h");
   const movingLaserPathStartAfterDrag = await objectNumber(page, "pathStart");
   const movingLaserPathEndAfterDrag = await objectNumber(page, "pathEnd");
+  const movingLaserSpeedAfterDrag = Number(await page.locator("[data-object-field='speed']").inputValue());
+  const movingLaserPeriodAfterDrag = Number(await page.locator("[data-object-field='period']").inputValue());
   const movingLaserResizeHeightBefore = await objectNumber(page, "h");
   const movingLaserPathStartBeforeResize = await objectNumber(page, "pathStart");
   const movingLaserPathEndBeforeResize = await objectNumber(page, "pathEnd");
@@ -1170,28 +1179,39 @@ try {
   await page.locator("[data-object-field='speed']").fill("120");
   await dispatchChange(page.locator("[data-object-field='speed']"));
   const dronePeriod = Number(await page.locator("[data-object-field='period']").inputValue());
+  const droneSpeedBeforeDrag = Number(await page.locator("[data-object-field='speed']").inputValue());
   const droneHandleX = (await objectNumber(page, "x")) + (await objectNumber(page, "w")) / 2;
   await page.locator("[data-tool='select']").click();
   await dragWorld(page, { x: droneHandleX, y: 360 }, { x: droneHandleX, y: 340 });
   const dronePathStartAfterDrag = Number(await page.locator("[data-object-field='pathStart']").inputValue());
+  const droneSpeedAfterDrag = Number(await page.locator("[data-object-field='speed']").inputValue());
+  const dronePeriodAfterDrag = Number(await page.locator("[data-object-field='period']").inputValue());
   const droneExportJson = await page.locator("[data-export-json]").inputValue();
   const droneExport = JSON.parse(droneExportJson)[0].drones.find((drone) => drone.id === "smoke-drone-lock");
 
   await openTab(page, "objects");
   await page.locator("[data-object-list] [data-id='smoke-monster']").click();
+  const monsterSpeedBeforeDrag = Number(await page.locator("[data-object-field='speed']").inputValue());
+  const monsterPeriodBeforeDrag = Number(await page.locator("[data-object-field='period']").inputValue());
   const monsterHandleX = (await objectNumber(page, "x")) + (await objectNumber(page, "w")) / 2;
   await page.locator("[data-tool='select']").click();
   await dragWorld(page, { x: monsterHandleX, y: 440 }, { x: monsterHandleX, y: 420 });
   const monsterPathStartAfterDrag = Number(await page.locator("[data-object-field='pathStart']").inputValue());
+  const monsterSpeedAfterDrag = Number(await page.locator("[data-object-field='speed']").inputValue());
+  const monsterPeriodAfterDrag = Number(await page.locator("[data-object-field='period']").inputValue());
   const monsterExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0].monsters.find((monster) => monster.id === "smoke-monster");
 
   await page.locator("[data-level-select]").selectOption("4");
   await openTab(page, "objects");
   await page.locator("[data-object-list] [data-id='lift-a']").click();
+  const platformSpeedBeforeDrag = Number(await page.locator("[data-object-field='speed']").inputValue());
+  const platformPeriodBeforeDrag = Number(await page.locator("[data-object-field='period']").inputValue());
   const platformHandleX = (await objectNumber(page, "x")) + (await objectNumber(page, "w")) / 2;
   await page.locator("[data-tool='select']").click();
   await dragWorld(page, { x: platformHandleX, y: 338 }, { x: platformHandleX, y: 320 });
   const platformPathStartAfterDrag = Number(await page.locator("[data-object-field='pathStart']").inputValue());
+  const platformSpeedAfterDrag = Number(await page.locator("[data-object-field='speed']").inputValue());
+  const platformPeriodAfterDrag = Number(await page.locator("[data-object-field='period']").inputValue());
   const platformResizeHeightBefore = await objectNumber(page, "h");
   const platformPathStartBeforeResize = await objectNumber(page, "pathStart");
   const platformPathEndBeforeResize = await objectNumber(page, "pathEnd");
@@ -1477,8 +1497,23 @@ try {
   assert(toolkitTimer?.duration === 150, `Expected timed switch duration to export, got ${JSON.stringify(toolkitTimer)}`);
   assert(toolkitSensor?.actors === "both", `Expected echo sensor actor mode to export, got ${JSON.stringify(toolkitSensor)}`);
   assert(
-    toolkitSweeper?.axis === "y" && toolkitSweeper?.distance === 120 && toolkitSweeper?.disabledBy?.includes("smoke-timer"),
+    toolkitSweeper?.axis === "y" &&
+      toolkitSweeper?.distance === 160 &&
+      toolkitSweeper?.period === 120 &&
+      toolkitSweeper?.disabledBy?.includes("smoke-timer"),
     `Expected moving laser path/link settings to export, got ${JSON.stringify(toolkitSweeper)}`
+  );
+  assert(
+    movingLaserSpeedBeforePathResize === 160 &&
+      movingLaserSpeedAfterPathResize === movingLaserSpeedBeforePathResize &&
+      movingLaserPeriodBeforePathResize === 90 &&
+      movingLaserPeriodAfterPathResize === 120,
+    `Expected typed moving-laser path edits to preserve speed and recalculate period, got ${JSON.stringify({
+      movingLaserSpeedBeforePathResize,
+      movingLaserSpeedAfterPathResize,
+      movingLaserPeriodBeforePathResize,
+      movingLaserPeriodAfterPathResize
+    })}`
   );
   assert(
     toolkitDrone?.disabledBy?.includes("smoke-timer"),
@@ -1509,6 +1544,13 @@ try {
   assert(
     movingLaserPathStartAfterDrag === movingLaserPathStartBeforeDrag - 40 && movingLaserPathEndAfterDrag === movingLaserPathEndBeforeDrag,
     `Expected moving-laser start endpoint drag to move start path only, got ${movingLaserPathStartAfterDrag}-${movingLaserPathEndAfterDrag}`
+  );
+  assert(
+    movingLaserSpeedAfterDrag === movingLaserSpeedBeforeDrag && movingLaserPeriodAfterDrag > movingLaserPeriodBeforeDrag,
+    `Expected dragging moving-laser endpoint to preserve speed and lengthen period, got ${JSON.stringify({
+      speed: [movingLaserSpeedBeforeDrag, movingLaserSpeedAfterDrag],
+      period: [movingLaserPeriodBeforeDrag, movingLaserPeriodAfterDrag]
+    })}`
   );
   assert(
     movingLaserResizeHeightAfter > movingLaserResizeHeightBefore,
@@ -1679,15 +1721,36 @@ try {
   assert(afterDoorDeleteValidation === "clean", `Expected clean validation after deleting smoke door, got ${afterDoorDeleteValidation}`);
   assert(dronePeriod === 100, `Expected speed 120 over 100px drone travel to produce period 100, got ${dronePeriod}`);
   assert(dronePathStartAfterDrag === 340, `Expected draggable drone path endpoint to set start to 340, got ${dronePathStartAfterDrag}`);
+  assert(
+    droneSpeedAfterDrag === droneSpeedBeforeDrag && dronePeriodAfterDrag === 120,
+    `Expected draggable drone endpoint to preserve speed and recalculate period, got ${JSON.stringify({
+      speed: [droneSpeedBeforeDrag, droneSpeedAfterDrag],
+      period: [dronePeriod, dronePeriodAfterDrag]
+    })}`
+  );
   assert(droneExportJson.includes('"axis": "y"'), "Expected drone export JSON to include vertical axis");
   assert(droneExport.y === 340, `Expected exported drone origin y to match anchored path start 340, got ${droneExport.y}`);
   assert(droneExport.distance === 120, `Expected exported drone travel distance 120 after snapped endpoint edit, got ${droneExport.distance}`);
   assert(monsterPathStartAfterDrag === 420, `Expected draggable monster path endpoint to set start to 420, got ${monsterPathStartAfterDrag}`);
   assert(
+    monsterSpeedAfterDrag === monsterSpeedBeforeDrag && monsterPeriodAfterDrag > monsterPeriodBeforeDrag,
+    `Expected draggable monster endpoint to preserve speed and recalculate period, got ${JSON.stringify({
+      speed: [monsterSpeedBeforeDrag, monsterSpeedAfterDrag],
+      period: [monsterPeriodBeforeDrag, monsterPeriodAfterDrag]
+    })}`
+  );
+  assert(
     monsterExport.y === 420 && monsterExport.distance === 80,
     `Expected exported monster origin/distance to follow dragged path start, got ${JSON.stringify(monsterExport)}`
   );
   assert(platformPathStartAfterDrag === 320, `Expected draggable platform endpoint to set start to 320, got ${platformPathStartAfterDrag}`);
+  assert(
+    platformSpeedAfterDrag === platformSpeedBeforeDrag && platformPeriodAfterDrag > platformPeriodBeforeDrag,
+    `Expected draggable platform endpoint to preserve speed and recalculate period, got ${JSON.stringify({
+      speed: [platformSpeedBeforeDrag, platformSpeedAfterDrag],
+      period: [platformPeriodBeforeDrag, platformPeriodAfterDrag]
+    })}`
+  );
   assert(platformExport.y === 320, `Expected exported platform origin y to match anchored path start 320, got ${platformExport.y}`);
   assert(platformExport.distance === 200, `Expected exported platform travel distance 200 after endpoint edit, got ${platformExport.distance}`);
   assert(
