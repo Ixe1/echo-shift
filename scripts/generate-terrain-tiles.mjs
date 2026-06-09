@@ -318,13 +318,17 @@ const drawRigidSurfaceCap = (frameIndex, palette, variant) => {
   const line = rgba(palette.line);
   const dark = rgba(palette.dark);
   const light = rgba(palette.light);
+  const accent = rgba(palette.accent);
   fillRect(frameIndex, 0, 15, FRAME, 6, shade(surface, 0.08));
   fillRect(frameIndex, 0, 21, FRAME, 3, shade(face, -0.12));
   fillRect(frameIndex, 0, 24, FRAME, 6, shade(face, -0.02));
   fillRect(frameIndex, 0, 30, FRAME, 2, shade(dark, 0.06));
   drawLine(frameIndex, 0, 14, FRAME - 1, 14, shade(light, -0.08));
   drawLine(frameIndex, 0, 20, FRAME - 1, 20, shade(line, -0.04));
+  fillTriangle(frameIndex, { x: 0, y: 15 }, { x: 5, y: 15 }, { x: 0, y: 20 }, shade(dark, 0.16));
+  fillTriangle(frameIndex, { x: 31, y: 15 }, { x: 26, y: 15 }, { x: 31, y: 20 }, shade(light, -0.14));
   for (let x = 6 + variant; x < FRAME; x += 12) dot(frameIndex, x, 17, shade(light, -0.12));
+  if (variant === 1) fillRect(frameIndex, 12, 17, 8, 2, shade(accent, -0.08));
 };
 
 const drawSurfaceCap = (frameIndex, palette, variant) => {
@@ -344,6 +348,7 @@ const drawSurfaceCap = (frameIndex, palette, variant) => {
       if ((x + variant) % 4 === 0) drawLine(frameIndex, Math.min(FRAME - 1, x + 1), 25, Math.max(0, x - 1), top + 4, darkGrass);
     }
     for (let x = 1 + variant; x < FRAME; x += 8) drawLine(frameIndex, x, 28, x + 2, 31, shade(root, 0.18));
+    for (let x = 4 + variant; x < FRAME; x += 13) dot(frameIndex, x, 25 + (x % 3), shade(soil, 0.28));
     return;
   }
 
@@ -357,16 +362,23 @@ const drawSurfaceCap = (frameIndex, palette, variant) => {
     return;
   }
   if (palette.key === "glass-energy") {
+    fillRect(frameIndex, 0, 14, FRAME, 2, shade(rgba(palette.light), -0.12));
     drawLine(frameIndex, 2, 18, 14, 18, rgba(palette.light));
     drawLine(frameIndex, 18, 25, 30, 17, shade(rgba(palette.accent), 0.2));
+    drawLine(frameIndex, 4 + variant * 3, 28, 18 + variant * 2, 18, shade(rgba(palette.light), -0.18));
     return;
   }
   if (palette.key === "sand-ruin") {
     for (let x = variant; x < FRAME; x += 9) fillRect(frameIndex, x, 13 + (x % 3), 4, 2, shade(rgba(palette.light), -0.05));
+    fillRect(frameIndex, 0, 22, FRAME, 2, shade(rgba(palette.line), -0.04));
+    drawLine(frameIndex, 5, 27, 14, 24, rgba(palette.dark));
+    drawLine(frameIndex, 20, 17, 28, 20, shade(rgba(palette.line), -0.1));
     return;
   }
   if (palette.key === "ice-cryo") {
     fillTriangle(frameIndex, { x: 5 + variant, y: 14 }, { x: 10 + variant, y: 6 }, { x: 15 + variant, y: 14 }, shade(rgba(palette.light), -0.04));
+    fillTriangle(frameIndex, { x: 2 + variant * 3, y: 21 }, { x: 7 + variant * 3, y: 31 }, { x: 11 + variant * 3, y: 21 }, shade(rgba(palette.light), -0.08));
+    fillTriangle(frameIndex, { x: 19, y: 21 }, { x: 23, y: 30 }, { x: 27, y: 21 }, shade(rgba(palette.accent), 0.1));
     drawLine(frameIndex, 5, 25, 19, 20, rgba(palette.line));
     return;
   }
@@ -377,6 +389,8 @@ const drawSurfaceCap = (frameIndex, palette, variant) => {
   }
   if (palette.key === "copper-corrode") {
     fillRect(frameIndex, 0, 22, FRAME, 2, rgba(palette.accent));
+    fillRect(frameIndex, 4, 16, 24, 4, shade(rgba(palette.light), -0.18));
+    fillRect(frameIndex, 6, 17, 20, 2, rgba(palette.surface));
     for (let x = 4 + variant; x < FRAME; x += 13) dot(frameIndex, x, 16 + (x % 3), shade(rgba(palette.accent), 0.12));
   }
 };
@@ -397,27 +411,54 @@ const drawSurfaceDecor = (frameIndex, palette, variant) => {
     return;
   }
   if (palette.key === "metal-lab") {
+    if (variant === 0) {
+      fillRect(frameIndex, 8, 16, 16, 12, shade(rgba(palette.face), 0.1));
+      strokeRect(frameIndex, 8, 16, 16, 12, rgba(palette.line));
+      fillRect(frameIndex, 11, 19, 10, 4, rgba(palette.accent));
+      dot(frameIndex, 12, 25, rgba(palette.light));
+      return;
+    }
+    if (variant === 1) {
+      fillRect(frameIndex, 5, 22, 22, 6, shade(rgba(palette.line), -0.1));
+      for (let x = 7; x < 26; x += 4) drawLine(frameIndex, x, 23, x, 27, rgba(palette.light));
+      return;
+    }
     fillRect(frameIndex, 4, 24, 24, 3, shade(rgba(palette.line), -0.1));
     drawLine(frameIndex, 5, 25, 14, 22, rgba(palette.accent));
     drawLine(frameIndex, 14, 22, 26, 24, shade(rgba(palette.accent), -0.14));
-    dot(frameIndex, 8 + variant * 6, 20, rgba(palette.light));
+    dot(frameIndex, 20, 20, rgba(palette.light));
     return;
   }
   if (palette.key === "glass-energy") {
-    fillTriangle(frameIndex, { x: 9, y: 27 }, { x: 15 + variant, y: 10 }, { x: 22, y: 27 }, shade(rgba(palette.accent), 0.16));
-    drawLine(frameIndex, 15 + variant, 10, 15, 26, rgba(palette.light));
+    fillTriangle(frameIndex, { x: 8, y: 28 }, { x: 14 + variant, y: 7 }, { x: 20, y: 28 }, shade(rgba(palette.accent), 0.16));
+    fillTriangle(frameIndex, { x: 18, y: 28 }, { x: 23 + variant, y: 15 }, { x: 28, y: 28 }, shade(rgba(palette.light), -0.12));
+    drawLine(frameIndex, 14 + variant, 7, 15, 26, rgba(palette.light));
     return;
   }
   if (palette.key === "warning-industrial") {
-    fillRect(frameIndex, 11, 18, 10, 10, rgba(palette.dark));
-    fillRect(frameIndex, 13, 14, 6, 5, rgba(palette.accent));
-    drawLine(frameIndex, 10, 28, 22, 28, rgba(palette.surface));
+    if (variant === 0) {
+      fillRect(frameIndex, 11, 18, 10, 10, rgba(palette.dark));
+      fillRect(frameIndex, 13, 14, 6, 5, rgba(palette.accent));
+      fillCircle(frameIndex, 16, 13, 3, shade(rgba(palette.accent), 0.12));
+      drawLine(frameIndex, 10, 28, 22, 28, rgba(palette.surface));
+      return;
+    }
+    fillRect(frameIndex, 12 + variant, 13, 7, 16, rgba(palette.surface));
+    drawLine(frameIndex, 11 + variant, 16, 20 + variant, 25, rgba(palette.dark));
+    drawLine(frameIndex, 11 + variant, 20, 19 + variant, 28, rgba(palette.dark));
+    fillRect(frameIndex, 9, 28, 16, 2, rgba(palette.dark));
     return;
   }
   if (palette.key === "sand-ruin") {
-    fillRect(frameIndex, 8, 22, 16, 6, shade(rgba(palette.face), -0.08));
-    fillRect(frameIndex, 10, 18, 12, 4, rgba(palette.surface));
-    drawLine(frameIndex, 7, 28, 25, 28, rgba(palette.dark));
+    if (variant === 0) {
+      fillRect(frameIndex, 8, 22, 16, 6, shade(rgba(palette.face), -0.08));
+      fillRect(frameIndex, 10, 18, 12, 4, rgba(palette.surface));
+      drawLine(frameIndex, 7, 28, 25, 28, rgba(palette.dark));
+      return;
+    }
+    fillRect(frameIndex, 12, 12, 8, 16, rgba(palette.surface));
+    fillRect(frameIndex, 9, 26, 14, 3, shade(rgba(palette.face), -0.08));
+    drawLine(frameIndex, 12, 17, 19, 14, rgba(palette.line));
     return;
   }
   if (palette.key === "ice-cryo") {
@@ -427,17 +468,27 @@ const drawSurfaceDecor = (frameIndex, palette, variant) => {
     return;
   }
   if (palette.key === "wood-archive") {
-    fillRect(frameIndex, 8, 18, 15, 10, shade(rgba(palette.surface), 0.05));
-    drawLine(frameIndex, 8, 18, 23, 28, rgba(palette.line));
-    drawLine(frameIndex, 8, 28, 23, 18, rgba(palette.line));
-    fillRect(frameIndex, 11, 14, 9, 4, shade(rgba(palette.light), -0.05));
+    if (variant === 0) {
+      fillRect(frameIndex, 8, 18, 15, 10, shade(rgba(palette.surface), 0.05));
+      drawLine(frameIndex, 8, 18, 23, 28, rgba(palette.line));
+      drawLine(frameIndex, 8, 28, 23, 18, rgba(palette.line));
+      fillRect(frameIndex, 11, 14, 9, 4, shade(rgba(palette.light), -0.05));
+      return;
+    }
+    fillRect(frameIndex, 9, 23, 15, 5, shade(rgba(palette.light), -0.1));
+    fillRect(frameIndex, 11, 18, 10, 5, rgba(palette.surface));
+    drawLine(frameIndex, 12, 18, 21, 23, rgba(palette.line));
+    drawLine(frameIndex, 20, 12, 23, 20, rgba(palette.accent));
     return;
   }
   if (palette.key === "copper-corrode") {
-    drawLine(frameIndex, 5, 23, 13, 15, rgba(palette.accent));
-    drawLine(frameIndex, 13, 15, 24, 15, rgba(palette.accent));
-    drawLine(frameIndex, 24, 15, 29, 24, shade(rgba(palette.accent), -0.18));
-    dot(frameIndex, 10 + variant * 5, 21, rgba(palette.light));
+    const pipe = shade(rgba(palette.light), -0.08);
+    fillRect(frameIndex, 5, 22, 22, 5, pipe);
+    fillRect(frameIndex, 8, 14, 6, 13, pipe);
+    fillRect(frameIndex, 14, 14, 13, 5, pipe);
+    fillRect(frameIndex, 6, 23, 20, 2, rgba(palette.surface));
+    fillRect(frameIndex, 15, 15, 10, 2, rgba(palette.surface));
+    dot(frameIndex, 10 + variant * 5, 20, rgba(palette.accent));
   }
 };
 
