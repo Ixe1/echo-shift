@@ -209,14 +209,14 @@ const monsterDefinitions: Record<MonsterKind, MonsterDefinition> = {
     killable: true,
     vulnerableFrom: "top",
     defaultMotion: { axis: "x", distance: 120, speed: 80 },
-    animation: monsterAnimation("hop", 5, { liftAmplitude: 10, liftPeriod: 28, tiltAmplitude: 0.05, stretchAmplitude: 0.05, squashAmplitude: 0.1 })
+    animation: monsterAnimation("hop", 4, { liftAmplitude: 18, liftPeriod: 22, tiltAmplitude: 0.09, stretchAmplitude: 0.08, squashAmplitude: 0.14 })
   },
   "glasswing-wisp": {
     score: DEFAULT_MONSTER_SCORE,
     killable: true,
     vulnerableFrom: "bottom",
     defaultMotion: { axis: "y", distance: 96, speed: 58, phase: 0.3 },
-    animation: monsterAnimation("hover", 4, { liftAmplitude: 5.2, liftPeriod: 54, tiltAmplitude: 0.07, stretchAmplitude: 0.015, squashAmplitude: 0.015 })
+    animation: monsterAnimation("hover", 4, { liftAmplitude: 12, liftPeriod: 36, tiltAmplitude: 0.16, stretchAmplitude: 0.035, squashAmplitude: 0.025 })
   },
   "root-roller": {
     score: DEFAULT_MONSTER_SCORE,

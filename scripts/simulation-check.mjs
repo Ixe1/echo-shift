@@ -1623,8 +1623,13 @@ try {
     assert(transform.yOffset === 0, `Expected ${kind} visual transform to stay foot-locked, got ${JSON.stringify(transform)}`);
   }
   assert(
-    monsterVisualTransformForKind("sprout-hopper", 7, 1).yOffset <= -9,
+    monsterVisualTransformForKind("sprout-hopper", 7, 1).yOffset <= -14,
     `Expected sprout hopper to have a visible sprite-only hop, got ${JSON.stringify(monsterVisualTransformForKind("sprout-hopper", 7, 1))}`
+  );
+  assert(
+    Math.abs(monsterVisualTransformForKind("glasswing-wisp", 9, 1).yOffset) >= 10 &&
+      Math.abs(monsterVisualTransformForKind("glasswing-wisp", 9, 1).rotation) >= 0.1,
+    `Expected glasswing wisp to have an obvious hover/tilt transform, got ${JSON.stringify(monsterVisualTransformForKind("glasswing-wisp", 9, 1))}`
   );
   assert(
     monsterAnimationProfileForKind("sprout-hopper").style !== monsterAnimationProfileForKind("root-roller").style,

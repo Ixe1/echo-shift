@@ -11,6 +11,7 @@ import {
 } from "../game/backgroundAmbience";
 import { backgroundForLevel, isLevelBackgroundKey, levelBackgroundKeys, levelBackgrounds } from "../game/backgrounds";
 import {
+  DEFAULT_MONSTER_SCORE,
   bossEntrySides,
   bossKinds,
   bossWeakSpots,
@@ -796,7 +797,7 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
       distance: hasMotion ? nonNegativeNumber(record.distance, defaults.distance) : undefined,
       period: hasMotion ? positiveInteger(record.period, defaults.period) : undefined,
       phase: hasMotion ? positiveNumber(record.phase, defaults.phase) : undefined,
-      score: Number.isFinite(Number(record.score)) ? nonNegativeInteger(record.score, 0) : undefined,
+      score: Number.isFinite(Number(record.score)) ? nonNegativeInteger(record.score, DEFAULT_MONSTER_SCORE) : DEFAULT_MONSTER_SCORE,
       killable: record.killable === false ? false : undefined,
       vulnerableFrom: normalizeMonsterVulnerability(record.vulnerableFrom)
     } as Monster;
@@ -1314,8 +1315,8 @@ class LevelEditor {
       return;
     }
     if (field === "scoreValue") {
-      const score = nonNegativeInteger(value, 0);
-      if (score > 0) record.score = score;
+      const score = nonNegativeInteger(value, this.selection?.kind === "monsters" ? DEFAULT_MONSTER_SCORE : 0);
+      if (this.selection?.kind === "monsters" || score > 0) record.score = score;
       else delete record.score;
       return;
     }
@@ -1978,7 +1979,9 @@ class LevelEditor {
     if (kind === "movingLasers") return { ...base, startsOn: true, axis: "x", distance: 100, period: 180, phase: 0 } as MovingLaser;
     if (kind === "cores") return { ...base, label: id.split("-").at(-1)?.toUpperCase() } as Core;
     if (kind === "drones") return { ...base, axis: "x", distance: 120, period: 200, phase: 0 } as PatrolDrone;
-    if (kind === "monsters") return { ...base, kind: "sprout-hopper", ...defaultMonsterMotionForKind("sprout-hopper") } as Monster;
+    if (kind === "monsters") {
+      return { ...base, kind: "sprout-hopper", ...defaultMonsterMotionForKind("sprout-hopper"), score: DEFAULT_MONSTER_SCORE } as Monster;
+    }
     if (kind === "bosses") {
       const kindValue = "storm-relay-warden";
       return {
@@ -2368,7 +2371,7 @@ class LevelEditor {
             { value: "bottom", label: "Bottom" },
             { value: "both", label: "Top or Bottom" }
           ])}
-          ${this.numberField("Score", "scoreValue", Number(record.score || 0), "object", 50)}
+          ${this.numberField("Score", "scoreValue", Number(record.score ?? DEFAULT_MONSTER_SCORE), "object", 50)}
           ${this.checkboxField("Killable", "killable", record.killable !== false)}
         </div>
         <div class="inspector-grid two">
