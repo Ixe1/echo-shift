@@ -85,6 +85,7 @@ const HAZARD_VENT_FRAMES = 6;
 const RUN_FRAMES = [1, 2, 3, 4] as const;
 const LEVEL_INTRO_MS = 3000;
 const LEVEL_INTRO_OUTRO_MS = 820;
+const MUSIC_LOADING_OVERLAY_DELAY_MS = 220;
 const BOSS_MUSIC_FADE_MS = 620;
 const PLAYER_CAMERA_REFERENCE_HEIGHT = 540;
 const PLAYER_CAMERA_ZOOM = 1.152;
@@ -296,6 +297,10 @@ export class GameScene extends Phaser.Scene {
   private introActive = false;
   private introElapsedMs = 0;
   private levelIntroOverlay: HTMLElement | null = null;
+  private musicLoadingActive = false;
+  private musicLoadingOverlay: HTMLElement | null = null;
+  private musicLoadingTimer: number | null = null;
+  private musicLoadingToken = 0;
   private lastTutorialHint = "";
   private readonly launchPadActiveUntil = new Map<string, number>();
   private readonly fxBursts: FxBurst[] = [];
@@ -443,6 +448,10 @@ export class GameScene extends Phaser.Scene {
     this.introActive = false;
     this.introElapsedMs = 0;
     this.levelIntroOverlay = null;
+    this.musicLoadingActive = false;
+    this.musicLoadingOverlay = null;
+    this.musicLoadingTimer = null;
+    this.musicLoadingToken = 0;
     this.lastTutorialHint = "";
     this.launchPadActiveUntil.clear();
     this.fxBursts.length = 0;
@@ -453,7 +462,10 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.syncDraftPlaytestUrl();
-    audio.playMusic(this.currentLevelSoundtrackKey());
+    const levelMusicKey = this.currentLevelSoundtrackKey();
+    const levelMusicReady = audio.isMusicReady(levelMusicKey);
+    audio.playMusic(levelMusicKey);
+    const levelMusicWarmup = audio.preloadMusic(levelMusicKey);
     this.cameras.main.setBounds(this.level.bounds.x, this.level.bounds.y, this.level.bounds.w, this.level.bounds.h);
     this.cameras.main.setBackgroundColor("#05070d");
     this.configureCameraFrame();
@@ -491,13 +503,22 @@ export class GameScene extends Phaser.Scene {
     this.hud.toast(`${isDraftPlaytestActive() ? "Draft playtest · " : ""}${this.level.index + 1}: ${this.level.name}`);
     this.registerSceneCleanup();
     this.prewarmLevelTextures();
-    this.startLevelIntro();
+    this.preloadUpcomingSoundtracks();
     this.renderWorld();
     this.updateHud();
+    this.startLevelWhenMusicReady(levelMusicKey, levelMusicReady, levelMusicWarmup);
   }
 
   update(_time: number, delta: number): void {
     const updateStart = performance.now();
+    if (this.musicLoadingActive) {
+      const updateMs = performance.now() - updateStart;
+      const renderStart = performance.now();
+      this.renderWorld();
+      this.updateHud();
+      this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
+      return;
+    }
     if (this.introActive) this.updateLevelIntro(delta);
     if (this.levelIntroBlocksGameplay()) {
       const updateMs = performance.now() - updateStart;
@@ -572,6 +593,14 @@ export class GameScene extends Phaser.Scene {
     return soundtrackForLevel(this.level, this.levelIndex).key;
   }
 
+  private preloadUpcomingSoundtracks(): void {
+    for (const boss of this.level.bosses || []) void audio.preloadMusic(soundtrackForBoss(boss).key);
+    if (!this.tutorialMode && this.levelIndex + 1 < levels.length) {
+      const nextLevelIndex = this.levelIndex + 1;
+      void audio.preloadMusic(soundtrackForLevel(levels[nextLevelIndex], nextLevelIndex).key);
+    }
+  }
+
   private restartLevelMusic(): void {
     this.bossMusicActive = false;
     this.bossMusicKey = null;
@@ -599,6 +628,81 @@ export class GameScene extends Phaser.Scene {
 
   private bossFightInProgress(): boolean {
     return this.simulation.bossFightInProgress();
+  }
+
+  private startLevelWhenMusicReady(
+    key: ReturnType<typeof soundtrackForLevel>["key"],
+    ready: boolean,
+    warmup: Promise<boolean>
+  ): void {
+    if (ready) {
+      this.startLevelIntro();
+      return;
+    }
+
+    this.hud.hideToast();
+    this.musicLoadingActive = true;
+    const token = ++this.musicLoadingToken;
+    this.writeMusicLoadingDiagnostics("pending");
+    this.musicLoadingTimer = window.setTimeout(() => {
+      if (this.musicLoadingToken === token && this.musicLoadingActive) this.showMusicLoadingOverlay(key);
+    }, MUSIC_LOADING_OVERLAY_DELAY_MS);
+
+    void warmup.finally(() => {
+      if (this.musicLoadingToken !== token || !this.musicLoadingActive) return;
+      this.finishMusicLoading();
+      this.startLevelIntro();
+    });
+  }
+
+  private showMusicLoadingOverlay(key: ReturnType<typeof soundtrackForLevel>["key"]): void {
+    if (this.musicLoadingOverlay) return;
+    const overlay = document.createElement("div");
+    overlay.className = "level-intro music-loading";
+    overlay.dataset.musicLoading = key;
+    overlay.innerHTML = `
+      <div class="level-intro-track" aria-hidden="true">
+        <img class="level-intro-track-logo" src="/assets/echo-shift-logo.png" alt="" />
+      </div>
+      <section class="level-intro-card music-loading-card" aria-label="Preparing level audio">
+        <div class="level-intro-number music-loading-glyph" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <div class="level-intro-copy">
+          <span class="level-intro-kicker">${this.tutorialMode ? "Training" : `Room ${String(this.level.index + 1).padStart(2, "0")}`}</span>
+          <strong>${escapeHtml(this.level.name)}</strong>
+          <span>Synchronising soundtrack</span>
+        </div>
+        <div class="level-intro-ready music-loading-ready">Tuning</div>
+      </section>
+      <div class="level-intro-sweep" aria-hidden="true">
+        <img class="level-intro-sweep-logo" src="/assets/echo-shift-logo.png" alt="" />
+      </div>
+    `;
+    uiRoot().append(overlay);
+    this.musicLoadingOverlay = overlay;
+    this.writeMusicLoadingDiagnostics("visible");
+  }
+
+  private finishMusicLoading(): void {
+    this.musicLoadingActive = false;
+    if (this.musicLoadingTimer !== null) {
+      window.clearTimeout(this.musicLoadingTimer);
+      this.musicLoadingTimer = null;
+    }
+    this.musicLoadingOverlay?.remove();
+    this.musicLoadingOverlay = null;
+    this.writeMusicLoadingDiagnostics("idle");
+  }
+
+  private cancelMusicLoading(): void {
+    this.musicLoadingToken += 1;
+    this.finishMusicLoading();
+  }
+
+  private writeMusicLoadingDiagnostics(phase: string): void {
+    if (!this.diagnosticsEnabled || typeof document === "undefined") return;
+    document.documentElement.dataset.echoShiftMusicLoading = phase;
   }
 
   private startLevelIntro(): void {
@@ -917,6 +1021,7 @@ export class GameScene extends Phaser.Scene {
 
   private togglePause(force?: boolean): void {
     if (this.retryPresentation || this.deathPresentation || this.completeHandled || this.retryRequired) return;
+    if (this.musicLoadingActive) return;
     if (this.introActive) this.finishLevelIntro();
     this.pausedByHud = force ?? !this.pausedByHud;
     if (this.pausedByHud) {
@@ -997,7 +1102,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.tutorialMode) return;
 
     let message = "";
-    if (!this.introActive && !this.completeHandled && !this.retryRequired && !this.deathPresentation) {
+    if (!this.musicLoadingActive && !this.introActive && !this.completeHandled && !this.retryRequired && !this.deathPresentation) {
       const snapshot = this.simulation.snapshot();
       const playerCenterX = snapshot.player.x + snapshot.player.w / 2;
       if (snapshot.echoes.length === 0) {
@@ -1150,6 +1255,7 @@ export class GameScene extends Phaser.Scene {
     this.cameraTarget = undefined;
     this.deathPresentation = null;
     this.retryPresentation = null;
+    this.cancelMusicLoading();
     this.finishLevelIntro();
     this.launchPadActiveUntil.clear();
     this.fxBursts.length = 0;

@@ -134,6 +134,7 @@ export class BootScene extends Phaser.Scene {
       cleanup();
       audio.unlock();
       const target = this.nextScene();
+      void audio.preloadMusic(target.musicKey);
       audio.playMusic(target.musicKey);
       clearUi();
       this.scene.start(target.scene, target.data);

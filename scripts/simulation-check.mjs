@@ -479,11 +479,25 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       `Expected unlock to avoid preloading every soundtrack, got ${mediaElements.length} elements before level music`
     );
 
+    assert(!audio.isMusicReady("boss"), "Expected an untouched looped boss soundtrack not to be Web Audio ready before preload");
+    deferNextFetch = true;
+    audio.playMusic("boss");
+    await settlePromises();
+    assert(pendingFetchResponses.length === 1, "Expected deferred Web Audio fetch for pending boss soundtrack");
+    assert(!menu.playing, "Expected menu music to stop while a different looped soundtrack is still loading");
+    resolvePendingFetches();
+    await settlePromises();
+    assert(audio.isMusicReady("boss"), "Expected resolved Web Audio boss soundtrack to be marked ready");
+
+    audio.playMusic("menu", { restart: true });
+    await settlePromises();
+    assert(menu.playing, "Expected menu music restart to recover after pending boss music test");
+
     runAnimationFrames = false;
     audio.playMusic("level-1");
     await settlePromises();
     const levelOneFadePauseSource = startedMusicSources.at(-1);
-    assert(menu.playing, "Expected outgoing menu music to keep playing while media-to-Web fade is pending");
+    assert(!menu.playing, "Expected outgoing menu music to stop once the requested Web Audio track is ready");
     audio.pauseMusic();
     assert(!menu.playing, "Expected pause to stop outgoing media music while media-to-Web fade is pending");
     assert(levelOneFadePauseSource.stopped, "Expected pause to stop current Web Audio music during media-to-Web fade");
@@ -627,7 +641,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     audio.playMusic("level-2");
     await settlePromises();
     const levelTwoSourceBeforePause = startedMusicSources.at(-1);
-    assert(!crossfadeOutgoingLevelOneSource.stopped, "Expected crossfade source to remain active while RAF fade is pending");
+    assert(crossfadeOutgoingLevelOneSource.stopped, "Expected outgoing Web Audio source to stop once the requested track is ready");
     audio.pauseMusic();
     assert(crossfadeOutgoingLevelOneSource.stopped, "Expected pause to stop outgoing Web Audio source while fade is pending");
     assert(levelTwoSourceBeforePause.stopped, "Expected pause to stop current Web Audio source");
@@ -638,7 +652,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     audio.playMusic("level-3");
     await settlePromises();
     const levelThreeSourceBeforeStop = startedMusicSources.at(-1);
-    assert(!levelTwoSourceBeforeStop.stopped, "Expected previous Web Audio source to remain active while stop test fade is pending");
+    assert(levelTwoSourceBeforeStop.stopped, "Expected previous Web Audio source to stop once the next requested track is ready");
     audio.stopMusic();
     assert(levelTwoSourceBeforeStop.stopped, "Expected stopMusic to stop outgoing Web Audio source while fade is pending");
     assert(levelThreeSourceBeforeStop.stopped, "Expected stopMusic to stop current Web Audio source");

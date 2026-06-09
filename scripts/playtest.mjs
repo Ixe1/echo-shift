@@ -486,6 +486,7 @@ try {
   const desktopIntroVisible = await page.locator("[data-level-intro='active']").isVisible();
   await page.screenshot({ path: artifacts.desktopIntro });
   await waitForLevelIntro(page);
+  const desktopMusicLoadingPhase = await page.evaluate(() => document.documentElement.dataset.echoShiftMusicLoading || "");
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await page.screenshot({ path: artifacts.desktopGame });
   await page.keyboard.down("KeyD");
@@ -788,6 +789,10 @@ try {
   assert(levelAudioState === "playing", `Expected level audio to continue after Play, got ${levelAudioState}`);
   assert(desktopIntroVisible, "Expected level intro cutscene to appear on desktop");
   assert(
+    desktopMusicLoadingPhase === "" || desktopMusicLoadingPhase === "idle",
+    `Expected music loading gate to clear before gameplay, got ${desktopMusicLoadingPhase}`
+  );
+  assert(
     desktopBackgroundKey === "level-1-springtide-glassgrove",
     `Expected Level 1 Springtide Glassgrove background key, got ${desktopBackgroundKey}`
   );
@@ -883,6 +888,7 @@ try {
         livesText,
         retryCastPixels,
         desktopIntroVisible,
+        desktopMusicLoadingPhase,
         pauseVisible,
         returnedToTitle,
         nextLevelLabel,

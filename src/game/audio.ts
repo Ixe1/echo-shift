@@ -107,6 +107,7 @@ export class SynthAudio {
   private mediaMusicKey: SoundtrackKey | null = null;
   private musicCache = new Map<SoundtrackKey, HTMLAudioElement>();
   private webMusicBufferCache = new Map<SoundtrackKey, Promise<AudioBuffer>>();
+  private webMusicReadyKeys = new Set<SoundtrackKey>();
   private activeEffects = new Map<HTMLAudioElement, number>();
   private fadingMusic = new Set<HTMLAudioElement>();
   private fadingWebMusic = new Set<WebMusicPlayback>();
@@ -214,12 +215,29 @@ export class SynthAudio {
 
   preloadSoundtracks(): void {
     for (const key of Object.keys(soundtracks) as SoundtrackKey[]) {
-      if (musicLoopRegionFor(key) && this.canUseWebMusic()) {
-        void this.webMusicBufferFor(key).catch(() => this.prepareMusicElement(this.musicElementFor(key)));
-      } else {
-        this.prepareMusicElement(this.musicElementFor(key));
-      }
+      void this.preloadMusic(key);
     }
+  }
+
+  preloadMusic(key: SoundtrackKey): Promise<boolean> {
+    const loop = musicLoopRegionFor(key);
+    if (loop && this.canUseWebMusic()) {
+      return this.webMusicBufferFor(key)
+        .then(() => true)
+        .catch(() => {
+          this.prepareMusicElement(this.musicElementFor(key));
+          return false;
+        });
+    }
+
+    this.prepareMusicElement(this.musicElementFor(key));
+    return Promise.resolve(true);
+  }
+
+  isMusicReady(key: SoundtrackKey): boolean {
+    const loop = musicLoopRegionFor(key);
+    if (!loop || !this.canUseWebMusic()) return true;
+    return this.webMusicReadyKeys.has(key);
   }
 
   playMusic(key: SoundtrackKey, options: { restart?: boolean; fadeMs?: number } = {}): void {
@@ -349,6 +367,7 @@ export class SynthAudio {
     }
     this.musicCache.clear();
     this.webMusicBufferCache.clear();
+    this.webMusicReadyKeys.clear();
     if (this.unlockListenersInstalled && typeof window !== "undefined") {
       const options = { capture: true };
       for (const eventName of unlockEvents) {
@@ -459,8 +478,13 @@ export class SynthAudio {
         if (!context) throw new Error("AudioContext unavailable");
         return context.decodeAudioData(data);
       })
+      .then((buffer) => {
+        this.webMusicReadyKeys.add(key);
+        return buffer;
+      })
       .catch((error) => {
         this.webMusicBufferCache.delete(key);
+        this.webMusicReadyKeys.delete(key);
         throw error;
       });
     this.webMusicBufferCache.set(key, promise);
@@ -480,6 +504,10 @@ export class SynthAudio {
     const attempt = ++this.webMusicPlayAttempt;
     this.musicPaused = false;
     this.musicKey = key;
+    if (!restartSameTrack && (this.music || (this.webMusic && this.webMusic.key !== key))) {
+      const token = ++this.fadeToken;
+      this.fadeOutCurrentMusic(token, Math.min(options.fadeMs ?? 260, 420));
+    }
     void this.webMusicBufferFor(key)
       .then((buffer) => {
         if (attempt !== this.webMusicPlayAttempt || this.musicKey !== key) return;
@@ -529,6 +557,17 @@ export class SynthAudio {
         if (attempt !== this.webMusicPlayAttempt || this.musicKey !== key) return;
         this.playMediaMusic(key, options);
       });
+  }
+
+  private fadeOutCurrentMusic(token: number, fadeMs?: number): void {
+    const previousMedia = this.music;
+    const previousWeb = this.webMusic;
+    this.music = null;
+    this.mediaMusicKey = null;
+    this.webMusic = null;
+    this.stopMusicLoopWatch();
+    if (previousMedia) this.fadeMusic(previousMedia, null, token, fadeMs);
+    if (previousWeb) this.fadeWebMusic(previousWeb, null, token, fadeMs);
   }
 
   private playSample(name: ToneName): boolean {

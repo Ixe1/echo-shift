@@ -4,6 +4,7 @@ import { audio } from "../game/audio";
 import { formatFrames } from "../game/geometry";
 import { getBestScores } from "../game/progress";
 import { formatScore } from "../game/scoring";
+import { soundtrackForLevel } from "../game/soundtracks";
 import { clearUi, icon, uiRoot } from "../ui/dom";
 
 export class LevelSelectScene extends Phaser.Scene {
@@ -19,6 +20,7 @@ export class LevelSelectScene extends Phaser.Scene {
     this.registerUiCleanup();
     const root = uiRoot();
     const draftPlaytest = isDraftPlaytestActive();
+    levels.forEach((level, levelPosition) => void audio.preloadMusic(soundtrackForLevel(level, levelPosition).key));
     const unlocked = levels.length;
     const scores = draftPlaytest ? {} : getBestScores();
     const buttons = levels
@@ -63,6 +65,13 @@ export class LevelSelectScene extends Phaser.Scene {
     });
 
     root.querySelectorAll<HTMLButtonElement>("[data-level]").forEach((button) => {
+      const warmButtonMusic = () => {
+        const levelIndex = Number(button.dataset.level || 0);
+        const level = levels[levelIndex];
+        if (level) void audio.preloadMusic(soundtrackForLevel(level, levelIndex).key);
+      };
+      button.addEventListener("pointerenter", warmButtonMusic);
+      button.addEventListener("focus", warmButtonMusic);
       button.addEventListener("click", () => {
         const levelIndex = Number(button.dataset.level || 0);
         audio.play("select");

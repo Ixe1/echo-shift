@@ -1,7 +1,9 @@
 import Phaser from "phaser";
 import { readEditorDraftCurrentIndex } from "../data/editorDraft";
-import { isDraftPlaytestActive } from "../data/levels";
+import { getLevel, isDraftPlaytestActive, levels } from "../data/levels";
+import { tutorialLevel } from "../data/tutorialLevel";
 import { audio } from "../game/audio";
+import { soundtrackForLevel } from "../game/soundtracks";
 import { clearUi, icon, uiRoot } from "../ui/dom";
 import { bindOptionsPanel, optionsPanelHtml } from "../ui/options";
 
@@ -18,6 +20,7 @@ export class MenuScene extends Phaser.Scene {
     this.registerUiCleanup();
     const root = uiRoot();
     const draftPlaytest = isDraftPlaytestActive();
+    this.preloadLikelyMusic(draftPlaytest);
     const editorButton = import.meta.env.DEV
       ? `<button class="ui-button" data-editor>${icon("levels")} Level Editor</button>`
       : "";
@@ -76,6 +79,13 @@ export class MenuScene extends Phaser.Scene {
     const parsed = Number(new URLSearchParams(window.location.search).get("level"));
     if (Number.isFinite(parsed)) return Math.max(0, Math.round(parsed));
     return readEditorDraftCurrentIndex();
+  }
+
+  private preloadLikelyMusic(draftPlaytest: boolean): void {
+    const levelIndex = draftPlaytest ? this.currentDraftLevelIndex() : 0;
+    const level = draftPlaytest ? getLevel(levelIndex) : levels[0];
+    void audio.preloadMusic(soundtrackForLevel(level, levelIndex).key);
+    if (!draftPlaytest) void audio.preloadMusic(soundtrackForLevel(tutorialLevel, 0).key);
   }
 
   private showCredits(): void {
