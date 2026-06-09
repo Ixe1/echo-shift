@@ -180,8 +180,7 @@ const runRoute = (simulation, route) => {
 };
 
 const settlePromises = async () => {
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let index = 0; index < 8; index += 1) await Promise.resolve();
 };
 
 const restoreGlobal = (key, value) => {
@@ -193,10 +192,14 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
   const previousAudio = globalThis.Audio;
+  const previousFetch = globalThis.fetch;
   const previousRequestAnimationFrame = globalThis.requestAnimationFrame;
+  const previousCancelAnimationFrame = globalThis.cancelAnimationFrame;
   const listeners = new Map();
   const mediaElements = [];
   const startedTones = [];
+  const startedMusicSources = [];
+  const audioContexts = [];
   const pendingResumes = [];
   const pendingBlockedRejects = [];
   const forceRejectedMedia = new Set();
@@ -219,6 +222,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       this.currentTime = 0;
       this.destination = {};
       this.state = "suspended";
+      audioContexts.push(this);
     }
 
     resume() {
@@ -228,6 +232,35 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
 
     createGain() {
       return { gain: fakeParam(), connect() {}, disconnect() { disconnectedNodes += 1; } };
+    }
+
+    createBufferSource() {
+      const source = {
+        buffer: null,
+        loop: false,
+        loopStart: 0,
+        loopEnd: 0,
+        startOffset: null,
+        stopped: false,
+        onended: null,
+        connect() {},
+        disconnect() {
+          disconnectedNodes += 1;
+        },
+        start(_when, offset = 0) {
+          source.startOffset = offset;
+          startedMusicSources.push(source);
+        },
+        stop() {
+          source.stopped = true;
+          source.onended?.();
+        }
+      };
+      return source;
+    }
+
+    decodeAudioData() {
+      return Promise.resolve({ duration: 180 });
     }
 
     createOscillator() {
@@ -264,7 +297,18 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       this.volume = 1;
       this.playCalls = 0;
       this.playing = false;
+      this.listeners = new Map();
       mediaElements.push(this);
+    }
+
+    addEventListener(type, handler) {
+      const handlers = this.listeners.get(type) || [];
+      handlers.push(handler);
+      this.listeners.set(type, handlers);
+    }
+
+    dispatchEvent(type) {
+      for (const handler of this.listeners.get(type) || []) handler({ type });
     }
 
     load() {}
@@ -336,7 +380,18 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   Object.defineProperty(globalThis, "window", { configurable: true, value: fakeWindow });
   Object.defineProperty(globalThis, "document", { configurable: true, value: fakeDocument });
   Object.defineProperty(globalThis, "Audio", { configurable: true, value: FakeAudioElement });
-  Object.defineProperty(globalThis, "requestAnimationFrame", { configurable: true, value: () => 0 });
+  Object.defineProperty(globalThis, "fetch", {
+    configurable: true,
+    value: () => Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) })
+  });
+  Object.defineProperty(globalThis, "requestAnimationFrame", {
+    configurable: true,
+    value: (callback) => {
+      callback(performance.now() + 1000);
+      return 1;
+    }
+  });
+  Object.defineProperty(globalThis, "cancelAnimationFrame", { configurable: true, value: () => undefined });
 
   try {
     const audio = new SynthAudio();
@@ -410,38 +465,46 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
 
     audio.playMusic("level-1");
     await settlePromises();
-    const levelOne = mediaElements.find((element) => element.src.includes("Level 1"));
-    assert(levelOne?.playing, "Expected level music to play after the session audio gate");
-    levelOne.currentTime = 17.25;
+    const levelOneLoopStart = soundtracks["level-1"].loopStartSeconds;
+    const levelOneLoopEnd = soundtracks["level-1"].loopEndSeconds;
+    const levelOneSource = startedMusicSources.at(-1);
+    assert(levelOneLoopStart === 8.97 && levelOneLoopEnd === 43.311, "Expected Level 1 soundtrack loop points to match selected audition values");
+    assert(levelOneSource?.loop === true, "Expected level music with authored loop points to use Web Audio looping");
+    assert(levelOneSource.loopStart === levelOneLoopStart, `Expected Web Audio loopStart ${levelOneLoopStart}, got ${levelOneSource.loopStart}`);
+    assert(levelOneSource.loopEnd === levelOneLoopEnd, `Expected Web Audio loopEnd ${levelOneLoopEnd}, got ${levelOneSource.loopEnd}`);
+    assert(levelOneSource.startOffset === 0, `Expected first level music play to start at 0, got ${levelOneSource.startOffset}`);
+    audioContexts.at(-1).currentTime += 17.25;
     audio.playMusic("level-1", { restart: true });
     await settlePromises();
-    assert(levelOne.currentTime === 0, `Expected retry/replay music restart to seek level track to 0, got ${levelOne.currentTime}`);
-    assert(levelOne.playCalls >= 2, `Expected restarted level music to play again, got ${levelOne.playCalls} calls`);
+    const restartedLevelOneSource = startedMusicSources.at(-1);
+    assert(restartedLevelOneSource !== levelOneSource, "Expected restarted Web Audio music to create a fresh buffer source");
+    assert(restartedLevelOneSource.startOffset === 0, `Expected retry/replay music restart to start level track at 0, got ${restartedLevelOneSource.startOffset}`);
+    assert(levelOneSource.stopped, "Expected restart to stop the previous Web Audio music source");
 
     mediaUnlocked = false;
-    audio.playMusic("level-2");
+    audio.playMusic("tutorial");
     await settlePromises();
-    const levelTwo = mediaElements.find((element) => element.src.includes("Level 2"));
-    assert(levelTwo?.playCalls === 1 && !levelTwo.playing, "Expected level switch music to be blocked before recovery");
+    const tutorialMusic = mediaElements.find((element) => element.src.includes("Tutorial"));
+    assert(tutorialMusic?.playCalls === 1 && !tutorialMusic.playing, "Expected tutorial music switch to be blocked before recovery");
     mediaUnlocked = true;
     dispatchEvent("focus");
     await settlePromises();
-    assert(levelTwo.playCalls >= 2 && levelTwo.playing, "Expected focus recovery to retry and start blocked level music");
+    assert(tutorialMusic.playCalls >= 2 && tutorialMusic.playing, "Expected focus recovery to retry and start blocked tutorial music");
 
     mediaUnlocked = false;
-    audio.playMusic("level-3");
+    audio.playMusic("menu", { restart: true });
     await settlePromises();
-    const levelThree = mediaElements.find((element) => element.src.includes("Level 3"));
-    assert(levelThree?.playCalls === 1 && !levelThree.playing, "Expected next level music to be blocked before visibility recovery");
+    assert(menu.playCalls >= 3 && !menu.playing, "Expected menu music restart to be blocked before visibility recovery");
     mediaUnlocked = true;
     visibilityState = "hidden";
     dispatchEvent("visibilitychange");
     await settlePromises();
-    assert(levelThree.playCalls === 1, "Expected hidden visibilitychange not to retry music");
+    const menuCallsBeforeVisibleRecovery = menu.playCalls;
+    assert(menu.playing === false, "Expected hidden visibilitychange not to retry blocked music");
     visibilityState = "visible";
     dispatchEvent("visibilitychange");
     await settlePromises();
-    assert(levelThree.playCalls >= 2 && levelThree.playing, "Expected visible recovery to retry and start blocked level music");
+    assert(menu.playCalls > menuCallsBeforeVisibleRecovery && menu.playing, "Expected visible recovery to retry and start blocked menu music");
 
     const tonesBeforeDisposedSampleReject = startedTones.length;
     deferBlockedRejects = true;
@@ -459,7 +522,9 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     restoreGlobal("window", previousWindow);
     restoreGlobal("document", previousDocument);
     restoreGlobal("Audio", previousAudio);
+    restoreGlobal("fetch", previousFetch);
     restoreGlobal("requestAnimationFrame", previousRequestAnimationFrame);
+    restoreGlobal("cancelAnimationFrame", previousCancelAnimationFrame);
   }
 };
 
@@ -740,8 +805,8 @@ try {
   assert(tutorialLevel.score.lives === null, `Expected tutorial to use unlimited lives, got ${tutorialLevel.score.lives}`);
   assert(soundtrackForLevel(tutorialLevel).key === "tutorial", "Expected tutorial soundtrack key to resolve");
   assert(soundtrackForLevel({ ...levels[0], soundtrackKey: "tutorial" }).key === "tutorial", "Expected explicit tutorial soundtrack key to override index fallback");
-  assert(soundtrackForLevel(levels[3], 3).key === "level-9", "Expected Level 4 to use Level 9 music");
-  assert(soundtrackForLevel(levels[4], 4).key === "level-10", "Expected Level 5 to use final Level 10 music");
+  assert(soundtrackForLevel(levels[3], 3).key === "level-4", "Expected Level 4 to use Level 4 music");
+  assert(soundtrackForLevel(levels[4], 4).key === "level-5", "Expected Level 5 to use Level 5 music");
   assert(soundtrackForLevel({ ...levels[4], soundtrackKey: undefined }, 5).key === "level-1", "Expected missing retired level-6 slot to use safe fallback");
   assert(soundtrackForLevel({ ...levels[4], soundtrackKey: "missing-track" }, 5).key === "level-1", "Expected unknown soundtrack key to use safe fallback");
   assert(soundtrackForLevel({ ...levels[4], soundtrackKey: "menu" }, 5).key === "level-1", "Expected menu soundtrack key to be ignored for levels");
