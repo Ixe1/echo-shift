@@ -207,6 +207,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   let deferBlockedRejects = false;
   let mediaUnlocked = false;
   let visibilityState = "visible";
+  let runAnimationFrames = true;
 
   const fakeParam = () => ({
     value: 0,
@@ -387,7 +388,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   Object.defineProperty(globalThis, "requestAnimationFrame", {
     configurable: true,
     value: (callback) => {
-      callback(performance.now() + 1000);
+      if (runAnimationFrames) callback(performance.now() + 1000);
       return 1;
     }
   });
@@ -474,12 +475,14 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     assert(levelOneSource.loopEnd === levelOneLoopEnd, `Expected Web Audio loopEnd ${levelOneLoopEnd}, got ${levelOneSource.loopEnd}`);
     assert(levelOneSource.startOffset === 0, `Expected first level music play to start at 0, got ${levelOneSource.startOffset}`);
     audioContexts.at(-1).currentTime += 17.25;
+    runAnimationFrames = false;
     audio.playMusic("level-1", { restart: true });
     await settlePromises();
     const restartedLevelOneSource = startedMusicSources.at(-1);
     assert(restartedLevelOneSource !== levelOneSource, "Expected restarted Web Audio music to create a fresh buffer source");
     assert(restartedLevelOneSource.startOffset === 0, `Expected retry/replay music restart to start level track at 0, got ${restartedLevelOneSource.startOffset}`);
-    assert(levelOneSource.stopped, "Expected restart to stop the previous Web Audio music source");
+    assert(levelOneSource.stopped, "Expected same-track restart to stop the previous Web Audio music source before fade completion");
+    runAnimationFrames = true;
 
     mediaUnlocked = false;
     audio.playMusic("tutorial");

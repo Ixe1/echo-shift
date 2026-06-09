@@ -459,6 +459,7 @@ export class SynthAudio {
       this.retryWebMusic(current);
       return;
     }
+    const restartSameTrack = Boolean(current && current.key === key && options.restart);
 
     const attempt = ++this.webMusicPlayAttempt;
     this.musicPaused = false;
@@ -473,9 +474,14 @@ export class SynthAudio {
         }
 
         const previousMedia = this.music;
-        const previousWeb = this.webMusic;
+        let previousWeb = this.webMusic;
         this.music = null;
         this.stopStaleFadingMusic(null);
+        if (restartSameTrack && previousWeb) {
+          this.fadingWebMusic.delete(previousWeb);
+          this.stopWebMusic(previousWeb);
+          previousWeb = null;
+        }
         this.stopStaleFadingWebMusic(previousWeb || undefined);
 
         const gain = context.createGain();
