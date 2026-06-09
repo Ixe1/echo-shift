@@ -233,6 +233,7 @@ export type SoundtrackKey =
   | "menu"
   | "tutorial"
   | "boss"
+  | "final-boss"
   | "level-1"
   | "level-2"
   | "level-3"
@@ -242,7 +243,7 @@ export type SoundtrackKey =
   | "level-9"
   | "level-10";
 
-export type LevelSoundtrackKey = Exclude<SoundtrackKey, "menu" | "boss">;
+export type LevelSoundtrackKey = Exclude<SoundtrackKey, "menu" | "boss" | "final-boss">;
 export type BossSoundtrackKey = Exclude<SoundtrackKey, "menu">;
 
 export type LevelBackgroundKey =

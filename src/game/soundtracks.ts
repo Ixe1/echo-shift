@@ -4,6 +4,7 @@ export const soundtrackKeys = [
   "menu",
   "tutorial",
   "boss",
+  "final-boss",
   "level-1",
   "level-2",
   "level-3",
@@ -41,6 +42,12 @@ export const soundtracks: Record<SoundtrackKey, Soundtrack> = {
     title: "Echo Shift - Boss",
     src: soundtrackPath("Echo Shift - Boss.mp3"),
     durationSeconds: 129.9
+  },
+  "final-boss": {
+    key: "final-boss",
+    title: "Echo Shift - Final Boss",
+    src: soundtrackPath("Echo Shift - Final Boss.mp3"),
+    durationSeconds: 164.8
   },
   "level-1": {
     key: "level-1",
@@ -92,14 +99,14 @@ export const soundtracks: Record<SoundtrackKey, Soundtrack> = {
   }
 };
 
-export const levelSoundtrackKeys = soundtrackKeys.filter((key): key is LevelSoundtrackKey => key !== "menu" && key !== "boss");
+export const levelSoundtrackKeys = soundtrackKeys.filter((key): key is LevelSoundtrackKey => key !== "menu" && key !== "boss" && key !== "final-boss");
 export const bossSoundtrackKeys = soundtrackKeys.filter((key): key is BossSoundtrackKey => key !== "menu");
 
 export const isSoundtrackKey = (value: unknown): value is SoundtrackKey =>
   typeof value === "string" && Object.prototype.hasOwnProperty.call(soundtracks, value);
 
 export const isLevelSoundtrackKey = (value: unknown): value is LevelSoundtrackKey =>
-  isSoundtrackKey(value) && value !== "menu" && value !== "boss";
+  isSoundtrackKey(value) && value !== "menu" && value !== "boss" && value !== "final-boss";
 
 export const isBossSoundtrackKey = (value: unknown): value is BossSoundtrackKey =>
   isSoundtrackKey(value) && value !== "menu";
