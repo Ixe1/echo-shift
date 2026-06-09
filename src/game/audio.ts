@@ -267,6 +267,14 @@ export class SynthAudio {
     this.mediaMusicKey = key;
 
     const token = ++this.fadeToken;
+    if (this.musicPaused) {
+      this.stopMusicLoopWatch();
+      next.pause();
+      if (previous) this.stopMusicElement(previous);
+      if (previousWeb) this.stopWebMusic(previousWeb);
+      return;
+    }
+
     this.playMusicElement(next);
     this.startMusicLoopWatch();
 
@@ -421,6 +429,7 @@ export class SynthAudio {
 
   private retryMusic(): void {
     if (this.webMusic) {
+      if (this.webMusic.key !== this.musicKey) return;
       this.retryWebMusic(this.webMusic);
       return;
     }
@@ -517,7 +526,7 @@ export class SynthAudio {
         }
       })
       .catch(() => {
-        if (attempt !== this.webMusicPlayAttempt || this.musicKey !== key || this.musicPaused) return;
+        if (attempt !== this.webMusicPlayAttempt || this.musicKey !== key) return;
         this.playMediaMusic(key, options);
       });
   }

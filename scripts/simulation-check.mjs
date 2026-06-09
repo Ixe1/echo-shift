@@ -557,6 +557,22 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     );
     audio.stopMusic();
 
+    runAnimationFrames = false;
+    failNextFetch = true;
+    audio.playMusic("final-boss");
+    audio.pauseMusic();
+    await settlePromises();
+    const pausedFinalBossFallback = mediaElements.find((element) => element.src === soundtracks["final-boss"].src);
+    assert(
+      pausedFinalBossFallback && pausedFinalBossFallback.playCalls === 0 && !pausedFinalBossFallback.playing,
+      "Expected paused Web Audio load failure to queue the requested fallback media without starting it"
+    );
+    audio.resumeMusic();
+    await settlePromises();
+    assert(pausedFinalBossFallback.playing, "Expected queued fallback media to start after resume");
+    audio.stopMusic();
+    runAnimationFrames = true;
+
     audio.playMusic("level-1");
     await settlePromises();
     const levelOneLoopStart = soundtracks["level-1"].loopStartSeconds;
@@ -578,12 +594,42 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     runAnimationFrames = true;
 
     runAnimationFrames = false;
+    const activeWebSourceBeforePendingTransition = restartedLevelOneSource;
+    const musicSourcesBeforePendingWebTransition = startedMusicSources.length;
+    deferNextFetch = true;
+    audio.playMusic("level-5");
+    await settlePromises();
+    assert(pendingFetchResponses.length === 1, "Expected deferred Web Audio fetch for pending Web-to-Web transition");
+    audio.pauseMusic();
+    assert(activeWebSourceBeforePendingTransition.stopped, "Expected pause to stop the outgoing Web Audio source during a pending Web-to-Web transition");
+    audio.resumeMusic();
+    await settlePromises();
+    assert(
+      startedMusicSources.length === musicSourcesBeforePendingWebTransition,
+      "Expected resume during pending Web-to-Web transition not to restart the stale outgoing Web Audio track"
+    );
+    resolvePendingFetches();
+    await settlePromises();
+    const pendingLevelFiveSource = startedMusicSources.at(-1);
+    assert(
+      startedMusicSources.length === musicSourcesBeforePendingWebTransition + 1 &&
+        pendingLevelFiveSource.loopStart === soundtracks["level-5"].loopStartSeconds &&
+        pendingLevelFiveSource.loopEnd === soundtracks["level-5"].loopEndSeconds,
+      "Expected pending Web-to-Web transition to start the requested soundtrack with authored loop points after decode"
+    );
+    audio.stopMusic();
+    runAnimationFrames = true;
+
+    audio.playMusic("level-1", { restart: true });
+    await settlePromises();
+    const crossfadeOutgoingLevelOneSource = startedMusicSources.at(-1);
+    runAnimationFrames = false;
     audio.playMusic("level-2");
     await settlePromises();
     const levelTwoSourceBeforePause = startedMusicSources.at(-1);
-    assert(!restartedLevelOneSource.stopped, "Expected crossfade source to remain active while RAF fade is pending");
+    assert(!crossfadeOutgoingLevelOneSource.stopped, "Expected crossfade source to remain active while RAF fade is pending");
     audio.pauseMusic();
-    assert(restartedLevelOneSource.stopped, "Expected pause to stop outgoing Web Audio source while fade is pending");
+    assert(crossfadeOutgoingLevelOneSource.stopped, "Expected pause to stop outgoing Web Audio source while fade is pending");
     assert(levelTwoSourceBeforePause.stopped, "Expected pause to stop current Web Audio source");
 
     audio.playMusic("level-2", { restart: true });
