@@ -237,7 +237,7 @@ export class SynthAudio {
   isMusicReady(key: SoundtrackKey): boolean {
     const loop = musicLoopRegionFor(key);
     if (!loop || !this.canUseWebMusic()) return this.mediaMusicReadyKeys.has(key);
-    return this.webMusicReadyKeys.has(key);
+    return this.webMusicReadyKeys.has(key) || this.mediaMusicReadyKeys.has(key);
   }
 
   playMusic(key: SoundtrackKey, options: { restart?: boolean; fadeMs?: number } = {}): void {
@@ -253,6 +253,10 @@ export class SynthAudio {
     this.markMusicKey(key);
     const loop = musicLoopRegionFor(key);
     if (loop && this.canUseWebMusic()) {
+      if (!this.webMusicReadyKeys.has(key) && this.mediaMusicReadyKeys.has(key)) {
+        this.playMediaMusic(key, options);
+        return;
+      }
       this.playWebMusic(key, loop, options);
       return;
     }
@@ -268,6 +272,7 @@ export class SynthAudio {
     }
 
     const next = this.musicElementFor(key);
+    const restartingSameElement = this.music === next && options.restart;
     const previousWeb = this.webMusic;
     this.webMusic = null;
     this.stopStaleFadingMusic(next);
@@ -279,7 +284,7 @@ export class SynthAudio {
       next.pause();
       next.currentTime = 0;
     }
-    next.volume = this.musicMuted ? 0 : 0;
+    next.volume = restartingSameElement ? (this.musicMuted ? 0 : this.musicOutputVolume()) : this.musicMuted ? 0 : 0;
     this.music = next;
     this.musicKey = key;
     this.mediaMusicKey = key;
@@ -295,6 +300,10 @@ export class SynthAudio {
 
     this.playMusicElement(next);
     this.startMusicLoopWatch();
+    if (restartingSameElement) {
+      this.applyMusicVolume(next);
+      return;
+    }
 
     this.fadeMusic(previous, next, token, options.fadeMs);
     if (previousWeb) this.fadeWebMusic(previousWeb, null, token, options.fadeMs);

@@ -555,17 +555,19 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       levelFourFallback?.playing,
       "Expected failed Web Audio soundtrack load to fall back to the requested media soundtrack"
     );
-    deferNextFetch = true;
+    assert(audio.isMusicReady("level-4"), "Expected ready fallback media to count as ready for a looped soundtrack");
+    const pendingFetchesBeforeFallbackRestart = pendingFetchResponses.length;
     const levelFourFallbackPlayCalls = levelFourFallback.playCalls;
     audio.playMusic("level-4", { restart: true });
     await settlePromises();
-    assert(pendingFetchResponses.length === 1, "Expected same-key fallback restart to retry Web Audio in the background");
     assert(
-      levelFourFallback.playing && levelFourFallback.playCalls > levelFourFallbackPlayCalls,
-      "Expected same-key HTML fallback restart to keep playing while Web Audio retry is pending"
+      pendingFetchResponses.length === pendingFetchesBeforeFallbackRestart,
+      "Expected same-key ready fallback restart not to start another Web Audio fetch"
     );
-    resolvePendingFetches();
-    await settlePromises();
+    assert(
+      levelFourFallback.playing && levelFourFallback.playCalls === levelFourFallbackPlayCalls + 1 && levelFourFallback.volume > 0,
+      "Expected same-key HTML fallback restart to keep playing at normal volume without a second fade"
+    );
     audio.stopMusic();
     runAnimationFrames = true;
 
