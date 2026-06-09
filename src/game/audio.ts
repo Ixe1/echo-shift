@@ -104,6 +104,7 @@ export class SynthAudio {
   private music: HTMLAudioElement | null = null;
   private webMusic: WebMusicPlayback | null = null;
   private musicKey: SoundtrackKey | null = null;
+  private mediaMusicKey: SoundtrackKey | null = null;
   private musicCache = new Map<SoundtrackKey, HTMLAudioElement>();
   private webMusicBufferCache = new Map<SoundtrackKey, Promise<AudioBuffer>>();
   private activeEffects = new Map<HTMLAudioElement, number>();
@@ -241,7 +242,7 @@ export class SynthAudio {
   }
 
   private playMediaMusic(key: SoundtrackKey, options: { restart?: boolean; fadeMs?: number } = {}): void {
-    if (this.music && this.musicKey === key && !options.restart) {
+    if (this.music && this.musicKey === key && this.mediaMusicKey === key && !options.restart) {
       this.applyMusicVolume(this.music);
       this.retryMusic();
       this.startMusicLoopWatch();
@@ -263,6 +264,7 @@ export class SynthAudio {
     next.volume = this.musicMuted ? 0 : 0;
     this.music = next;
     this.musicKey = key;
+    this.mediaMusicKey = key;
 
     const token = ++this.fadeToken;
     this.playMusicElement(next);
@@ -279,13 +281,13 @@ export class SynthAudio {
   }
 
   pauseMusic(): void {
-    if (!this.music && !this.webMusic) return;
+    if (!this.music && !this.webMusic && !this.musicKey) return;
     this.musicPaused = true;
     this.musicPlayAttempt += 1;
-    this.webMusicPlayAttempt += 1;
     this.stopMusicLoopWatch();
     if (this.music) this.music.pause();
     if (this.webMusic) this.pauseWebMusic(this.webMusic);
+    this.stopAllFadingMusic();
     this.stopAllFadingWebMusic();
     this.markAudioState("paused");
   }
@@ -302,12 +304,14 @@ export class SynthAudio {
     this.webMusicPlayAttempt += 1;
     this.musicPaused = false;
     this.stopMusicLoopWatch();
-    const currentKey = this.musicKey;
+    const currentMediaKey = this.mediaMusicKey;
     if (this.music) this.unloadMusicElement(this.music);
-    if (currentKey) this.musicCache.delete(currentKey);
+    if (currentMediaKey) this.musicCache.delete(currentMediaKey);
     this.music = null;
+    this.mediaMusicKey = null;
     if (this.webMusic) this.stopWebMusic(this.webMusic);
     this.webMusic = null;
+    this.stopAllFadingMusic();
     this.stopAllFadingWebMusic();
     this.musicKey = null;
     this.releaseUnusedMusic();
@@ -323,6 +327,7 @@ export class SynthAudio {
     this.stopMusicLoopWatch();
     this.music = null;
     this.musicKey = null;
+    this.mediaMusicKey = null;
     if (this.webMusic) this.stopWebMusic(this.webMusic);
     this.webMusic = null;
     for (const playback of this.fadingWebMusic) this.stopWebMusic(playback);
@@ -419,7 +424,7 @@ export class SynthAudio {
       this.retryWebMusic(this.webMusic);
       return;
     }
-    if (!this.music || this.musicPaused) return;
+    if (!this.music || this.mediaMusicKey !== this.musicKey || this.musicPaused) return;
     this.prepareMusicElement(this.music);
     this.playMusicElement(this.music);
     this.startMusicLoopWatch();
@@ -468,7 +473,7 @@ export class SynthAudio {
     this.musicKey = key;
     void this.webMusicBufferFor(key)
       .then((buffer) => {
-        if (attempt !== this.webMusicPlayAttempt || this.musicKey !== key || this.musicPaused) return;
+        if (attempt !== this.webMusicPlayAttempt || this.musicKey !== key) return;
         const context = this.ensureContext();
         if (!context) {
           this.playMediaMusic(key, options);
@@ -478,6 +483,7 @@ export class SynthAudio {
         const previousMedia = this.music;
         let previousWeb = this.webMusic;
         this.music = null;
+        this.mediaMusicKey = null;
         this.stopStaleFadingMusic(null);
         if (restartSameTrack && previousWeb) {
           this.fadingWebMusic.delete(previousWeb);
@@ -499,11 +505,16 @@ export class SynthAudio {
           startedAt: context.currentTime
         };
         this.webMusic = playback;
-        this.startWebMusicSource(playback, 0);
+        if (!this.musicPaused) this.startWebMusicSource(playback, 0);
         const token = ++this.fadeToken;
-        this.fadeWebMusic(previousWeb, playback, token, options.fadeMs);
-        this.fadeMusic(previousMedia, null, token, options.fadeMs);
-        this.resumeContextForWebMusic(playback, attempt);
+        if (this.musicPaused) {
+          if (previousWeb) this.stopWebMusic(previousWeb);
+          if (previousMedia) this.stopMusicElement(previousMedia);
+        } else {
+          this.fadeWebMusic(previousWeb, playback, token, options.fadeMs);
+          this.fadeMusic(previousMedia, null, token, options.fadeMs);
+          this.resumeContextForWebMusic(playback, attempt);
+        }
       })
       .catch(() => {
         if (attempt !== this.webMusicPlayAttempt || this.musicKey !== key || this.musicPaused) return;
@@ -838,6 +849,12 @@ export class SynthAudio {
   private stopStaleFadingMusic(except: HTMLAudioElement | null): void {
     for (const element of [...this.fadingMusic]) {
       if (element !== except) this.stopMusicElement(element);
+    }
+  }
+
+  private stopAllFadingMusic(): void {
+    for (const element of [...this.fadingMusic]) {
+      this.stopMusicElement(element);
     }
   }
 

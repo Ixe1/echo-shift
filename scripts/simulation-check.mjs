@@ -202,9 +202,12 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   const audioContexts = [];
   const pendingResumes = [];
   const pendingBlockedRejects = [];
+  const pendingFetchResponses = [];
   const forceRejectedMedia = new Set();
   let disconnectedNodes = 0;
   let deferBlockedRejects = false;
+  let deferNextFetch = false;
+  let failNextFetch = false;
   let mediaUnlocked = false;
   let visibilityState = "visible";
   let runAnimationFrames = true;
@@ -377,13 +380,25 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   const rejectBlockedPlays = () => {
     for (const reject of pendingBlockedRejects.splice(0)) reject(new Error("blocked by autoplay policy"));
   };
+  const makeFetchResponse = () => ({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) });
+  const resolvePendingFetches = () => {
+    for (const resolve of pendingFetchResponses.splice(0)) resolve(makeFetchResponse());
+  };
 
   Object.defineProperty(globalThis, "window", { configurable: true, value: fakeWindow });
   Object.defineProperty(globalThis, "document", { configurable: true, value: fakeDocument });
   Object.defineProperty(globalThis, "Audio", { configurable: true, value: FakeAudioElement });
   Object.defineProperty(globalThis, "fetch", {
     configurable: true,
-    value: () => Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) })
+    value: () => {
+      if (failNextFetch) {
+        failNextFetch = false;
+        return Promise.resolve({ ok: false, arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)) });
+      }
+      if (!deferNextFetch) return Promise.resolve(makeFetchResponse());
+      deferNextFetch = false;
+      return new Promise((resolve) => pendingFetchResponses.push(resolve));
+    }
   });
   Object.defineProperty(globalThis, "requestAnimationFrame", {
     configurable: true,
@@ -463,6 +478,84 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       mediaElements.length === elementsBeforeUnlock,
       `Expected unlock to avoid preloading every soundtrack, got ${mediaElements.length} elements before level music`
     );
+
+    runAnimationFrames = false;
+    audio.playMusic("level-1");
+    await settlePromises();
+    const levelOneFadePauseSource = startedMusicSources.at(-1);
+    assert(menu.playing, "Expected outgoing menu music to keep playing while media-to-Web fade is pending");
+    audio.pauseMusic();
+    assert(!menu.playing, "Expected pause to stop outgoing media music while media-to-Web fade is pending");
+    assert(levelOneFadePauseSource.stopped, "Expected pause to stop current Web Audio music during media-to-Web fade");
+    runAnimationFrames = true;
+
+    audio.playMusic("menu", { restart: true });
+    await settlePromises();
+    assert(menu.playing, "Expected menu music restart to recover after paused media-to-Web transition");
+
+    runAnimationFrames = false;
+    failNextFetch = true;
+    audio.playMusic("level-4");
+    await settlePromises();
+    const levelFourFallback = mediaElements.find((element) => element.src === soundtracks["level-4"].src);
+    assert(
+      levelFourFallback?.playing,
+      "Expected failed Web Audio soundtrack load to fall back to the requested media soundtrack"
+    );
+    audio.stopMusic();
+    runAnimationFrames = true;
+
+    audio.playMusic("menu", { restart: true });
+    await settlePromises();
+    assert(menu.playing, "Expected menu music restart to recover after failed Web Audio fallback");
+
+    deferNextFetch = true;
+    runAnimationFrames = false;
+    const menuPlayCallsBeforePendingLoop = menu.playCalls;
+    audio.playMusic("level-2");
+    await settlePromises();
+    assert(pendingFetchResponses.length === 1, "Expected deferred Web Audio fetch for pending looped soundtrack");
+    audio.pauseMusic();
+    audio.resumeMusic();
+    await settlePromises();
+    assert(
+      menu.playCalls === menuPlayCallsBeforePendingLoop,
+      "Expected resume during pending Web Audio decode not to replay the previous media soundtrack"
+    );
+    resolvePendingFetches();
+    await settlePromises();
+    const pendingLevelTwoSource = startedMusicSources.at(-1);
+    assert(pendingLevelTwoSource?.loop === true, "Expected pending looped soundtrack to start with Web Audio after decode resolves");
+    assert(
+      pendingLevelTwoSource.loopStart === soundtracks["level-2"].loopStartSeconds &&
+        pendingLevelTwoSource.loopEnd === soundtracks["level-2"].loopEndSeconds,
+      "Expected pending looped soundtrack to keep authored Web Audio loop points after pause/resume"
+    );
+    audio.stopMusic();
+    runAnimationFrames = true;
+
+    deferNextFetch = true;
+    const musicSourcesBeforeSilentPending = startedMusicSources.length;
+    audio.playMusic("level-3");
+    await settlePromises();
+    assert(pendingFetchResponses.length === 1, "Expected deferred Web Audio fetch for pending soundtrack from silence");
+    audio.pauseMusic();
+    resolvePendingFetches();
+    await settlePromises();
+    assert(
+      startedMusicSources.length === musicSourcesBeforeSilentPending,
+      "Expected paused pending soundtrack from silence not to start until music resumes"
+    );
+    audio.resumeMusic();
+    await settlePromises();
+    const resumedPendingLevelThreeSource = startedMusicSources.at(-1);
+    assert(
+      startedMusicSources.length === musicSourcesBeforeSilentPending + 1 &&
+        resumedPendingLevelThreeSource.loopStart === soundtracks["level-3"].loopStartSeconds &&
+        resumedPendingLevelThreeSource.loopEnd === soundtracks["level-3"].loopEndSeconds,
+      "Expected pending soundtrack from silence to start with authored loop points after resume"
+    );
+    audio.stopMusic();
 
     audio.playMusic("level-1");
     await settlePromises();
