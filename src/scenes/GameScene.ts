@@ -1520,10 +1520,11 @@ export class GameScene extends Phaser.Scene {
         }
 
         if (!this.shouldPlaceTerrainDecor(solid, segmentWidth, column)) continue;
+        if (Math.abs(from - tileX) > 0.01 || width < TERRAIN_TILE_SIZE - 0.01) continue;
         const decorRect = {
-          x: tileX,
+          x: from,
           y: solid.y - TERRAIN_TILE_SIZE,
-          w: Math.min(TERRAIN_TILE_SIZE, solid.x + solid.w - tileX),
+          w: width,
           h: TERRAIN_TILE_SIZE
         };
         if (decorRect.w <= 12 || !this.terrainDecorHasClearance(decorRect)) continue;

@@ -352,6 +352,8 @@ const level = {
     { id: "upper-floor-cover", x: 160, y: 120, w: 88, h: 98, sprite: "floor", tone: "steel" },
     { id: "lower-solid-floor", x: 300, y: 230, w: 150, h: 18, sprite: "floor", tone: "steel" },
     { id: "upper-top-only-cover", x: 328, y: 120, w: 88, h: 158, sprite: "floor", tone: "steel", collision: "top-only" },
+    { id: "stepped-decor-base", x: 100, y: 80, w: 260, h: 60, sprite: "floor", material: "grass-organic" },
+    { id: "stepped-decor-cover", x: 100, y: 48, w: 34, h: 32, sprite: "block", material: "wood-archive" },
     { id: "enclosed-top", x: 800, y: 400, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-left", x: 780, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-center", x: 800, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
@@ -467,6 +469,7 @@ try {
     doors: document.documentElement.dataset.echoShiftDoorAssetTransforms || "",
     solids: document.documentElement.dataset.echoShiftSolidAssetFrames || "",
     outlines: document.documentElement.dataset.echoShiftSolidOutlineRects || "",
+    terrainDecor: document.documentElement.dataset.echoShiftTerrainDecorFrames || "",
     sensors: document.documentElement.dataset.echoShiftEchoSensorAssetFrames || "",
     hazards: document.documentElement.dataset.echoShiftHazardVentSpriteFrames || "",
     objectCount: Number(document.documentElement.dataset.echoShiftObjectAssetCount || "0"),
@@ -637,6 +640,19 @@ try {
   assert(!diagnostics.sensors.includes(":9:"), `Hidden echo sensor diagnostics should not use door-open frame 9, got ${diagnostics.sensors}`);
   assert(diagnostics.hazards.includes("hazard-vent:qa-vent:0:"), `Expected hazard vent sprite diagnostics, got ${diagnostics.hazards}`);
   assert(diagnostics.hazards.includes(":796,488:90x74"), `Expected hazard vent placement diagnostics, got ${diagnostics.hazards}`);
+  assert(
+    diagnostics.terrainDecor.includes("solid:stepped-decor-base:surface:0:1:cap:grass-organic:") &&
+      diagnostics.terrainDecor.includes(":134,64:30x32"),
+    `Expected stepped terrain cap to clip to exposed mid-tile span, got ${diagnostics.terrainDecor}`
+  );
+  assert(
+    !diagnostics.terrainDecor.includes("solid:stepped-decor-base:decor:0:1:"),
+    `Expected stepped terrain decor to skip clipped edge column, got ${diagnostics.terrainDecor}`
+  );
+  assert(
+    diagnostics.terrainDecor.includes("solid:stepped-decor-base:decor:0:6:decor:grass-organic:"),
+    `Expected stepped terrain decor to still render on fully exposed eligible column, got ${diagnostics.terrainDecor}`
+  );
   assert(diagnostics.objectCount >= 25, `Expected synced object sprites, got ${diagnostics.objectCount}`);
   assert(diagnostics.backgroundFilter === "time-lab-prototype:0", `Expected background texture to use linear filtering, got ${diagnostics.backgroundFilter}`);
   assert(diagnostics.objectAtlasFilter === "object-atlas:0", `Expected object atlas texture to use linear filtering, got ${diagnostics.objectAtlasFilter}`);
