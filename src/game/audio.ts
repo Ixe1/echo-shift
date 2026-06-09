@@ -286,6 +286,7 @@ export class SynthAudio {
     this.stopMusicLoopWatch();
     if (this.music) this.music.pause();
     if (this.webMusic) this.pauseWebMusic(this.webMusic);
+    this.stopAllFadingWebMusic();
     this.markAudioState("paused");
   }
 
@@ -307,6 +308,7 @@ export class SynthAudio {
     this.music = null;
     if (this.webMusic) this.stopWebMusic(this.webMusic);
     this.webMusic = null;
+    this.stopAllFadingWebMusic();
     this.musicKey = null;
     this.releaseUnusedMusic();
     if (import.meta.env.DEV && typeof document !== "undefined") delete document.documentElement.dataset.echoShiftMusicKey;
@@ -845,6 +847,13 @@ export class SynthAudio {
         this.fadingWebMusic.delete(playback);
         this.stopWebMusic(playback);
       }
+    }
+  }
+
+  private stopAllFadingWebMusic(): void {
+    for (const playback of [...this.fadingWebMusic]) {
+      this.fadingWebMusic.delete(playback);
+      this.stopWebMusic(playback);
     }
   }
 

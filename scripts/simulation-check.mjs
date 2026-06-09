@@ -484,6 +484,27 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     assert(levelOneSource.stopped, "Expected same-track restart to stop the previous Web Audio music source before fade completion");
     runAnimationFrames = true;
 
+    runAnimationFrames = false;
+    audio.playMusic("level-2");
+    await settlePromises();
+    const levelTwoSourceBeforePause = startedMusicSources.at(-1);
+    assert(!restartedLevelOneSource.stopped, "Expected crossfade source to remain active while RAF fade is pending");
+    audio.pauseMusic();
+    assert(restartedLevelOneSource.stopped, "Expected pause to stop outgoing Web Audio source while fade is pending");
+    assert(levelTwoSourceBeforePause.stopped, "Expected pause to stop current Web Audio source");
+
+    audio.playMusic("level-2", { restart: true });
+    await settlePromises();
+    const levelTwoSourceBeforeStop = startedMusicSources.at(-1);
+    audio.playMusic("level-3");
+    await settlePromises();
+    const levelThreeSourceBeforeStop = startedMusicSources.at(-1);
+    assert(!levelTwoSourceBeforeStop.stopped, "Expected previous Web Audio source to remain active while stop test fade is pending");
+    audio.stopMusic();
+    assert(levelTwoSourceBeforeStop.stopped, "Expected stopMusic to stop outgoing Web Audio source while fade is pending");
+    assert(levelThreeSourceBeforeStop.stopped, "Expected stopMusic to stop current Web Audio source");
+    runAnimationFrames = true;
+
     mediaUnlocked = false;
     audio.playMusic("tutorial");
     await settlePromises();
