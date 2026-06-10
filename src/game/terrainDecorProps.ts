@@ -39,7 +39,8 @@ export type TerrainDecorPropDefinition = {
 const automaticDecorDensityByMaterial: Partial<Record<TerrainMaterial, Exclude<SolidDecorDensity, "auto" | "off">>> = {
   "grass-organic": "medium",
   "copper-corrode": "medium",
-  "warning-industrial": "low"
+  "warning-industrial": "low",
+  "ice-cryo": "medium"
 };
 
 export const normalizeSolidDecorDensity = (value: unknown): SolidDecorDensity | undefined =>
@@ -710,7 +711,238 @@ export const rainhouseTerrainDecorProps = [
   }
 ] as const satisfies readonly TerrainDecorPropDefinition[];
 
-export const allTerrainDecorProps = [...gardenTerrainDecorProps, ...rainhouseTerrainDecorProps] as const satisfies readonly TerrainDecorPropDefinition[];
+export const cryoTerrainDecorProps = [
+  {
+    id: "cryo-frost-clump",
+    material: "ice-cryo",
+    category: "surface-small",
+    frame: 46,
+    w: 72,
+    h: 48,
+    anchor: "bottom-left",
+    minSegmentWidth: 72,
+    clearance: { w: 64, h: 42 },
+    densities: ["low", "medium", "high"],
+    weight: 4,
+    depthOffset: 0.21
+  },
+  {
+    id: "cryo-ice-shard-cluster",
+    material: "ice-cryo",
+    category: "surface-medium",
+    frame: 47,
+    w: 86,
+    h: 86,
+    anchor: "bottom-center",
+    minSegmentWidth: 118,
+    clearance: { w: 76, h: 78 },
+    densities: ["medium", "high"],
+    weight: 3,
+    depthOffset: 0.17
+  },
+  {
+    id: "cryo-frozen-cable-stub",
+    material: "ice-cryo",
+    category: "surface-small",
+    frame: 48,
+    w: 70,
+    h: 82,
+    anchor: "bottom-left",
+    minSegmentWidth: 86,
+    clearance: { w: 62, h: 74 },
+    densities: ["low", "medium", "high"],
+    weight: 2,
+    depthOffset: 0.19
+  },
+  {
+    id: "cryo-small-canister",
+    material: "ice-cryo",
+    category: "surface-medium",
+    frame: 49,
+    w: 64,
+    h: 98,
+    anchor: "bottom-center",
+    minSegmentWidth: 112,
+    clearance: { w: 56, h: 88 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: 0.16
+  },
+  {
+    id: "cryo-snow-crystal-mound",
+    material: "ice-cryo",
+    category: "surface-small",
+    frame: 50,
+    w: 80,
+    h: 48,
+    anchor: "bottom-left",
+    minSegmentWidth: 82,
+    clearance: { w: 72, h: 42 },
+    densities: ["low", "medium", "high"],
+    weight: 3,
+    depthOffset: 0.2
+  },
+  {
+    id: "cryo-frosted-vent",
+    material: "ice-cryo",
+    category: "surface-medium",
+    frame: 51,
+    w: 98,
+    h: 78,
+    anchor: "bottom-center",
+    minSegmentWidth: 132,
+    clearance: { w: 88, h: 70 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: 0.16
+  },
+  {
+    id: "cryo-cold-warning-plate",
+    material: "ice-cryo",
+    category: "surface-small",
+    frame: 52,
+    w: 90,
+    h: 46,
+    anchor: "bottom-left",
+    minSegmentWidth: 96,
+    clearance: { w: 80, h: 40 },
+    densities: ["low", "medium", "high"],
+    weight: 2,
+    depthOffset: 0.19
+  },
+  {
+    id: "cryo-glow-core-node",
+    material: "ice-cryo",
+    category: "surface-small",
+    frame: 53,
+    w: 70,
+    h: 76,
+    anchor: "bottom-left",
+    minSegmentWidth: 86,
+    clearance: { w: 62, h: 68 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: 0.18
+  },
+  {
+    id: "cryo-hanging-icicles",
+    material: "ice-cryo",
+    category: "overhang",
+    frame: 54,
+    w: 86,
+    h: 100,
+    anchor: "top-left",
+    minSegmentWidth: 112,
+    clearance: { w: 78, h: 90 },
+    densities: ["medium", "high"],
+    weight: 3,
+    depthOffset: 0.08
+  },
+  {
+    id: "cryo-frozen-cable-bundle",
+    material: "ice-cryo",
+    category: "overhang",
+    frame: 55,
+    w: 72,
+    h: 110,
+    anchor: "top-left",
+    minSegmentWidth: 112,
+    clearance: { w: 64, h: 100 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: 0.08
+  },
+  {
+    id: "cryo-wall-frost-crack",
+    material: "ice-cryo",
+    category: "wall-decal",
+    frame: 56,
+    w: 110,
+    h: 100,
+    anchor: "wall-left",
+    minSegmentWidth: 120,
+    clearance: { w: 100, h: 90 },
+    densities: ["medium", "high"],
+    weight: 3,
+    depthOffset: 0.05
+  },
+  {
+    id: "cryo-frozen-glass-panel",
+    material: "ice-cryo",
+    category: "wall-decal",
+    frame: 57,
+    w: 110,
+    h: 108,
+    anchor: "wall-left",
+    minSegmentWidth: 128,
+    clearance: { w: 100, h: 98 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: 0.05
+  },
+  {
+    id: "cryo-tall-tank",
+    material: "ice-cryo",
+    category: "behind-surface-large",
+    frame: 58,
+    w: 82,
+    h: 140,
+    anchor: "bottom-center",
+    minSegmentWidth: 180,
+    clearance: { w: 74, h: 128 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: -0.23
+  },
+  {
+    id: "cryo-ice-column-fragment",
+    material: "ice-cryo",
+    category: "behind-surface-large",
+    frame: 59,
+    w: 76,
+    h: 138,
+    anchor: "bottom-center",
+    minSegmentWidth: 170,
+    clearance: { w: 68, h: 126 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: -0.22
+  },
+  {
+    id: "cryo-background-pod",
+    material: "ice-cryo",
+    category: "behind-surface-large",
+    frame: 60,
+    w: 150,
+    h: 100,
+    anchor: "bottom-center",
+    minSegmentWidth: 260,
+    clearance: { w: 138, h: 90 },
+    densities: ["high"],
+    weight: 1,
+    depthOffset: -0.25
+  },
+  {
+    id: "cryo-hanging-frost-cables",
+    material: "ice-cryo",
+    category: "overhang",
+    frame: 61,
+    w: 90,
+    h: 130,
+    anchor: "top-left",
+    minSegmentWidth: 128,
+    clearance: { w: 82, h: 118 },
+    densities: ["high"],
+    weight: 2,
+    depthOffset: 0.08
+  }
+] as const satisfies readonly TerrainDecorPropDefinition[];
+
+export const allTerrainDecorProps = [
+  ...gardenTerrainDecorProps,
+  ...rainhouseTerrainDecorProps,
+  ...cryoTerrainDecorProps
+] as const satisfies readonly TerrainDecorPropDefinition[];
 
 export const terrainDecorPropsForMaterial = (material: TerrainMaterial): readonly TerrainDecorPropDefinition[] =>
   allTerrainDecorProps.filter((prop) => prop.material === material);

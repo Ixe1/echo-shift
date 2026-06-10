@@ -4,6 +4,7 @@ import { deflateSync, inflateSync } from "node:zlib";
 const PRIMARY_SOURCE = "docs/concepts/garden-decor-props-reference-20260610.png";
 const FILLER_SOURCE = "docs/concepts/garden-decor-fillers-reference-20260610.png";
 const RAINHOUSE_SOURCE = "docs/concepts/rainhouse-decor-props-reference-20260610.png";
+const CRYO_SOURCE = "docs/concepts/cryo-decor-props-reference-20260610.png";
 const OUT_DIR = "public/assets/sprites/terrain-decor-props";
 const CONTACT_SHEET = "public/assets/sprites/terrain-decor-props.png";
 const CONTACT_FRAME = 192;
@@ -56,7 +57,23 @@ const crops = [
   { id: "rain-puddle-conduit", source: "rainhouse", x: 40, y: 1000, w: 260, h: 160, anchor: "bottom" },
   { id: "rain-small-terminal", source: "rainhouse", x: 370, y: 960, w: 185, h: 225, anchor: "bottom" },
   { id: "rain-hanging-chain-cable", source: "rainhouse", x: 675, y: 925, w: 205, h: 255, anchor: "top" },
-  { id: "rain-relay-mast", source: "rainhouse", x: 940, y: 895, w: 275, h: 310, anchor: "bottom" }
+  { id: "rain-relay-mast", source: "rainhouse", x: 940, y: 895, w: 275, h: 310, anchor: "bottom" },
+  { id: "cryo-frost-clump", source: "cryo", x: 45, y: 65, w: 210, h: 180, anchor: "bottom" },
+  { id: "cryo-ice-shard-cluster", source: "cryo", x: 350, y: 25, w: 230, h: 230, anchor: "bottom" },
+  { id: "cryo-frozen-cable-stub", source: "cryo", x: 690, y: 35, w: 185, h: 230, anchor: "bottom" },
+  { id: "cryo-small-canister", source: "cryo", x: 1000, y: 25, w: 165, h: 255, anchor: "bottom" },
+  { id: "cryo-snow-crystal-mound", source: "cryo", x: 70, y: 395, w: 220, h: 165, anchor: "bottom" },
+  { id: "cryo-frosted-vent", source: "cryo", x: 345, y: 365, w: 245, h: 210, anchor: "bottom" },
+  { id: "cryo-cold-warning-plate", source: "cryo", x: 660, y: 400, w: 230, h: 165, anchor: "bottom" },
+  { id: "cryo-glow-core-node", source: "cryo", x: 1000, y: 365, w: 205, h: 215, anchor: "bottom" },
+  { id: "cryo-hanging-icicles", source: "cryo", x: 40, y: 650, w: 230, h: 225, anchor: "top" },
+  { id: "cryo-frozen-cable-bundle", source: "cryo", x: 355, y: 645, w: 190, h: 235, anchor: "top" },
+  { id: "cryo-wall-frost-crack", source: "cryo", x: 650, y: 650, w: 245, h: 230, anchor: "top" },
+  { id: "cryo-frozen-glass-panel", source: "cryo", x: 965, y: 635, w: 230, h: 240, anchor: "top" },
+  { id: "cryo-tall-tank", source: "cryo", x: 60, y: 900, w: 190, h: 280, anchor: "bottom" },
+  { id: "cryo-ice-column-fragment", source: "cryo", x: 360, y: 910, w: 200, h: 270, anchor: "bottom" },
+  { id: "cryo-background-pod", source: "cryo", x: 615, y: 965, w: 315, h: 220, anchor: "bottom" },
+  { id: "cryo-hanging-frost-cables", source: "cryo", x: 980, y: 900, w: 230, h: 305, anchor: "top" }
 ];
 
 const assert = (condition, message) => {
@@ -187,7 +204,8 @@ const encodePng = (width, height, data) => {
 const sources = {
   primary: decodePng(readFileSync(PRIMARY_SOURCE)),
   filler: decodePng(readFileSync(FILLER_SOURCE)),
-  rainhouse: decodePng(readFileSync(RAINHOUSE_SOURCE))
+  rainhouse: decodePng(readFileSync(RAINHOUSE_SOURCE)),
+  cryo: decodePng(readFileSync(CRYO_SOURCE))
 };
 
 const isChroma = (r, g, b) => r > 115 && b > 120 && g < 115 && r - g > 45 && b - g > 45 && Math.abs(r - b) < 95;

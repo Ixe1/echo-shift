@@ -368,6 +368,10 @@ const level = {
     { id: "rain-copper-auto-base", x: 3500, y: 120, w: 300, h: 96, sprite: "floor", material: "copper-corrode" },
     { id: "rain-warning-auto-base", x: 3840, y: 120, w: 280, h: 60, sprite: "floor", material: "warning-industrial" },
     { id: "rain-glass-optin-wall", x: 4160, y: 70, w: 200, h: 180, sprite: "wall", material: "glass-energy", decorDensity: "high" },
+    { id: "cryo-visible-sample", x: 650, y: 260, w: 220, h: 70, sprite: "floor", material: "ice-cryo", decorDensity: "high" },
+    { id: "cryo-high-decor-base", x: 4400, y: 120, w: 360, h: 96, sprite: "floor", material: "ice-cryo", decorDensity: "high" },
+    { id: "cryo-auto-base", x: 4800, y: 120, w: 300, h: 96, sprite: "floor", material: "ice-cryo" },
+    { id: "cryo-wall-decor-base", x: 5140, y: 70, w: 220, h: 190, sprite: "wall", material: "ice-cryo", decorDensity: "high" },
     { id: "enclosed-top", x: 800, y: 400, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-left", x: 780, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-center", x: 800, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
@@ -719,6 +723,24 @@ try {
     "rain-hanging-chain-cable",
     "rain-relay-mast"
   ];
+  const cryoPropIds = [
+    "cryo-frost-clump",
+    "cryo-ice-shard-cluster",
+    "cryo-frozen-cable-stub",
+    "cryo-small-canister",
+    "cryo-snow-crystal-mound",
+    "cryo-frosted-vent",
+    "cryo-cold-warning-plate",
+    "cryo-glow-core-node",
+    "cryo-hanging-icicles",
+    "cryo-frozen-cable-bundle",
+    "cryo-wall-frost-crack",
+    "cryo-frozen-glass-panel",
+    "cryo-tall-tank",
+    "cryo-ice-column-fragment",
+    "cryo-background-pod",
+    "cryo-hanging-frost-cables"
+  ];
   const steppedVisibleDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:stepped-decor-base:"));
   const ceilingVisibleDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:ceiling-decor-base:"));
   const gardenHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-high-decor-base:"));
@@ -731,6 +753,10 @@ try {
   const rainCopperAutoDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:rain-copper-auto-base:"));
   const rainWarningAutoDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:rain-warning-auto-base:"));
   const rainGlassOptinDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:rain-glass-optin-wall:"));
+  const cryoVisibleDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:cryo-visible-sample:"));
+  const cryoHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:cryo-high-decor-base:"));
+  const cryoAutoDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:cryo-auto-base:"));
+  const cryoWallDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:cryo-wall-decor-base:"));
   const gardenHighDecorSizes = new Set(
     gardenHighDecorProps.flatMap((entry) => {
       const match = entry.match(/:(\d+)x(\d+):[-.\d]+$/);
@@ -781,6 +807,28 @@ try {
     `Expected explicit glass-energy high density to allow wall-decal Rainhouse props, got ${diagnostics.terrainDecorProps}`
   );
   assert(
+    terrainDecorPropEntries.some((entry) => cryoPropIds.some((id) => entry.includes(`:${id}:`))),
+    `Expected at least one Cryo prop to be selected, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    cryoVisibleDecorProps.some((entry) => entry.includes(":ice-cryo:high:")),
+    `Expected visible Cryo sample to render for screenshot coverage, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    cryoHighDecorProps.length >= 3 &&
+      cryoHighDecorProps.some((entry) => entry.includes(":behind-surface-large:")) &&
+      cryoHighDecorProps.some((entry) => entry.includes(":surface-small:") || entry.includes(":surface-medium:")),
+    `Expected high-density ice-cryo decor to include large and surface Cryo props, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    cryoAutoDecorProps.length >= 2 && cryoAutoDecorProps.every((entry) => entry.includes(":ice-cryo:medium:")),
+    `Expected ice-cryo auto decor to resolve to medium inferred props, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    cryoWallDecorProps.some((entry) => entry.includes(":wall-decal:ice-cryo:high:")),
+    `Expected high-density ice-cryo wall to render wall-decal props, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
     steppedVisibleDecorProps.some((entry) => entry.includes(":behind-surface-large:")),
     `Expected visible in-bounds stepped garden strip to render a large prop for screenshot coverage, got ${diagnostics.terrainDecorProps}`
   );
@@ -826,7 +874,7 @@ try {
   assert(diagnostics.backgroundFilter === "time-lab-prototype:0", `Expected background texture to use linear filtering, got ${diagnostics.backgroundFilter}`);
   assert(diagnostics.objectAtlasFilter === "object-atlas:0", `Expected object atlas texture to use linear filtering, got ${diagnostics.objectAtlasFilter}`);
   assert(diagnostics.terrainTileFilter === "terrain-tiles:0", `Expected terrain tile texture to use linear filtering, got ${diagnostics.terrainTileFilter}`);
-  assert(diagnostics.terrainDecorPropFilter === "terrain-decor-props:46:0", `Expected terrain decor prop textures to use linear filtering, got ${diagnostics.terrainDecorPropFilter}`);
+  assert(diagnostics.terrainDecorPropFilter === "terrain-decor-props:62:0", `Expected terrain decor prop textures to use linear filtering, got ${diagnostics.terrainDecorPropFilter}`);
   assertNoUnexpectedBrowserMessages("Full graphics render");
 
   const fullGraphicsScreenshot = `${outDir}/door-solid-render-qa.png`;
