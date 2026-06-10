@@ -19,7 +19,7 @@ const crops = [
   { id: "flowering-shrub", x: 441, y: 430, w: 124, h: 113, anchor: "bottom" },
   { id: "leaf-bush", x: 732, y: 436, w: 119, h: 107, anchor: "bottom" },
   { id: "root-mound", x: 587, y: 298, w: 120, h: 83, anchor: "bottom" },
-  { id: "slim-tree", x: 827, y: 398, w: 241, h: 319, anchor: "bottom" },
+  { id: "slim-tree", x: 827, y: 398, w: 241, h: 319, anchor: "bottom", keep: "largest" },
   { id: "broad-tree", x: 1295, y: 430, w: 213, h: 287, anchor: "bottom" },
   { id: "root-arch", x: 570, y: 567, w: 236, h: 147, anchor: "bottom" },
   { id: "hanging-vines", x: 24, y: 769, w: 150, h: 199, anchor: "top" },
@@ -205,6 +205,83 @@ const cropToImage = (crop) => {
   return { width: crop.w, height: crop.h, data };
 };
 
+const alphaAt = (image, x, y) => image.data[(y * image.width + x) * BYTES_PER_PIXEL + 3];
+
+const visibleComponents = (image) => {
+  const seen = new Uint8Array(image.width * image.height);
+  const components = [];
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      const startIndex = y * image.width + x;
+      if (seen[startIndex] || alphaAt(image, x, y) === 0) continue;
+      const queue = [{ x, y }];
+      const pixels = [];
+      seen[startIndex] = 1;
+      let minX = x;
+      let minY = y;
+      let maxX = x + 1;
+      let maxY = y + 1;
+      for (let index = 0; index < queue.length; index += 1) {
+        const point = queue[index];
+        pixels.push(point);
+        minX = Math.min(minX, point.x);
+        minY = Math.min(minY, point.y);
+        maxX = Math.max(maxX, point.x + 1);
+        maxY = Math.max(maxY, point.y + 1);
+        for (let ny = point.y - 1; ny <= point.y + 1; ny += 1) {
+          for (let nx = point.x - 1; nx <= point.x + 1; nx += 1) {
+            if (nx < 0 || ny < 0 || nx >= image.width || ny >= image.height) continue;
+            const neighborIndex = ny * image.width + nx;
+            if (seen[neighborIndex] || alphaAt(image, nx, ny) === 0) continue;
+            seen[neighborIndex] = 1;
+            queue.push({ x: nx, y: ny });
+          }
+        }
+      }
+      components.push({ pixels, area: pixels.length, minX, minY, maxX, maxY });
+    }
+  }
+  return components.sort((a, b) => b.area - a.area);
+};
+
+const keepLargestComponent = (image) => {
+  const [largest] = visibleComponents(image);
+  assert(largest, "Expected visible sprite component");
+  const data = new Uint8Array(image.data.length);
+  for (const pixel of largest.pixels) {
+    const offset = (pixel.y * image.width + pixel.x) * BYTES_PER_PIXEL;
+    data.set(image.data.subarray(offset, offset + BYTES_PER_PIXEL), offset);
+  }
+  return { ...image, data };
+};
+
+const trimImage = (image, id) => {
+  let minX = image.width;
+  let minY = image.height;
+  let maxX = 0;
+  let maxY = 0;
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      if (alphaAt(image, x, y) === 0) continue;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + 1);
+      maxY = Math.max(maxY, y + 1);
+    }
+  }
+  assert(maxX > minX && maxY > minY, `Image ${id} has no visible pixels after component filtering`);
+  const width = maxX - minX;
+  const height = maxY - minY;
+  const data = new Uint8Array(width * height * BYTES_PER_PIXEL);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const sourceOffset = ((minY + y) * image.width + minX + x) * BYTES_PER_PIXEL;
+      data.set(image.data.subarray(sourceOffset, sourceOffset + BYTES_PER_PIXEL), (y * width + x) * BYTES_PER_PIXEL);
+    }
+  }
+  return { width, height, data };
+};
+
 const contactRows = Math.ceil(crops.length / CONTACT_COLUMNS);
 const contactWidth = CONTACT_COLUMNS * CONTACT_FRAME;
 const contactHeight = contactRows * CONTACT_FRAME;
@@ -219,21 +296,21 @@ mkdirSync(OUT_DIR, { recursive: true });
 
 for (let index = 0; index < crops.length; index += 1) {
   const crop = trimCrop(crops[index]);
-  const image = cropToImage(crop);
+  const image = trimImage(crop.keep === "largest" ? keepLargestComponent(cropToImage(crop)) : cropToImage(crop), crop.id);
   writeFileSync(`${OUT_DIR}/${crop.id}.png`, encodePng(image.width, image.height, image.data));
 
-  const scale = Math.min((CONTACT_FRAME - 12) / crop.w, (CONTACT_FRAME - 12) / crop.h);
-  const drawW = Math.max(1, Math.round(crop.w * scale));
-  const drawH = Math.max(1, Math.round(crop.h * scale));
+  const scale = Math.min((CONTACT_FRAME - 12) / image.width, (CONTACT_FRAME - 12) / image.height);
+  const drawW = Math.max(1, Math.round(image.width * scale));
+  const drawH = Math.max(1, Math.round(image.height * scale));
   const frameX = (index % CONTACT_COLUMNS) * CONTACT_FRAME;
   const frameY = Math.floor(index / CONTACT_COLUMNS) * CONTACT_FRAME;
   const left = frameX + Math.floor((CONTACT_FRAME - drawW) / 2);
   const top = crop.anchor === "top" ? frameY + 6 : frameY + CONTACT_FRAME - drawH - 6;
   for (let y = 0; y < drawH; y += 1) {
     for (let x = 0; x < drawW; x += 1) {
-      const sx = Math.min(crop.w - 1, Math.floor((x / drawW) * crop.w));
-      const sy = Math.min(crop.h - 1, Math.floor((y / drawH) * crop.h));
-      const sourceIndex = (sy * crop.w + sx) * BYTES_PER_PIXEL;
+      const sx = Math.min(image.width - 1, Math.floor((x / drawW) * image.width));
+      const sy = Math.min(image.height - 1, Math.floor((y / drawH) * image.height));
+      const sourceIndex = (sy * image.width + sx) * BYTES_PER_PIXEL;
       setContactPixel(left + x, top + y, image.data.subarray(sourceIndex, sourceIndex + BYTES_PER_PIXEL));
     }
   }

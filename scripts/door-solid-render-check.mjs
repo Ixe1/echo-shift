@@ -358,6 +358,7 @@ const level = {
     { id: "ceiling-decor-overhang", x: 462, y: 47, w: 32, h: 32, sprite: "block", material: "wood-archive" },
     { id: "garden-high-decor-base", x: 980, y: 120, w: 320, h: 96, sprite: "floor", material: "grass-organic", decorDensity: "high" },
     { id: "garden-off-decor-base", x: 1340, y: 120, w: 260, h: 96, sprite: "floor", material: "grass-organic", decorDensity: "off" },
+    { id: "garden-swept-decor-base", x: 1640, y: 120, w: 340, h: 96, sprite: "floor", material: "grass-organic", decorDensity: "high" },
     { id: "enclosed-top", x: 800, y: 400, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-left", x: 780, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-center", x: 800, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
@@ -384,7 +385,7 @@ const level = {
   cores: [],
   hazards: [{ id: "qa-vent", x: 760, y: 476, w: 72, h: 4 }],
   crates: [],
-  platforms: [],
+  platforms: [{ id: "decor-sweep-platform", x: 1640, y: 40, w: 170, h: 120, axis: "x", distance: 170, period: 120 }],
   oneWays: [],
   conveyors: [],
   launchPads: [],
@@ -696,6 +697,10 @@ try {
   assert(
     !diagnostics.terrainDecorProps.includes("solid:garden-off-decor-base:"),
     `Expected decorDensity off to suppress inferred props, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    !diagnostics.terrainDecorProps.includes("solid:garden-swept-decor-base:"),
+    `Expected moving-platform swept path to suppress overlapping inferred props, got ${diagnostics.terrainDecorProps}`
   );
   assert(diagnostics.objectCount >= 25, `Expected synced object sprites, got ${diagnostics.objectCount}`);
   assert(diagnostics.backgroundFilter === "time-lab-prototype:0", `Expected background texture to use linear filtering, got ${diagnostics.backgroundFilter}`);

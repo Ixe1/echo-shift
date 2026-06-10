@@ -64,7 +64,9 @@ import type {
   Level,
   LevelScore,
   Monster,
+  MovingLaser,
   MovingPlatform,
+  PatrolDrone,
   Rect,
   Solid,
   SolidDecorDensity,
@@ -2020,6 +2022,38 @@ export class GameScene extends Phaser.Scene {
     return this.terrainTileVariant(solid, terrainMaterialForSolid(solid), "decor-placement", 0, column) === 0;
   }
 
+  private movingObjectSweepRect(object: MovingPlatform | PatrolDrone): Rect {
+    const end = {
+      x: object.x + (object.axis === "x" ? object.distance : 0),
+      y: object.y + (object.axis === "y" ? object.distance : 0),
+      w: object.w,
+      h: object.h
+    };
+    return this.unionRect(object, end);
+  }
+
+  private movingLaserSweepRect(laser: MovingLaser): Rect {
+    const stationaryLaser = { ...laser, distance: 0, phase: 0 };
+    const start = movingLaserRectAt(stationaryLaser, 0);
+    const end = movingLaserRectAt(
+      {
+        ...stationaryLaser,
+        x: laser.x + (laser.axis === "x" ? laser.distance : 0),
+        y: laser.y + (laser.axis === "y" ? laser.distance : 0)
+      },
+      0
+    );
+    return this.unionRect(start, end);
+  }
+
+  private unionRect(a: Rect, b: Rect): Rect {
+    const x = Math.min(a.x, b.x);
+    const y = Math.min(a.y, b.y);
+    const right = Math.max(a.x + a.w, b.x + b.w);
+    const bottom = Math.max(a.y + a.h, b.y + b.h);
+    return { x, y, w: right - x, h: bottom - y };
+  }
+
   private terrainDecorHasClearance(solid: Solid, rect: Rect): boolean {
     const padded = { x: rect.x - 10, y: rect.y - 10, w: rect.w + 20, h: rect.h + 22 };
     const startClearance = { x: this.level.start.x - 30, y: this.level.start.y - 64, w: 72, h: 92 };
@@ -2028,17 +2062,17 @@ export class GameScene extends Phaser.Scene {
       ...this.level.solids.filter(
         (blocker) => blocker !== solid && solidCollisionFor(blocker) !== "decorative" && blocker.y < rect.y + rect.h - 0.01
       ),
-      ...(this.level.platforms || []),
+      ...(this.level.platforms || []).map((platform) => this.movingObjectSweepRect(platform)),
       ...(this.level.oneWays || []),
       ...(this.level.conveyors || []),
       ...(this.level.launchPads || []),
-      ...(this.level.drones || []),
+      ...(this.level.drones || []).map((drone) => this.movingObjectSweepRect(drone)),
       ...(this.level.plates || []),
       ...(this.level.timedSwitches || []),
       ...(this.level.echoSensors || []),
       ...(this.level.doors || []),
       ...(this.level.lasers || []),
-      ...(this.level.movingLasers || []),
+      ...(this.level.movingLasers || []).map((laser) => this.movingLaserSweepRect(laser)),
       ...(this.level.cores || []),
       ...(this.level.hazards || []),
       ...(this.level.crates || []),
