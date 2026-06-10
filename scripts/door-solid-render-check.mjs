@@ -682,6 +682,20 @@ try {
     `Expected low-overhang terrain decor to still render on clear eligible column, got ${diagnostics.terrainDecor}`
   );
   const terrainDecorPropEntries = diagnostics.terrainDecorProps.split("|").filter(Boolean);
+  const newGardenFillerPropIds = [
+    "tiny-flower-tuft",
+    "glow-moss-clump",
+    "seedling-sprout",
+    "edge-leaf-clump",
+    "thin-fern-spray",
+    "curled-root-hook",
+    "pink-flower-tuft",
+    "small-mushroom-pair",
+    "meadow-flower-clump",
+    "curled-vine-sprout",
+    "broken-root-nub",
+    "broad-leaf-tuft"
+  ];
   const steppedVisibleDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:stepped-decor-base:"));
   const ceilingVisibleDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:ceiling-decor-base:"));
   const gardenHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-high-decor-base:"));
@@ -707,6 +721,10 @@ try {
   assert(
     gardenHighDecorSizes.size >= 2 && !gardenHighDecorSizes.has("32x32"),
     `Expected variable-size garden decor props, got ${[...gardenHighDecorSizes].join(", ")} from ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    terrainDecorPropEntries.some((entry) => newGardenFillerPropIds.some((id) => entry.includes(`:${id}:`))),
+    `Expected at least one new garden filler prop to be selected, got ${diagnostics.terrainDecorProps}`
   );
   assert(
     steppedVisibleDecorProps.some((entry) => entry.includes(":behind-surface-large:")),
@@ -754,7 +772,7 @@ try {
   assert(diagnostics.backgroundFilter === "time-lab-prototype:0", `Expected background texture to use linear filtering, got ${diagnostics.backgroundFilter}`);
   assert(diagnostics.objectAtlasFilter === "object-atlas:0", `Expected object atlas texture to use linear filtering, got ${diagnostics.objectAtlasFilter}`);
   assert(diagnostics.terrainTileFilter === "terrain-tiles:0", `Expected terrain tile texture to use linear filtering, got ${diagnostics.terrainTileFilter}`);
-  assert(diagnostics.terrainDecorPropFilter === "terrain-decor-props:18:0", `Expected terrain decor prop textures to use linear filtering, got ${diagnostics.terrainDecorPropFilter}`);
+  assert(diagnostics.terrainDecorPropFilter === "terrain-decor-props:30:0", `Expected terrain decor prop textures to use linear filtering, got ${diagnostics.terrainDecorPropFilter}`);
   assertNoUnexpectedBrowserMessages("Full graphics render");
 
   const fullGraphicsScreenshot = `${outDir}/door-solid-render-qa.png`;

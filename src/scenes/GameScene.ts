@@ -104,9 +104,9 @@ const BOSS_ARENA_CAMERA_ZOOM = 1.2;
 const TERRAIN_SURFACE_CAP_OVERLAP = 16;
 const TERRAIN_DECOR_MIN_SOLID_HEIGHT = 28;
 const TERRAIN_DECOR_MIN_SEGMENT_WIDTH = 96;
-const TERRAIN_DECOR_PROP_SURFACE_SLOT: Record<ActiveTerrainDecorDensity, number> = { low: 80, medium: 44, high: 36 };
-const TERRAIN_DECOR_PROP_SURFACE_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0.46, medium: 0.92, high: 1 };
-const TERRAIN_DECOR_PROP_LARGE_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0, medium: 0.58, high: 1 };
+const TERRAIN_DECOR_PROP_SURFACE_SLOT: Record<ActiveTerrainDecorDensity, number> = { low: 92, medium: 56, high: 46 };
+const TERRAIN_DECOR_PROP_SURFACE_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0.4, medium: 0.86, high: 0.96 };
+const TERRAIN_DECOR_PROP_LARGE_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0, medium: 0.52, high: 0.9 };
 const TERRAIN_DECOR_PROP_OVERHANG_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0, medium: 0.64, high: 0.86 };
 const TERRAIN_DECOR_PROP_WALL_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0, medium: 0.82, high: 1 };
 const BOSS_DEFEAT_BURST_OFFSETS = [
@@ -1731,7 +1731,7 @@ export class GameScene extends Phaser.Scene {
       const slotTo = slotIndex === slotCount - 1 ? segment.to : segment.from + (segmentWidth / slotCount) * (slotIndex + 1);
       const slotCenter = (slotFrom + slotTo) / 2;
       const nearbyPropIds = placedSurfaceProps
-        .filter((placed) => Math.abs(placed.center - slotCenter) < 220)
+        .filter((placed) => Math.abs(placed.center - slotCenter) < 280)
         .map((placed) => placed.id);
       const preferredCategory: TerrainDecorPropCategory =
         density !== "low" && hash % 2 === 0 ? "surface-medium" : "surface-small";
@@ -1779,9 +1779,9 @@ export class GameScene extends Phaser.Scene {
     segmentWidth: number,
     slotCount: number
   ): number {
-    if (density === "low") return segmentWidth >= 180 ? 1 : 0;
-    if (density === "medium") return Math.min(slotCount, Math.max(2, Math.floor(segmentWidth / 120)));
-    return Math.min(slotCount, Math.max(3, Math.floor(segmentWidth / 95)));
+    if (density === "low") return segmentWidth >= 220 ? 1 : 0;
+    if (density === "medium") return Math.min(slotCount, Math.max(2, Math.floor(segmentWidth / 165)));
+    return Math.min(slotCount, Math.max(2, Math.floor(segmentWidth / 135)));
   }
 
   private syncLargeTerrainDecorProp(

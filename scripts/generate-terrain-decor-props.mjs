@@ -1,7 +1,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { deflateSync, inflateSync } from "node:zlib";
 
-const SOURCE = "docs/concepts/garden-decor-props-reference-20260610.png";
+const PRIMARY_SOURCE = "docs/concepts/garden-decor-props-reference-20260610.png";
+const FILLER_SOURCE = "docs/concepts/garden-decor-fillers-reference-20260610.png";
 const OUT_DIR = "public/assets/sprites/terrain-decor-props";
 const CONTACT_SHEET = "public/assets/sprites/terrain-decor-props.png";
 const CONTACT_FRAME = 192;
@@ -26,7 +27,19 @@ const crops = [
   { id: "dangling-roots", x: 470, y: 773, w: 125, h: 191, anchor: "top" },
   { id: "moss-strip", x: 24, y: 769, w: 150, h: 62, anchor: "top" },
   { id: "wall-vine", x: 986, y: 774, w: 42, h: 194, anchor: "top" },
-  { id: "root-creeper", x: 1385, y: 747, w: 76, h: 221, anchor: "top" }
+  { id: "root-creeper", x: 1385, y: 747, w: 76, h: 221, anchor: "top" },
+  { id: "tiny-flower-tuft", source: "filler", x: 70, y: 150, w: 210, h: 190, anchor: "bottom" },
+  { id: "glow-moss-clump", source: "filler", x: 340, y: 145, w: 260, h: 185, anchor: "bottom" },
+  { id: "seedling-sprout", source: "filler", x: 675, y: 110, w: 235, h: 235, anchor: "bottom" },
+  { id: "edge-leaf-clump", source: "filler", x: 980, y: 145, w: 230, h: 190, anchor: "bottom" },
+  { id: "thin-fern-spray", source: "filler", x: 75, y: 470, w: 225, h: 230, anchor: "bottom" },
+  { id: "curled-root-hook", source: "filler", x: 385, y: 470, w: 205, h: 230, anchor: "bottom" },
+  { id: "pink-flower-tuft", source: "filler", x: 700, y: 480, w: 215, h: 220, anchor: "bottom" },
+  { id: "small-mushroom-pair", source: "filler", x: 1010, y: 475, w: 190, h: 220, anchor: "bottom" },
+  { id: "meadow-flower-clump", source: "filler", x: 70, y: 880, w: 245, h: 210, anchor: "bottom" },
+  { id: "curled-vine-sprout", source: "filler", x: 385, y: 870, w: 205, h: 235, anchor: "bottom" },
+  { id: "broken-root-nub", source: "filler", x: 695, y: 875, w: 205, h: 230, anchor: "bottom" },
+  { id: "broad-leaf-tuft", source: "filler", x: 990, y: 880, w: 220, h: 215, anchor: "bottom" }
 ];
 
 const assert = (condition, message) => {
@@ -154,11 +167,17 @@ const encodePng = (width, height, data) => {
   ]);
 };
 
-const source = decodePng(readFileSync(SOURCE));
+const sources = {
+  primary: decodePng(readFileSync(PRIMARY_SOURCE)),
+  filler: decodePng(readFileSync(FILLER_SOURCE))
+};
 
 const isChroma = (r, g, b) => r > 115 && b > 120 && g < 115 && r - g > 45 && b - g > 45 && Math.abs(r - b) < 95;
 
-const sourcePixel = (x, y) => {
+const sourceForCrop = (crop) => sources[crop.source || "primary"];
+
+const sourcePixel = (crop, x, y) => {
+  const source = sourceForCrop(crop);
   if (x < 0 || y < 0 || x >= source.width || y >= source.height) return [0, 0, 0, 0];
   const index = (y * source.width + x) * BYTES_PER_PIXEL;
   const r = source.data[index];
@@ -176,7 +195,7 @@ const trimCrop = (crop) => {
   let maxY = crop.y;
   for (let y = crop.y; y < crop.y + crop.h; y += 1) {
     for (let x = crop.x; x < crop.x + crop.w; x += 1) {
-      if (sourcePixel(x, y)[3] === 0) continue;
+      if (sourcePixel(crop, x, y)[3] === 0) continue;
       minX = Math.min(minX, x);
       minY = Math.min(minY, y);
       maxX = Math.max(maxX, x + 1);
@@ -199,7 +218,7 @@ const cropToImage = (crop) => {
   const data = new Uint8Array(crop.w * crop.h * BYTES_PER_PIXEL);
   for (let y = 0; y < crop.h; y += 1) {
     for (let x = 0; x < crop.w; x += 1) {
-      data.set(sourcePixel(crop.x + x, crop.y + y), (y * crop.w + x) * BYTES_PER_PIXEL);
+      data.set(sourcePixel(crop, crop.x + x, crop.y + y), (y * crop.w + x) * BYTES_PER_PIXEL);
     }
   }
   return { width: crop.w, height: crop.h, data };
