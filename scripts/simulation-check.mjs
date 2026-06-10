@@ -1843,6 +1843,30 @@ try {
   assert(!monsterStompSim.killedMonsterIds.has("stompable-test"), "Rewind/reset should restore killed monsters");
   assert(monsterStompSim.score === 0, `Rewind/reset should remove current-attempt monster score, got ${monsterStompSim.score}`);
 
+  const forgivingMonsterStompSim = new RoomSimulation(monsterLevel);
+  Object.assign(forgivingMonsterStompSim.player, { x: 42, y: 69, vx: 0, vy: 0, onGround: false });
+  const forgivingMonsterStomp = forgivingMonsterStompSim.step(idle);
+  assert(
+    forgivingMonsterStomp.monsterKills.length === 1 && !forgivingMonsterStompSim.dead,
+    "Expected slightly late centered top contact to kill stompable monster"
+  );
+
+  const edgeSideMonsterSim = new RoomSimulation(monsterLevel);
+  Object.assign(edgeSideMonsterSim.player, { x: 20, y: 69, vx: 0, vy: 0, onGround: false });
+  const edgeSideMonster = edgeSideMonsterSim.step(idle);
+  assert(edgeSideMonster.died && edgeSideMonsterSim.dead, "Expected edge side contact to remain lethal when player center is outside monster");
+
+  const topContactBottomVulnerableSim = new RoomSimulation({
+    ...baseLevel,
+    monsters: [{ id: "bottom-only-top-test", kind: "glasswing-wisp", x: 40, y: 96, w: 28, h: 24 }]
+  });
+  Object.assign(topContactBottomVulnerableSim.player, { x: 42, y: 69, vx: 0, vy: 0, onGround: false });
+  const topContactBottomVulnerable = topContactBottomVulnerableSim.step(idle);
+  assert(
+    topContactBottomVulnerable.died && topContactBottomVulnerableSim.dead,
+    "Expected top contact on bottom-vulnerable monster to remain lethal"
+  );
+
   const monsterSideSim = new RoomSimulation({
     ...baseLevel,
     monsters: [{ id: "side-danger-test", kind: "sprout-hopper", x: 20, y: 86, w: 28, h: 34 }]

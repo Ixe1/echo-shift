@@ -29,6 +29,10 @@ export const BOSS_VULNERABLE_FRAMES = BOSS_ATTACK_CYCLE_FRAMES - BOSS_ATTACK_WIN
 export const BOSS_DEFEAT_DEPARTURE_FRAMES = 170;
 export const DEFAULT_MONSTER_SCORE = 200;
 
+const MONSTER_STOMP_TOP_GRACE = 14;
+const MONSTER_STOMP_CENTER_GRACE = 6;
+const MONSTER_STOMP_DEPTH_RATIO = 0.82;
+
 const STORM_ATTACK_CYCLE_FRAMES = 330;
 const STORM_ATTACK_WINDUP_FRAMES = 112;
 const STORM_ATTACK_ACTIVE_FRAMES = 54;
@@ -515,11 +519,14 @@ export const actorKillsMonster = (actor: ActorBody, previousY: number, monster: 
   const vulnerability = monsterVulnerability(monster);
   const previousBottom = previousY + actor.h;
   const currentBottom = actor.y + actor.h;
+  const actorCenterX = actor.x + actor.w / 2;
+  const centerOverMonster = actorCenterX >= rect.x - MONSTER_STOMP_CENTER_GRACE && actorCenterX <= rect.x + rect.w + MONSTER_STOMP_CENTER_GRACE;
   const topHit =
     (vulnerability === "top" || vulnerability === "both") &&
     actor.vy >= 0 &&
-    previousBottom <= rect.y + 6 &&
-    currentBottom <= rect.y + Math.max(10, rect.h * 0.7);
+    centerOverMonster &&
+    previousBottom <= rect.y + MONSTER_STOMP_TOP_GRACE &&
+    currentBottom <= rect.y + Math.max(14, rect.h * MONSTER_STOMP_DEPTH_RATIO);
   const bottomHit =
     (vulnerability === "bottom" || vulnerability === "both") &&
     actor.vy <= 0 &&

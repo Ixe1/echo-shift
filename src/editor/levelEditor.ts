@@ -1234,6 +1234,10 @@ class LevelEditor {
     const target = this.selectedRectObject();
     if (!target) return;
     if (field === "x" || field === "y" || field === "w" || field === "h") {
+      if (this.selection.kind === "cores" && (field === "w" || field === "h")) {
+        this.afterMutation("Core dimensions are fixed; use Size for visuals");
+        return;
+      }
       const previousRect = { x: target.x, y: target.y, w: target.w, h: target.h };
       if (this.selection.kind === "exit") {
         target[field] = field === "w" || field === "h" ? Math.max(1, Number(value)) : Number(value);
@@ -1792,7 +1796,14 @@ class LevelEditor {
   }
 
   private canResizeSelection(selection: Selection): boolean {
-    return selection.kind !== "start" && selection.kind !== "exit" && selection.kind !== "plates" && selection.kind !== "timedSwitches" && selection.kind !== "drones";
+    return (
+      selection.kind !== "start" &&
+      selection.kind !== "exit" &&
+      selection.kind !== "plates" &&
+      selection.kind !== "timedSwitches" &&
+      selection.kind !== "cores" &&
+      selection.kind !== "drones"
+    );
   }
 
   private addObjectAtViewCenter(): void {
@@ -2241,14 +2252,21 @@ class LevelEditor {
 
     const object = this.findObject(selection.kind, selection.id);
     if (!object) return `<div class="empty-inspector">Missing object</div>`;
-    const rectFields = `
-      ${this.textField("ID", "id", String(object.id), "object")}
-      <div class="inspector-grid four">
+    const dimensionFields =
+      selection.kind === "cores"
+        ? `<div class="inspector-grid two">
+        ${this.numberField("X", "x", object.x, "object")}
+        ${this.numberField("Y", "y", object.y, "object")}
+      </div>`
+        : `<div class="inspector-grid four">
         ${this.numberField("X", "x", object.x, "object")}
         ${this.numberField("Y", "y", object.y, "object")}
         ${this.numberField("W", "w", object.w, "object")}
         ${this.numberField("H", "h", object.h, "object")}
-      </div>
+      </div>`;
+    const rectFields = `
+      ${this.textField("ID", "id", String(object.id), "object")}
+      ${dimensionFields}
     `;
     return `${rectFields}${this.kindSpecificFields(selection.kind, object)}`;
   }
