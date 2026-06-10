@@ -36,8 +36,8 @@ import { solidRenderDepth, solidVisualRoleFor } from "../game/solidRenderOrder";
 import { soundtrackForBoss, soundtrackForLevel } from "../game/soundtracks";
 import { RoomSimulation } from "../game/state";
 import {
+  allTerrainDecorProps,
   effectiveSolidDecorDensity,
-  gardenTerrainDecorProps,
   terrainDecorPropTextureKey,
   terrainDecorPropsForMaterial,
   type TerrainDecorPropCategory,
@@ -1548,7 +1548,7 @@ export class GameScene extends Phaser.Scene {
       this.textures.get(TERRAIN_TILE_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
       this.terrainTextureFilter = `${TERRAIN_TILE_KEY}:${Phaser.Textures.FilterMode.LINEAR}`;
     }
-    const loadedDecorPropKeys = gardenTerrainDecorProps.map(terrainDecorPropTextureKey).filter((key) => this.textures.exists(key));
+    const loadedDecorPropKeys = allTerrainDecorProps.map(terrainDecorPropTextureKey).filter((key) => this.textures.exists(key));
     for (const textureKey of loadedDecorPropKeys) {
       this.textures.get(textureKey).setFilter(Phaser.Textures.FilterMode.LINEAR);
     }

@@ -23,7 +23,7 @@ export type TerrainDecorAnchor = "bottom-left" | "bottom-center" | "top-left" | 
 
 export type TerrainDecorPropDefinition = {
   id: string;
-  material: "grass-organic";
+  material: TerrainMaterial;
   category: TerrainDecorPropCategory;
   frame: number;
   w: number;
@@ -34,6 +34,12 @@ export type TerrainDecorPropDefinition = {
   densities: ReadonlyArray<Exclude<SolidDecorDensity, "auto" | "off">>;
   weight: number;
   depthOffset: number;
+};
+
+const automaticDecorDensityByMaterial: Partial<Record<TerrainMaterial, Exclude<SolidDecorDensity, "auto" | "off">>> = {
+  "grass-organic": "medium",
+  "copper-corrode": "medium",
+  "warning-industrial": "low"
 };
 
 export const normalizeSolidDecorDensity = (value: unknown): SolidDecorDensity | undefined =>
@@ -51,7 +57,7 @@ export const effectiveSolidDecorDensity = (
 ): SolidDecorDensity => {
   const density = normalizeSolidDecorDensity(solid.decorDensity) || "auto";
   if (density !== "auto") return density;
-  return material === "grass-organic" ? "medium" : "off";
+  return automaticDecorDensityByMaterial[material] || "off";
 };
 
 export const gardenTerrainDecorProps = [
@@ -477,5 +483,234 @@ export const gardenTerrainDecorProps = [
   }
 ] as const satisfies readonly TerrainDecorPropDefinition[];
 
+export const rainhouseTerrainDecorProps = [
+  {
+    id: "rain-copper-coil",
+    material: "copper-corrode",
+    category: "surface-small",
+    frame: 30,
+    w: 54,
+    h: 72,
+    anchor: "bottom-left",
+    minSegmentWidth: 64,
+    clearance: { w: 48, h: 64 },
+    densities: ["low", "medium", "high"],
+    weight: 3,
+    depthOffset: 0.2
+  },
+  {
+    id: "rain-patina-relay-box",
+    material: "copper-corrode",
+    category: "surface-medium",
+    frame: 31,
+    w: 92,
+    h: 78,
+    anchor: "bottom-center",
+    minSegmentWidth: 124,
+    clearance: { w: 82, h: 70 },
+    densities: ["medium", "high"],
+    weight: 3,
+    depthOffset: 0.17
+  },
+  {
+    id: "rain-wet-cable-loop",
+    material: "copper-corrode",
+    category: "surface-small",
+    frame: 32,
+    w: 76,
+    h: 70,
+    anchor: "bottom-left",
+    minSegmentWidth: 88,
+    clearance: { w: 68, h: 62 },
+    densities: ["low", "medium", "high"],
+    weight: 2,
+    depthOffset: 0.19
+  },
+  {
+    id: "rain-insulator-cluster",
+    material: "copper-corrode",
+    category: "surface-medium",
+    frame: 33,
+    w: 84,
+    h: 96,
+    anchor: "bottom-center",
+    minSegmentWidth: 128,
+    clearance: { w: 74, h: 86 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: 0.16
+  },
+  {
+    id: "rain-gutter-cap",
+    material: "copper-corrode",
+    category: "surface-medium",
+    frame: 34,
+    w: 112,
+    h: 64,
+    anchor: "bottom-center",
+    minSegmentWidth: 150,
+    clearance: { w: 100, h: 56 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: 0.17
+  },
+  {
+    id: "rain-dripping-pipes",
+    material: "copper-corrode",
+    category: "overhang",
+    frame: 35,
+    w: 74,
+    h: 92,
+    anchor: "top-left",
+    minSegmentWidth: 112,
+    clearance: { w: 66, h: 82 },
+    densities: ["medium", "high"],
+    weight: 3,
+    depthOffset: 0.08
+  },
+  {
+    id: "rain-warning-plate",
+    material: "warning-industrial",
+    category: "surface-small",
+    frame: 36,
+    w: 90,
+    h: 42,
+    anchor: "bottom-left",
+    minSegmentWidth: 96,
+    clearance: { w: 80, h: 36 },
+    densities: ["low", "medium", "high"],
+    weight: 4,
+    depthOffset: 0.19
+  },
+  {
+    id: "rain-glass-energy-node",
+    material: "glass-energy",
+    category: "surface-small",
+    frame: 37,
+    w: 64,
+    h: 72,
+    anchor: "bottom-left",
+    minSegmentWidth: 80,
+    clearance: { w: 56, h: 64 },
+    densities: ["low", "medium", "high"],
+    weight: 3,
+    depthOffset: 0.18
+  },
+  {
+    id: "rain-cable-bank",
+    material: "copper-corrode",
+    category: "overhang",
+    frame: 38,
+    w: 68,
+    h: 116,
+    anchor: "top-left",
+    minSegmentWidth: 112,
+    clearance: { w: 60, h: 104 },
+    densities: ["medium", "high"],
+    weight: 3,
+    depthOffset: 0.08
+  },
+  {
+    id: "rain-wall-conduit-panel",
+    material: "glass-energy",
+    category: "wall-decal",
+    frame: 39,
+    w: 112,
+    h: 100,
+    anchor: "wall-left",
+    minSegmentWidth: 120,
+    clearance: { w: 102, h: 90 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: 0.05
+  },
+  {
+    id: "rain-copper-column-fragment",
+    material: "copper-corrode",
+    category: "behind-surface-large",
+    frame: 40,
+    w: 70,
+    h: 128,
+    anchor: "bottom-center",
+    minSegmentWidth: 170,
+    clearance: { w: 62, h: 118 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: -0.22
+  },
+  {
+    id: "rain-cracked-relay-cabinet",
+    material: "copper-corrode",
+    category: "behind-surface-large",
+    frame: 41,
+    w: 118,
+    h: 128,
+    anchor: "bottom-center",
+    minSegmentWidth: 220,
+    clearance: { w: 106, h: 118 },
+    densities: ["high"],
+    weight: 2,
+    depthOffset: -0.24
+  },
+  {
+    id: "rain-puddle-conduit",
+    material: "copper-corrode",
+    category: "surface-medium",
+    frame: 42,
+    w: 120,
+    h: 52,
+    anchor: "bottom-center",
+    minSegmentWidth: 140,
+    clearance: { w: 110, h: 46 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: 0.16
+  },
+  {
+    id: "rain-small-terminal",
+    material: "copper-corrode",
+    category: "surface-medium",
+    frame: 43,
+    w: 76,
+    h: 100,
+    anchor: "bottom-center",
+    minSegmentWidth: 124,
+    clearance: { w: 68, h: 90 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: 0.16
+  },
+  {
+    id: "rain-hanging-chain-cable",
+    material: "warning-industrial",
+    category: "overhang",
+    frame: 44,
+    w: 84,
+    h: 118,
+    anchor: "top-left",
+    minSegmentWidth: 128,
+    clearance: { w: 76, h: 106 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: 0.08
+  },
+  {
+    id: "rain-relay-mast",
+    material: "copper-corrode",
+    category: "behind-surface-large",
+    frame: 45,
+    w: 132,
+    h: 158,
+    anchor: "bottom-center",
+    minSegmentWidth: 260,
+    clearance: { w: 120, h: 146 },
+    densities: ["high"],
+    weight: 1,
+    depthOffset: -0.25
+  }
+] as const satisfies readonly TerrainDecorPropDefinition[];
+
+export const allTerrainDecorProps = [...gardenTerrainDecorProps, ...rainhouseTerrainDecorProps] as const satisfies readonly TerrainDecorPropDefinition[];
+
 export const terrainDecorPropsForMaterial = (material: TerrainMaterial): readonly TerrainDecorPropDefinition[] =>
-  material === "grass-organic" ? gardenTerrainDecorProps : [];
+  allTerrainDecorProps.filter((prop) => prop.material === material);

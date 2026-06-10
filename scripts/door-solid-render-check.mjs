@@ -363,6 +363,10 @@ const level = {
     { id: "garden-top-only-decor-base", x: 2440, y: 120, w: 300, h: 20, sprite: "floor", material: "grass-organic", collision: "top-only" },
     { id: "garden-covered-decor-base", x: 2780, y: 120, w: 260, h: 96, sprite: "floor", material: "grass-organic", decorDensity: "high" },
     { id: "garden-covered-blocker", x: 2780, y: 88, w: 260, h: 32, sprite: "block", material: "wood-archive" },
+    { id: "rain-copper-decor-base", x: 3100, y: 120, w: 360, h: 96, sprite: "floor", material: "copper-corrode", decorDensity: "high" },
+    { id: "rain-copper-auto-base", x: 3500, y: 120, w: 300, h: 96, sprite: "floor", material: "copper-corrode" },
+    { id: "rain-warning-auto-base", x: 3840, y: 120, w: 280, h: 60, sprite: "floor", material: "warning-industrial" },
+    { id: "rain-glass-optin-wall", x: 4160, y: 70, w: 200, h: 180, sprite: "wall", material: "glass-energy", decorDensity: "high" },
     { id: "enclosed-top", x: 800, y: 400, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-left", x: 780, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-center", x: 800, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
@@ -696,6 +700,24 @@ try {
     "broken-root-nub",
     "broad-leaf-tuft"
   ];
+  const rainhousePropIds = [
+    "rain-copper-coil",
+    "rain-patina-relay-box",
+    "rain-wet-cable-loop",
+    "rain-insulator-cluster",
+    "rain-gutter-cap",
+    "rain-dripping-pipes",
+    "rain-warning-plate",
+    "rain-glass-energy-node",
+    "rain-cable-bank",
+    "rain-wall-conduit-panel",
+    "rain-copper-column-fragment",
+    "rain-cracked-relay-cabinet",
+    "rain-puddle-conduit",
+    "rain-small-terminal",
+    "rain-hanging-chain-cable",
+    "rain-relay-mast"
+  ];
   const steppedVisibleDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:stepped-decor-base:"));
   const ceilingVisibleDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:ceiling-decor-base:"));
   const gardenHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-high-decor-base:"));
@@ -703,6 +725,10 @@ try {
   const gardenObjectDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-object-decor-base:"));
   const gardenTopOnlyDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-top-only-decor-base:"));
   const gardenCoveredDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-covered-decor-base:"));
+  const rainCopperHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:rain-copper-decor-base:"));
+  const rainCopperAutoDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:rain-copper-auto-base:"));
+  const rainWarningAutoDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:rain-warning-auto-base:"));
+  const rainGlassOptinDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:rain-glass-optin-wall:"));
   const gardenHighDecorSizes = new Set(
     gardenHighDecorProps.flatMap((entry) => {
       const match = entry.match(/:(\d+)x(\d+):[-.\d]+$/);
@@ -725,6 +751,28 @@ try {
   assert(
     terrainDecorPropEntries.some((entry) => newGardenFillerPropIds.some((id) => entry.includes(`:${id}:`))),
     `Expected at least one new garden filler prop to be selected, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    terrainDecorPropEntries.some((entry) => rainhousePropIds.some((id) => entry.includes(`:${id}:`))),
+    `Expected at least one Rainhouse prop to be selected, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    rainCopperHighDecorProps.length >= 3 &&
+      rainCopperHighDecorProps.some((entry) => entry.includes(":behind-surface-large:")) &&
+      rainCopperHighDecorProps.some((entry) => entry.includes(":surface-small:") || entry.includes(":surface-medium:")),
+    `Expected high-density copper decor to include large and surface Rainhouse props, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    rainCopperAutoDecorProps.length >= 2 && rainCopperAutoDecorProps.every((entry) => entry.includes(":copper-corrode:medium:")),
+    `Expected copper-corrode auto decor to resolve to medium inferred props, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    rainWarningAutoDecorProps.length >= 1 && rainWarningAutoDecorProps.every((entry) => entry.includes(":warning-industrial:low:")),
+    `Expected warning-industrial auto decor to resolve to low inferred props, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    rainGlassOptinDecorProps.some((entry) => entry.includes(":wall-decal:glass-energy:high:")),
+    `Expected explicit glass-energy high density to allow wall-decal Rainhouse props, got ${diagnostics.terrainDecorProps}`
   );
   assert(
     steppedVisibleDecorProps.some((entry) => entry.includes(":behind-surface-large:")),
@@ -772,7 +820,7 @@ try {
   assert(diagnostics.backgroundFilter === "time-lab-prototype:0", `Expected background texture to use linear filtering, got ${diagnostics.backgroundFilter}`);
   assert(diagnostics.objectAtlasFilter === "object-atlas:0", `Expected object atlas texture to use linear filtering, got ${diagnostics.objectAtlasFilter}`);
   assert(diagnostics.terrainTileFilter === "terrain-tiles:0", `Expected terrain tile texture to use linear filtering, got ${diagnostics.terrainTileFilter}`);
-  assert(diagnostics.terrainDecorPropFilter === "terrain-decor-props:30:0", `Expected terrain decor prop textures to use linear filtering, got ${diagnostics.terrainDecorPropFilter}`);
+  assert(diagnostics.terrainDecorPropFilter === "terrain-decor-props:46:0", `Expected terrain decor prop textures to use linear filtering, got ${diagnostics.terrainDecorPropFilter}`);
   assertNoUnexpectedBrowserMessages("Full graphics render");
 
   const fullGraphicsScreenshot = `${outDir}/door-solid-render-qa.png`;

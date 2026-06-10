@@ -3,6 +3,7 @@ import { deflateSync, inflateSync } from "node:zlib";
 
 const PRIMARY_SOURCE = "docs/concepts/garden-decor-props-reference-20260610.png";
 const FILLER_SOURCE = "docs/concepts/garden-decor-fillers-reference-20260610.png";
+const RAINHOUSE_SOURCE = "docs/concepts/rainhouse-decor-props-reference-20260610.png";
 const OUT_DIR = "public/assets/sprites/terrain-decor-props";
 const CONTACT_SHEET = "public/assets/sprites/terrain-decor-props.png";
 const CONTACT_FRAME = 192;
@@ -39,7 +40,23 @@ const crops = [
   { id: "meadow-flower-clump", source: "filler", x: 70, y: 880, w: 245, h: 210, anchor: "bottom" },
   { id: "curled-vine-sprout", source: "filler", x: 385, y: 870, w: 205, h: 235, anchor: "bottom" },
   { id: "broken-root-nub", source: "filler", x: 695, y: 875, w: 205, h: 230, anchor: "bottom" },
-  { id: "broad-leaf-tuft", source: "filler", x: 990, y: 880, w: 220, h: 215, anchor: "bottom" }
+  { id: "broad-leaf-tuft", source: "filler", x: 990, y: 880, w: 220, h: 215, anchor: "bottom" },
+  { id: "rain-copper-coil", source: "rainhouse", x: 60, y: 65, w: 145, h: 195, anchor: "bottom" },
+  { id: "rain-patina-relay-box", source: "rainhouse", x: 320, y: 50, w: 245, h: 215, anchor: "bottom" },
+  { id: "rain-wet-cable-loop", source: "rainhouse", x: 650, y: 45, w: 225, h: 235, anchor: "bottom" },
+  { id: "rain-insulator-cluster", source: "rainhouse", x: 975, y: 40, w: 230, h: 245, anchor: "bottom" },
+  { id: "rain-gutter-cap", source: "rainhouse", x: 50, y: 365, w: 240, h: 185, anchor: "bottom" },
+  { id: "rain-dripping-pipes", source: "rainhouse", x: 355, y: 350, w: 200, h: 225, anchor: "top" },
+  { id: "rain-warning-plate", source: "rainhouse", x: 650, y: 395, w: 240, h: 145, anchor: "bottom" },
+  { id: "rain-glass-energy-node", source: "rainhouse", x: 965, y: 360, w: 200, h: 210, anchor: "bottom" },
+  { id: "rain-cable-bank", source: "rainhouse", x: 70, y: 625, w: 170, h: 250, anchor: "top" },
+  { id: "rain-wall-conduit-panel", source: "rainhouse", x: 345, y: 645, w: 245, h: 225, anchor: "top" },
+  { id: "rain-copper-column-fragment", source: "rainhouse", x: 690, y: 620, w: 175, h: 245, anchor: "bottom" },
+  { id: "rain-cracked-relay-cabinet", source: "rainhouse", x: 965, y: 610, w: 240, h: 260, anchor: "bottom" },
+  { id: "rain-puddle-conduit", source: "rainhouse", x: 40, y: 1000, w: 260, h: 160, anchor: "bottom" },
+  { id: "rain-small-terminal", source: "rainhouse", x: 370, y: 960, w: 185, h: 225, anchor: "bottom" },
+  { id: "rain-hanging-chain-cable", source: "rainhouse", x: 675, y: 925, w: 205, h: 255, anchor: "top" },
+  { id: "rain-relay-mast", source: "rainhouse", x: 940, y: 895, w: 275, h: 310, anchor: "bottom" }
 ];
 
 const assert = (condition, message) => {
@@ -169,7 +186,8 @@ const encodePng = (width, height, data) => {
 
 const sources = {
   primary: decodePng(readFileSync(PRIMARY_SOURCE)),
-  filler: decodePng(readFileSync(FILLER_SOURCE))
+  filler: decodePng(readFileSync(FILLER_SOURCE)),
+  rainhouse: decodePng(readFileSync(RAINHOUSE_SOURCE))
 };
 
 const isChroma = (r, g, b) => r > 115 && b > 120 && g < 115 && r - g > 45 && b - g > 45 && Math.abs(r - b) < 95;
