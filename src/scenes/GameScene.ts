@@ -2017,6 +2017,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private shouldPlaceTerrainDecor(solid: Solid, segmentWidth: number, column: number): boolean {
+    if (solid.decorDensity === "off") return false;
     if (solid.h < TERRAIN_DECOR_MIN_SOLID_HEIGHT || segmentWidth < TERRAIN_DECOR_MIN_SEGMENT_WIDTH) return false;
     if (solidCollisionFor(solid) === "top-only") return false;
     return this.terrainTileVariant(solid, terrainMaterialForSolid(solid), "decor-placement", 0, column) === 0;

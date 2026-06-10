@@ -674,6 +674,7 @@ try {
     `Expected low-overhang terrain decor to still render on clear eligible column, got ${diagnostics.terrainDecor}`
   );
   const terrainDecorPropEntries = diagnostics.terrainDecorProps.split("|").filter(Boolean);
+  const steppedVisibleDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:stepped-decor-base:"));
   const gardenHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-high-decor-base:"));
   const gardenHighDecorSizes = new Set(
     gardenHighDecorProps.flatMap((entry) => {
@@ -693,6 +694,14 @@ try {
   assert(
     gardenHighDecorSizes.size >= 2 && !gardenHighDecorSizes.has("32x32"),
     `Expected variable-size garden decor props, got ${[...gardenHighDecorSizes].join(", ")} from ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    steppedVisibleDecorProps.some((entry) => entry.includes(":behind-surface-large:")),
+    `Expected visible in-bounds stepped garden strip to render a large prop for screenshot coverage, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    !diagnostics.terrainDecor.includes("solid:garden-off-decor-base:decor:"),
+    `Expected decorDensity off to suppress legacy surface decor tiles, got ${diagnostics.terrainDecor}`
   );
   assert(
     !diagnostics.terrainDecorProps.includes("solid:garden-off-decor-base:"),
