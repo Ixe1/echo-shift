@@ -363,6 +363,7 @@ const level = {
     { id: "garden-top-only-decor-base", x: 2440, y: 120, w: 300, h: 20, sprite: "floor", material: "grass-organic", collision: "top-only" },
     { id: "garden-covered-decor-base", x: 2780, y: 120, w: 260, h: 96, sprite: "floor", material: "grass-organic", decorDensity: "high" },
     { id: "garden-covered-blocker", x: 2780, y: 88, w: 260, h: 32, sprite: "block", material: "wood-archive" },
+    { id: "rain-visible-copper-sample", x: 770, y: 78, w: 120, h: 64, sprite: "floor", material: "copper-corrode", decorDensity: "high" },
     { id: "rain-copper-decor-base", x: 3100, y: 120, w: 360, h: 96, sprite: "floor", material: "copper-corrode", decorDensity: "high" },
     { id: "rain-copper-auto-base", x: 3500, y: 120, w: 300, h: 96, sprite: "floor", material: "copper-corrode" },
     { id: "rain-warning-auto-base", x: 3840, y: 120, w: 280, h: 60, sprite: "floor", material: "warning-industrial" },
@@ -725,6 +726,7 @@ try {
   const gardenObjectDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-object-decor-base:"));
   const gardenTopOnlyDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-top-only-decor-base:"));
   const gardenCoveredDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-covered-decor-base:"));
+  const rainVisibleDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:rain-visible-copper-sample:"));
   const rainCopperHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:rain-copper-decor-base:"));
   const rainCopperAutoDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:rain-copper-auto-base:"));
   const rainWarningAutoDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:rain-warning-auto-base:"));
@@ -755,6 +757,10 @@ try {
   assert(
     terrainDecorPropEntries.some((entry) => rainhousePropIds.some((id) => entry.includes(`:${id}:`))),
     `Expected at least one Rainhouse prop to be selected, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    rainVisibleDecorProps.some((entry) => entry.includes(":copper-corrode:high:")),
+    `Expected visible Rainhouse copper sample to render for screenshot coverage, got ${diagnostics.terrainDecorProps}`
   );
   assert(
     rainCopperHighDecorProps.length >= 3 &&
