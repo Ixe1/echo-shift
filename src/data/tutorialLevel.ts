@@ -10,7 +10,7 @@ const s = (
   w: number,
   h: number,
   tone: Solid["tone"] = "steel",
-  options: Partial<Pick<Solid, "sprite" | "material" | "collision">> = {}
+  options: Partial<Pick<Solid, "sprite" | "material" | "collision" | "decorDensity">> = {}
 ): Solid => ({
   id,
   x,
@@ -93,7 +93,7 @@ export const tutorialLevel: Level = markAnchoredMotionModel({
     s("right-wall", 5600, 0, 26, 560, "glass"),
     s("jump-marker", 302, 438, 92, 18, "steel", { sprite: "floor", material: "glass-energy", collision: "top-only" }),
     s("plate-marker", 620, 438, 132, 18, "steel", { sprite: "floor", material: "metal-lab", collision: "top-only" }),
-    s("crate-marker", 1360, 438, 180, 18, "steel", { sprite: "floor", material: "wood-archive", collision: "top-only" }),
+    s("crate-marker", 1360, 438, 180, 18, "steel", { sprite: "floor", material: "wood-archive", collision: "top-only", decorDensity: "off" }),
     s("timed-marker", 2180, 438, 150, 18, "steel", { sprite: "floor", material: "warning-industrial", collision: "top-only" }),
     s("core-marker", 2840, 430, 170, 18, "steel", { sprite: "floor", material: "glass-energy", collision: "top-only" }),
     s("laser-overlook", 3740, 360, 240, 18, "steel", { sprite: "floor", material: "glass-energy", collision: "top-only" }),

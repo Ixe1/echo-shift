@@ -134,7 +134,8 @@ export const level1SpringtideSprint = {
         "h": 20,
         "id": "block-11",
         "sprite": "block",
-        "material": "wood-archive"
+        "material": "wood-archive",
+        "decorDensity": "off"
       },
       {
         "x": 880,
