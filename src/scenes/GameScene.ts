@@ -64,9 +64,7 @@ import type {
   Level,
   LevelScore,
   Monster,
-  MovingLaser,
   MovingPlatform,
-  PatrolDrone,
   Rect,
   Solid,
   SolidDecorDensity,
@@ -106,11 +104,11 @@ const BOSS_ARENA_CAMERA_ZOOM = 1.2;
 const TERRAIN_SURFACE_CAP_OVERLAP = 16;
 const TERRAIN_DECOR_MIN_SOLID_HEIGHT = 28;
 const TERRAIN_DECOR_MIN_SEGMENT_WIDTH = 96;
-const TERRAIN_DECOR_PROP_SURFACE_SLOT: Record<ActiveTerrainDecorDensity, number> = { low: 88, medium: 64, high: 48 };
-const TERRAIN_DECOR_PROP_SURFACE_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0.25, medium: 0.42, high: 0.64 };
-const TERRAIN_DECOR_PROP_LARGE_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0, medium: 0.34, high: 1 };
-const TERRAIN_DECOR_PROP_OVERHANG_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0, medium: 0.28, high: 0.54 };
-const TERRAIN_DECOR_PROP_WALL_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0, medium: 0.2, high: 0.48 };
+const TERRAIN_DECOR_PROP_SURFACE_SLOT: Record<ActiveTerrainDecorDensity, number> = { low: 80, medium: 44, high: 36 };
+const TERRAIN_DECOR_PROP_SURFACE_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0.46, medium: 0.92, high: 1 };
+const TERRAIN_DECOR_PROP_LARGE_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0, medium: 0.58, high: 1 };
+const TERRAIN_DECOR_PROP_OVERHANG_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0, medium: 0.64, high: 0.86 };
+const TERRAIN_DECOR_PROP_WALL_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0, medium: 0.82, high: 1 };
 const BOSS_DEFEAT_BURST_OFFSETS = [
   { x: 0.28, y: 0.34, start: 0, tint: 0xffe35a },
   { x: 0.62, y: 0.42, start: 18, tint: 0xff8b3d },
@@ -1719,27 +1717,60 @@ export class GameScene extends Phaser.Scene {
     const slotWidth = TERRAIN_DECOR_PROP_SURFACE_SLOT[density];
     const slotCount = Math.max(1, Math.floor(segmentWidth / slotWidth));
     const ids: string[] = [];
+    const placedSlotIndexes = new Set<number>();
 
-    for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
+    const placeSlot = (slotIndex: number): boolean => {
       const hash = this.terrainDecorHash(solid, material, "surface-prop", segmentIndex, slotIndex);
-      if (this.terrainDecorRoll(hash) > TERRAIN_DECOR_PROP_SURFACE_CHANCE[density]) continue;
       const slotFrom = segment.from + (segmentWidth / slotCount) * slotIndex;
       const slotTo = slotIndex === slotCount - 1 ? segment.to : segment.from + (segmentWidth / slotCount) * (slotIndex + 1);
       const preferredCategory: TerrainDecorPropCategory =
-        density !== "low" && hash % 5 === 0 ? "surface-medium" : "surface-small";
+        density !== "low" && hash % 2 === 0 ? "surface-medium" : "surface-small";
       const prop =
         this.pickTerrainDecorProp(props, preferredCategory, density, segmentWidth, hash >>> 8) ||
         this.pickTerrainDecorProp(props, "surface-small", density, segmentWidth, hash >>> 12);
-      if (!prop) continue;
+      if (!prop) return false;
       const rect = this.surfaceTerrainDecorRect(solid, segment, slotFrom, slotTo, prop, hash);
-      if (!rect || !this.canPlaceTerrainDecorProp(solid, prop, rect, placedRects)) continue;
+      if (!rect || !this.canPlaceTerrainDecorProp(solid, prop, rect, placedRects)) return false;
       const id = `solid:${solid.id}:decor-prop:${segmentIndex}:${slotIndex}:${prop.id}`;
       this.syncTerrainDecorPropAsset(id, prop, rect, depth + prop.depthOffset, material, density);
       ids.push(id);
       placedRects.push(rect);
+      placedSlotIndexes.add(slotIndex);
+      return true;
+    };
+
+    for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
+      const hash = this.terrainDecorHash(solid, material, "surface-prop", segmentIndex, slotIndex);
+      if (this.terrainDecorRoll(hash) > TERRAIN_DECOR_PROP_SURFACE_CHANCE[density]) continue;
+      placeSlot(slotIndex);
+    }
+
+    const minimumCount = this.minimumSurfaceTerrainDecorPropCount(density, segmentWidth, slotCount);
+    if (ids.length < minimumCount) {
+      const prioritySlots = [0, slotCount - 1, Math.floor(slotCount / 2), Math.floor(slotCount / 4), Math.floor((slotCount * 3) / 4)];
+      const fallbackSlots = Array.from({ length: slotCount }, (_, slotIndex) => ({
+        slotIndex,
+        priority: prioritySlots.includes(slotIndex) ? prioritySlots.indexOf(slotIndex) : prioritySlots.length,
+        hash: this.terrainDecorHash(solid, material, "surface-prop-fill", segmentIndex, slotIndex)
+      })).sort((a, b) => a.priority - b.priority || a.hash - b.hash);
+      for (const { slotIndex } of fallbackSlots) {
+        if (ids.length >= minimumCount) break;
+        if (placedSlotIndexes.has(slotIndex)) continue;
+        placeSlot(slotIndex);
+      }
     }
 
     return ids;
+  }
+
+  private minimumSurfaceTerrainDecorPropCount(
+    density: ActiveTerrainDecorDensity,
+    segmentWidth: number,
+    slotCount: number
+  ): number {
+    if (density === "low") return segmentWidth >= 180 ? 1 : 0;
+    if (density === "medium") return Math.min(slotCount, Math.max(2, Math.floor(segmentWidth / 120)));
+    return Math.min(slotCount, Math.max(3, Math.floor(segmentWidth / 95)));
   }
 
   private syncLargeTerrainDecorProp(
@@ -2023,38 +2054,6 @@ export class GameScene extends Phaser.Scene {
     return this.terrainTileVariant(solid, terrainMaterialForSolid(solid), "decor-placement", 0, column) === 0;
   }
 
-  private movingObjectSweepRect(object: MovingPlatform | PatrolDrone): Rect {
-    const end = {
-      x: object.x + (object.axis === "x" ? object.distance : 0),
-      y: object.y + (object.axis === "y" ? object.distance : 0),
-      w: object.w,
-      h: object.h
-    };
-    return this.unionRect(object, end);
-  }
-
-  private movingLaserSweepRect(laser: MovingLaser): Rect {
-    const stationaryLaser = { ...laser, distance: 0, phase: 0 };
-    const start = movingLaserRectAt(stationaryLaser, 0);
-    const end = movingLaserRectAt(
-      {
-        ...stationaryLaser,
-        x: laser.x + (laser.axis === "x" ? laser.distance : 0),
-        y: laser.y + (laser.axis === "y" ? laser.distance : 0)
-      },
-      0
-    );
-    return this.unionRect(start, end);
-  }
-
-  private unionRect(a: Rect, b: Rect): Rect {
-    const x = Math.min(a.x, b.x);
-    const y = Math.min(a.y, b.y);
-    const right = Math.max(a.x + a.w, b.x + b.w);
-    const bottom = Math.max(a.y + a.h, b.y + b.h);
-    return { x, y, w: right - x, h: bottom - y };
-  }
-
   private terrainDecorHasClearance(solid: Solid, rect: Rect): boolean {
     const padded = { x: rect.x - 10, y: rect.y - 10, w: rect.w + 20, h: rect.h + 22 };
     const startClearance = { x: this.level.start.x - 30, y: this.level.start.y - 64, w: 72, h: 92 };
@@ -2062,23 +2061,7 @@ export class GameScene extends Phaser.Scene {
     const blockers: Rect[] = [
       ...this.level.solids.filter(
         (blocker) => blocker !== solid && solidCollisionFor(blocker) !== "decorative" && blocker.y < rect.y + rect.h - 0.01
-      ),
-      ...(this.level.platforms || []).map((platform) => this.movingObjectSweepRect(platform)),
-      ...(this.level.oneWays || []),
-      ...(this.level.conveyors || []),
-      ...(this.level.launchPads || []),
-      ...(this.level.drones || []).map((drone) => this.movingObjectSweepRect(drone)),
-      ...(this.level.plates || []),
-      ...(this.level.timedSwitches || []),
-      ...(this.level.echoSensors || []),
-      ...(this.level.doors || []),
-      ...(this.level.lasers || []),
-      ...(this.level.movingLasers || []).map((laser) => this.movingLaserSweepRect(laser)),
-      ...(this.level.cores || []),
-      ...(this.level.hazards || []),
-      ...(this.level.crates || []),
-      ...(this.level.monsters || []),
-      ...(this.level.bosses || [])
+      )
     ];
     return blockers.every((blocker) => !rectsOverlap(padded, blocker));
   }
