@@ -764,12 +764,15 @@ try {
     "timber-carved-panel"
   ];
   const steppedVisibleDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:stepped-decor-base:"));
+  const steppedCoverDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:stepped-decor-cover:"));
   const ceilingVisibleDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:ceiling-decor-base:"));
+  const ceilingOverhangDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:ceiling-decor-overhang:"));
   const gardenHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-high-decor-base:"));
   const gardenSweptDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-swept-decor-base:"));
   const gardenObjectDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-object-decor-base:"));
   const gardenTopOnlyDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-top-only-decor-base:"));
   const gardenCoveredDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-covered-decor-base:"));
+  const gardenCoveredBlockerDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-covered-blocker:"));
   const rainVisibleDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:rain-visible-copper-sample:"));
   const rainCopperHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:rain-copper-decor-base:"));
   const rainCopperAutoDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:rain-copper-auto-base:"));
@@ -892,6 +895,12 @@ try {
   assert(
     !diagnostics.terrainDecorProps.includes("solid:garden-off-decor-base:"),
     `Expected decorDensity off to suppress inferred props, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    steppedCoverDecorProps.length === 0 &&
+      ceilingOverhangDecorProps.length === 0 &&
+      gardenCoveredBlockerDecorProps.length === 0,
+    `Expected wood-archive cover/blocker opt-outs to suppress inferred props, got ${diagnostics.terrainDecorProps}`
   );
   assert(
     gardenSweptDecorProps.length >= 3,
