@@ -767,6 +767,7 @@ try {
   const { RoomSimulation } = await server.ssrLoadModule("/src/game/state.ts");
   const { makeActor } = await server.ssrLoadModule("/src/game/player.ts");
   const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
+  const { level1SpringtideSprint } = await server.ssrLoadModule("/src/data/level-1-springtide-sprint.ts");
   const { tutorialLevel } = await server.ssrLoadModule("/src/data/tutorialLevel.ts");
   const { doorRequiredCoreIds, isMajorCore, movingLaserRectAt } = await server.ssrLoadModule("/src/game/objects.ts");
   const { EDITOR_DRAFT_STORAGE_KEY, readEditorDraftSnapshot } = await server.ssrLoadModule("/src/data/editorDraft.ts");
@@ -1073,8 +1074,24 @@ try {
     "Expected explicit off decor density to disable inferred props"
   );
   assert(
+    effectiveSolidDecorDensity({ decorDensity: undefined }, "wood-archive") === "medium",
+    "Expected wood-archive auto decor density to resolve to medium"
+  );
+  assert(
+    tutorialLevel.solids.find((solid) => solid.id === "crate-marker")?.decorDensity === "off",
+    "Expected tutorial crate marker to opt out of inferred wood-archive props"
+  );
+  assert(
+    level1SpringtideSprint.solids.find((solid) => solid.id === "block-11")?.decorDensity === "off",
+    "Expected Level 1 sprint wood marker block to opt out of inferred wood-archive props"
+  );
+  assert(
     terrainDecorPropsForMaterial("grass-organic").some((prop) => prop.category === "behind-surface-large" && prop.w !== prop.h),
     "Expected garden decor props to include variable-size large background props"
+  );
+  assert(
+    terrainDecorPropsForMaterial("wood-archive").some((prop) => prop.category === "wall-decal" && prop.id === "timber-carved-panel"),
+    "Expected wood-archive decor props to include Timber wall decals"
   );
   assert(
     selectBossCameraFocus([{ id: "departing-first", phase: "departing" }, { id: "active-second", phase: "active" }])?.id === "active-second",
