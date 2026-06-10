@@ -867,6 +867,11 @@ try {
     { x: smokeCoreBeforeLockDrag.x + smokeCoreBeforeLockDrag.w + 60, y: smokeCoreBeforeLockDrag.y + smokeCoreBeforeLockDrag.h / 2 }
   );
   const smokeCoreAfterLockDrag = JSON.parse(await page.locator("[data-export-json]").inputValue())[0].cores.find((item) => item.id === "smoke-core");
+  await page.locator("[data-tool='cores']").click();
+  await dragWorld(page, { x: 1140, y: 360 }, { x: 1240, y: 420 });
+  await page.locator("[data-object-field='id']").fill("smoke-drag-core");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  const smokeDragCreatedCore = JSON.parse(await page.locator("[data-export-json]").inputValue())[0].cores.find((item) => item.id === "smoke-drag-core");
 
   await dragToolToWorld(page, "cores", { x: 1080, y: 360 });
   await page.locator("[data-object-field='id']").fill("smoke-required-core");
@@ -1538,6 +1543,10 @@ try {
   assert(
     smokeCoreBeforeLockDrag?.w === smokeCoreAfterLockDrag?.w && smokeCoreBeforeLockDrag?.h === smokeCoreAfterLockDrag?.h,
     `Expected core edge drag not to resize dimensions, got before ${JSON.stringify(smokeCoreBeforeLockDrag)} after ${JSON.stringify(smokeCoreAfterLockDrag)}`
+  );
+  assert(
+    smokeDragCreatedCore?.w === 20 && smokeDragCreatedCore?.h === 20,
+    `Expected core click-drag creation to keep default fixed dimensions, got ${JSON.stringify(smokeDragCreatedCore)}`
   );
   assert(toolkitCore?.size === "large", `Expected core size to export, got ${JSON.stringify(toolkitCore)}`);
   assert(requiredCoreDefaultSize === "small", `Expected unlinked required-core candidate to default to small, got ${requiredCoreDefaultSize}`);

@@ -1672,16 +1672,20 @@ class LevelEditor {
     if (!target) return;
     const previousRect = { x: target.x, y: target.y, w: target.w, h: target.h };
     const size = defaultSizeFor(this.drag.kind, this.drag.kind === "solids" ? this.drag.preset : null);
-    const minX = Math.min(this.drag.origin.x, world.x);
-    const minY = Math.min(this.drag.origin.y, world.y);
-    const maxX = Math.max(this.drag.origin.x, world.x);
-    const maxY = Math.max(this.drag.origin.y, world.y);
-    target.x = minX;
-    target.y = minY;
-    target.w = Math.max(size.w, maxX - minX);
-    target.h = Math.max(size.h, maxY - minY);
-    if (Math.abs(world.x - this.drag.origin.x) < GRID && Math.abs(world.y - this.drag.origin.y) < GRID) {
+    if (this.drag.kind === "cores") {
       Object.assign(target, this.drag.startRect);
+    } else {
+      const minX = Math.min(this.drag.origin.x, world.x);
+      const minY = Math.min(this.drag.origin.y, world.y);
+      const maxX = Math.max(this.drag.origin.x, world.x);
+      const maxY = Math.max(this.drag.origin.y, world.y);
+      target.x = minX;
+      target.y = minY;
+      target.w = Math.max(size.w, maxX - minX);
+      target.h = Math.max(size.h, maxY - minY);
+      if (Math.abs(world.x - this.drag.origin.x) < GRID && Math.abs(world.y - this.drag.origin.y) < GRID) {
+        Object.assign(target, this.drag.startRect);
+      }
     }
     this.snapToNearbySurface(this.drag.kind, target);
     this.syncBossDefaultCheckpoint(this.drag.kind, target, previousRect);
