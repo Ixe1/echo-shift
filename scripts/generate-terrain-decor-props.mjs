@@ -5,6 +5,7 @@ const PRIMARY_SOURCE = "docs/concepts/garden-decor-props-reference-20260610.png"
 const FILLER_SOURCE = "docs/concepts/garden-decor-fillers-reference-20260610.png";
 const RAINHOUSE_SOURCE = "docs/concepts/rainhouse-decor-props-reference-20260610.png";
 const CRYO_SOURCE = "docs/concepts/cryo-decor-props-reference-20260610.png";
+const TIMBER_SOURCE = "docs/concepts/timber-archive-decor-props-reference-20260610.png";
 const OUT_DIR = "public/assets/sprites/terrain-decor-props";
 const CONTACT_SHEET = "public/assets/sprites/terrain-decor-props.png";
 const CONTACT_FRAME = 192;
@@ -73,7 +74,23 @@ const crops = [
   { id: "cryo-tall-tank", source: "cryo", x: 60, y: 900, w: 190, h: 280, anchor: "bottom" },
   { id: "cryo-ice-column-fragment", source: "cryo", x: 360, y: 910, w: 200, h: 270, anchor: "bottom" },
   { id: "cryo-background-pod", source: "cryo", x: 615, y: 965, w: 315, h: 220, anchor: "bottom" },
-  { id: "cryo-hanging-frost-cables", source: "cryo", x: 980, y: 900, w: 230, h: 305, anchor: "top" }
+  { id: "cryo-hanging-frost-cables", source: "cryo", x: 980, y: 900, w: 230, h: 305, anchor: "top" },
+  { id: "timber-loose-papers", source: "timber", x: 0, y: 0, w: 314, h: 314, anchor: "bottom" },
+  { id: "timber-tiny-book-stack", source: "timber", x: 314, y: 0, w: 313, h: 314, anchor: "bottom" },
+  { id: "timber-glow-moss-log", source: "timber", x: 627, y: 0, w: 313, h: 314, anchor: "bottom" },
+  { id: "timber-brass-data-tags", source: "timber", x: 940, y: 0, w: 314, h: 314, anchor: "bottom" },
+  { id: "timber-book-pile", source: "timber", x: 0, y: 314, w: 314, h: 313, anchor: "bottom" },
+  { id: "timber-broken-shelf-chunk", source: "timber", x: 314, y: 314, w: 313, h: 313, anchor: "bottom" },
+  { id: "timber-archive-crate", source: "timber", x: 627, y: 314, w: 313, h: 313, anchor: "bottom" },
+  { id: "timber-root-data-box", source: "timber", x: 940, y: 314, w: 314, h: 313, anchor: "bottom" },
+  { id: "timber-old-bookcase", source: "timber", x: 0, y: 627, w: 314, h: 313, anchor: "bottom" },
+  { id: "timber-timber-column", source: "timber", x: 314, y: 627, w: 313, h: 313, anchor: "bottom" },
+  { id: "timber-root-archive-trunk", source: "timber", x: 627, y: 627, w: 313, h: 313, anchor: "bottom" },
+  { id: "timber-archive-terminal", source: "timber", x: 940, y: 627, w: 314, h: 313, anchor: "bottom" },
+  { id: "timber-dangling-roots", source: "timber", x: 0, y: 940, w: 314, h: 314, anchor: "top" },
+  { id: "timber-hanging-tags-cables", source: "timber", x: 314, y: 940, w: 313, h: 314, anchor: "top" },
+  { id: "timber-hanging-lamps", source: "timber", x: 627, y: 940, w: 313, h: 314, anchor: "top" },
+  { id: "timber-carved-panel", source: "timber", x: 940, y: 940, w: 314, h: 314, anchor: "top" }
 ];
 
 const assert = (condition, message) => {
@@ -205,7 +222,8 @@ const sources = {
   primary: decodePng(readFileSync(PRIMARY_SOURCE)),
   filler: decodePng(readFileSync(FILLER_SOURCE)),
   rainhouse: decodePng(readFileSync(RAINHOUSE_SOURCE)),
-  cryo: decodePng(readFileSync(CRYO_SOURCE))
+  cryo: decodePng(readFileSync(CRYO_SOURCE)),
+  timber: decodePng(readFileSync(TIMBER_SOURCE))
 };
 
 const isChroma = (r, g, b) => r > 115 && b > 120 && g < 115 && r - g > 45 && b - g > 45 && Math.abs(r - b) < 95;

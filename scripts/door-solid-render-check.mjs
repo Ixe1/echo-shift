@@ -372,6 +372,10 @@ const level = {
     { id: "cryo-high-decor-base", x: 4400, y: 120, w: 360, h: 96, sprite: "floor", material: "ice-cryo", decorDensity: "high" },
     { id: "cryo-auto-base", x: 4800, y: 120, w: 300, h: 96, sprite: "floor", material: "ice-cryo" },
     { id: "cryo-wall-decor-base", x: 5140, y: 70, w: 220, h: 190, sprite: "wall", material: "ice-cryo", decorDensity: "high" },
+    { id: "timber-visible-sample", x: 390, y: 300, w: 220, h: 70, sprite: "floor", material: "wood-archive", decorDensity: "high" },
+    { id: "timber-high-decor-base", x: 5480, y: 120, w: 380, h: 96, sprite: "floor", material: "wood-archive", decorDensity: "high" },
+    { id: "timber-auto-base", x: 5900, y: 120, w: 300, h: 96, sprite: "floor", material: "wood-archive" },
+    { id: "timber-wall-decor-base", x: 6240, y: 70, w: 240, h: 190, sprite: "wall", material: "wood-archive", decorDensity: "high" },
     { id: "enclosed-top", x: 800, y: 400, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-left", x: 780, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-center", x: 800, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
@@ -741,6 +745,24 @@ try {
     "cryo-background-pod",
     "cryo-hanging-frost-cables"
   ];
+  const timberPropIds = [
+    "timber-loose-papers",
+    "timber-tiny-book-stack",
+    "timber-glow-moss-log",
+    "timber-brass-data-tags",
+    "timber-book-pile",
+    "timber-broken-shelf-chunk",
+    "timber-archive-crate",
+    "timber-root-data-box",
+    "timber-old-bookcase",
+    "timber-timber-column",
+    "timber-root-archive-trunk",
+    "timber-archive-terminal",
+    "timber-dangling-roots",
+    "timber-hanging-tags-cables",
+    "timber-hanging-lamps",
+    "timber-carved-panel"
+  ];
   const steppedVisibleDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:stepped-decor-base:"));
   const ceilingVisibleDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:ceiling-decor-base:"));
   const gardenHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-high-decor-base:"));
@@ -757,6 +779,10 @@ try {
   const cryoHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:cryo-high-decor-base:"));
   const cryoAutoDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:cryo-auto-base:"));
   const cryoWallDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:cryo-wall-decor-base:"));
+  const timberVisibleDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:timber-visible-sample:"));
+  const timberHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:timber-high-decor-base:"));
+  const timberAutoDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:timber-auto-base:"));
+  const timberWallDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:timber-wall-decor-base:"));
   const gardenHighDecorSizes = new Set(
     gardenHighDecorProps.flatMap((entry) => {
       const match = entry.match(/:(\d+)x(\d+):[-.\d]+$/);
@@ -829,6 +855,28 @@ try {
     `Expected high-density ice-cryo wall to render wall-decal props, got ${diagnostics.terrainDecorProps}`
   );
   assert(
+    terrainDecorPropEntries.some((entry) => timberPropIds.some((id) => entry.includes(`:${id}:`))),
+    `Expected at least one Timber prop to be selected, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    timberVisibleDecorProps.some((entry) => entry.includes(":wood-archive:high:")),
+    `Expected visible Timber sample to render for screenshot coverage, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    timberHighDecorProps.length >= 3 &&
+      timberHighDecorProps.some((entry) => entry.includes(":behind-surface-large:")) &&
+      timberHighDecorProps.some((entry) => entry.includes(":surface-small:") || entry.includes(":surface-medium:")),
+    `Expected high-density wood-archive decor to include large and surface Timber props, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    timberAutoDecorProps.length >= 2 && timberAutoDecorProps.every((entry) => entry.includes(":wood-archive:medium:")),
+    `Expected wood-archive auto decor to resolve to medium inferred props, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    timberWallDecorProps.some((entry) => entry.includes(":wall-decal:wood-archive:high:")),
+    `Expected high-density wood-archive wall to render wall-decal props, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
     steppedVisibleDecorProps.some((entry) => entry.includes(":behind-surface-large:")),
     `Expected visible in-bounds stepped garden strip to render a large prop for screenshot coverage, got ${diagnostics.terrainDecorProps}`
   );
@@ -874,7 +922,7 @@ try {
   assert(diagnostics.backgroundFilter === "time-lab-prototype:0", `Expected background texture to use linear filtering, got ${diagnostics.backgroundFilter}`);
   assert(diagnostics.objectAtlasFilter === "object-atlas:0", `Expected object atlas texture to use linear filtering, got ${diagnostics.objectAtlasFilter}`);
   assert(diagnostics.terrainTileFilter === "terrain-tiles:0", `Expected terrain tile texture to use linear filtering, got ${diagnostics.terrainTileFilter}`);
-  assert(diagnostics.terrainDecorPropFilter === "terrain-decor-props:62:0", `Expected terrain decor prop textures to use linear filtering, got ${diagnostics.terrainDecorPropFilter}`);
+  assert(diagnostics.terrainDecorPropFilter === "terrain-decor-props:78:0", `Expected terrain decor prop textures to use linear filtering, got ${diagnostics.terrainDecorPropFilter}`);
   assertNoUnexpectedBrowserMessages("Full graphics render");
 
   const fullGraphicsScreenshot = `${outDir}/door-solid-render-qa.png`;

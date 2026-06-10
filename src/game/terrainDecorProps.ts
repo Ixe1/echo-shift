@@ -40,7 +40,8 @@ const automaticDecorDensityByMaterial: Partial<Record<TerrainMaterial, Exclude<S
   "grass-organic": "medium",
   "copper-corrode": "medium",
   "warning-industrial": "low",
-  "ice-cryo": "medium"
+  "ice-cryo": "medium",
+  "wood-archive": "medium"
 };
 
 export const normalizeSolidDecorDensity = (value: unknown): SolidDecorDensity | undefined =>
@@ -938,10 +939,238 @@ export const cryoTerrainDecorProps = [
   }
 ] as const satisfies readonly TerrainDecorPropDefinition[];
 
+export const woodArchiveTerrainDecorProps = [
+  {
+    id: "timber-loose-papers",
+    material: "wood-archive",
+    category: "surface-small",
+    frame: 62,
+    w: 88,
+    h: 60,
+    anchor: "bottom-left",
+    minSegmentWidth: 88,
+    clearance: { w: 78, h: 52 },
+    densities: ["low", "medium", "high"],
+    weight: 4,
+    depthOffset: 0.2
+  },
+  {
+    id: "timber-tiny-book-stack",
+    material: "wood-archive",
+    category: "surface-small",
+    frame: 63,
+    w: 76,
+    h: 72,
+    anchor: "bottom-left",
+    minSegmentWidth: 86,
+    clearance: { w: 68, h: 64 },
+    densities: ["low", "medium", "high"],
+    weight: 3,
+    depthOffset: 0.2
+  },
+  {
+    id: "timber-glow-moss-log",
+    material: "wood-archive",
+    category: "surface-small",
+    frame: 64,
+    w: 88,
+    h: 76,
+    anchor: "bottom-left",
+    minSegmentWidth: 96,
+    clearance: { w: 78, h: 68 },
+    densities: ["low", "medium", "high"],
+    weight: 3,
+    depthOffset: 0.2
+  },
+  {
+    id: "timber-brass-data-tags",
+    material: "wood-archive",
+    category: "surface-small",
+    frame: 65,
+    w: 74,
+    h: 76,
+    anchor: "bottom-left",
+    minSegmentWidth: 88,
+    clearance: { w: 66, h: 68 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: 0.19
+  },
+  {
+    id: "timber-book-pile",
+    material: "wood-archive",
+    category: "surface-medium",
+    frame: 66,
+    w: 100,
+    h: 112,
+    anchor: "bottom-center",
+    minSegmentWidth: 132,
+    clearance: { w: 90, h: 100 },
+    densities: ["medium", "high"],
+    weight: 3,
+    depthOffset: 0.16
+  },
+  {
+    id: "timber-broken-shelf-chunk",
+    material: "wood-archive",
+    category: "surface-medium",
+    frame: 67,
+    w: 98,
+    h: 122,
+    anchor: "bottom-center",
+    minSegmentWidth: 132,
+    clearance: { w: 88, h: 110 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: 0.16
+  },
+  {
+    id: "timber-archive-crate",
+    material: "wood-archive",
+    category: "surface-medium",
+    frame: 68,
+    w: 94,
+    h: 114,
+    anchor: "bottom-center",
+    minSegmentWidth: 128,
+    clearance: { w: 84, h: 102 },
+    densities: ["medium", "high"],
+    weight: 3,
+    depthOffset: 0.16
+  },
+  {
+    id: "timber-root-data-box",
+    material: "wood-archive",
+    category: "surface-medium",
+    frame: 69,
+    w: 108,
+    h: 122,
+    anchor: "bottom-center",
+    minSegmentWidth: 148,
+    clearance: { w: 98, h: 110 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: 0.16
+  },
+  {
+    id: "timber-old-bookcase",
+    material: "wood-archive",
+    category: "behind-surface-large",
+    frame: 70,
+    w: 110,
+    h: 158,
+    anchor: "bottom-center",
+    minSegmentWidth: 210,
+    clearance: { w: 100, h: 146 },
+    densities: ["medium", "high"],
+    weight: 3,
+    depthOffset: -0.25
+  },
+  {
+    id: "timber-timber-column",
+    material: "wood-archive",
+    category: "behind-surface-large",
+    frame: 71,
+    w: 74,
+    h: 150,
+    anchor: "bottom-center",
+    minSegmentWidth: 170,
+    clearance: { w: 66, h: 138 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: -0.23
+  },
+  {
+    id: "timber-root-archive-trunk",
+    material: "wood-archive",
+    category: "behind-surface-large",
+    frame: 72,
+    w: 124,
+    h: 140,
+    anchor: "bottom-center",
+    minSegmentWidth: 240,
+    clearance: { w: 112, h: 128 },
+    densities: ["high"],
+    weight: 2,
+    depthOffset: -0.25
+  },
+  {
+    id: "timber-archive-terminal",
+    material: "wood-archive",
+    category: "behind-surface-large",
+    frame: 73,
+    w: 106,
+    h: 140,
+    anchor: "bottom-center",
+    minSegmentWidth: 220,
+    clearance: { w: 96, h: 128 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: -0.24
+  },
+  {
+    id: "timber-dangling-roots",
+    material: "wood-archive",
+    category: "overhang",
+    frame: 74,
+    w: 78,
+    h: 96,
+    anchor: "top-left",
+    minSegmentWidth: 112,
+    clearance: { w: 70, h: 86 },
+    densities: ["medium", "high"],
+    weight: 3,
+    depthOffset: 0.08
+  },
+  {
+    id: "timber-hanging-tags-cables",
+    material: "wood-archive",
+    category: "overhang",
+    frame: 75,
+    w: 94,
+    h: 100,
+    anchor: "top-left",
+    minSegmentWidth: 128,
+    clearance: { w: 84, h: 90 },
+    densities: ["medium", "high"],
+    weight: 2,
+    depthOffset: 0.08
+  },
+  {
+    id: "timber-hanging-lamps",
+    material: "wood-archive",
+    category: "overhang",
+    frame: 76,
+    w: 92,
+    h: 106,
+    anchor: "top-left",
+    minSegmentWidth: 128,
+    clearance: { w: 82, h: 96 },
+    densities: ["high"],
+    weight: 2,
+    depthOffset: 0.08
+  },
+  {
+    id: "timber-carved-panel",
+    material: "wood-archive",
+    category: "wall-decal",
+    frame: 77,
+    w: 124,
+    h: 122,
+    anchor: "wall-left",
+    minSegmentWidth: 136,
+    clearance: { w: 112, h: 110 },
+    densities: ["medium", "high"],
+    weight: 3,
+    depthOffset: 0.05
+  }
+] as const satisfies readonly TerrainDecorPropDefinition[];
+
 export const allTerrainDecorProps = [
   ...gardenTerrainDecorProps,
   ...rainhouseTerrainDecorProps,
-  ...cryoTerrainDecorProps
+  ...cryoTerrainDecorProps,
+  ...woodArchiveTerrainDecorProps
 ] as const satisfies readonly TerrainDecorPropDefinition[];
 
 export const terrainDecorPropsForMaterial = (material: TerrainMaterial): readonly TerrainDecorPropDefinition[] =>
