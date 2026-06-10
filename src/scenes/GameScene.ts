@@ -36,6 +36,14 @@ import { solidRenderDepth, solidVisualRoleFor } from "../game/solidRenderOrder";
 import { soundtrackForBoss, soundtrackForLevel } from "../game/soundtracks";
 import { RoomSimulation } from "../game/state";
 import {
+  effectiveSolidDecorDensity,
+  gardenTerrainDecorProps,
+  terrainDecorPropTextureKey,
+  terrainDecorPropsForMaterial,
+  type TerrainDecorPropCategory,
+  type TerrainDecorPropDefinition
+} from "../game/terrainDecorProps";
+import {
   terrainMaterialForSolid,
   terrainTileFrame,
   TERRAIN_TILE_KEY,
@@ -59,10 +67,13 @@ import type {
   MovingPlatform,
   Rect,
   Solid,
+  SolidDecorDensity,
   TerrainMaterial
 } from "../game/types";
 import { Hud } from "../ui/hud";
 import { uiRoot } from "../ui/dom";
+
+type ActiveTerrainDecorDensity = Exclude<SolidDecorDensity, "auto" | "off">;
 
 const STEP_MS = 1000 / 60;
 const BACKGROUND_DRIFT_PADDING = 16;
@@ -93,6 +104,11 @@ const BOSS_ARENA_CAMERA_ZOOM = 1.2;
 const TERRAIN_SURFACE_CAP_OVERLAP = 16;
 const TERRAIN_DECOR_MIN_SOLID_HEIGHT = 28;
 const TERRAIN_DECOR_MIN_SEGMENT_WIDTH = 96;
+const TERRAIN_DECOR_PROP_SURFACE_SLOT: Record<ActiveTerrainDecorDensity, number> = { low: 88, medium: 64, high: 48 };
+const TERRAIN_DECOR_PROP_SURFACE_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0.25, medium: 0.42, high: 0.64 };
+const TERRAIN_DECOR_PROP_LARGE_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0, medium: 0.34, high: 1 };
+const TERRAIN_DECOR_PROP_OVERHANG_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0, medium: 0.28, high: 0.54 };
+const TERRAIN_DECOR_PROP_WALL_CHANCE: Record<ActiveTerrainDecorDensity, number> = { low: 0, medium: 0.2, high: 0.48 };
 const BOSS_DEFEAT_BURST_OFFSETS = [
   { x: 0.28, y: 0.34, start: 0, tint: 0xffe35a },
   { x: 0.62, y: 0.42, start: 18, tint: 0xff8b3d },
@@ -233,6 +249,7 @@ export class GameScene extends Phaser.Scene {
   private readonly activeCoreSpriteIds = new Set<string>();
   private staticSolidAssetFrames: string[] = [];
   private staticTerrainDecorFrames: string[] = [];
+  private staticTerrainDecorPropFrames: string[] = [];
   private tileAssetPhases: string[] = [];
   private tileAssetOrigins: string[] = [];
   private laserAssetTransforms: string[] = [];
@@ -254,6 +271,7 @@ export class GameScene extends Phaser.Scene {
   private monsterAtlasTextureFilter = "";
   private bossAtlasTextureFilter = "";
   private terrainTextureFilter = "";
+  private terrainDecorPropTextureFilter = "";
   private requiredCoreIds = new Set<string>();
   private diagnosticsEnabled = false;
   private lowChurnGraphics = false;
@@ -430,6 +448,7 @@ export class GameScene extends Phaser.Scene {
     this.monsterAtlasTextureFilter = "";
     this.bossAtlasTextureFilter = "";
     this.terrainTextureFilter = "";
+    this.terrainDecorPropTextureFilter = "";
     this.requiredCoreIds = doorRequiredCoreIds(this.level.doors || []);
     this.diagnosticsEnabled = this.shouldExposeRenderDiagnostics();
     this.lowChurnGraphics = this.shouldUseLowChurnGraphics();
@@ -1529,12 +1548,20 @@ export class GameScene extends Phaser.Scene {
       this.textures.get(TERRAIN_TILE_KEY).setFilter(Phaser.Textures.FilterMode.LINEAR);
       this.terrainTextureFilter = `${TERRAIN_TILE_KEY}:${Phaser.Textures.FilterMode.LINEAR}`;
     }
+    const loadedDecorPropKeys = gardenTerrainDecorProps.map(terrainDecorPropTextureKey).filter((key) => this.textures.exists(key));
+    for (const textureKey of loadedDecorPropKeys) {
+      this.textures.get(textureKey).setFilter(Phaser.Textures.FilterMode.LINEAR);
+    }
+    if (loadedDecorPropKeys.length > 0) {
+      this.terrainDecorPropTextureFilter = `terrain-decor-props:${loadedDecorPropKeys.length}:${Phaser.Textures.FilterMode.LINEAR}`;
+    }
   }
 
   private syncStaticLevelAssets(): void {
     this.staticObjectAssetIds.clear();
     this.staticSolidAssetFrames = [];
     this.staticTerrainDecorFrames = [];
+    this.staticTerrainDecorPropFrames = [];
     this.staticSolidOutlineRects = [];
     this.structureOutlines.clear();
     this.syncStaticSolids();
@@ -1549,9 +1576,11 @@ export class GameScene extends Phaser.Scene {
       const depth = solidRenderDepth(solid);
       const tileIds = this.syncStaticSolidAsset(solid, frame, material, depth);
       const surfaceIds = this.syncStaticSolidSurfaceAssets(solid, material, depth);
+      const propIds = this.syncStaticTerrainDecorProps(solid, material, depth);
       this.staticSolidAssetFrames.push(`${solid.id}:${frame}:${material}:${tileIds.length}:${solidCollisionFor(solid)}:${depth.toFixed(3)}`);
       for (const tileId of tileIds) this.markStaticObjectAsset(tileId);
       for (const surfaceId of surfaceIds) this.markStaticObjectAsset(surfaceId);
+      for (const propId of propIds) this.markStaticObjectAsset(propId);
       this.drawSolidReadabilityOutline(solid);
     }
   }
@@ -1647,6 +1676,297 @@ export class GameScene extends Phaser.Scene {
       }
     }
     return ids;
+  }
+
+  private syncStaticTerrainDecorProps(solid: Solid, material: TerrainMaterial, depth: number): string[] {
+    if (solid.w <= 0 || solid.h <= 0) return [];
+    if (solidCollisionFor(solid) === "top-only") return [];
+    const density = this.activeTerrainDecorDensity(effectiveSolidDecorDensity(solid, material));
+    if (!density) return [];
+    const props = terrainDecorPropsForMaterial(material).filter((prop) => this.textures.exists(terrainDecorPropTextureKey(prop)));
+    if (props.length === 0) return [];
+
+    const ids: string[] = [];
+    const placedRects: Rect[] = [];
+    const topSegments = this.solidSurfaceTopSegments(solid);
+    for (let segmentIndex = 0; segmentIndex < topSegments.length; segmentIndex += 1) {
+      const segment = topSegments[segmentIndex];
+      const segmentWidth = segment.to - segment.from;
+      if (segmentWidth < 40) continue;
+      ids.push(...this.syncLargeTerrainDecorProp(solid, material, density, props, segment, segmentIndex, depth));
+      ids.push(...this.syncSurfaceTerrainDecorProps(solid, material, density, props, segment, segmentIndex, depth, placedRects));
+      ids.push(...this.syncOverhangTerrainDecorProp(solid, material, density, props, segment, segmentIndex, depth, placedRects));
+      ids.push(...this.syncWallTerrainDecorProp(solid, material, density, props, segment, segmentIndex, depth, placedRects));
+    }
+    return ids;
+  }
+
+  private syncSurfaceTerrainDecorProps(
+    solid: Solid,
+    material: TerrainMaterial,
+    density: ActiveTerrainDecorDensity,
+    props: readonly TerrainDecorPropDefinition[],
+    segment: { from: number; to: number },
+    segmentIndex: number,
+    depth: number,
+    placedRects: Rect[]
+  ): string[] {
+    if (solid.h < TERRAIN_DECOR_MIN_SOLID_HEIGHT) return [];
+    const segmentWidth = segment.to - segment.from;
+    if (segmentWidth < 48) return [];
+    const slotWidth = TERRAIN_DECOR_PROP_SURFACE_SLOT[density];
+    const slotCount = Math.max(1, Math.floor(segmentWidth / slotWidth));
+    const ids: string[] = [];
+
+    for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
+      const hash = this.terrainDecorHash(solid, material, "surface-prop", segmentIndex, slotIndex);
+      if (this.terrainDecorRoll(hash) > TERRAIN_DECOR_PROP_SURFACE_CHANCE[density]) continue;
+      const slotFrom = segment.from + (segmentWidth / slotCount) * slotIndex;
+      const slotTo = slotIndex === slotCount - 1 ? segment.to : segment.from + (segmentWidth / slotCount) * (slotIndex + 1);
+      const preferredCategory: TerrainDecorPropCategory =
+        density !== "low" && hash % 5 === 0 ? "surface-medium" : "surface-small";
+      const prop =
+        this.pickTerrainDecorProp(props, preferredCategory, density, segmentWidth, hash >>> 8) ||
+        this.pickTerrainDecorProp(props, "surface-small", density, segmentWidth, hash >>> 12);
+      if (!prop) continue;
+      const rect = this.surfaceTerrainDecorRect(solid, segment, slotFrom, slotTo, prop, hash);
+      if (!rect || !this.canPlaceTerrainDecorProp(solid, prop, rect, placedRects)) continue;
+      const id = `solid:${solid.id}:decor-prop:${segmentIndex}:${slotIndex}:${prop.id}`;
+      this.syncTerrainDecorPropAsset(id, prop, rect, depth + prop.depthOffset, material, density);
+      ids.push(id);
+      placedRects.push(rect);
+    }
+
+    return ids;
+  }
+
+  private syncLargeTerrainDecorProp(
+    solid: Solid,
+    material: TerrainMaterial,
+    density: ActiveTerrainDecorDensity,
+    props: readonly TerrainDecorPropDefinition[],
+    segment: { from: number; to: number },
+    segmentIndex: number,
+    depth: number
+  ): string[] {
+    const segmentWidth = segment.to - segment.from;
+    if (this.terrainDecorRoll(this.terrainDecorHash(solid, material, "large-prop-chance", segmentIndex, 0)) > TERRAIN_DECOR_PROP_LARGE_CHANCE[density]) {
+      return [];
+    }
+    const hash = this.terrainDecorHash(solid, material, "large-prop", segmentIndex, 0);
+    const prop = this.pickTerrainDecorProp(props, "behind-surface-large", density, segmentWidth, hash);
+    if (!prop) return [];
+
+    const left = this.decorRangeValue(hash >>> 6, segment.from + 10, segment.to - prop.w - 10);
+    const rect = {
+      x: Math.round(left),
+      y: Math.round(solid.y - prop.h + 14),
+      w: prop.w,
+      h: prop.h
+    };
+    if (!this.terrainDecorHasClearance(solid, this.terrainDecorPropClearanceRect(prop, rect))) return [];
+
+    const id = `solid:${solid.id}:decor-prop:${segmentIndex}:large:${prop.id}`;
+    this.syncTerrainDecorPropAsset(id, prop, rect, depth + prop.depthOffset, material, density);
+    return [id];
+  }
+
+  private syncOverhangTerrainDecorProp(
+    solid: Solid,
+    material: TerrainMaterial,
+    density: ActiveTerrainDecorDensity,
+    props: readonly TerrainDecorPropDefinition[],
+    segment: { from: number; to: number },
+    segmentIndex: number,
+    depth: number,
+    placedRects: Rect[]
+  ): string[] {
+    if (solid.h < 36) return [];
+    const segmentWidth = segment.to - segment.from;
+    const chanceHash = this.terrainDecorHash(solid, material, "overhang-prop-chance", segmentIndex, 0);
+    if (this.terrainDecorRoll(chanceHash) > TERRAIN_DECOR_PROP_OVERHANG_CHANCE[density]) return [];
+
+    const hash = this.terrainDecorHash(solid, material, "overhang-prop", segmentIndex, 0);
+    const prop = this.pickTerrainDecorProp(props, "overhang", density, segmentWidth, hash);
+    if (!prop) return [];
+
+    const left = this.decorRangeValue(hash >>> 6, segment.from + 8, segment.to - prop.w - 8);
+    const rect = {
+      x: Math.round(left),
+      y: Math.round(solid.y + 2),
+      w: prop.w,
+      h: prop.h
+    };
+    if (!this.canPlaceTerrainDecorProp(solid, prop, rect, placedRects)) return [];
+
+    const id = `solid:${solid.id}:decor-prop:${segmentIndex}:overhang:${prop.id}`;
+    this.syncTerrainDecorPropAsset(id, prop, rect, depth + prop.depthOffset, material, density);
+    placedRects.push(rect);
+    return [id];
+  }
+
+  private syncWallTerrainDecorProp(
+    solid: Solid,
+    material: TerrainMaterial,
+    density: ActiveTerrainDecorDensity,
+    props: readonly TerrainDecorPropDefinition[],
+    segment: { from: number; to: number },
+    segmentIndex: number,
+    depth: number,
+    placedRects: Rect[]
+  ): string[] {
+    if (solid.h < 62) return [];
+    const segmentWidth = segment.to - segment.from;
+    const chanceHash = this.terrainDecorHash(solid, material, "wall-prop-chance", segmentIndex, 0);
+    if (this.terrainDecorRoll(chanceHash) > TERRAIN_DECOR_PROP_WALL_CHANCE[density]) return [];
+
+    const hash = this.terrainDecorHash(solid, material, "wall-prop", segmentIndex, 0);
+    const candidates = props.filter(
+      (prop) =>
+        prop.category === "wall-decal" &&
+        prop.densities.includes(density) &&
+        segmentWidth >= prop.minSegmentWidth &&
+        prop.h <= solid.h - 8
+    );
+    const prop = this.pickWeightedTerrainDecorProp(candidates, hash);
+    if (!prop) return [];
+
+    const left = this.decorRangeValue(hash >>> 5, segment.from + 8, segment.to - prop.w - 8);
+    const top = this.decorRangeValue(hash >>> 13, solid.y + 10, solid.y + solid.h - prop.h - 8);
+    const rect = {
+      x: Math.round(left),
+      y: Math.round(top),
+      w: prop.w,
+      h: prop.h
+    };
+    if (!this.canPlaceTerrainDecorProp(solid, prop, rect, placedRects)) return [];
+
+    const id = `solid:${solid.id}:decor-prop:${segmentIndex}:wall:${prop.id}`;
+    this.syncTerrainDecorPropAsset(id, prop, rect, depth + prop.depthOffset, material, density);
+    placedRects.push(rect);
+    return [id];
+  }
+
+  private activeTerrainDecorDensity(density: SolidDecorDensity): ActiveTerrainDecorDensity | null {
+    if (density === "low" || density === "medium" || density === "high") return density;
+    return null;
+  }
+
+  private pickTerrainDecorProp(
+    props: readonly TerrainDecorPropDefinition[],
+    category: TerrainDecorPropCategory,
+    density: ActiveTerrainDecorDensity,
+    segmentWidth: number,
+    hash: number
+  ): TerrainDecorPropDefinition | null {
+    return this.pickWeightedTerrainDecorProp(
+      props.filter(
+        (prop) => prop.category === category && prop.densities.includes(density) && segmentWidth >= prop.minSegmentWidth
+      ),
+      hash
+    );
+  }
+
+  private pickWeightedTerrainDecorProp(
+    props: readonly TerrainDecorPropDefinition[],
+    hash: number
+  ): TerrainDecorPropDefinition | null {
+    const totalWeight = props.reduce((sum, prop) => sum + Math.max(0, prop.weight), 0);
+    if (totalWeight <= 0) return null;
+    let pick = hash % totalWeight;
+    for (const prop of props) {
+      pick -= Math.max(0, prop.weight);
+      if (pick < 0) return prop;
+    }
+    return props[0] || null;
+  }
+
+  private surfaceTerrainDecorRect(
+    solid: Solid,
+    segment: { from: number; to: number },
+    slotFrom: number,
+    slotTo: number,
+    prop: TerrainDecorPropDefinition,
+    hash: number
+  ): Rect | null {
+    if (segment.to - segment.from < prop.w + 4) return null;
+    const slotCenter = (slotFrom + slotTo) / 2;
+    const jitterSpan = Math.max(0, (slotTo - slotFrom - prop.w) * 0.72);
+    const jitter = (this.terrainDecorRoll(hash >>> 16) - 0.5) * jitterSpan;
+    const minCenter = segment.from + prop.w / 2 + 2;
+    const maxCenter = segment.to - prop.w / 2 - 2;
+    const center = Phaser.Math.Clamp(slotCenter + jitter, minCenter, maxCenter);
+    return {
+      x: Math.round(center - prop.w / 2),
+      y: Math.round(solid.y - prop.h + 8),
+      w: prop.w,
+      h: prop.h
+    };
+  }
+
+  private canPlaceTerrainDecorProp(
+    solid: Solid,
+    prop: TerrainDecorPropDefinition,
+    rect: Rect,
+    placedRects: Rect[]
+  ): boolean {
+    const paddedRect = { x: rect.x - 4, y: rect.y - 4, w: rect.w + 8, h: rect.h + 8 };
+    if (placedRects.some((placed) => rectsOverlap(paddedRect, placed))) return false;
+    return this.terrainDecorHasClearance(solid, this.terrainDecorPropClearanceRect(prop, rect));
+  }
+
+  private terrainDecorPropClearanceRect(prop: TerrainDecorPropDefinition, rect: Rect): Rect {
+    return {
+      x: rect.x + (rect.w - prop.clearance.w) / 2,
+      y: rect.y + (rect.h - prop.clearance.h) / 2,
+      w: prop.clearance.w,
+      h: prop.clearance.h
+    };
+  }
+
+  private syncTerrainDecorPropAsset(
+    id: string,
+    prop: TerrainDecorPropDefinition,
+    rect: Rect,
+    depth: number,
+    material: TerrainMaterial,
+    density: ActiveTerrainDecorDensity
+  ): void {
+    const asset = this.assetFor(id, "image", undefined, terrainDecorPropTextureKey(prop)) as Phaser.GameObjects.Image;
+    asset
+      .setVisible(true)
+      .setDepth(depth)
+      .setAlpha(1)
+      .setOrigin(0, 0)
+      .setPosition(rect.x, rect.y)
+      .setRotation(0)
+      .setDisplaySize(rect.w, rect.h)
+      .clearTint();
+    this.activeObjectAssetIds.add(id);
+    if (this.diagnosticsEnabled) {
+      this.staticTerrainDecorPropFrames.push(
+        `${id}:${prop.id}:${prop.category}:${material}:${density}:${prop.frame}:${Math.round(rect.x)},${Math.round(rect.y)}:${Math.round(rect.w)}x${Math.round(rect.h)}:${depth.toFixed(3)}`
+      );
+    }
+  }
+
+  private terrainDecorHash(solid: Solid, material: TerrainMaterial, role: string, row: number, column: number): number {
+    let hash = 2166136261;
+    const key = `${this.level.id}:${solid.id}:${material}:${role}:${row}:${column}`;
+    for (let index = 0; index < key.length; index += 1) {
+      hash ^= key.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  private terrainDecorRoll(hash: number): number {
+    return ((hash >>> 0) % 10000) / 10000;
+  }
+
+  private decorRangeValue(hash: number, min: number, max: number): number {
+    if (max <= min) return min;
+    return min + this.terrainDecorRoll(hash) * (max - min);
   }
 
   private solidSurfaceTopSegments(solid: Solid): Array<{ side: "top"; from: number; to: number }> {
@@ -2629,6 +2949,7 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftObjectAssetCount = String(this.activeObjectAssetIds.size + this.staticObjectAssetIds.size);
     document.documentElement.dataset.echoShiftSolidAssetFrames = this.staticSolidAssetFrames.join(",");
     document.documentElement.dataset.echoShiftTerrainDecorFrames = this.staticTerrainDecorFrames.join("|");
+    document.documentElement.dataset.echoShiftTerrainDecorPropFrames = this.staticTerrainDecorPropFrames.join("|");
     document.documentElement.dataset.echoShiftTileAssetPhases = this.tileAssetPhases.join("|");
     document.documentElement.dataset.echoShiftTileAssetOrigins = this.tileAssetOrigins.join("|");
     document.documentElement.dataset.echoShiftLaserAssetTransforms = this.laserAssetTransforms.join("|");
@@ -2660,6 +2981,7 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftMonsterAtlasFilter = this.monsterAtlasTextureFilter;
     document.documentElement.dataset.echoShiftBossAtlasFilter = this.bossAtlasTextureFilter;
     document.documentElement.dataset.echoShiftTerrainTileFilter = this.terrainTextureFilter;
+    document.documentElement.dataset.echoShiftTerrainDecorPropFilter = this.terrainDecorPropTextureFilter;
   }
 
   private drawActor(actor: ActorBody, color: number, alpha: number): void {
@@ -3074,7 +3396,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private assetFor(id: string, kind: "tile" | "image", frame: number, textureKey = OBJECT_ATLAS_KEY): ObjectAsset {
+  private assetFor(id: string, kind: "tile" | "image", frame?: number | string, textureKey = OBJECT_ATLAS_KEY): ObjectAsset {
     const existing = this.objectAssets.get(id);
     if (existing) {
       const kindMatches = (kind === "tile" && existing.type === "TileSprite") || (kind === "image" && existing.type === "Image");

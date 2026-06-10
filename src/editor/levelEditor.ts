@@ -30,6 +30,7 @@ import { normalizeSolidCollision, solidCollisionFor, solidCollisionValues, solid
 import { solidRenderDepth } from "../game/solidRenderOrder";
 import { normalizeSolid, normalizeSolidSprite, solidSpriteValues } from "../game/solidSprites";
 import { bossSoundtrackKeys, defaultSoundtrackKeyForLevel, isBossSoundtrackKey, isLevelSoundtrackKey, levelSoundtrackKeys, soundtracks } from "../game/soundtracks";
+import { normalizeSolidDecorDensity, solidDecorDensityLabels, solidDecorDensityValues } from "../game/terrainDecorProps";
 import { normalizeTerrainMaterial, terrainMaterialForSolid, terrainMaterialLabels, terrainMaterialValues } from "../game/terrainMaterials";
 import type {
   Conveyor,
@@ -261,6 +262,11 @@ const terrainMaterialOptions: SelectOption[] = [
 const solidCollisionOptions: SelectOption[] = [
   { value: "", label: "default/solid" },
   ...solidCollisionValues.map((value) => ({ value, label: value }))
+];
+
+const solidDecorDensityOptions: SelectOption[] = [
+  { value: "", label: "default/auto" },
+  ...solidDecorDensityValues.map((value) => ({ value, label: solidDecorDensityLabels[value] }))
 ];
 
 const cloneLevels = (items: Level[]): Level[] => JSON.parse(JSON.stringify(items)) as Level[];
@@ -708,7 +714,8 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
       tone: record.tone as Solid["tone"],
       sprite: normalizeSolidSprite(record.sprite),
       material: normalizeTerrainMaterial(record.material),
-      collision: normalizeSolidCollision(record.collision)
+      collision: normalizeSolidCollision(record.collision),
+      decorDensity: normalizeSolidDecorDensity(record.decorDensity)
     });
   }
   if (kind === "conveyors") {
@@ -1355,6 +1362,12 @@ class LevelEditor {
       const collision = normalizeSolidCollision(String(value).trim());
       if (collision) record.collision = collision;
       else delete record.collision;
+      return;
+    }
+    if (field === "decorDensity") {
+      const density = normalizeSolidDecorDensity(String(value).trim());
+      if (density) record.decorDensity = density;
+      else delete record.decorDensity;
       return;
     }
     if (field === "size") {
@@ -2287,6 +2300,7 @@ class LevelEditor {
           ])}
           ${this.selectField("Material", "material", String(record.material || ""), terrainMaterialOptions)}
           ${this.selectField("Collision", "collision", String(record.collision || ""), solidCollisionOptions)}
+          ${this.selectField("Decor", "decorDensity", String(record.decorDensity || ""), solidDecorDensityOptions)}
           ${this.selectField("Tone", "tone", String(record.tone || ""), ["", "steel", "glass", "warning", "dark"])}
         </div>
       `;

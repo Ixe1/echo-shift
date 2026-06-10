@@ -777,6 +777,11 @@ try {
   const { selectBossCameraFocus } = await server.ssrLoadModule("/src/game/bossCamera.ts");
   const { terrainMaterialForSolid } = await server.ssrLoadModule("/src/game/terrainMaterials.ts");
   const {
+    effectiveSolidDecorDensity,
+    normalizeSolidDecorDensity,
+    terrainDecorPropsForMaterial
+  } = await server.ssrLoadModule("/src/game/terrainDecorProps.ts");
+  const {
     bossAttackActiveFramesFor,
     bossAttackCycleFramesFor,
     bossAttackWindupFramesFor,
@@ -1056,6 +1061,20 @@ try {
   assert(
     terrainMaterialForSolid({ id: "explicit-sand", tone: "steel", sprite: "floor", material: "sand-ruin" }) === "sand-ruin",
     "Expected explicit terrain material to override legacy tone"
+  );
+  assert(normalizeSolidDecorDensity("high") === "high", "Expected solid decor density high to normalize");
+  assert(normalizeSolidDecorDensity("dense") === undefined, "Expected unknown solid decor density to be ignored");
+  assert(
+    effectiveSolidDecorDensity({ decorDensity: undefined }, "grass-organic") === "medium",
+    "Expected grass-organic auto decor density to resolve to medium"
+  );
+  assert(
+    effectiveSolidDecorDensity({ decorDensity: "off" }, "grass-organic") === "off",
+    "Expected explicit off decor density to disable inferred props"
+  );
+  assert(
+    terrainDecorPropsForMaterial("grass-organic").some((prop) => prop.category === "behind-surface-large" && prop.w !== prop.h),
+    "Expected garden decor props to include variable-size large background props"
   );
   assert(
     selectBossCameraFocus([{ id: "departing-first", phase: "departing" }, { id: "active-second", phase: "active" }])?.id === "active-second",

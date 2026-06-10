@@ -16,6 +16,7 @@ import {
   STORM_BOSS_CLEAN_KEY
 } from "../game/enemySprites";
 import { soundtrackForLevel } from "../game/soundtracks";
+import { gardenTerrainDecorProps, terrainDecorPropSrc, terrainDecorPropTextureKey } from "../game/terrainDecorProps";
 import { TERRAIN_TILE_KEY, TERRAIN_TILE_SIZE } from "../game/terrainMaterials";
 import { clearUi, icon, uiRoot } from "../ui/dom";
 
@@ -83,6 +84,9 @@ export class BootScene extends Phaser.Scene {
       margin: 1,
       spacing: 2
     });
+    for (const prop of gardenTerrainDecorProps) {
+      this.load.image(terrainDecorPropTextureKey(prop), terrainDecorPropSrc(prop));
+    }
     for (const background of Object.values(levelBackgrounds)) {
       this.load.image(background.key, background.src);
     }

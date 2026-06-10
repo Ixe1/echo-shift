@@ -356,6 +356,8 @@ const level = {
     { id: "stepped-decor-cover", x: 100, y: 48, w: 34, h: 32, sprite: "block", material: "wood-archive" },
     { id: "ceiling-decor-base", x: 430, y: 80, w: 260, h: 60, sprite: "floor", material: "grass-organic" },
     { id: "ceiling-decor-overhang", x: 462, y: 47, w: 32, h: 32, sprite: "block", material: "wood-archive" },
+    { id: "garden-high-decor-base", x: 980, y: 120, w: 320, h: 96, sprite: "floor", material: "grass-organic", decorDensity: "high" },
+    { id: "garden-off-decor-base", x: 1340, y: 120, w: 260, h: 96, sprite: "floor", material: "grass-organic", decorDensity: "off" },
     { id: "enclosed-top", x: 800, y: 400, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-left", x: 780, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-center", x: 800, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
@@ -472,6 +474,7 @@ try {
     solids: document.documentElement.dataset.echoShiftSolidAssetFrames || "",
     outlines: document.documentElement.dataset.echoShiftSolidOutlineRects || "",
     terrainDecor: document.documentElement.dataset.echoShiftTerrainDecorFrames || "",
+    terrainDecorProps: document.documentElement.dataset.echoShiftTerrainDecorPropFrames || "",
     sensors: document.documentElement.dataset.echoShiftEchoSensorAssetFrames || "",
     hazards: document.documentElement.dataset.echoShiftHazardVentSpriteFrames || "",
     objectCount: Number(document.documentElement.dataset.echoShiftObjectAssetCount || "0"),
@@ -479,6 +482,7 @@ try {
     backgroundFilter: document.documentElement.dataset.echoShiftBackgroundFilter || "",
     objectAtlasFilter: document.documentElement.dataset.echoShiftObjectAtlasFilter || "",
     terrainTileFilter: document.documentElement.dataset.echoShiftTerrainTileFilter || "",
+    terrainDecorPropFilter: document.documentElement.dataset.echoShiftTerrainDecorPropFilter || "",
     canvas: {
       width: document.querySelector("canvas")?.clientWidth || 0,
       height: document.querySelector("canvas")?.clientHeight || 0
@@ -668,10 +672,36 @@ try {
     diagnostics.terrainDecor.includes("solid:ceiling-decor-base:decor:0:4:decor:grass-organic:"),
     `Expected low-overhang terrain decor to still render on clear eligible column, got ${diagnostics.terrainDecor}`
   );
+  const terrainDecorPropEntries = diagnostics.terrainDecorProps.split("|").filter(Boolean);
+  const gardenHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-high-decor-base:"));
+  const gardenHighDecorSizes = new Set(
+    gardenHighDecorProps.flatMap((entry) => {
+      const match = entry.match(/:(\d+)x(\d+):[-.\d]+$/);
+      return match ? [`${match[1]}x${match[2]}`] : [];
+    })
+  );
+  assert(gardenHighDecorProps.length >= 3, `Expected high-density garden solid to render multiple decor props, got ${diagnostics.terrainDecorProps}`);
+  assert(
+    gardenHighDecorProps.some((entry) => entry.includes(":behind-surface-large:")),
+    `Expected high-density garden solid to include a large background prop, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    gardenHighDecorProps.some((entry) => entry.includes(":surface-small:") || entry.includes(":surface-medium:")),
+    `Expected high-density garden solid to include surface props, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    gardenHighDecorSizes.size >= 2 && !gardenHighDecorSizes.has("32x32"),
+    `Expected variable-size garden decor props, got ${[...gardenHighDecorSizes].join(", ")} from ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    !diagnostics.terrainDecorProps.includes("solid:garden-off-decor-base:"),
+    `Expected decorDensity off to suppress inferred props, got ${diagnostics.terrainDecorProps}`
+  );
   assert(diagnostics.objectCount >= 25, `Expected synced object sprites, got ${diagnostics.objectCount}`);
   assert(diagnostics.backgroundFilter === "time-lab-prototype:0", `Expected background texture to use linear filtering, got ${diagnostics.backgroundFilter}`);
   assert(diagnostics.objectAtlasFilter === "object-atlas:0", `Expected object atlas texture to use linear filtering, got ${diagnostics.objectAtlasFilter}`);
   assert(diagnostics.terrainTileFilter === "terrain-tiles:0", `Expected terrain tile texture to use linear filtering, got ${diagnostics.terrainTileFilter}`);
+  assert(diagnostics.terrainDecorPropFilter === "terrain-decor-props:18:0", `Expected terrain decor prop textures to use linear filtering, got ${diagnostics.terrainDecorPropFilter}`);
   assertNoUnexpectedBrowserMessages("Full graphics render");
 
   const fullGraphicsScreenshot = `${outDir}/door-solid-render-qa.png`;

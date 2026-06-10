@@ -5,6 +5,7 @@ import { bossEntrySides, bossKinds, bossWeakSpots, monsterKinds } from "../game/
 import { normalizeScoreSettings } from "../game/scoring";
 import { solidCollisionValues } from "../game/solidCollision";
 import { normalizeSolid, solidSpriteValues } from "../game/solidSprites";
+import { solidDecorDensityValues } from "../game/terrainDecorProps";
 import { isBossSoundtrackKey, isLevelSoundtrackKey } from "../game/soundtracks";
 import { ANCHORED_MOTION_MODEL, normalizeLevelMotionModel, usesAnchoredMotionModel } from "./motionModel";
 
@@ -91,8 +92,15 @@ const solidSpriteValue = (value: unknown): boolean =>
 const solidCollisionValue = (value: unknown): boolean =>
   value === undefined || solidCollisionValues.includes(value as (typeof solidCollisionValues)[number]);
 
+const solidDecorDensityValue = (value: unknown): boolean =>
+  value === undefined || solidDecorDensityValues.includes(value as (typeof solidDecorDensityValues)[number]);
+
 const solidLike = (value: unknown): boolean =>
-  objectRectLike(value) && optionalString(value.tone) && solidSpriteValue(value.sprite) && solidCollisionValue(value.collision);
+  objectRectLike(value) &&
+  optionalString(value.tone) &&
+  solidSpriteValue(value.sprite) &&
+  solidCollisionValue(value.collision) &&
+  solidDecorDensityValue(value.decorDensity);
 const oneWayLike = (value: unknown): boolean => objectRectLike(value);
 const conveyorLike = (value: unknown): boolean =>
   objectRectLike(value) && (value.direction === -1 || value.direction === 1) && finiteValue(value.speed) && value.speed >= 0;

@@ -694,12 +694,16 @@ try {
   const floorPresetMaterialDefault = await page.locator("[data-object-field='material']").inputValue();
   const floorCollisionOptions = await page.locator("[data-object-field='collision'] option").allTextContents();
   const floorPresetCollisionDefault = await page.locator("[data-object-field='collision']").inputValue();
+  const floorDecorOptions = await page.locator("[data-object-field='decorDensity'] option").allTextContents();
+  const floorPresetDecorDefault = await page.locator("[data-object-field='decorDensity']").inputValue();
   await page.locator("[data-object-field='material']").selectOption("sand-ruin");
   await page.locator("[data-object-field='collision']").selectOption("top-only");
+  await page.locator("[data-object-field='decorDensity']").selectOption("high");
   const floorPresetExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
   const floorPresetSprite = floorPresetExport.solids.find((solid) => solid.id === floorPresetId)?.sprite;
   const floorPresetMaterial = floorPresetExport.solids.find((solid) => solid.id === floorPresetId)?.material;
   const floorPresetCollision = floorPresetExport.solids.find((solid) => solid.id === floorPresetId)?.collision;
+  const floorPresetDecorDensity = floorPresetExport.solids.find((solid) => solid.id === floorPresetId)?.decorDensity;
   await page.locator("[data-delete-object]").click();
   await page.locator("[data-tool='floor']").click();
   await dragWorld(page, { x: 1180, y: 420 }, { x: 1200, y: 440 });
@@ -1461,6 +1465,9 @@ try {
   assert(floorCollisionOptions.some((option) => option.includes("top-only")), `Expected solid collision options, got ${floorCollisionOptions.join(", ")}`);
   assert(floorPresetCollisionDefault === "", `Expected new floor collision to start in default/solid mode, got ${floorPresetCollisionDefault}`);
   assert(floorPresetCollision === "top-only", `Expected selected floor collision to export as top-only, got ${floorPresetCollision}`);
+  assert(floorDecorOptions.some((option) => option.includes("High")), `Expected solid decor density options, got ${floorDecorOptions.join(", ")}`);
+  assert(floorPresetDecorDefault === "", `Expected new floor decor density to start in default/auto mode, got ${floorPresetDecorDefault}`);
+  assert(floorPresetDecorDensity === "high", `Expected selected floor decor density to export as high, got ${floorPresetDecorDensity}`);
   assert(clickDragFloorWidth === 320 && clickDragFloorHeight === 20, `Expected click-drag floor preset 320x20, got ${clickDragFloorWidth}x${clickDragFloorHeight}`);
   assert(userFloorId.startsWith("floorpiece-"), `Expected user floor id to avoid structural floor-* exemption, got ${userFloorId}`);
   assert(
