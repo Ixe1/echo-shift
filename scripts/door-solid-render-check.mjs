@@ -897,6 +897,10 @@ try {
     `Expected decorDensity off to suppress inferred props, got ${diagnostics.terrainDecorProps}`
   );
   assert(
+    !diagnostics.terrainDecor.includes("solid:garden-covered-blocker:decor:"),
+    `Expected wood-archive cover/blocker opt-out to suppress legacy tile decor, got ${diagnostics.terrainDecor}`
+  );
+  assert(
     steppedCoverDecorProps.length === 0 &&
       ceilingOverhangDecorProps.length === 0 &&
       gardenCoveredBlockerDecorProps.length === 0,
