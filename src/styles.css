@@ -834,55 +834,87 @@ button {
 }
 
 .music-loading {
-  background:
-    radial-gradient(circle at 50% 50%, rgba(67, 247, 255, 0.12), transparent 34%),
-    linear-gradient(90deg, rgba(5, 7, 13, 0.9), rgba(5, 7, 13, 0.44) 48%, rgba(5, 7, 13, 0.82)),
-    repeating-linear-gradient(0deg, rgba(67, 247, 255, 0.11) 0 2px, transparent 2px 16px);
-  animation-duration: 900ms;
+  position: absolute;
+  inset: 0;
+  z-index: 24;
+  display: grid;
+  place-items: center;
+  padding: clamp(20px, 5vw, 48px);
+  overflow: hidden;
+  pointer-events: auto;
+  color: rgba(236, 251, 255, 0.86);
+  background: #000;
 }
 
-.music-loading .level-intro-track,
-.music-loading .level-intro-card {
-  animation-duration: 1200ms;
+.music-loading-panel {
+  width: min(420px, calc(100vw - 40px));
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+  padding: clamp(22px, 5vw, 34px);
+  border: 1px solid rgba(67, 247, 255, 0.34);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(9, 15, 23, 0.92), rgba(2, 4, 7, 0.96));
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.64), inset 0 0 28px rgba(67, 247, 255, 0.06);
 }
 
-.music-loading-card {
-  border-color: rgba(67, 247, 255, 0.72);
-  background:
-    linear-gradient(90deg, rgba(67, 247, 255, 0.18), transparent 24%),
-    linear-gradient(135deg, rgba(7, 16, 32, 0.98), rgba(14, 23, 42, 0.9));
+.music-loading-meter {
+  width: 78px;
+  height: 42px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 8px;
 }
 
-.music-loading-glyph {
-  gap: 7px;
-  grid-template-columns: repeat(3, 10px);
-  color: transparent;
-}
-
-.music-loading-glyph span {
-  width: 10px;
-  height: 44%;
-  min-height: 24px;
+.music-loading-meter span {
+  width: 9px;
+  height: 34px;
   border-radius: 8px;
   background: linear-gradient(180deg, #fff8bf, var(--cyan));
-  box-shadow: 0 0 18px rgba(67, 247, 255, 0.52);
+  box-shadow: 0 0 16px rgba(67, 247, 255, 0.5);
+  transform-origin: bottom;
   animation: musicLoadPulse 860ms ease-in-out infinite;
 }
 
-.music-loading-glyph span:nth-child(2) {
+.music-loading-meter span:nth-child(2) {
   animation-delay: 120ms;
 }
 
-.music-loading-glyph span:nth-child(3) {
+.music-loading-meter span:nth-child(3) {
   animation-delay: 240ms;
 }
 
-.music-loading-ready {
+.music-loading-copy {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  text-align: center;
+}
+
+.music-loading-kicker,
+.music-loading-copy span:last-child {
+  text-transform: uppercase;
+  font-weight: 900;
+}
+
+.music-loading-kicker {
   color: var(--cyan);
-  background:
-    linear-gradient(90deg, rgba(67, 247, 255, 0.18), rgba(255, 227, 90, 0.08)),
-    rgba(5, 7, 13, 0.42);
-  border-color: rgba(67, 247, 255, 0.56);
+  font-size: clamp(0.76rem, 1.8vw, 0.9rem);
+}
+
+.music-loading-copy strong {
+  color: #fff;
+  font-size: clamp(1.35rem, 5vw, 1.85rem);
+  line-height: 1;
+  text-transform: uppercase;
+  text-shadow: 0 0 18px rgba(67, 247, 255, 0.24);
+}
+
+.music-loading-copy span:last-child {
+  color: rgba(236, 251, 255, 0.64);
+  font-size: clamp(0.72rem, 1.8vw, 0.86rem);
+  line-height: 1.2;
 }
 
 @keyframes introBackdrop {
@@ -1050,8 +1082,14 @@ button {
     min-height: 44px;
   }
 
-  .music-loading-glyph {
-    grid-template-columns: repeat(3, 9px);
+  .music-loading-panel {
+    width: min(360px, calc(100vw - 28px));
+    gap: 16px;
+  }
+
+  .music-loading-meter {
+    width: 68px;
+    height: 38px;
   }
 
   .touch-controls {
@@ -1078,7 +1116,7 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .music-loading-glyph span {
+  .music-loading-meter span {
     animation: none;
     opacity: 0.86;
     transform: scaleY(0.86);

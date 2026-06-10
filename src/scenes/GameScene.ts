@@ -658,26 +658,19 @@ export class GameScene extends Phaser.Scene {
   private showMusicLoadingOverlay(key: ReturnType<typeof soundtrackForLevel>["key"]): void {
     if (this.musicLoadingOverlay) return;
     const overlay = document.createElement("div");
-    overlay.className = "level-intro music-loading";
+    overlay.className = "music-loading";
     overlay.dataset.musicLoading = key;
     overlay.innerHTML = `
-      <div class="level-intro-track" aria-hidden="true">
-        <img class="level-intro-track-logo" src="/assets/echo-shift-logo.png" alt="" />
-      </div>
-      <section class="level-intro-card music-loading-card" aria-label="Preparing level audio">
-        <div class="level-intro-number music-loading-glyph" aria-hidden="true">
+      <section class="music-loading-panel" aria-label="Preparing level audio">
+        <div class="music-loading-meter" aria-hidden="true">
           <span></span><span></span><span></span>
         </div>
-        <div class="level-intro-copy">
-          <span class="level-intro-kicker">${this.tutorialMode ? "Training" : `Room ${String(this.level.index + 1).padStart(2, "0")}`}</span>
-          <strong>${escapeHtml(this.level.name)}</strong>
+        <div class="music-loading-copy">
+          <span class="music-loading-kicker">${this.tutorialMode ? "Training soundtrack" : `Room ${String(this.level.index + 1).padStart(2, "0")} soundtrack`}</span>
+          <strong>Tuning audio</strong>
           <span>Synchronising soundtrack</span>
         </div>
-        <div class="level-intro-ready music-loading-ready">Tuning</div>
       </section>
-      <div class="level-intro-sweep" aria-hidden="true">
-        <img class="level-intro-sweep-logo" src="/assets/echo-shift-logo.png" alt="" />
-      </div>
     `;
     uiRoot().append(overlay);
     this.musicLoadingOverlay = overlay;
