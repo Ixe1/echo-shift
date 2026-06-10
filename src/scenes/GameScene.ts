@@ -1680,7 +1680,7 @@ export class GameScene extends Phaser.Scene {
 
   private syncStaticTerrainDecorProps(solid: Solid, material: TerrainMaterial, depth: number): string[] {
     if (solid.w <= 0 || solid.h <= 0) return [];
-    if (solidCollisionFor(solid) === "top-only") return [];
+    const topOnly = solidCollisionFor(solid) === "top-only";
     const density = this.activeTerrainDecorDensity(effectiveSolidDecorDensity(solid, material));
     if (!density) return [];
     const props = terrainDecorPropsForMaterial(material).filter((prop) => this.textures.exists(terrainDecorPropTextureKey(prop)));
@@ -1693,10 +1693,14 @@ export class GameScene extends Phaser.Scene {
       const segment = topSegments[segmentIndex];
       const segmentWidth = segment.to - segment.from;
       if (segmentWidth < 40) continue;
-      ids.push(...this.syncLargeTerrainDecorProp(solid, material, density, props, segment, segmentIndex, depth));
+      if (!topOnly) {
+        ids.push(...this.syncLargeTerrainDecorProp(solid, material, density, props, segment, segmentIndex, depth));
+      }
       ids.push(...this.syncSurfaceTerrainDecorProps(solid, material, density, props, segment, segmentIndex, depth, placedRects));
-      ids.push(...this.syncOverhangTerrainDecorProp(solid, material, density, props, segment, segmentIndex, depth, placedRects));
-      ids.push(...this.syncWallTerrainDecorProp(solid, material, density, props, segment, segmentIndex, depth, placedRects));
+      if (!topOnly) {
+        ids.push(...this.syncOverhangTerrainDecorProp(solid, material, density, props, segment, segmentIndex, depth, placedRects));
+        ids.push(...this.syncWallTerrainDecorProp(solid, material, density, props, segment, segmentIndex, depth, placedRects));
+      }
     }
     return ids;
   }
@@ -1711,23 +1715,29 @@ export class GameScene extends Phaser.Scene {
     depth: number,
     placedRects: Rect[]
   ): string[] {
-    if (solid.h < TERRAIN_DECOR_MIN_SOLID_HEIGHT) return [];
+    const topOnly = solidCollisionFor(solid) === "top-only";
+    if (solid.h < TERRAIN_DECOR_MIN_SOLID_HEIGHT && !topOnly) return [];
     const segmentWidth = segment.to - segment.from;
     if (segmentWidth < 48) return [];
     const slotWidth = TERRAIN_DECOR_PROP_SURFACE_SLOT[density];
     const slotCount = Math.max(1, Math.floor(segmentWidth / slotWidth));
     const ids: string[] = [];
     const placedSlotIndexes = new Set<number>();
+    const placedSurfaceProps: Array<{ id: string; center: number }> = [];
 
     const placeSlot = (slotIndex: number): boolean => {
       const hash = this.terrainDecorHash(solid, material, "surface-prop", segmentIndex, slotIndex);
       const slotFrom = segment.from + (segmentWidth / slotCount) * slotIndex;
       const slotTo = slotIndex === slotCount - 1 ? segment.to : segment.from + (segmentWidth / slotCount) * (slotIndex + 1);
+      const slotCenter = (slotFrom + slotTo) / 2;
+      const nearbyPropIds = placedSurfaceProps
+        .filter((placed) => Math.abs(placed.center - slotCenter) < 220)
+        .map((placed) => placed.id);
       const preferredCategory: TerrainDecorPropCategory =
         density !== "low" && hash % 2 === 0 ? "surface-medium" : "surface-small";
       const prop =
-        this.pickTerrainDecorProp(props, preferredCategory, density, segmentWidth, hash >>> 8) ||
-        this.pickTerrainDecorProp(props, "surface-small", density, segmentWidth, hash >>> 12);
+        this.pickTerrainDecorProp(props, preferredCategory, density, segmentWidth, hash >>> 8, nearbyPropIds) ||
+        this.pickTerrainDecorProp(props, "surface-small", density, segmentWidth, hash >>> 12, nearbyPropIds);
       if (!prop) return false;
       const rect = this.surfaceTerrainDecorRect(solid, segment, slotFrom, slotTo, prop, hash);
       if (!rect || !this.canPlaceTerrainDecorProp(solid, prop, rect, placedRects)) return false;
@@ -1736,6 +1746,7 @@ export class GameScene extends Phaser.Scene {
       ids.push(id);
       placedRects.push(rect);
       placedSlotIndexes.add(slotIndex);
+      placedSurfaceProps.push({ id: prop.id, center: rect.x + rect.w / 2 });
       return true;
     };
 
@@ -1890,14 +1901,15 @@ export class GameScene extends Phaser.Scene {
     category: TerrainDecorPropCategory,
     density: ActiveTerrainDecorDensity,
     segmentWidth: number,
-    hash: number
+    hash: number,
+    avoidPropIds: readonly string[] = []
   ): TerrainDecorPropDefinition | null {
-    return this.pickWeightedTerrainDecorProp(
-      props.filter(
-        (prop) => prop.category === category && prop.densities.includes(density) && segmentWidth >= prop.minSegmentWidth
-      ),
-      hash
+    const candidates = props.filter(
+      (prop) => prop.category === category && prop.densities.includes(density) && segmentWidth >= prop.minSegmentWidth
     );
+    const preferredCandidates =
+      avoidPropIds.length > 0 ? candidates.filter((prop) => !avoidPropIds.includes(prop.id)) : candidates;
+    return this.pickWeightedTerrainDecorProp(preferredCandidates.length > 0 ? preferredCandidates : candidates, hash);
   }
 
   private pickWeightedTerrainDecorProp(
@@ -2049,9 +2061,12 @@ export class GameScene extends Phaser.Scene {
 
   private shouldPlaceTerrainDecor(solid: Solid, segmentWidth: number, column: number): boolean {
     if (solid.decorDensity === "off") return false;
-    if (solid.h < TERRAIN_DECOR_MIN_SOLID_HEIGHT || segmentWidth < TERRAIN_DECOR_MIN_SEGMENT_WIDTH) return false;
-    if (solidCollisionFor(solid) === "top-only") return false;
-    return this.terrainTileVariant(solid, terrainMaterialForSolid(solid), "decor-placement", 0, column) === 0;
+    const collision = solidCollisionFor(solid);
+    const material = terrainMaterialForSolid(solid);
+    if (solid.h < TERRAIN_DECOR_MIN_SOLID_HEIGHT && collision !== "top-only") return false;
+    if (segmentWidth < TERRAIN_DECOR_MIN_SEGMENT_WIDTH) return false;
+    if (collision === "top-only" && material !== "grass-organic") return false;
+    return this.terrainTileVariant(solid, material, "decor-placement", 0, column) === 0;
   }
 
   private terrainDecorHasClearance(solid: Solid, rect: Rect): boolean {

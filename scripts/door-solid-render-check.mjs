@@ -360,6 +360,9 @@ const level = {
     { id: "garden-off-decor-base", x: 1340, y: 120, w: 260, h: 96, sprite: "floor", material: "grass-organic", decorDensity: "off" },
     { id: "garden-swept-decor-base", x: 1640, y: 120, w: 340, h: 96, sprite: "floor", material: "grass-organic", decorDensity: "high" },
     { id: "garden-object-decor-base", x: 2040, y: 120, w: 340, h: 96, sprite: "floor", material: "grass-organic", decorDensity: "high" },
+    { id: "garden-top-only-decor-base", x: 2440, y: 120, w: 300, h: 20, sprite: "floor", material: "grass-organic", collision: "top-only" },
+    { id: "garden-covered-decor-base", x: 2780, y: 120, w: 260, h: 96, sprite: "floor", material: "grass-organic", decorDensity: "high" },
+    { id: "garden-covered-blocker", x: 2780, y: 88, w: 260, h: 32, sprite: "block", material: "wood-archive" },
     { id: "enclosed-top", x: 800, y: 400, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-left", x: 780, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
     { id: "enclosed-center", x: 800, y: 420, w: 20, h: 20, sprite: "block", tone: "dark" },
@@ -381,11 +384,14 @@ const level = {
   plates: [],
   timedSwitches: [],
   lasers: [{ id: "decor-overlay-beam", x: 2050, y: 72, w: 280, h: 44, startsOn: true }],
-  movingLasers: [],
-  drones: [],
-  cores: [],
-  hazards: [{ id: "qa-vent", x: 760, y: 476, w: 72, h: 4 }],
-  crates: [],
+  movingLasers: [{ id: "decor-overlay-sweeper", x: 2180, y: 72, w: 80, h: 32, axis: "x", distance: 80, period: 140, startsOn: true }],
+  drones: [{ id: "decor-overlay-drone", x: 2180, y: 82, w: 32, h: 28, axis: "x", distance: 80, period: 120 }],
+  cores: [{ id: "decor-overlay-core", x: 2250, y: 84, w: 24, h: 24, label: "D" }],
+  hazards: [
+    { id: "qa-vent", x: 760, y: 476, w: 72, h: 4 },
+    { id: "decor-overlay-vent", x: 2180, y: 116, w: 120, h: 4 }
+  ],
+  crates: [{ id: "decor-overlay-crate", x: 2320, y: 92, w: 28, h: 28 }],
   monsters: [{ id: "decor-overlay-monster", kind: "sprout-hopper", x: 2100, y: 84, w: 48, h: 36 }],
   platforms: [{ id: "decor-sweep-platform", x: 1640, y: 40, w: 170, h: 120, axis: "x", distance: 170, period: 120 }],
   oneWays: [],
@@ -681,6 +687,8 @@ try {
   const gardenHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-high-decor-base:"));
   const gardenSweptDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-swept-decor-base:"));
   const gardenObjectDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-object-decor-base:"));
+  const gardenTopOnlyDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-top-only-decor-base:"));
+  const gardenCoveredDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:garden-covered-decor-base:"));
   const gardenHighDecorSizes = new Set(
     gardenHighDecorProps.flatMap((entry) => {
       const match = entry.match(/:(\d+)x(\d+):[-.\d]+$/);
@@ -723,7 +731,24 @@ try {
   );
   assert(
     gardenObjectDecorProps.length >= 3,
-    `Expected monsters and lasers not to suppress geometry-driven inferred props, got ${diagnostics.terrainDecorProps}`
+    `Expected gameplay objects not to suppress geometry-driven inferred props, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    gardenTopOnlyDecorProps.length >= 2 &&
+      gardenTopOnlyDecorProps.every((entry) => entry.includes(":surface-small:") || entry.includes(":surface-medium:")),
+    `Expected top-only garden ledges to render small/medium inferred surface props, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    gardenTopOnlyDecorProps.every((entry, index, entries) => {
+      const current = entry.match(/decor-prop:\d+:\d+:([^:]+):/)?.[1] || "";
+      const previous = index > 0 ? entries[index - 1].match(/decor-prop:\d+:\d+:([^:]+):/)?.[1] || "" : "";
+      return current !== previous;
+    }),
+    `Expected nearby top-only garden props to avoid immediate repeated prop ids, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    gardenCoveredDecorProps.length === 0,
+    `Expected overlapping solid geometry to suppress inferred props, got ${diagnostics.terrainDecorProps}`
   );
   assert(diagnostics.objectCount >= 25, `Expected synced object sprites, got ${diagnostics.objectCount}`);
   assert(diagnostics.backgroundFilter === "time-lab-prototype:0", `Expected background texture to use linear filtering, got ${diagnostics.backgroundFilter}`);
