@@ -2438,7 +2438,8 @@ export class GameScene extends Phaser.Scene {
       if (boss.kind === "cryo-conservator") this.drawCryoBossWindupEffect(boss, snapshot, color);
       if (boss.kind === "archive-custodian") this.drawArchiveBossWindupEffect(boss, snapshot, color);
       for (const attack of snapshot.attacks) {
-        this.drawBossAttackEffect(attack, color);
+        if (boss.kind === "archive-custodian") this.drawArchiveBossAttackEffect(attack, color);
+        else this.drawBossAttackEffect(attack, color);
       }
       if (boss.kind === "storm-relay-warden") {
         for (const shock of snapshot.floorShocks) {
@@ -2515,6 +2516,72 @@ export class GameScene extends Phaser.Scene {
       this.fx.fillStyle(color, 0.2);
       this.fx.fillCircle(endX, endY, 11);
     }
+  }
+
+  private drawArchiveBossAttackEffect(attack: BossAttackSnapshot, color: number): void {
+    if (this.diagnosticsEnabled) {
+      this.bossEffectFrames.push(
+        `archive-attack:${attack.kind}:${Math.round(attack.x)},${Math.round(attack.y)}:${Math.round(attack.w)}x${Math.round(attack.h)}`
+      );
+    }
+    const pulse = Math.sin(this.simulation.tick / 4) * 0.5 + 0.5;
+    if (attack.kind === "horizontal") {
+      const endX = attack.originX <= attack.x + attack.w / 2 ? attack.x + attack.w : attack.x;
+      this.fx.fillStyle(0x23170d, 0.24);
+      this.fx.fillRoundedRect(attack.x - 8, attack.y - 9, attack.w + 16, attack.h + 18, 7);
+      this.fx.fillStyle(color, 0.14 + pulse * 0.08);
+      this.fx.fillRoundedRect(attack.x - 5, attack.y - 6, attack.w + 10, attack.h + 12, 7);
+      this.fx.lineStyle(12, color, 0.28 + pulse * 0.16);
+      this.fx.lineBetween(attack.originX, attack.originY, endX, attack.originY);
+      this.fx.lineStyle(5, 0xffffff, 0.64 + pulse * 0.16);
+      this.fx.lineBetween(attack.originX, attack.originY, endX, attack.originY);
+      this.fx.lineStyle(1.5, 0x3b2512, 0.45);
+      const pages = Math.max(5, Math.floor(attack.w / 42));
+      for (let index = 0; index < pages; index += 1) {
+        const ratio = (index + ((this.simulation.tick % 14) / 14)) / pages;
+        const x = attack.originX + (endX - attack.originX) * ratio;
+        const y = attack.originY - 12 + Math.sin(this.simulation.tick / 6 + index * 1.8) * 2.5;
+        const width = 9 + (index % 2) * 3;
+        const height = 13 + (index % 3);
+        this.fx.fillStyle(index % 2 === 0 ? 0xfff0bd : 0xffffff, 0.48);
+        this.fx.fillRect(x - width / 2, y, width, height);
+        this.fx.strokeRect(x - width / 2, y, width, height);
+        this.fx.lineStyle(1, 0x3b2512, 0.32);
+        this.fx.lineBetween(x - width / 2 + 2, y + 4, x + width / 2 - 2, y + 4);
+        this.fx.lineBetween(x - width / 2 + 2, y + 8, x + width / 2 - 3, y + 8);
+      }
+      this.fx.fillStyle(0xffffff, 0.82);
+      this.fx.fillCircle(attack.originX, attack.originY, 5.4);
+      this.fx.fillStyle(color, 0.38 + pulse * 0.22);
+      this.fx.fillCircle(attack.originX, attack.originY, 12);
+      return;
+    }
+
+    this.fx.fillStyle(0x24170f, 0.2);
+    this.fx.fillRoundedRect(attack.x - 6, attack.y - 4, attack.w + 12, attack.h + 8, 7);
+    this.fx.fillStyle(color, 0.11 + pulse * 0.07);
+    this.fx.fillRoundedRect(attack.x - 4, attack.y - 2, attack.w + 8, attack.h + 4, 7);
+    this.fx.lineStyle(3, color, 0.36 + pulse * 0.24);
+    this.fx.lineBetween(attack.originX, attack.y, attack.originX, attack.y + attack.h);
+    this.fx.lineStyle(1.5, 0xffffff, 0.28 + pulse * 0.22);
+    this.fx.lineBetween(attack.originX - attack.w * 0.18, attack.y + 8, attack.originX + attack.w * 0.18, attack.y + attack.h - 6);
+    const sheets = Math.max(6, Math.floor(attack.h / 34));
+    for (let index = 0; index < sheets; index += 1) {
+      const ratio = (index + ((this.simulation.tick % 18) / 18)) / sheets;
+      const y = attack.y + ratio * attack.h;
+      const x = attack.originX + Math.sin(this.simulation.tick / 5 + index * 1.7) * attack.w * 0.22;
+      const width = 12 + (index % 2) * 4;
+      const height = 10 + (index % 3) * 2;
+      this.fx.fillStyle(index % 2 === 0 ? 0xffefbc : 0xffffff, 0.48);
+      this.fx.fillRect(x - width / 2, y - height / 2, width, height);
+      this.fx.lineStyle(1, 0x3b2512, 0.32);
+      this.fx.strokeRect(x - width / 2, y - height / 2, width, height);
+      this.fx.lineBetween(x - width / 2 + 2, y - 1, x + width / 2 - 2, y - 1);
+    }
+    this.fx.fillStyle(0xffffff, 0.36);
+    this.fx.fillCircle(attack.originX, attack.y + attack.h, 5.2);
+    this.fx.fillStyle(color, 0.22);
+    this.fx.fillCircle(attack.originX, attack.y + attack.h, 11);
   }
 
   private drawArchiveBossWindupEffect(boss: Boss, snapshot: BossSnapshot, color: number): void {
@@ -2736,7 +2803,7 @@ export class GameScene extends Phaser.Scene {
     const stateFrame = this.bossStateAnimationFrame(kind, id, snapshot, spriteState, introProgress);
     const useCleanSingleFrame = useCleanStormSprite || useCleanCryoSprite;
     const frame = useCleanSingleFrame ? 0 : useCleanArchiveSprite ? bossStateFrameForCleanSheet(spriteState, stateFrame) : bossFrameForKind(kind, spriteState, stateFrame);
-    const activePulse = snapshot.phase === "active" && !useCleanSingleFrame ? Math.sin(this.simulation.tick / 18) * 0.015 : 0;
+    const activePulse = snapshot.phase === "active" && !useCleanSingleFrame && !useCleanArchiveSprite ? Math.sin(this.simulation.tick / 18) * 0.015 : 0;
     const departureProgress =
       snapshot.phase === "departing" ? Math.max(0, Math.min(1, snapshot.departureFrames / Math.max(1, snapshot.departureTotalFrames))) : 0;
     const displayWidth = Math.max(148, body.w * 1.5) * (1 + activePulse);

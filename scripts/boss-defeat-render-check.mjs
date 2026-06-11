@@ -126,6 +126,58 @@ const draftLevel = {
   hint: "QA"
 };
 
+const archiveAttackDraftLevel = {
+  id: "archive-attack-render-qa",
+  index: 0,
+  name: "Archive Attack Render QA",
+  subtitle: "Render checks",
+  motionModel: "anchored",
+  start: { x: 220, y: 226 },
+  exit: { x: 760, y: 242, w: 32, h: 38 },
+  bounds: { x: 0, y: 0, w: 860, h: 340 },
+  solids: [
+    { id: "floor", x: 0, y: 280, w: 860, h: 60, sprite: "floor", tone: "wood-archive" },
+    { id: "left-wall", x: -20, y: 0, w: 20, h: 340, sprite: "wall", tone: "wood-archive" },
+    { id: "right-wall", x: 860, y: 0, w: 20, h: 340, sprite: "wall", tone: "wood-archive" }
+  ],
+  doors: [],
+  plates: [],
+  timedSwitches: [],
+  lasers: [],
+  movingLasers: [],
+  drones: [],
+  cores: [],
+  hazards: [],
+  crates: [],
+  platforms: [],
+  oneWays: [],
+  conveyors: [],
+  launchPads: [],
+  echoSensors: [],
+  bosses: [
+    {
+      id: "archive-attack-boss",
+      kind: "archive-custodian",
+      x: 80,
+      y: 90,
+      w: 360,
+      h: 160,
+      entrySide: "center",
+      introSeconds: 1,
+      health: 2,
+      score: 1000
+    }
+  ],
+  score: {
+    lives: 3,
+    coreScore: 100,
+    deathPenalty: 500,
+    timeBonusTargetSeconds: 10,
+    timeBonusPerSecond: 100
+  },
+  hint: "QA"
+};
+
 const cameraFollowDraftLevel = {
   id: "boss-camera-follow-qa",
   index: 0,
@@ -297,6 +349,44 @@ const verifyCryoFloorIceRender = async (page) => {
   return { diagnostic: match?.[0] || raw, screenshot };
 };
 
+const verifyArchiveAttackRender = async (page) => {
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.evaluate((snapshot) => {
+    window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
+  }, { motionModel: "anchored", currentIndex: 0, levels: [archiveAttackDraftLevel] });
+
+  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+  await startAudioGate(page);
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await waitForLevelIntro(page);
+  await page.waitForFunction(
+    () => {
+      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+      const windup = effects.match(/archive-attack-boss:archive-windup:(\d+):/);
+      return Boolean(windup && Number(windup[1]) >= 65);
+    },
+    null,
+    { timeout: 9000 }
+  );
+  await page.keyboard.down("ArrowRight");
+  await page.waitForTimeout(450);
+  await page.keyboard.up("ArrowRight");
+  await page.waitForFunction(
+    () => {
+      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+      const sprites = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
+      return effects.includes("archive-attack:horizontal") && sprites.includes("archive-attack-boss:archive-custodian-clean") && sprites.includes(":attack:");
+    },
+    null,
+    { timeout: 10000 }
+  );
+
+  const raw = await page.evaluate(() => document.documentElement.dataset.echoShiftBossEffectFrames || "");
+  const screenshot = `${outDir}/archive-attack-active.png`;
+  await page.screenshot({ path: screenshot, fullPage: true });
+  return { diagnostic: raw, screenshot };
+};
+
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
   const messages = [];
@@ -320,11 +410,15 @@ try {
     () => {
       const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
       const sprites = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
-      return effects.includes("render-boss:archive-windup") && sprites.includes("render-boss:archive-custodian-clean");
+      const windup = effects.match(/render-boss:archive-windup:(\d+):/);
+      return Boolean(windup && Number(windup[1]) >= 65 && sprites.includes("render-boss:archive-custodian-clean"));
     },
     null,
     { timeout: 9000 }
   );
+  await page.keyboard.down("ArrowRight");
+  await page.waitForTimeout(450);
+  await page.keyboard.up("ArrowRight");
 
   await page.waitForFunction(
     () => {
@@ -332,9 +426,11 @@ try {
       return frames.includes("render-boss:") && frames.includes(":active:vulnerable");
     },
     null,
-    { timeout: 9000 }
+    { timeout: 10000 }
   );
 
+  await page.keyboard.down("ArrowLeft");
+  await page.waitForTimeout(350);
   await page.keyboard.down("Space");
   await page.waitForFunction(
     () => {
@@ -346,6 +442,7 @@ try {
     { timeout: 2000 }
   );
   await page.keyboard.up("Space");
+  await page.keyboard.up("ArrowLeft");
 
   const early = await readDepartureEffect(page);
   assert(early.total === 170, `Expected 170-frame boss departure diagnostic, got ${JSON.stringify(early)}`);
@@ -404,6 +501,7 @@ try {
   await page.screenshot({ path: portalScreenshot, fullPage: true });
 
   const cameraFollow = await verifyBossCameraFollowsPlayer(page);
+  const archiveAttack = await verifyArchiveAttackRender(page);
   const cryoFloorIce = await verifyCryoFloorIceRender(page);
 
   const unexpectedMessages = messages.filter((msg) => !isAllowedBrowserMessage(msg));
@@ -415,10 +513,12 @@ try {
         ok: true,
         departure: { early, mid, late, camera, spriteWidth },
         cameraFollow,
+        archiveAttack,
         cryoFloorIce,
         screenshots: {
           departure: departureScreenshot,
           portal: portalScreenshot,
+          archiveAttack: archiveAttack.screenshot,
           cryoFloorIce: cryoFloorIce.screenshot
         }
       },

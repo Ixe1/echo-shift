@@ -83,7 +83,7 @@ const ARCHIVE_PAGE_SHARD_WIDTH = 18;
 const ARCHIVE_PAGE_SHARD_INSET = 28;
 const ARCHIVE_PAGE_SHARD_SPACING = 86;
 const ARCHIVE_CORE_CLEARANCE = 94;
-const ARCHIVE_VERTICAL_EASE = 0.075;
+const ARCHIVE_VERTICAL_EASE = 0.095;
 
 type BossTimingSource = BossKind | { kind?: BossKind };
 
@@ -676,6 +676,8 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
   const playerCenterY = player.y + player.h / 2;
   const arena = bossMovementBounds(boss, size);
   if ((boss.kind === "storm-relay-warden" || boss.kind === "cryo-conservator" || boss.kind === "archive-custodian") && state.recoveryFrames <= 0) {
+    const attackMinY = boss.y + 22;
+    const attackMaxY = boss.kind === "archive-custodian" ? boss.y + boss.h + Math.max(36, size.h * 0.75) : boss.y + boss.h - 22;
     const patrolFrames = bossAttackWindupFramesFor(boss.kind);
     const retargetFrame = Math.max(1, Math.floor(patrolFrames * 0.45));
     if (cycle === retargetFrame) {
@@ -684,15 +686,17 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
         ? { minX: arena.minX + size.w / 2, maxX: arena.maxX + size.w / 2 }
         : { minX: boss.x + 24, maxX: boss.x + boss.w - 24 };
       state.attackX = clamp(playerCenterX, attackBounds.minX, attackBounds.maxX);
-      state.attackY = clamp(playerCenterY, boss.y + 22, boss.y + boss.h - 22);
+      state.attackY = clamp(playerCenterY, attackMinY, attackMaxY);
     }
   }
   if (((boss.kind === "storm-relay-warden" || boss.kind === "cryo-conservator" || boss.kind === "archive-custodian") && state.activeFrames === 1) || cycle === 0) {
+    const attackMinY = boss.y + 22;
+    const attackMaxY = boss.kind === "archive-custodian" ? boss.y + boss.h + Math.max(36, size.h * 0.75) : boss.y + boss.h - 22;
     const constrainedVerticalBoss = boss.kind === "storm-relay-warden" || boss.kind === "cryo-conservator";
     const attackMinX = constrainedVerticalBoss ? arena.minX + size.w / 2 : boss.x + 24;
     const attackMaxX = constrainedVerticalBoss ? arena.maxX + size.w / 2 : boss.x + boss.w - 24;
     state.attackX = clamp(playerCenterX, attackMinX, attackMaxX);
-    state.attackY = clamp(playerCenterY, boss.y + 22, boss.y + boss.h - 22);
+    state.attackY = clamp(playerCenterY, attackMinY, attackMaxY);
   }
 
   if (boss.kind === "storm-relay-warden") {
@@ -824,15 +828,17 @@ const archiveAttackRectsAt = (boss: Boss, state: BossRuntimeState, body: Rect): 
   const bodyCenter = rectCenter(body);
   const direction = finiteNumber(state.attackX, bodyCenter.x) >= bodyCenter.x ? 1 : -1;
   const originX = direction > 0 ? body.x + body.w * 0.8 : body.x + body.w * 0.2;
-  const originY = clamp(finiteNumber(state.attackY, bodyCenter.y), body.y + body.h * 0.36, body.y + body.h * 0.72);
+  const laneMaxY = boss.y + boss.h + Math.max(36, body.h * 0.75);
+  const originY = clamp(finiteNumber(state.attackY, bodyCenter.y), boss.y + 18, laneMaxY);
+  const beamHalfHeight = 11;
   const startX = direction > 0 ? originX - 2 : boss.x + 12;
   const endX = direction > 0 ? boss.x + boss.w - 12 : originX + 2;
   const attacks: BossAttackSnapshot[] = [
     {
       x: Math.min(startX, endX),
-      y: originY - 8,
+      y: originY - beamHalfHeight,
       w: Math.max(24, Math.abs(endX - startX)),
-      h: 16,
+      h: beamHalfHeight * 2,
       kind: "horizontal",
       originX,
       originY
@@ -1039,7 +1045,7 @@ const advanceArchiveCustodianMotion = (
     targetY = clamp(highY + Math.sin(cycle / 14) * 8, arena.minY + size.h / 2, arena.maxY + size.h / 2);
   } else if (cycle < activeEndFrame) {
     targetX = clamp(finiteNumber(state.attackX, playerCenterX) + lockedSideOffset, arena.minX + size.w / 2, arena.maxX + size.w / 2);
-    targetY = clamp(finiteNumber(state.attackY, playerCenterY) - size.h * 0.48, arena.minY + size.h / 2, arena.maxY + size.h / 2);
+    targetY = clamp(highY + Math.sin(cycle / 10) * 4, arena.minY + size.h / 2, arena.maxY + size.h / 2);
   } else {
     const descentProgress = clamp((cycle - activeEndFrame) / Math.max(1, ARCHIVE_VULNERABLE_READY_FRAMES), 0, 1);
     targetX = clamp(finiteNumber(state.attackX, arenaCenterX), arena.minX + size.w / 2, arena.maxX + size.w / 2);

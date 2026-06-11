@@ -2301,6 +2301,32 @@ try {
     ...bossLevel,
     bosses: [{ ...bossLevel.bosses[0], kind: "archive-custodian", introSeconds: 1, health: 2, score: 1600 }]
   };
+  const archiveLowFloorLevel = {
+    ...baseLevel,
+    id: "archive-low-floor-targeting",
+    start: { x: 220, y: 226 },
+    exit: { x: 760, y: 242, w: 32, h: 38 },
+    bounds: { x: 0, y: 0, w: 860, h: 340 },
+    solids: [
+      { id: "floor", x: 0, y: 280, w: 860, h: 60 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 340 },
+      { id: "right-wall", x: 860, y: 0, w: 20, h: 340 }
+    ],
+    bosses: [
+      {
+        id: "archive-low-floor-boss",
+        kind: "archive-custodian",
+        x: 80,
+        y: 90,
+        w: 360,
+        h: 160,
+        entrySide: "center",
+        introSeconds: 1,
+        health: 2,
+        score: 1600
+      }
+    ]
+  };
   assert(
     bossAttackCycleFramesFor("archive-custodian") > bossAttackCycleFramesFor("cryo-conservator") - 40,
     `Expected archive boss to use a deliberate readable attack cycle, got ${bossAttackCycleFramesFor("archive-custodian")}`
@@ -2314,16 +2340,79 @@ try {
   assert(archiveWarning.attackWarnings.length === 1, `Expected full-health archive warm-up to warn one index beam, got ${archiveWarning.attackWarnings.length}`);
   assert(archiveWarning.attackWarnings[0].kind === "horizontal", `Expected archive warm-up to warn a horizontal index beam, got ${archiveWarning.attackWarnings[0].kind}`);
 
+  const archiveLowFloorWarningSim = new RoomSimulation(archiveLowFloorLevel);
+  Object.assign(archiveLowFloorWarningSim.player, {
+    x: archiveLowFloorLevel.start.x,
+    y: 280 - archiveLowFloorWarningSim.player.h,
+    vx: 0,
+    vy: 0,
+    onGround: true
+  });
+  archiveLowFloorWarningSim.step(idle);
+  runFrames(archiveLowFloorWarningSim, 60, idle);
+  const archiveLowFloorWarning = runBossUntilWarning(archiveLowFloorWarningSim, "archive-low-floor-boss", 0.65);
+  const archiveLowFloorBeam = archiveLowFloorWarning.attackWarnings.find((warning) => warning.kind === "horizontal");
+  assert(Boolean(archiveLowFloorBeam), `Expected low-floor archive warm-up to warn an index beam, got ${JSON.stringify(archiveLowFloorWarning.attackWarnings)}`);
+  assert(
+    rectsOverlap(archiveLowFloorWarningSim.player, archiveLowFloorBeam),
+    `Expected low-floor archive warning lane to cover the sampled player, got player ${JSON.stringify(archiveLowFloorWarningSim.player)} and warning ${JSON.stringify(archiveLowFloorBeam)}`
+  );
+
+  const archiveLowFloorAttackSim = new RoomSimulation(archiveLowFloorLevel);
+  Object.assign(archiveLowFloorAttackSim.player, {
+    x: archiveLowFloorLevel.start.x,
+    y: 280 - archiveLowFloorAttackSim.player.h,
+    vx: 0,
+    vy: 0,
+    onGround: true
+  });
+  archiveLowFloorAttackSim.step(idle);
+  runFrames(archiveLowFloorAttackSim, 60, idle);
+  let archiveLowFloorAttack = null;
+  for (let frameIndex = 0; frameIndex < 180; frameIndex += 1) {
+    const snapshot = archiveLowFloorAttackSim.bossSnapshots().find((boss) => boss.id === "archive-low-floor-boss");
+    if (snapshot?.attacks.length > 0) {
+      archiveLowFloorAttack = snapshot;
+      break;
+    }
+    archiveLowFloorAttackSim.step(idle);
+  }
+  assert(Boolean(archiveLowFloorAttack), "Expected low-floor archive boss to reach an active attack window");
+  assert(
+    archiveLowFloorAttack.attacks.some((attack) => rectsOverlap(archiveLowFloorAttackSim.player, attack)),
+    `Expected low-floor archive active beam to cover the sampled player, got player ${JSON.stringify(archiveLowFloorAttackSim.player)} and attacks ${JSON.stringify(archiveLowFloorAttack.attacks)}`
+  );
+  assert(
+    !rectsOverlap(archiveLowFloorAttackSim.player, archiveLowFloorAttack.body),
+    `Expected low-floor archive body to stay clear during the beam, got player ${JSON.stringify(archiveLowFloorAttackSim.player)} and body ${JSON.stringify(archiveLowFloorAttack.body)}`
+  );
+  assert(
+    archiveLowFloorAttackSim.player.y - (archiveLowFloorAttack.body.y + archiveLowFloorAttack.body.h) >= 32,
+    `Expected low-floor archive body to remain visibly above the player during attack, got player ${JSON.stringify(archiveLowFloorAttackSim.player)} and body ${JSON.stringify(archiveLowFloorAttack.body)}`
+  );
+
   const archiveAttackSim = new RoomSimulation(archiveLevel);
   Object.assign(archiveAttackSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
   archiveAttackSim.step(idle);
   runFrames(archiveAttackSim, 60, idle);
   Object.assign(archiveAttackSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  const archiveAttackTargetY = archiveAttackSim.player.y + archiveAttackSim.player.h / 2;
   const archiveAttackSnapshot = runBossUntilAttack(archiveAttackSim, "boss-test");
-  assertAttackStartsFromBoss(archiveAttackSnapshot, "archive boss index beam");
   assert(archiveAttackSnapshot.attacks.length === 1, `Expected full-health archive boss to fire one index beam, got ${archiveAttackSnapshot.attacks.length}`);
   const archiveBeam = archiveAttackSnapshot.attacks[0];
   assert(archiveBeam.kind === "horizontal", `Expected archive boss primary attack to be horizontal, got ${archiveBeam.kind}`);
+  assert(
+    archiveBeam.originX >= archiveAttackSnapshot.body.x - 1 && archiveBeam.originX <= archiveAttackSnapshot.body.x + archiveAttackSnapshot.body.w + 1,
+    `Expected archive index beam to project from the boss side, got origin x ${archiveBeam.originX} for ${JSON.stringify(archiveAttackSnapshot.body)}`
+  );
+  assert(
+    Math.abs(archiveBeam.y + archiveBeam.h / 2 - archiveBeam.originY) <= 2,
+    `Expected archive index beam lane to pass through its projected origin, got ${JSON.stringify(archiveBeam)}`
+  );
+  assert(
+    Math.abs(archiveBeam.originY - archiveAttackTargetY) <= 4,
+    `Expected archive index beam lane to target sampled player y ${archiveAttackTargetY}, got ${archiveBeam.originY}`
+  );
   Object.assign(archiveAttackSim.player, {
     x: archiveBeam.x + archiveBeam.w / 2 - 12,
     y: archiveBeam.y + archiveBeam.h / 2 - archiveAttackSim.player.h / 2,

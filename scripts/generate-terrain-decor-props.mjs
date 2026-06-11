@@ -227,6 +227,7 @@ const sources = {
 };
 
 const isChroma = (r, g, b) => r > 115 && b > 120 && g < 115 && r - g > 45 && b - g > 45 && Math.abs(r - b) < 95;
+const isTimberChromaSpill = (r, g, b) => r > 80 && b > 80 && g < 98 && r - g > 28 && b - g > 28 && Math.abs(r - b) < 110;
 
 const sourceForCrop = (crop) => sources[crop.source || "primary"];
 
@@ -238,7 +239,7 @@ const sourcePixel = (crop, x, y) => {
   const g = source.data[index + 1];
   const b = source.data[index + 2];
   const alpha = source.data[index + 3];
-  if (alpha === 0 || isChroma(r, g, b)) return [0, 0, 0, 0];
+  if (alpha === 0 || isChroma(r, g, b) || (crop.source === "timber" && isTimberChromaSpill(r, g, b))) return [0, 0, 0, 0];
   return [r, g, b, alpha];
 };
 

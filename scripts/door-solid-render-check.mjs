@@ -786,6 +786,10 @@ try {
   const timberHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:timber-high-decor-base:"));
   const timberAutoDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:timber-auto-base:"));
   const timberWallDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:timber-wall-decor-base:"));
+  const timberDecorSizes = [...timberVisibleDecorProps, ...timberHighDecorProps, ...timberAutoDecorProps, ...timberWallDecorProps].flatMap((entry) => {
+    const match = entry.match(/:(\d+)x(\d+):[-.\d]+$/);
+    return match ? [{ w: Number(match[1]), h: Number(match[2]), entry }] : [];
+  });
   const gardenHighDecorSizes = new Set(
     gardenHighDecorProps.flatMap((entry) => {
       const match = entry.match(/:(\d+)x(\d+):[-.\d]+$/);
@@ -878,6 +882,10 @@ try {
   assert(
     timberWallDecorProps.some((entry) => entry.includes(":wall-decal:wood-archive:high:")),
     `Expected high-density wood-archive wall to render wall-decal props, got ${diagnostics.terrainDecorProps}`
+  );
+  assert(
+    timberDecorSizes.every((size) => size.w <= 104 && size.h <= 132),
+    `Expected Timber decor props to stay normalized to garden/cryo scale, got ${timberDecorSizes.map((size) => `${size.w}x${size.h}`).join(", ")} from ${diagnostics.terrainDecorProps}`
   );
   assert(
     steppedVisibleDecorProps.some((entry) => entry.includes(":behind-surface-large:")),
