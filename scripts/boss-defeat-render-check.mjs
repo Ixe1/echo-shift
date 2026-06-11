@@ -28,7 +28,7 @@ const waitForLevelIntro = async (page) => {
   await page.waitForFunction(
     () => {
       const phase = document.documentElement.dataset.echoShiftLevelIntro;
-      return !document.querySelector("[data-level-intro='active']") && (phase === "exiting" || phase === "idle");
+      return !document.querySelector("[data-level-intro='active']") && (!phase || phase === "exiting" || phase === "idle");
     },
     null,
     { timeout: 12000 }
@@ -57,6 +57,14 @@ const readCameraWorldView = async (page) =>
     return { raw, x: Number(x), y: Number(y), w: Number(w), h: Number(h) };
   });
 
+const readCameraSample = async (page) =>
+  page.evaluate(() => {
+    const raw = document.documentElement.dataset.echoShiftCameraSample || "";
+    const [zoom = "0", position = "0,0"] = raw.split(":");
+    const [x = "0", y = "0"] = position.split(",");
+    return { raw, zoom: Number(zoom), x: Number(x), y: Number(y) };
+  });
+
 const readBossSpriteWidth = async (page) =>
   page.evaluate(() => {
     const entry = (document.documentElement.dataset.echoShiftBossSpriteFrames || "")
@@ -73,12 +81,12 @@ const draftLevel = {
   subtitle: "Render checks",
   motionModel: "anchored",
   start: { x: 220, y: 226 },
-  exit: { x: 760, y: 222, w: 32, h: 38 },
-  bounds: { x: 0, y: 0, w: 860, h: 320 },
+  exit: { x: 760, y: 242, w: 32, h: 38 },
+  bounds: { x: 0, y: 0, w: 860, h: 340 },
   solids: [
-    { id: "floor", x: 0, y: 260, w: 860, h: 60, sprite: "floor", tone: "steel" },
-    { id: "left-wall", x: -20, y: 0, w: 20, h: 320, sprite: "wall", tone: "glass" },
-    { id: "right-wall", x: 860, y: 0, w: 20, h: 320, sprite: "wall", tone: "glass" }
+    { id: "floor", x: 0, y: 280, w: 860, h: 60, sprite: "floor", tone: "steel" },
+    { id: "left-wall", x: -20, y: 0, w: 20, h: 340, sprite: "wall", tone: "glass" },
+    { id: "right-wall", x: 860, y: 0, w: 20, h: 340, sprite: "wall", tone: "glass" }
   ],
   doors: [],
   plates: [],
@@ -119,6 +127,112 @@ const draftLevel = {
   hint: "QA"
 };
 
+const cameraFollowDraftLevel = {
+  id: "boss-camera-follow-qa",
+  index: 0,
+  name: "Boss Camera Follow QA",
+  subtitle: "Camera remains on player during boss intro",
+  motionModel: "anchored",
+  start: { x: 1420, y: 450 },
+  exit: { x: 2860, y: 438, w: 48, h: 62 },
+  bounds: { x: 0, y: 0, w: 3000, h: 540 },
+  solids: [
+    { id: "floor", x: 0, y: 500, w: 3000, h: 60, sprite: "floor", tone: "steel" },
+    { id: "left-wall", x: -26, y: 0, w: 26, h: 560, sprite: "wall", tone: "glass" },
+    { id: "right-wall", x: 3000, y: 0, w: 26, h: 560, sprite: "wall", tone: "glass" }
+  ],
+  doors: [],
+  plates: [],
+  timedSwitches: [],
+  lasers: [],
+  movingLasers: [],
+  drones: [],
+  cores: [],
+  hazards: [],
+  crates: [],
+  platforms: [],
+  oneWays: [],
+  conveyors: [],
+  launchPads: [],
+  echoSensors: [],
+  bosses: [
+    {
+      id: "camera-follow-boss",
+      kind: "archive-custodian",
+      x: 1400,
+      y: 120,
+      w: 1200,
+      h: 380,
+      entrySide: "center",
+      weakSpot: "bottom",
+      introSeconds: 1,
+      health: 1,
+      score: 1000
+    }
+  ],
+  score: {
+    lives: 3,
+    coreScore: 100,
+    deathPenalty: 500,
+    timeBonusTargetSeconds: 10,
+    timeBonusPerSecond: 100
+  },
+  hint: "QA"
+};
+
+const cryoFloorIceDraftLevel = {
+  id: "cryo-floor-ice-render-qa",
+  index: 0,
+  name: "Cryo Floor Ice Render QA",
+  subtitle: "Render checks",
+  motionModel: "anchored",
+  start: { x: 220, y: 226 },
+  exit: { x: 760, y: 222, w: 32, h: 38 },
+  bounds: { x: 0, y: 0, w: 860, h: 320 },
+  solids: [
+    { id: "floor", x: 0, y: 260, w: 860, h: 60, sprite: "floor", material: "ice-cryo", tone: "steel" },
+    { id: "left-wall", x: -20, y: 0, w: 20, h: 320, sprite: "wall", tone: "glass" },
+    { id: "right-wall", x: 860, y: 0, w: 20, h: 320, sprite: "wall", tone: "glass" }
+  ],
+  doors: [],
+  plates: [],
+  timedSwitches: [],
+  lasers: [],
+  movingLasers: [],
+  drones: [],
+  cores: [],
+  hazards: [],
+  crates: [],
+  platforms: [],
+  oneWays: [],
+  conveyors: [],
+  launchPads: [],
+  echoSensors: [],
+  bosses: [
+    {
+      id: "cryo-floor-ice-boss",
+      kind: "cryo-conservator",
+      x: 80,
+      y: 70,
+      w: 360,
+      h: 190,
+      entrySide: "top",
+      weakSpot: "bottom",
+      introSeconds: 1,
+      health: 2,
+      score: 1000
+    }
+  ],
+  score: {
+    lives: 3,
+    coreScore: 100,
+    deathPenalty: 500,
+    timeBonusTargetSeconds: 10,
+    timeBonusPerSecond: 100
+  },
+  hint: "QA"
+};
+
 const launchOptions = {
   headless: true,
   args: ["--no-sandbox", "--disable-dev-shm-usage"]
@@ -127,6 +241,63 @@ const launchOptions = {
 if (browserPath) launchOptions.executablePath = browserPath;
 
 const browser = await chromium.launch(launchOptions);
+
+const verifyBossCameraFollowsPlayer = async (page) => {
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.evaluate((snapshot) => {
+    window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
+  }, { motionModel: "anchored", currentIndex: 0, levels: [cameraFollowDraftLevel] });
+
+  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+  await startAudioGate(page);
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await waitForLevelIntro(page);
+  await page.waitForFunction(
+    () => {
+      const frames = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
+      return frames.includes("camera-follow-boss:") && frames.includes(":active:");
+    },
+    null,
+    { timeout: 9000 }
+  );
+
+  const sample = await readCameraSample(page);
+  const view = await readCameraWorldView(page);
+  const centerX = view.x + view.w / 2;
+  const arenaCenterX = cameraFollowDraftLevel.bosses[0].x + cameraFollowDraftLevel.bosses[0].w / 2;
+  assert(sample.zoom > 1.45, `Expected boss entry to keep normal player camera zoom, got ${JSON.stringify({ sample, view })}`);
+  assert(
+    centerX < arenaCenterX - 180,
+    `Expected boss entry camera to remain nearer the player than the arena center, got ${JSON.stringify({ sample, view, centerX, arenaCenterX })}`
+  );
+  return { sample, view, centerX, arenaCenterX };
+};
+
+const verifyCryoFloorIceRender = async (page) => {
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.evaluate((snapshot) => {
+    window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
+  }, { motionModel: "anchored", currentIndex: 0, levels: [cryoFloorIceDraftLevel] });
+
+  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+  await startAudioGate(page);
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await waitForLevelIntro(page);
+  await page.waitForFunction(
+    () => {
+      const frames = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+      return frames.includes("cryo-floor-ice:");
+    },
+    null,
+    { timeout: 9000 }
+  );
+
+  const raw = await page.evaluate(() => document.documentElement.dataset.echoShiftBossEffectFrames || "");
+  const match = raw.match(/cryo-floor-ice:([^|]+)/);
+  const screenshot = `${outDir}/cryo-floor-ice-visible.png`;
+  await page.screenshot({ path: screenshot, fullPage: true });
+  return { diagnostic: match?.[0] || raw, screenshot };
+};
 
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
@@ -225,6 +396,9 @@ try {
   const portalScreenshot = `${outDir}/boss-defeat-portal-unlocked.png`;
   await page.screenshot({ path: portalScreenshot, fullPage: true });
 
+  const cameraFollow = await verifyBossCameraFollowsPlayer(page);
+  const cryoFloorIce = await verifyCryoFloorIceRender(page);
+
   const unexpectedMessages = messages.filter((msg) => !isAllowedBrowserMessage(msg));
   assert(unexpectedMessages.length === 0, `Unexpected console/page messages: ${JSON.stringify(unexpectedMessages)}`);
 
@@ -233,9 +407,12 @@ try {
       {
         ok: true,
         departure: { early, mid, late, camera, spriteWidth },
+        cameraFollow,
+        cryoFloorIce,
         screenshots: {
           departure: departureScreenshot,
-          portal: portalScreenshot
+          portal: portalScreenshot,
+          cryoFloorIce: cryoFloorIce.screenshot
         }
       },
       null,

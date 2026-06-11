@@ -293,6 +293,8 @@ try {
   const draftPlaytestMusicKey = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftMusicKey);
   const draftPlaytestAudioState = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftAudioState);
   const draftPlaytestBackgroundKey = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundKey);
+  const draftPlaytestBackgroundRenderMode = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundRenderMode);
+  const draftPlaytestBackgroundDetailLayer = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundDetailLayer);
   const draftPlaytestBackgroundPieces = Number(await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundPieces));
   await draftPlaytestPage.screenshot({ path: `${outDir}/editor-playtest-draft.png`, fullPage: true });
   await draftPlaytestPage.locator("[data-menu]").click();
@@ -1364,8 +1366,10 @@ try {
   );
   assert(draftPlaytestMusicKey === "tutorial", `Expected draft playtest GameScene to request explicit tutorial soundtrack, got ${draftPlaytestMusicKey}`);
   assert(draftPlaytestAudioState === "playing", `Expected draft playtest audio to start after gate, got ${draftPlaytestAudioState}`);
-  assert(draftPlaytestBackgroundKey === "level-2-rainhouse-relay", `Expected draft playtest to render selected authored background, got ${draftPlaytestBackgroundKey}`);
-  assert(draftPlaytestBackgroundPieces >= 1, `Expected draft playtest to create repeated background pieces, got ${draftPlaytestBackgroundPieces}`);
+  assert(draftPlaytestBackgroundKey === "level-2-rainhouse-relay-fit", `Expected draft playtest to render selected authored background, got ${draftPlaytestBackgroundKey}`);
+  assert(draftPlaytestBackgroundRenderMode === "fit-level", `Expected draft playtest background to use fit-level render mode, got ${draftPlaytestBackgroundRenderMode}`);
+  assert(draftPlaytestBackgroundDetailLayer === "off", `Expected draft playtest fit-level background to disable procedural detail layer, got ${draftPlaytestBackgroundDetailLayer}`);
+  assert(draftPlaytestBackgroundPieces >= 1, `Expected draft playtest to create background image pieces, got ${draftPlaytestBackgroundPieces}`);
   assert(draftReturnUrl.includes("editor=1"), `Expected draft Editor button to return to editor=1, got ${draftReturnUrl}`);
   assert(!draftReturnUrl.includes("playtestDraft=1"), `Expected draft Editor button to clean playtest flag, got ${draftReturnUrl}`);
   assert(!draftReturnUrl.includes("level=1"), `Expected draft Editor button to clean level flag, got ${draftReturnUrl}`);
@@ -1431,7 +1435,11 @@ try {
   assert(soundtrackOptions.some((option) => option.includes("Auto: Echo Shift - Level 1")), `Expected auto soundtrack option, got ${soundtrackOptions.join(", ")}`);
   assert(soundtrackOptions.some((option) => option.includes("Echo Shift - Tutorial")), `Expected selectable tutorial MP3 option, got ${soundtrackOptions.join(", ")}`);
   assert(soundtrackExportKey === "tutorial", `Expected selected soundtrack key to export as tutorial, got ${soundtrackExportKey}`);
-  assert(backgroundOptions.some((option) => option.includes("Auto: Springtide Glassgrove")), `Expected auto background option, got ${backgroundOptions.join(", ")}`);
+  assert(
+    backgroundOptions.some((option) => option.includes("Auto: Springtide Garden Full-Plate")),
+    `Expected auto background option, got ${backgroundOptions.join(", ")}`
+  );
+  assert(backgroundOptions.some((option) => option.includes("4800x1440")), `Expected Springtide full-plate dimensions in options, got ${backgroundOptions.join(", ")}`);
   assert(backgroundOptions.some((option) => option.includes("1694x929")), `Expected Springtide background dimensions in options, got ${backgroundOptions.join(", ")}`);
   assert(backgroundOptions.some((option) => option.includes("1672x941")), `Expected background dimensions in options, got ${backgroundOptions.join(", ")}`);
   assert(backgroundOptions.some((option) => option.includes("1881x836")), `Expected Level 1 background dimensions in options, got ${backgroundOptions.join(", ")}`);

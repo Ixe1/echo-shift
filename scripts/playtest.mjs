@@ -471,7 +471,7 @@ try {
   const preGateTimerCount = await page.locator("[data-time]").count();
   const preGateLevelCount = await page.locator("[data-level]").count();
   const preGateMusicKey = await page.evaluate(() => document.documentElement.dataset.echoShiftMusicKey || "");
-  await page.keyboard.press("Enter");
+  await startAudioGate(page);
   await page.locator("[data-play]").waitFor({ state: "visible" });
   await page.waitForFunction(() => document.documentElement.dataset.echoShiftAudioState === "playing");
   const menuAudioState = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioState || "");
@@ -482,6 +482,12 @@ try {
   await page.waitForFunction(() => document.documentElement.dataset.echoShiftAudioState === "playing");
   const levelAudioState = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioState || "");
   const desktopBackgroundKey = await page.evaluate(() => document.documentElement.dataset.echoShiftBackgroundKey);
+  const desktopBackgroundRenderMode = await page.evaluate(
+    () => document.documentElement.dataset.echoShiftBackgroundRenderMode
+  );
+  const desktopBackgroundDetailLayer = await page.evaluate(
+    () => document.documentElement.dataset.echoShiftBackgroundDetailLayer
+  );
   const objectAssetCount = Number(await page.evaluate(() => document.documentElement.dataset.echoShiftObjectAssetCount || "0"));
   const desktopIntroVisible = await page.locator("[data-level-intro='active']").isVisible();
   await page.screenshot({ path: artifacts.desktopIntro });
@@ -793,8 +799,16 @@ try {
     `Expected music loading gate to clear before gameplay, got ${desktopMusicLoadingPhase}`
   );
   assert(
-    desktopBackgroundKey === "level-1-springtide-glassgrove",
-    `Expected Level 1 Springtide Glassgrove background key, got ${desktopBackgroundKey}`
+    desktopBackgroundKey === "level-1-springtide-garden-fit",
+    `Expected Level 1 Springtide Garden full-plate background key, got ${desktopBackgroundKey}`
+  );
+  assert(
+    desktopBackgroundRenderMode === "fit-level",
+    `Expected Level 1 background to use fit-level render mode, got ${desktopBackgroundRenderMode}`
+  );
+  assert(
+    desktopBackgroundDetailLayer === "off",
+    `Expected Level 1 fit-level background to disable procedural detail layer, got ${desktopBackgroundDetailLayer}`
   );
   assert(objectAssetCount >= 10, `Expected object atlas sprites to instantiate on Level 1, got ${objectAssetCount}`);
   assert(scoreText === "000000", `Expected score HUD to start at zero after a rewind, got ${scoreText}`);

@@ -9,9 +9,9 @@ const MAX_SPEED = 205;
 const GROUND_ACCEL = 50;
 const AIR_ACCEL = 32;
 const FRICTION = 0.77;
-const GRAVITY = 0.82;
-const MAX_FALL = 15;
-const JUMP_SPEED = -13.05;
+const GRAVITY = 0.72;
+const MAX_FALL = 13.5;
+const JUMP_SPEED = -12.3;
 const COYOTE_FRAMES = 7;
 const JUMP_BUFFER_FRAMES = 7;
 const LAUNCH_CONTROL_ACCEL_SCALE = 0.35;
@@ -155,7 +155,7 @@ export const moveActor = (
   }
 
   if (!launchControlLocked && !input.jump && actor.vy < -4.6) {
-    actor.vy *= 0.78;
+    actor.vy *= 0.82;
   }
 
   const gravity = launchFloatActive ? GRAVITY * LAUNCH_FLOAT_GRAVITY_SCALE : GRAVITY;

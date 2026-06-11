@@ -29,9 +29,16 @@ export const BOSS_VULNERABLE_FRAMES = BOSS_ATTACK_CYCLE_FRAMES - BOSS_ATTACK_WIN
 export const BOSS_DEFEAT_DEPARTURE_FRAMES = 170;
 export const DEFAULT_MONSTER_SCORE = 200;
 
+const BOSS_ENTRY_OFFSCREEN_PADDING = 720;
 const MONSTER_STOMP_TOP_GRACE = 14;
-const MONSTER_STOMP_CENTER_GRACE = 6;
 const MONSTER_STOMP_DEPTH_RATIO = 0.82;
+const MONSTER_ATTACK_SENSOR_HEIGHT = 8;
+const MONSTER_ATTACK_SENSOR_INSET_X = 2;
+const MONSTER_ATTACK_SIDE_GRACE_MIN = 10;
+const MONSTER_ATTACK_SIDE_GRACE_RATIO = 0.35;
+const MONSTER_VERTICAL_SPEED_GRACE = 0.35;
+const MONSTER_UNDERSIDE_ENTRY_GRACE = 6;
+const MONSTER_UNDERSIDE_DEPTH_RATIO = 0.75;
 
 const STORM_ATTACK_CYCLE_FRAMES = 330;
 const STORM_ATTACK_WINDUP_FRAMES = 112;
@@ -42,6 +49,7 @@ const STORM_HIT_PAUSE_FRAMES = 48;
 const STORM_HIT_RISE_FRAMES = 120;
 const STORM_HIT_PATROL_FRAMES = 54;
 const STORM_HIT_RECOVERY_FRAMES = STORM_HIT_PAUSE_FRAMES + STORM_HIT_RISE_FRAMES + STORM_HIT_PATROL_FRAMES;
+const STORM_NORMAL_RISE_FRAMES = 104;
 const STORM_FLOOR_SHOCK_CORE_WIDTH = 72;
 const STORM_FLOOR_SHOCK_TILE_WIDTH = 32;
 const STORM_FLOOR_SHOCK_WIDTH = STORM_FLOOR_SHOCK_CORE_WIDTH + STORM_FLOOR_SHOCK_TILE_WIDTH * 2;
@@ -57,6 +65,7 @@ const CRYO_HIT_PAUSE_FRAMES = 48;
 const CRYO_HIT_RISE_FRAMES = 126;
 const CRYO_HIT_PATROL_FRAMES = 60;
 const CRYO_HIT_RECOVERY_FRAMES = CRYO_HIT_PAUSE_FRAMES + CRYO_HIT_RISE_FRAMES + CRYO_HIT_PATROL_FRAMES;
+const CRYO_NORMAL_RISE_FRAMES = 80;
 const CRYO_BEAM_WIDTH = 34;
 const CRYO_FLOOR_ICE_WIDTH = 128;
 const CRYO_FLOOR_ICE_HEIGHT = 8;
@@ -519,20 +528,61 @@ export const actorKillsMonster = (actor: ActorBody, previousY: number, monster: 
   const vulnerability = monsterVulnerability(monster);
   const previousBottom = previousY + actor.h;
   const currentBottom = actor.y + actor.h;
-  const actorCenterX = actor.x + actor.w / 2;
-  const centerOverMonster = actorCenterX >= rect.x - MONSTER_STOMP_CENTER_GRACE && actorCenterX <= rect.x + rect.w + MONSTER_STOMP_CENTER_GRACE;
+  const footSensor = monsterActorFootSensor(actor);
+  const headSensor = monsterActorHeadSensor(actor);
+  const topZone = monsterTopVulnerabilityZone(rect);
+  const bottomZone = monsterBottomVulnerabilityZone(rect);
   const topHit =
     (vulnerability === "top" || vulnerability === "both") &&
-    actor.vy >= 0 &&
-    centerOverMonster &&
+    actor.vy >= -MONSTER_VERTICAL_SPEED_GRACE &&
+    rectsOverlap(footSensor, topZone) &&
     previousBottom <= rect.y + MONSTER_STOMP_TOP_GRACE &&
     currentBottom <= rect.y + Math.max(14, rect.h * MONSTER_STOMP_DEPTH_RATIO);
   const bottomHit =
     (vulnerability === "bottom" || vulnerability === "both") &&
-    actor.vy <= 0 &&
-    previousY >= rect.y + rect.h - 6 &&
-    actor.y >= rect.y + Math.max(4, rect.h * 0.25);
+    actor.vy <= MONSTER_VERTICAL_SPEED_GRACE &&
+    rectsOverlap(headSensor, bottomZone) &&
+    previousY >= rect.y + rect.h - MONSTER_UNDERSIDE_ENTRY_GRACE &&
+    actor.y >= rect.y + rect.h - Math.max(14, rect.h * MONSTER_UNDERSIDE_DEPTH_RATIO);
   return topHit || bottomHit;
+};
+
+const monsterAttackSideGrace = (rect: Rect): number =>
+  Math.max(MONSTER_ATTACK_SIDE_GRACE_MIN, rect.w * MONSTER_ATTACK_SIDE_GRACE_RATIO);
+
+const monsterActorFootSensor = (actor: ActorBody): Rect => ({
+  x: actor.x + MONSTER_ATTACK_SENSOR_INSET_X,
+  y: actor.y + actor.h - MONSTER_ATTACK_SENSOR_HEIGHT,
+  w: Math.max(1, actor.w - MONSTER_ATTACK_SENSOR_INSET_X * 2),
+  h: MONSTER_ATTACK_SENSOR_HEIGHT
+});
+
+const monsterActorHeadSensor = (actor: ActorBody): Rect => ({
+  x: actor.x + MONSTER_ATTACK_SENSOR_INSET_X,
+  y: actor.y,
+  w: Math.max(1, actor.w - MONSTER_ATTACK_SENSOR_INSET_X * 2),
+  h: MONSTER_ATTACK_SENSOR_HEIGHT
+});
+
+const monsterTopVulnerabilityZone = (rect: Rect): Rect => {
+  const sideGrace = monsterAttackSideGrace(rect);
+  return {
+    x: rect.x - sideGrace,
+    y: rect.y - MONSTER_STOMP_TOP_GRACE,
+    w: rect.w + sideGrace * 2,
+    h: MONSTER_STOMP_TOP_GRACE + Math.max(14, rect.h * MONSTER_STOMP_DEPTH_RATIO)
+  };
+};
+
+const monsterBottomVulnerabilityZone = (rect: Rect): Rect => {
+  const sideGrace = monsterAttackSideGrace(rect);
+  const depth = Math.max(14, rect.h * MONSTER_UNDERSIDE_DEPTH_RATIO);
+  return {
+    x: rect.x - sideGrace,
+    y: rect.y + rect.h - depth,
+    w: rect.w + sideGrace * 2,
+    h: depth + MONSTER_UNDERSIDE_ENTRY_GRACE
+  };
 };
 
 export const bossHealth = (boss: Boss): number => Math.max(1, Math.round(finiteNumber(boss.health, defaultBossHealth(boss.kind))));
@@ -882,6 +932,23 @@ const advanceCryoConservatorFloorIce = (boss: Boss, state: BossRuntimeState, cyc
   state.floorIcePatches = state.floorIcePatches.slice(0, CRYO_FLOOR_ICE_MAX_PATCHES);
 };
 
+const bossNormalVerticalTargetY = (
+  cycle: number,
+  activeEndFrame: number,
+  riseFrames: number,
+  readyFrames: number,
+  highY: number,
+  lowY: number,
+  riseStartY: number
+): number => {
+  if (cycle <= activeEndFrame) {
+    const riseProgress = clamp(cycle / Math.max(1, riseFrames), 0, 1);
+    return riseStartY + (highY - riseStartY) * riseProgress;
+  }
+  const descentProgress = clamp((cycle - activeEndFrame) / Math.max(1, readyFrames), 0, 1);
+  return highY + (lowY - highY) * descentProgress;
+};
+
 const advanceStormRelayMotion = (
   boss: Boss,
   state: BossRuntimeState,
@@ -900,18 +967,19 @@ const advanceStormRelayMotion = (
   }
 
   const activeEndFrame = bossAttackEndFrameFor("storm-relay-warden");
-  const descentProgress =
-    cycle <= activeEndFrame ? 0 : clamp((cycle - activeEndFrame) / Math.max(1, STORM_VULNERABLE_READY_FRAMES), 0, 1);
-  const targetY = highY + (lowY - highY) * descentProgress;
+  const currentCenterY = finiteNumber(state.bodyY, lowY - size.h / 2) + size.h / 2;
+  const introLiftStartY =
+    state.activeFrames < STORM_ATTACK_CYCLE_FRAMES && currentCenterY > lowY + 12 ? arena.maxY + size.h / 2 : lowY;
+  const targetY = bossNormalVerticalTargetY(cycle, activeEndFrame, STORM_NORMAL_RISE_FRAMES, STORM_VULNERABLE_READY_FRAMES, highY, lowY, introLiftStartY);
 
   state.targetX = targetX;
   state.targetY = targetY;
   const desiredX = targetX - size.w / 2;
   const desiredY = targetY - size.h / 2;
   const windupFrames = bossAttackWindupFramesFor("storm-relay-warden");
-  const ease = cycle < windupFrames ? 0.08 : cycle < activeEndFrame ? 0.14 : STORM_VERTICAL_FLIGHT_EASE;
-  state.bodyX += (desiredX - state.bodyX) * ease;
-  state.bodyY += (desiredY - state.bodyY) * ease;
+  const horizontalEase = cycle < windupFrames ? 0.08 : cycle < activeEndFrame ? 0.14 : STORM_VERTICAL_FLIGHT_EASE;
+  state.bodyX += (desiredX - state.bodyX) * horizontalEase;
+  state.bodyY += (desiredY - state.bodyY) * STORM_VERTICAL_FLIGHT_EASE;
   state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
   state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
 };
@@ -969,9 +1037,10 @@ const advanceCryoConservatorMotion = (
   }
 
   const activeEndFrame = bossAttackEndFrameFor("cryo-conservator");
-  const descentProgress =
-    cycle <= activeEndFrame ? 0 : clamp((cycle - activeEndFrame) / Math.max(1, CRYO_VULNERABLE_READY_FRAMES), 0, 1);
-  const targetY = highY + (lowY - highY) * descentProgress;
+  const currentCenterY = finiteNumber(state.bodyY, lowY - size.h / 2) + size.h / 2;
+  const introLiftStartY =
+    state.activeFrames < CRYO_ATTACK_CYCLE_FRAMES && currentCenterY > lowY + 12 ? arena.maxY + size.h / 2 : lowY;
+  const targetY = bossNormalVerticalTargetY(cycle, activeEndFrame, CRYO_NORMAL_RISE_FRAMES, CRYO_VULNERABLE_READY_FRAMES, highY, lowY, introLiftStartY);
   const windupFrames = bossAttackWindupFramesFor("cryo-conservator");
   const patrolSway = cycle < windupFrames ? Math.sin(cycle / Math.max(1, windupFrames) * Math.PI * 2) * Math.min(24, (arena.maxX - arena.minX) * 0.08) : 0;
 
@@ -979,9 +1048,9 @@ const advanceCryoConservatorMotion = (
   state.targetY = targetY;
   const desiredX = state.targetX - size.w / 2;
   const desiredY = targetY - size.h / 2;
-  const ease = cycle < windupFrames ? 0.075 : cycle < activeEndFrame ? 0.12 : CRYO_VERTICAL_FLIGHT_EASE;
-  state.bodyX += (desiredX - state.bodyX) * ease;
-  state.bodyY += (desiredY - state.bodyY) * ease;
+  const horizontalEase = cycle < windupFrames ? 0.075 : cycle < activeEndFrame ? 0.12 : CRYO_VERTICAL_FLIGHT_EASE;
+  state.bodyX += (desiredX - state.bodyX) * horizontalEase;
+  state.bodyY += (desiredY - state.bodyY) * CRYO_VERTICAL_FLIGHT_EASE;
   state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
   state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
 };
@@ -1108,9 +1177,9 @@ const bossMovementBounds = (boss: Boss, size: { w: number; h: number }): { minX:
 
 const bossEntryBodyRect = (boss: Boss, size: { w: number; h: number }, target: Rect): Rect => {
   const side = normalizeBossEntrySide(boss.entrySide);
-  if (side === "left") return { ...target, x: boss.x - size.w - 24 };
-  if (side === "right") return { ...target, x: boss.x + boss.w + 24 };
-  if (side === "top") return { ...target, y: boss.y - size.h - 24 };
-  if (side === "bottom") return { ...target, y: boss.y + boss.h + 24 };
-  return { ...target, x: boss.x + boss.w / 2 - size.w / 2, y: boss.y + boss.h / 2 - size.h / 2 };
+  if (side === "left") return { ...target, x: boss.x - size.w - BOSS_ENTRY_OFFSCREEN_PADDING };
+  if (side === "right") return { ...target, x: boss.x + boss.w + BOSS_ENTRY_OFFSCREEN_PADDING };
+  if (side === "top" || side === "center") return { ...target, y: boss.y - size.h - BOSS_ENTRY_OFFSCREEN_PADDING };
+  if (side === "bottom") return { ...target, y: boss.y + boss.h + BOSS_ENTRY_OFFSCREEN_PADDING };
+  return { ...target, y: boss.y - size.h - BOSS_ENTRY_OFFSCREEN_PADDING };
 };

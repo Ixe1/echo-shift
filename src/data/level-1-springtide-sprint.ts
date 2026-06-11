@@ -4,10 +4,10 @@ export const level1SpringtideSprint = {
     "id": "portal-primer",
     "index": 0,
     "name": "Springtide Sprint",
-    "subtitle": "A high-speed line through the reclaimed atrium",
+    "subtitle": "A high-speed line through the reclaimed garden",
     "motionModel": "anchored",
     "soundtrackKey": "level-1",
-    "backgroundKey": "level-1-springtide-glassgrove",
+    "backgroundKey": "level-1-springtide-garden-fit",
     "backgroundAmbience": {
       "preset": "lab",
       "intensity": 0.28,

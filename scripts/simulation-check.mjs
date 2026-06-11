@@ -775,7 +775,6 @@ try {
   const { soundtrackForBoss, soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
   const { backgroundForLevel, levelBackgrounds } = await server.ssrLoadModule("/src/game/backgrounds.ts");
   const { backgroundAmbienceForLevel, backgroundAmbienceIsActive } = await server.ssrLoadModule("/src/game/backgroundAmbience.ts");
-  const { selectBossCameraFocus } = await server.ssrLoadModule("/src/game/bossCamera.ts");
   const { terrainMaterialForSolid } = await server.ssrLoadModule("/src/game/terrainMaterials.ts");
   const {
     effectiveSolidDecorDensity,
@@ -1018,13 +1017,23 @@ try {
   assert(Boolean(levelBackgrounds["time-lab-prototype"]), "Expected prototype level background");
   assert(Boolean(levelBackgrounds["level-1-time-lab-no-portals"]), "Expected Level 1 no-portal background");
   assert(Boolean(levelBackgrounds["level-1-springtide-glassgrove"]), "Expected Springtide Glassgrove level background");
+  assert(Boolean(levelBackgrounds["level-1-springtide-garden-fit"]), "Expected Springtide Garden full-plate background");
+  assert(Boolean(levelBackgrounds["level-2-rainhouse-relay-fit"]), "Expected Rainhouse Relay full-plate background");
   assert(Boolean(levelBackgrounds["level-3-cryo-conservatory"]), "Expected Cryo Conservatory level background");
+  assert(Boolean(levelBackgrounds["level-3-cryo-grove-fit"]), "Expected Cryo Grove full-plate background");
   assert(Boolean(levelBackgrounds["level-4-timber-archive"]), "Expected Timber Archive level background");
+  assert(Boolean(levelBackgrounds["level-4-timber-archive-fit"]), "Expected Timber Archive full-plate background");
   assert(Boolean(levelBackgrounds["level-5-sunken-clockwork"]), "Expected Sunken Clockwork level background");
-  assert(backgroundForLevel(levels[0], 0).key === "level-1-springtide-glassgrove", "Expected Level 1 to use Springtide Glassgrove background");
-  assert(backgroundForLevel(levels[2], 2).key === "level-3-cryo-conservatory", "Expected Level 3 to use Cryo Conservatory background");
-  assert(backgroundForLevel(levels[3], 3).key === "level-4-timber-archive", "Expected Level 4 to use Timber Archive background");
-  assert(backgroundForLevel(levels[4], 4).key === "level-5-sunken-clockwork", "Expected Level 5 to use Sunken Clockwork background");
+  assert(Boolean(levelBackgrounds["level-5-sunken-clockwork-fit"]), "Expected Sunken Clockwork full-plate background");
+  assert(backgroundForLevel(levels[0], 0).key === "level-1-springtide-garden-fit", "Expected Level 1 to use Springtide Garden full-plate background");
+  assert(backgroundForLevel(levels[1], 1).key === "level-2-rainhouse-relay-fit", "Expected Level 2 to use Rainhouse Relay full-plate background");
+  assert(backgroundForLevel(levels[2], 2).key === "level-3-cryo-grove-fit", "Expected Level 3 to use Cryo Grove full-plate background");
+  assert(backgroundForLevel(levels[3], 3).key === "level-4-timber-archive-fit", "Expected Level 4 to use Timber Archive full-plate background");
+  assert(backgroundForLevel(levels[4], 4).key === "level-5-sunken-clockwork-fit", "Expected Level 5 to use Sunken Clockwork full-plate background");
+  assert(
+    levels.every((level, index) => backgroundForLevel(level, index).renderMode === "fit-level"),
+    "Expected campaign levels to use fit-level background render mode"
+  );
   assert(
     backgroundForLevel({ ...levels[1], backgroundKey: undefined }, 1).key === "time-lab-prototype",
     "Expected levels without explicit backgrounds to use prototype fallback"
@@ -1093,15 +1102,6 @@ try {
     terrainDecorPropsForMaterial("wood-archive").some((prop) => prop.category === "wall-decal" && prop.id === "timber-carved-panel"),
     "Expected wood-archive decor props to include Timber wall decals"
   );
-  assert(
-    selectBossCameraFocus([{ id: "departing-first", phase: "departing" }, { id: "active-second", phase: "active" }])?.id === "active-second",
-    "Expected boss camera focus to prefer active bosses over earlier departing bosses"
-  );
-  assert(
-    selectBossCameraFocus([{ id: "departing-first", phase: "departing" }, { id: "idle-second", phase: "idle" }])?.id === "departing-first",
-    "Expected boss camera focus to fall back to a departing boss when no boss is active"
-  );
-
   await verifyAudioUnlockRetry(SynthAudio, soundtracks);
 
   const previousWindow = globalThis.window;
@@ -1696,7 +1696,7 @@ try {
   );
   launchFloatLandingSim.step(jump);
   assert(
-    Math.abs(launchFloatLandingSim.player.vy - -12.23) < 0.001,
+    Math.abs(launchFloatLandingSim.player.vy - -11.58) < 0.001,
     `Normal jump after launch landing should keep baseline jump velocity, got ${launchFloatLandingSim.player.vy}`
   );
 
@@ -1887,10 +1887,18 @@ try {
     "Expected slightly late centered top contact to kill stompable monster"
   );
 
-  const edgeSideMonsterSim = new RoomSimulation(monsterLevel);
-  Object.assign(edgeSideMonsterSim.player, { x: 20, y: 69, vx: 0, vy: 0, onGround: false });
-  const edgeSideMonster = edgeSideMonsterSim.step(idle);
-  assert(edgeSideMonster.died && edgeSideMonsterSim.dead, "Expected edge side contact to remain lethal when player center is outside monster");
+  const edgeOverhangMonsterSim = new RoomSimulation(monsterLevel);
+  Object.assign(edgeOverhangMonsterSim.player, { x: 20, y: 69, vx: 0, vy: 0, onGround: false });
+  const edgeOverhangMonster = edgeOverhangMonsterSim.step(idle);
+  assert(
+    edgeOverhangMonster.monsterKills.length === 1 && !edgeOverhangMonsterSim.dead,
+    "Expected top-foot contact on monster overhang to kill stompable monster"
+  );
+
+  const lowerSideMonsterSim = new RoomSimulation(monsterLevel);
+  Object.assign(lowerSideMonsterSim.player, { x: 20, y: 86, vx: 0, vy: 0, onGround: false });
+  const lowerSideMonster = lowerSideMonsterSim.step(idle);
+  assert(lowerSideMonster.died && lowerSideMonsterSim.dead, "Expected lower side contact to remain lethal when player is not above the monster");
 
   const topContactBottomVulnerableSim = new RoomSimulation({
     ...baseLevel,
@@ -1998,6 +2006,17 @@ try {
   const undersideKill = undersideMonsterSim.step(idle);
   assert(undersideKill.monsterKills.length === 1, "Expected upward underside hit to kill vulnerable monster");
 
+  const undersideOverhangMonsterSim = new RoomSimulation({
+    ...baseLevel,
+    monsters: [{ id: "under-overhang-test", kind: "copper-leech", x: 40, y: 50, w: 28, h: 24, score: 200 }]
+  });
+  Object.assign(undersideOverhangMonsterSim.player, { x: 20, y: 76, vx: 0, vy: -4, onGround: false });
+  const undersideOverhangKill = undersideOverhangMonsterSim.step(idle);
+  assert(
+    undersideOverhangKill.monsterKills.length === 1 && !undersideOverhangMonsterSim.dead,
+    "Expected upward head contact on monster underside overhang to kill bottom-vulnerable monster"
+  );
+
   const bossLevel = {
     ...baseLevel,
     doors: [
@@ -2040,6 +2059,21 @@ try {
   const bossIntroSnapshot = bossIntroSim.bossSnapshots()[0];
   assert(bossIntroSnapshot?.introTotalFrames === 17 * 60, `Expected boss intro snapshot to use configured intro frames, got ${bossIntroSnapshot?.introTotalFrames}`);
   assert(bossIntroSnapshot?.weakSpotKind === "bottom", `Expected storm boss weak spot to default to bottom, got ${bossIntroSnapshot?.weakSpotKind}`);
+  assert(
+    bossIntroSnapshot?.body.x > bossLevel.bosses[0].x + bossLevel.bosses[0].w + 500,
+    `Expected right-entry boss intro to begin off-screen, got ${JSON.stringify(bossIntroSnapshot?.body)}`
+  );
+  const centerEntryLevel = {
+    ...bossLevel,
+    bosses: [{ ...bossLevel.bosses[0], id: "center-entry-boss", entrySide: "center" }]
+  };
+  const centerEntrySim = new RoomSimulation(centerEntryLevel);
+  centerEntrySim.step(idle);
+  const centerEntrySnapshot = centerEntrySim.bossSnapshots()[0];
+  assert(
+    centerEntrySnapshot?.body.y < centerEntryLevel.bosses[0].y - 500,
+    `Expected center-entry boss intro to begin above the viewport, got ${JSON.stringify(centerEntrySnapshot?.body)}`
+  );
   assert(!bossIntroSim.dead, "Boss intro should not damage player on first contact");
   runFrames(bossIntroSim, 17 * 60 - 2, idle);
   const introBossState = bossIntroSim.bossStates.get("boss-test");
@@ -2051,6 +2085,14 @@ try {
   assert(activeBossState?.activeFrames === 0, `Expected boss active frames to start at 0, got ${activeBossState?.activeFrames}`);
   assert(bossIntroSim.bossSnapshots()[0].attacks.length === 0, "Expected boss active phase to start with a clear attack wind-up");
   assert(!bossIsVulnerable(bossIntroSim.bossSnapshots()[0]), "Expected boss weak point to stay guarded at the start of the active phase");
+  const stormIntroLiftStart = bossIntroSim.bossSnapshots()[0];
+  runFrames(bossIntroSim, 12, idle);
+  const stormIntroLiftLater = bossIntroSim.bossSnapshots()[0];
+  const stormIntroLiftDelta = stormIntroLiftStart.body.y - stormIntroLiftLater.body.y;
+  assert(
+    stormIntroLiftDelta > 0.2 && stormIntroLiftDelta < 18,
+    `Expected storm boss to lift gradually after intro, moved ${stormIntroLiftDelta}px from ${stormIntroLiftStart.body.y} to ${stormIntroLiftLater.body.y}`
+  );
   const stormLaneLevel = {
     ...bossLevel,
     bosses: [{ ...bossLevel.bosses[0], introSeconds: 1, health: 2 }]
@@ -2079,6 +2121,36 @@ try {
   const stormFloor = stormLaneLevel.solids.find((solid) => solid.id === "floor");
   assert(stormFloor && stormShock.y + stormShock.h === stormFloor.y, `Expected storm floor shock to sit on top of the floor, got ${JSON.stringify(stormShock)}`);
   assert(stormShock.w === 136, `Expected storm floor shock to include one extra 32px tile on each side, got ${JSON.stringify(stormShock)}`);
+
+  const stormTallLiftLevel = {
+    ...baseLevel,
+    start: { x: 80, y: 286 },
+    exit: { x: 372, y: 322, w: 28, h: 38 },
+    bounds: { x: 0, y: 0, w: 420, h: 420 },
+    solids: [
+      { id: "floor", x: 0, y: 360, w: 420, h: 40 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 420 },
+      { id: "right-wall", x: 420, y: 0, w: 20, h: 420 }
+    ],
+    bosses: [{ id: "tall-boss", kind: "storm-relay-warden", x: 40, y: 20, w: 320, h: 300, entrySide: "right", introSeconds: 1, health: 2, score: 1200 }]
+  };
+  const stormMissedCycleSim = new RoomSimulation(stormTallLiftLevel);
+  Object.assign(stormMissedCycleSim.player, { x: 120, y: 286, vx: 0, vy: 0, onGround: false });
+  stormMissedCycleSim.step(idle);
+  runFrames(stormMissedCycleSim, 60, idle);
+  const stormMissedVulnerable = runBossUntilVulnerable(stormMissedCycleSim, "tall-boss");
+  Object.assign(stormMissedCycleSim.player, { x: 32, y: 326, vx: 0, vy: 0, onGround: true });
+  const stormFramesUntilNextCycle =
+    bossAttackCycleFramesFor(stormMissedVulnerable) - (stormMissedVulnerable.activeFrames % bossAttackCycleFramesFor(stormMissedVulnerable));
+  runFrames(stormMissedCycleSim, stormFramesUntilNextCycle, idle);
+  const stormMissedLiftStart = stormMissedCycleSim.bossSnapshots()[0];
+  runFrames(stormMissedCycleSim, 12, idle);
+  const stormMissedLiftLater = stormMissedCycleSim.bossSnapshots()[0];
+  const stormMissedLiftDelta = stormMissedLiftStart.body.y - stormMissedLiftLater.body.y;
+  assert(
+    stormMissedLiftDelta > 0.2 && stormMissedLiftDelta < 12,
+    `Expected storm boss to lift gradually after a missed weak point, moved ${stormMissedLiftDelta}px from ${stormMissedLiftStart.body.y} to ${stormMissedLiftLater.body.y}`
+  );
 
   const stormShockDeathSim = new RoomSimulation(stormLaneLevel);
   Object.assign(stormShockDeathSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });

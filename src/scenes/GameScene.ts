@@ -3,7 +3,6 @@ import { updateEditorDraftCurrentIndex } from "../data/editorDraft";
 import { getLevel, isDraftPlaytestActive, levels } from "../data/levels";
 import { tutorialLevel } from "../data/tutorialLevel";
 import { audio } from "../game/audio";
-import { selectBossCameraFocus } from "../game/bossCamera";
 import { backgroundAmbienceForLevel, backgroundAmbienceIsActive, type NormalizedBackgroundAmbience } from "../game/backgroundAmbience";
 import { backgroundForLevel } from "../game/backgrounds";
 import {
@@ -100,7 +99,6 @@ const MUSIC_LOADING_OVERLAY_DELAY_MS = 220;
 const BOSS_MUSIC_FADE_MS = 620;
 const PLAYER_CAMERA_REFERENCE_HEIGHT = 540;
 const PLAYER_CAMERA_ZOOM = 1.152;
-const BOSS_ARENA_CAMERA_ZOOM = 1.2;
 const TERRAIN_SURFACE_CAP_OVERLAP = 16;
 const TERRAIN_DECOR_MIN_SOLID_HEIGHT = 28;
 const TERRAIN_DECOR_MIN_SEGMENT_WIDTH = 96;
@@ -155,6 +153,9 @@ const escapeHtml = (value: string): string =>
   });
 
 type ObjectAsset = Phaser.GameObjects.TileSprite | Phaser.GameObjects.Image;
+type BackgroundImageAsset =
+  | { renderMode: "repeat-x"; image: Phaser.GameObjects.TileSprite }
+  | { renderMode: "fit-level"; image: Phaser.GameObjects.Image };
 type SolidOutlineSide = "top" | "bottom" | "left" | "right";
 type SolidOutlineSegment = {
   side: SolidOutlineSide;
@@ -304,7 +305,7 @@ export class GameScene extends Phaser.Scene {
   private readonly beamRenderRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   private readonly hazardRenderRect: Rect = { x: 0, y: 0, w: 0, h: 0 };
   private exitSprite?: Phaser.GameObjects.Image;
-  private backgroundImages: Phaser.GameObjects.TileSprite[] = [];
+  private backgroundImages: BackgroundImageAsset[] = [];
   private backgroundImageTint: number | null = null;
   private backgroundAmbienceRenderTick = -1;
   private texturePrewarmSprites: Phaser.GameObjects.Image[] = [];
@@ -1174,13 +1175,6 @@ export class GameScene extends Phaser.Scene {
     return Math.max(0.1, (this.scale.height / PLAYER_CAMERA_REFERENCE_HEIGHT) * PLAYER_CAMERA_ZOOM);
   }
 
-  private bossArenaCameraZoom(arena: Rect): number {
-    const paddedWidth = Math.max(1, arena.w + 96);
-    const paddedHeight = Math.max(1, arena.h + 80);
-    const fitZoom = Math.min(this.scale.width / paddedWidth, this.scale.height / paddedHeight) * BOSS_ARENA_CAMERA_ZOOM;
-    return Math.max(0.1, Math.min(this.baseCameraZoom(), fitZoom));
-  }
-
   private recordCameraDiagnostics = (): void => {
     const camera = this.cameras.main;
     if (this.diagnosticsEnabled) {
@@ -1280,28 +1274,8 @@ export class GameScene extends Phaser.Scene {
   private renderWorld(): void {
     const snapshot = this.liveRenderView();
     if (!this.deathPresentation) {
-      const introBoss = snapshot.bosses.find((boss) => boss.phase === "intro");
-      if (introBoss) {
-        const boss = (this.level.bosses || []).find((item) => item.id === introBoss.id);
-        const arena = boss || introBoss.body;
-        const focus = rectCenter(arena);
-        this.cameras.main.setZoom(this.bossArenaCameraZoom(arena));
-        this.cameraTarget?.setPosition(focus.x, focus.y);
-        this.cameras.main.centerOn(focus.x, focus.y);
-      } else {
-        const cameraBoss = selectBossCameraFocus(snapshot.bosses);
-        if (cameraBoss) {
-          const boss = (this.level.bosses || []).find((item) => item.id === cameraBoss.id);
-          const arena = boss || cameraBoss.body;
-          const focus = rectCenter(arena);
-          this.cameras.main.setZoom(this.bossArenaCameraZoom(arena));
-          this.cameraTarget?.setPosition(focus.x, focus.y);
-          this.cameras.main.centerOn(focus.x, focus.y);
-        } else {
-          this.cameras.main.setZoom(this.baseCameraZoom());
-          this.cameraTarget?.setPosition(snapshot.player.x + snapshot.player.w / 2, snapshot.player.y + snapshot.player.h / 2);
-        }
-      }
+      this.cameras.main.setZoom(this.baseCameraZoom());
+      this.cameraTarget?.setPosition(snapshot.player.x + snapshot.player.w / 2, snapshot.player.y + snapshot.player.h / 2);
     }
     this.beginObjectAssetSync();
     this.world.clear();
@@ -1369,6 +1343,8 @@ export class GameScene extends Phaser.Scene {
     const floorTop = bounds.y + bounds.h - 40;
     const hasImageBackground = this.backgroundImages.length > 0;
     layer.clear();
+    if (this.backgroundImages.some((backgroundImage) => backgroundImage.renderMode === "fit-level")) return;
+
     layer.fillStyle(0x05070d, hasImageBackground ? 0.26 : 1);
     layer.fillRect(bounds.x, bounds.y, bounds.w, bounds.h);
     if (!hasImageBackground) {
@@ -1479,40 +1455,56 @@ export class GameScene extends Phaser.Scene {
     const tint = active && ambience.intensity >= 0.28 ? Number.parseInt(ambience.color.slice(1), 16) : null;
 
     if (this.backgroundImageTint !== tint) {
-      for (const image of this.backgroundImages) {
-        if (tint === null) image.clearTint();
-        else image.setTint(tint);
+      for (const backgroundImage of this.backgroundImages) {
+        if (tint === null || backgroundImage.renderMode === "fit-level") backgroundImage.image.clearTint();
+        else backgroundImage.image.setTint(tint);
       }
       this.backgroundImageTint = tint;
     }
 
-    for (const image of this.backgroundImages) {
-      image.setTilePosition(
-        Math.round(-driftX / Math.max(0.01, image.tileScaleX)),
-        Math.round(-driftY / Math.max(0.01, image.tileScaleY))
-      );
-      image.setAlpha(alpha);
+    for (const backgroundImage of this.backgroundImages) {
+      backgroundImage.image.setAlpha(alpha);
+      if (backgroundImage.renderMode === "repeat-x") {
+        backgroundImage.image.setTilePosition(
+          Math.round(-driftX / Math.max(0.01, backgroundImage.image.tileScaleX)),
+          Math.round(-driftY / Math.max(0.01, backgroundImage.image.tileScaleY))
+        );
+      }
     }
   }
 
   private createBackgroundImages(): void {
     const background = backgroundForLevel(this.level, this.levelIndex);
     const bounds = this.level.bounds;
-    const scale = Math.max(bounds.h / background.sourceSize.h, 0.01);
-    const startX = bounds.x - BACKGROUND_DRIFT_PADDING;
     const texture = this.textures.get(background.key);
     texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
     this.backgroundTextureFilter = `${background.key}:${Phaser.Textures.FilterMode.LINEAR}`;
-    const image = this.add
-      .tileSprite(startX, bounds.y, bounds.w + BACKGROUND_DRIFT_PADDING * 2, bounds.h, background.key)
-      .setOrigin(0, 0)
-      .setDepth(-20)
-      .setAlpha(0.78)
-      .setTileScale(scale, scale);
-    this.backgroundImages.push(image);
+    if (background.renderMode === "fit-level") {
+      const scale = Math.max(bounds.w / background.sourceSize.w, bounds.h / background.sourceSize.h, 0.01);
+      const image = this.add
+        .image(bounds.x + bounds.w / 2, bounds.y + bounds.h / 2, background.key)
+        .setOrigin(0.5, 0.5)
+        .setDepth(-20)
+        .setAlpha(0.78)
+        .setDisplaySize(background.sourceSize.w * scale, background.sourceSize.h * scale);
+      this.backgroundImages.push({ renderMode: "fit-level", image });
+    } else {
+      const scale = Math.max(bounds.h / background.sourceSize.h, 0.01);
+      const startX = bounds.x - BACKGROUND_DRIFT_PADDING;
+      const image = this.add
+        .tileSprite(startX, bounds.y, bounds.w + BACKGROUND_DRIFT_PADDING * 2, bounds.h, background.key)
+        .setOrigin(0, 0)
+        .setDepth(-20)
+        .setAlpha(0.78)
+        .setTileScale(scale, scale);
+      this.backgroundImages.push({ renderMode: "repeat-x", image });
+    }
 
     if (import.meta.env.DEV) {
       document.documentElement.dataset.echoShiftBackgroundKey = background.key;
+      document.documentElement.dataset.echoShiftBackgroundRenderMode = background.renderMode;
+      document.documentElement.dataset.echoShiftBackgroundDetailLayer =
+        background.renderMode === "fit-level" || this.lowChurnGraphics ? "off" : "on";
       document.documentElement.dataset.echoShiftBackgroundPieces = String(this.backgroundImages.length);
       document.documentElement.dataset.echoShiftBackgroundAmbience = JSON.stringify(backgroundAmbienceForLevel(this.level));
     }
@@ -2590,21 +2582,31 @@ export class GameScene extends Phaser.Scene {
         `cryo-floor-ice:${Math.round(ice.x)},${Math.round(ice.y)}:${Math.round(ice.w)}x${Math.round(ice.h)}:${Math.round(ice.remainingFrames)}/${Math.round(ice.lifeFrames)}`
       );
     }
-    const pulse = Math.sin(this.simulation.tick / 10) * 0.5 + 0.5;
-    const lifeRatio = Math.max(0.18, Math.min(1, ice.remainingFrames / Math.max(1, ice.lifeFrames)));
-    this.fx.fillStyle(color, (0.1 + pulse * 0.05) * lifeRatio);
-    this.fx.fillRoundedRect(ice.x - 4, ice.y - 2, ice.w + 8, ice.h + 6, 5);
-    this.fx.fillStyle(0xffffff, (0.16 + pulse * 0.12) * lifeRatio);
-    this.fx.fillRoundedRect(ice.x + 4, ice.y + ice.h * 0.35, Math.max(2, ice.w - 8), 2, 2);
-    const facets = Math.max(4, Math.floor(ice.w / 24));
-    this.fx.lineStyle(1.25, 0xffffff, (0.18 + pulse * 0.16) * lifeRatio);
+    const pulse = Math.sin(this.simulation.tick / 8) * 0.5 + 0.5;
+    const lifeRatio = Math.max(0.26, Math.min(1, ice.remainingFrames / Math.max(1, ice.lifeFrames)));
+    this.fx.fillStyle(0x071d2a, 0.2 * lifeRatio);
+    this.fx.fillRoundedRect(ice.x - 8, ice.y - 7, ice.w + 16, ice.h + 16, 7);
+    this.fx.fillStyle(color, (0.22 + pulse * 0.1) * lifeRatio);
+    this.fx.fillRoundedRect(ice.x - 8, ice.y - 8, ice.w + 16, ice.h + 15, 7);
+    this.fx.fillStyle(0xcafcff, (0.34 + pulse * 0.18) * lifeRatio);
+    this.fx.fillRoundedRect(ice.x - 4, ice.y - 5, ice.w + 8, 4 + pulse * 2, 3);
+    this.fx.fillStyle(0xffffff, (0.22 + pulse * 0.16) * lifeRatio);
+    this.fx.fillRoundedRect(ice.x + 8, ice.y + ice.h * 0.2, Math.max(2, ice.w - 16), 3, 2);
+    const facets = Math.max(5, Math.floor(ice.w / 18));
+    this.fx.lineStyle(1.75, 0xffffff, (0.32 + pulse * 0.2) * lifeRatio);
     for (let index = 0; index < facets; index += 1) {
       const x = ice.x + ((index + 0.5) / facets) * ice.w;
-      this.fx.lineBetween(x - 8, ice.y + ice.h, x - 2, ice.y + 1);
-      this.fx.lineBetween(x - 2, ice.y + 1, x + 9, ice.y + ice.h * 0.7);
+      this.fx.lineBetween(x - 10, ice.y + ice.h + 3, x - 2, ice.y - 2);
+      this.fx.lineBetween(x - 2, ice.y - 2, x + 10, ice.y + ice.h * 0.65);
     }
-    this.fx.lineStyle(2, color, (0.32 + pulse * 0.18) * lifeRatio);
-    this.fx.lineBetween(ice.x + 3, ice.y + ice.h, ice.x + ice.w - 3, ice.y + ice.h);
+    this.fx.lineStyle(3, color, (0.58 + pulse * 0.2) * lifeRatio);
+    this.fx.lineBetween(ice.x + 2, ice.y + ice.h + 1, ice.x + ice.w - 2, ice.y + ice.h + 1);
+    this.fx.lineStyle(1.25, 0xffffff, (0.3 + pulse * 0.18) * lifeRatio);
+    const tickCount = Math.max(4, Math.floor(ice.w / 26));
+    for (let index = 0; index < tickCount; index += 1) {
+      const x = ice.x + ((index + 0.5) / tickCount) * ice.w;
+      this.fx.lineBetween(x, ice.y + ice.h + 3, x + Math.sin(this.simulation.tick / 13 + index) * 3, ice.y + ice.h + 9);
+    }
   }
 
   private drawBossIntroEffect(body: Rect, color: number, progress: number): void {
