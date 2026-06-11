@@ -111,7 +111,6 @@ const draftLevel = {
       w: 360,
       h: 160,
       entrySide: "center",
-      weakSpot: "bottom",
       introSeconds: 1,
       health: 1,
       score: 1000
@@ -164,7 +163,6 @@ const cameraFollowDraftLevel = {
       w: 1200,
       h: 380,
       entrySide: "center",
-      weakSpot: "bottom",
       introSeconds: 1,
       health: 1,
       score: 1000
