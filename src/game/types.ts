@@ -200,9 +200,14 @@ export type Boss = Rect & {
 };
 
 export type BossAttackSnapshot = Rect & {
-  kind: "horizontal" | "vertical";
+  kind: "horizontal" | "vertical" | "falling";
   originX: number;
   originY: number;
+  attackType?: "archive-book";
+  attackPhase?: "warning" | "falling" | "impact";
+  round?: number;
+  variant?: number;
+  progress?: number;
 };
 
 export type BossFloorIceSnapshot = Rect & {

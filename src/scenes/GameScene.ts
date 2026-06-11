@@ -16,6 +16,9 @@ import {
 } from "../game/enemies";
 import {
   ARCHIVE_BOSS_CLEAN_KEY,
+  ARCHIVE_BOOK_VOLLEY_FRAME_HEIGHT,
+  ARCHIVE_BOOK_VOLLEY_FRAME_WIDTH,
+  ARCHIVE_BOOK_VOLLEY_KEY,
   BOSS_ATLAS_KEY,
   BOSS_STATE_FRAME_COUNT,
   CRYO_BOSS_CLEAN_KEY,
@@ -250,6 +253,8 @@ export class GameScene extends Phaser.Scene {
   private staticObjectAssetIds = new Set<string>();
   private readonly activeActorSpriteIds = new Set<string>();
   private readonly activeCoreSpriteIds = new Set<string>();
+  private archiveAttackSprites = new Map<string, Phaser.GameObjects.Image>();
+  private readonly activeArchiveAttackSpriteIds = new Set<string>();
   private staticSolidAssetFrames: string[] = [];
   private staticTerrainDecorFrames: string[] = [];
   private staticTerrainDecorPropFrames: string[] = [];
@@ -430,6 +435,8 @@ export class GameScene extends Phaser.Scene {
     this.staticObjectAssetIds.clear();
     this.activeActorSpriteIds.clear();
     this.activeCoreSpriteIds.clear();
+    this.archiveAttackSprites.clear();
+    this.activeArchiveAttackSpriteIds.clear();
     this.staticSolidAssetFrames = [];
     this.tileAssetPhases = [];
     this.tileAssetOrigins = [];
@@ -1231,6 +1238,8 @@ export class GameScene extends Phaser.Scene {
     this.staticObjectAssetIds.clear();
     this.activeActorSpriteIds.clear();
     this.activeCoreSpriteIds.clear();
+    this.archiveAttackSprites.clear();
+    this.activeArchiveAttackSpriteIds.clear();
     this.staticSolidAssetFrames = [];
     this.tileAssetPhases = [];
     this.tileAssetOrigins = [];
@@ -2429,6 +2438,7 @@ export class GameScene extends Phaser.Scene {
   private drawBosses(bosses: BossSnapshot[]): void {
     this.bossSpriteFrames = [];
     this.bossEffectFrames = [];
+    this.activeArchiveAttackSpriteIds.clear();
     for (const boss of this.level.bosses || []) {
       const snapshot = bosses.find((item) => item.id === boss.id);
       const color = this.bossColor(boss.kind);
@@ -2461,6 +2471,9 @@ export class GameScene extends Phaser.Scene {
       this.syncBossSprite(boss.id, boss.kind, snapshot, flickerWhite, introProgress);
       if (snapshot.phase === "departing") this.drawBossDefeatEffects(snapshot, color);
       if (snapshot.phase === "active" && bossIsVulnerable(snapshot)) this.drawBossWeakSpot(snapshot, color, flickerWhite);
+    }
+    for (const [id, sprite] of this.archiveAttackSprites) {
+      if (!this.activeArchiveAttackSpriteIds.has(id)) sprite.setVisible(false);
     }
   }
 
@@ -2519,6 +2532,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawArchiveBossAttackEffect(attack: BossAttackSnapshot, color: number): void {
+    if (attack.attackType === "archive-book" || attack.kind === "falling") {
+      this.drawArchiveBookAttackEffect(attack, color);
+      return;
+    }
     if (this.diagnosticsEnabled) {
       this.bossEffectFrames.push(
         `archive-attack:${attack.kind}:${Math.round(attack.x)},${Math.round(attack.y)}:${Math.round(attack.w)}x${Math.round(attack.h)}`
@@ -2584,6 +2601,61 @@ export class GameScene extends Phaser.Scene {
     this.fx.fillCircle(attack.originX, attack.y + attack.h, 11);
   }
 
+  private drawArchiveBookAttackEffect(attack: BossAttackSnapshot, color: number): void {
+    const phase = attack.attackPhase || "falling";
+    const round = attack.round || 1;
+    const variant = Math.max(0, Math.round(attack.variant || 0));
+    const progress = Math.max(0, Math.min(1, attack.progress || 0));
+    const centerX = attack.x + attack.w / 2;
+    const centerY = attack.y + attack.h / 2;
+    const pulse = Math.sin(this.simulation.tick / 3.5 + centerX * 0.03) * 0.5 + 0.5;
+    if (this.diagnosticsEnabled) {
+      this.bossEffectFrames.push(
+        `archive-book-${phase}:r${round}:f${variant}:${Math.round(attack.x)},${Math.round(attack.y)}:${Math.round(attack.w)}x${Math.round(attack.h)}:p${Math.round(progress * 100)}`
+      );
+    }
+
+    this.fx.fillStyle(0x1f130b, phase === "impact" ? 0.28 : 0.12);
+    this.fx.fillEllipse(centerX, attack.y + attack.h + 3, Math.max(36, attack.w * 1.16), phase === "impact" ? 13 : 8);
+    if (phase === "falling") {
+      this.fx.lineStyle(2, color, 0.2 + progress * 0.18);
+      this.fx.lineBetween(centerX, Math.max(attack.originY, attack.y - 28), centerX, attack.y + attack.h * 0.7);
+      this.fx.lineStyle(1, 0xffffff, 0.18 + pulse * 0.16);
+      this.fx.lineBetween(centerX - 8, attack.y - 20, centerX - 3, attack.y + attack.h * 0.55);
+      this.fx.lineBetween(centerX + 7, attack.y - 26, centerX + 2, attack.y + attack.h * 0.48);
+    } else {
+      this.fx.fillStyle(color, 0.1 + pulse * 0.08);
+      this.fx.fillEllipse(centerX, attack.y + attack.h * 0.82, attack.w * 1.45, attack.h * 1.08);
+      this.fx.lineStyle(2, color, 0.28 + pulse * 0.16);
+      this.fx.lineBetween(centerX - attack.w * 0.35, attack.y + attack.h * 0.55, centerX + attack.w * 0.34, attack.y + attack.h * 0.35);
+      this.fx.lineBetween(centerX - attack.w * 0.22, attack.y + attack.h * 0.25, centerX + attack.w * 0.2, attack.y + attack.h * 0.76);
+    }
+
+    if (!this.textures.exists(ARCHIVE_BOOK_VOLLEY_KEY)) {
+      this.fx.fillStyle(phase === "impact" ? 0xffefbd : 0x6b4326, 0.76);
+      this.fx.fillRoundedRect(attack.x, attack.y, attack.w, attack.h, 5);
+      return;
+    }
+
+    const frame = phase === "impact" ? 3 : variant % 2;
+    const spriteId = `archive-book:${round}:${Math.round(attack.originX)}:${variant}`;
+    let sprite = this.archiveAttackSprites.get(spriteId);
+    if (!sprite) {
+      sprite = this.add.image(0, 0, ARCHIVE_BOOK_VOLLEY_KEY, frame).setOrigin(0.5, 0.5).setDepth(22);
+      this.archiveAttackSprites.set(spriteId, sprite);
+    }
+    this.activeArchiveAttackSpriteIds.add(spriteId);
+    const displayW = phase === "impact" ? Math.max(92, attack.w * 1.5) : ARCHIVE_BOOK_VOLLEY_FRAME_WIDTH * 0.56;
+    const displayH = phase === "impact" ? ARCHIVE_BOOK_VOLLEY_FRAME_HEIGHT * 0.48 : ARCHIVE_BOOK_VOLLEY_FRAME_HEIGHT * 0.56;
+    sprite
+      .setVisible(true)
+      .setTexture(ARCHIVE_BOOK_VOLLEY_KEY, frame)
+      .setPosition(Math.round(centerX), Math.round(phase === "impact" ? attack.y + attack.h * 0.42 : centerY))
+      .setDisplaySize(displayW, displayH)
+      .setRotation(phase === "falling" ? Math.sin(this.simulation.tick / 9 + centerX * 0.02) * 0.07 : 0)
+      .setAlpha(phase === "impact" ? 0.9 : 1);
+  }
+
   private drawArchiveBossWindupEffect(boss: Boss, snapshot: BossSnapshot, color: number): void {
     if (snapshot.phase !== "active" || snapshot.recoveryFrames > 0 || bossIsVulnerable(snapshot) || snapshot.attacks.length > 0) return;
     const windupFrames = bossAttackWindupFramesFor(boss.kind);
@@ -2595,6 +2667,34 @@ export class GameScene extends Phaser.Scene {
       this.bossEffectFrames.push(`${boss.id}:archive-windup:${Math.round(progress * 100)}:${snapshot.attackWarnings.length}`);
     }
     for (const warning of snapshot.attackWarnings) {
+      if (warning.attackType === "archive-book" || warning.kind === "falling") {
+        if (this.diagnosticsEnabled) {
+          this.bossEffectFrames.push(
+            `archive-book-warning:r${warning.round || 1}:${Math.round(warning.x)},${Math.round(warning.y)}:${Math.round(warning.w)}x${Math.round(warning.h)}:p${Math.round((warning.progress || progress) * 100)}`
+          );
+        }
+        const warnProgress = Math.max(progress, Math.max(0, Math.min(1, warning.progress || 0)));
+        const centerX = warning.originX;
+        const centerY = warning.y + warning.h / 2;
+        const radiusPulse = 0.82 + pulse * 0.18 + warnProgress * 0.22;
+        this.fx.fillStyle(0x1e130b, 0.2 + warnProgress * 0.18);
+        this.fx.fillEllipse(centerX, centerY + 2, warning.w * radiusPulse, warning.h * (1.6 + warnProgress * 0.55));
+        this.fx.lineStyle(2, color, 0.24 + warnProgress * 0.38);
+        this.fx.strokeEllipse(centerX, centerY + 1, warning.w * (0.74 + warnProgress * 0.2), warning.h * (1.35 + warnProgress * 0.35));
+        this.fx.lineStyle(1.5, 0xffffff, 0.14 + warnProgress * 0.32);
+        this.fx.lineBetween(centerX - warning.w * 0.32, centerY, centerX + warning.w * 0.32, centerY);
+        this.fx.lineBetween(centerX, centerY - warning.h * 0.72, centerX, centerY + warning.h * 0.72);
+        const pageCount = 3;
+        for (let index = 0; index < pageCount; index += 1) {
+          const x = centerX + (index - 1) * warning.w * 0.24 + Math.sin(this.simulation.tick / 8 + index) * 2;
+          const y = Math.max(boss.y + 30, warning.originY + index * 10 + warnProgress * 18);
+          this.fx.fillStyle(index % 2 === 0 ? 0xffefbd : 0xffffff, 0.16 + warnProgress * 0.24);
+          this.fx.fillRect(x - 5, y, 10, 7);
+          this.fx.lineStyle(1, 0x3b2512, 0.18 + warnProgress * 0.14);
+          this.fx.strokeRect(x - 5, y, 10, 7);
+        }
+        continue;
+      }
       if (warning.kind === "horizontal") {
         this.fx.fillStyle(color, 0.035 + progress * 0.12);
         this.fx.fillRoundedRect(warning.x - 4, warning.y - 8, warning.w + 8, warning.h + 16, 8);
@@ -2835,9 +2935,17 @@ export class GameScene extends Phaser.Scene {
     if (snapshot.phase !== "active") return 0;
     const cycle = snapshot.activeFrames % bossAttackCycleFramesFor(snapshot);
     if (state === "windup") {
+      if (kind === "archive-custodian" && snapshot.attackWarnings.length > 0) {
+        const progress = Math.max(0, Math.min(1, snapshot.attackWarnings[0].progress || 0));
+        return Math.min(BOSS_STATE_FRAME_COUNT - 1, Math.floor(progress * BOSS_STATE_FRAME_COUNT));
+      }
       return Math.min(BOSS_STATE_FRAME_COUNT - 1, Math.floor((cycle / Math.max(1, bossAttackWindupFramesFor(snapshot))) * BOSS_STATE_FRAME_COUNT));
     }
     if (state === "attack") {
+      if (kind === "archive-custodian" && snapshot.attacks.length > 0) {
+        const progress = Math.max(0, Math.min(1, snapshot.attacks[0].progress || 0));
+        return Math.min(BOSS_STATE_FRAME_COUNT - 1, Math.floor(progress * BOSS_STATE_FRAME_COUNT));
+      }
       const attackFrame = cycle - bossAttackWindupFramesFor(snapshot);
       return Math.min(BOSS_STATE_FRAME_COUNT - 1, Math.floor((attackFrame / Math.max(1, bossAttackActiveFramesFor(snapshot))) * BOSS_STATE_FRAME_COUNT));
     }
@@ -2849,6 +2957,10 @@ export class GameScene extends Phaser.Scene {
     if (kind === "storm-relay-warden" || kind === "cryo-conservator") return "idle";
     if (snapshot.phase === "active") {
       if (bossIsVulnerable(snapshot)) return "vulnerable";
+      if (kind === "archive-custodian") {
+        if (snapshot.attacks.length > 0) return "attack";
+        if (snapshot.attackWarnings.length > 0) return "windup";
+      }
       const cycle = snapshot.activeFrames % bossAttackCycleFramesFor(snapshot);
       const windupFrames = bossAttackWindupFramesFor(snapshot);
       if (cycle >= windupFrames && cycle < windupFrames + bossAttackActiveFramesFor(snapshot)) {
@@ -3058,6 +3170,7 @@ export class GameScene extends Phaser.Scene {
       { key: HAZARD_VENT_KEY, frame: 0 },
       { key: MONSTER_ATLAS_KEY, frame: 0 },
       { key: BOSS_ATLAS_KEY, frame: 0 },
+      { key: ARCHIVE_BOOK_VOLLEY_KEY, frame: 0 },
       { key: POOF_SHEET_KEY, frame: 0 },
       { key: TERRAIN_TILE_KEY, frame: 0 },
       { key: "time-runner", frame: 0 },

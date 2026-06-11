@@ -7,6 +7,9 @@ import {
   BOSS_ATLAS_FRAME_WIDTH,
   BOSS_ATLAS_KEY,
   ARCHIVE_BOSS_CLEAN_KEY,
+  ARCHIVE_BOOK_VOLLEY_FRAME_HEIGHT,
+  ARCHIVE_BOOK_VOLLEY_FRAME_WIDTH,
+  ARCHIVE_BOOK_VOLLEY_KEY,
   CRYO_BOSS_CLEAN_KEY,
   MONSTER_ATLAS_FRAME_HEIGHT,
   MONSTER_ATLAS_FRAME_WIDTH,
@@ -74,6 +77,10 @@ export class BootScene extends Phaser.Scene {
     this.load.spritesheet(ARCHIVE_BOSS_CLEAN_KEY, "/assets/sprites/archive-custodian-clean.png", {
       frameWidth: BOSS_ATLAS_FRAME_WIDTH,
       frameHeight: BOSS_ATLAS_FRAME_HEIGHT
+    });
+    this.load.spritesheet(ARCHIVE_BOOK_VOLLEY_KEY, "/assets/sprites/archive-book-volley-sheet.png", {
+      frameWidth: ARCHIVE_BOOK_VOLLEY_FRAME_WIDTH,
+      frameHeight: ARCHIVE_BOOK_VOLLEY_FRAME_HEIGHT
     });
     this.load.spritesheet(MONSTER_ATLAS_KEY, "/assets/sprites/monster-atlas.png", {
       frameWidth: MONSTER_ATLAS_FRAME_WIDTH,

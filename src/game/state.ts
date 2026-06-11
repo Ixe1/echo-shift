@@ -514,7 +514,7 @@ export class RoomSimulation {
         continue;
       }
 
-      const attacks = bossAttackRectsAt(boss, state, this.tick);
+      const attacks = bossAttackRectsAt(boss, state, this.tick, this.level.solids);
       const floorShocks = bossFloorShockRectsAt(boss, state, this.tick, this.level.solids);
       if (
         (bossBodyDamages(state) && rectsOverlap(this.player, body)) ||
@@ -627,8 +627,8 @@ export class RoomSimulation {
           body,
           weakSpot,
           weakSpotKind: bossWeakSpot(boss),
-          attackWarnings: bossAttackWarningRectsAt(boss, state, this.tick),
-          attacks: bossAttackRectsAt(boss, state, this.tick),
+          attackWarnings: bossAttackWarningRectsAt(boss, state, this.tick, this.level.solids),
+          attacks: bossAttackRectsAt(boss, state, this.tick, this.level.solids),
           floorShocks: bossFloorShockRectsAt(boss, state, this.tick, this.level.solids),
           floorIce: bossFloorIceRectsAt(boss, state, this.tick, this.level.solids)
         }

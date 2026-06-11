@@ -2297,10 +2297,10 @@ try {
     `Expected storm boss recovered cycle to restart before the beam window, got frame ${stormRecovered.activeFrames}`
   );
 
-  const archiveLevel = {
-    ...bossLevel,
-    bosses: [{ ...bossLevel.bosses[0], kind: "archive-custodian", introSeconds: 1, health: 2, score: 1600 }]
-  };
+	  const archiveLevel = {
+	    ...bossLevel,
+	    bosses: [{ ...bossLevel.bosses[0], kind: "archive-custodian", introSeconds: 1, health: 2, score: 1600 }]
+	  };
   const archiveLowFloorLevel = {
     ...baseLevel,
     id: "archive-low-floor-targeting",
@@ -2327,20 +2327,41 @@ try {
       }
     ]
   };
-  assert(
-    bossAttackCycleFramesFor("archive-custodian") > bossAttackCycleFramesFor("cryo-conservator") - 40,
-    `Expected archive boss to use a deliberate readable attack cycle, got ${bossAttackCycleFramesFor("archive-custodian")}`
-  );
-  const archiveWarningSim = new RoomSimulation(archiveLevel);
-  Object.assign(archiveWarningSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
-  archiveWarningSim.step(idle);
-  runFrames(archiveWarningSim, 60, idle);
-  Object.assign(archiveWarningSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
-  const archiveWarning = runBossUntilWarning(archiveWarningSim, "boss-test", 0.65);
-  assert(archiveWarning.attackWarnings.length === 1, `Expected full-health archive warm-up to warn one index beam, got ${archiveWarning.attackWarnings.length}`);
-  assert(archiveWarning.attackWarnings[0].kind === "horizontal", `Expected archive warm-up to warn a horizontal index beam, got ${archiveWarning.attackWarnings[0].kind}`);
+	  assert(
+	    bossAttackCycleFramesFor("archive-custodian") > bossAttackCycleFramesFor("cryo-conservator") - 40,
+	    `Expected archive boss to use a deliberate readable attack cycle, got ${bossAttackCycleFramesFor("archive-custodian")}`
+	  );
+	  const runArchiveUntil = (simulation, bossId, predicate, maxFrames = 320) => {
+	    for (let frameIndex = 0; frameIndex < maxFrames; frameIndex += 1) {
+	      const snapshot = simulation.bossSnapshots().find((boss) => boss.id === bossId);
+	      if (snapshot && predicate(snapshot)) return snapshot;
+	      simulation.step(idle);
+	    }
+	    throw new Error(`Expected archive boss ${bossId} to reach requested state`);
+	  };
+	  const safeArchiveDodgeX = (warnings, bounds, playerWidth = 24) => {
+	    const sorted = [...warnings].sort((a, b) => a.x - b.x);
+	    const candidates = [bounds.x + 30, bounds.x + bounds.w - playerWidth - 30];
+	    for (let index = 0; index < sorted.length - 1; index += 1) {
+	      const left = sorted[index].x + sorted[index].w;
+	      const right = sorted[index + 1].x;
+	      if (right - left >= playerWidth + 8) candidates.push((left + right - playerWidth) / 2);
+	    }
+	    return candidates.find((x) => !sorted.some((warning) => rectsOverlap({ x, y: warning.y - 34, w: playerWidth, h: 34 }, warning))) ?? candidates[0];
+	  };
+	  const archiveWarningSim = new RoomSimulation(archiveLevel);
+	  Object.assign(archiveWarningSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
+	  archiveWarningSim.step(idle);
+	  runFrames(archiveWarningSim, 60, idle);
+	  Object.assign(archiveWarningSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+	  const archiveWarning = runBossUntilWarning(archiveWarningSim, "boss-test", 0.65);
+	  assert(archiveWarning.attackWarnings.length >= 2, `Expected full-health archive warm-up to warn multiple falling book landings, got ${archiveWarning.attackWarnings.length}`);
+	  assert(
+	    archiveWarning.attackWarnings.every((warning) => warning.kind === "falling" && warning.attackType === "archive-book" && warning.attackPhase === "warning"),
+	    `Expected archive warm-up warnings to be falling book landing shadows, got ${JSON.stringify(archiveWarning.attackWarnings)}`
+	  );
 
-  const archiveLowFloorWarningSim = new RoomSimulation(archiveLowFloorLevel);
+	  const archiveLowFloorWarningSim = new RoomSimulation(archiveLowFloorLevel);
   Object.assign(archiveLowFloorWarningSim.player, {
     x: archiveLowFloorLevel.start.x,
     y: 280 - archiveLowFloorWarningSim.player.h,
@@ -2348,15 +2369,15 @@ try {
     vy: 0,
     onGround: true
   });
-  archiveLowFloorWarningSim.step(idle);
-  runFrames(archiveLowFloorWarningSim, 60, idle);
-  const archiveLowFloorWarning = runBossUntilWarning(archiveLowFloorWarningSim, "archive-low-floor-boss", 0.65);
-  const archiveLowFloorBeam = archiveLowFloorWarning.attackWarnings.find((warning) => warning.kind === "horizontal");
-  assert(Boolean(archiveLowFloorBeam), `Expected low-floor archive warm-up to warn an index beam, got ${JSON.stringify(archiveLowFloorWarning.attackWarnings)}`);
-  assert(
-    rectsOverlap(archiveLowFloorWarningSim.player, archiveLowFloorBeam),
-    `Expected low-floor archive warning lane to cover the sampled player, got player ${JSON.stringify(archiveLowFloorWarningSim.player)} and warning ${JSON.stringify(archiveLowFloorBeam)}`
-  );
+	  archiveLowFloorWarningSim.step(idle);
+	  runFrames(archiveLowFloorWarningSim, 60, idle);
+	  const archiveLowFloorWarning = runBossUntilWarning(archiveLowFloorWarningSim, "archive-low-floor-boss", 0.65);
+	  const archiveLowFloorLanding = archiveLowFloorWarning.attackWarnings.find((warning) => warning.kind === "falling" && warning.attackType === "archive-book");
+	  assert(Boolean(archiveLowFloorLanding), `Expected low-floor archive warm-up to warn a falling book landing, got ${JSON.stringify(archiveLowFloorWarning.attackWarnings)}`);
+	  assert(
+	    archiveLowFloorWarning.attackWarnings.some((warning) => rectsOverlap(archiveLowFloorWarningSim.player, { ...warning, y: archiveLowFloorWarningSim.player.y, h: archiveLowFloorWarningSim.player.h })),
+	    `Expected low-floor archive warning landings to include the sampled player lane, got player ${JSON.stringify(archiveLowFloorWarningSim.player)} and warnings ${JSON.stringify(archiveLowFloorWarning.attackWarnings)}`
+	  );
 
   const archiveLowFloorAttackSim = new RoomSimulation(archiveLowFloorLevel);
   Object.assign(archiveLowFloorAttackSim.player, {
@@ -2366,94 +2387,139 @@ try {
     vy: 0,
     onGround: true
   });
-  archiveLowFloorAttackSim.step(idle);
-  runFrames(archiveLowFloorAttackSim, 60, idle);
-  let archiveLowFloorAttack = null;
-  for (let frameIndex = 0; frameIndex < 180; frameIndex += 1) {
-    const snapshot = archiveLowFloorAttackSim.bossSnapshots().find((boss) => boss.id === "archive-low-floor-boss");
-    if (snapshot?.attacks.length > 0) {
-      archiveLowFloorAttack = snapshot;
-      break;
-    }
-    archiveLowFloorAttackSim.step(idle);
-  }
-  assert(Boolean(archiveLowFloorAttack), "Expected low-floor archive boss to reach an active attack window");
-  assert(
-    archiveLowFloorAttack.attacks.some((attack) => rectsOverlap(archiveLowFloorAttackSim.player, attack)),
-    `Expected low-floor archive active beam to cover the sampled player, got player ${JSON.stringify(archiveLowFloorAttackSim.player)} and attacks ${JSON.stringify(archiveLowFloorAttack.attacks)}`
-  );
-  assert(
-    !rectsOverlap(archiveLowFloorAttackSim.player, archiveLowFloorAttack.body),
-    `Expected low-floor archive body to stay clear during the beam, got player ${JSON.stringify(archiveLowFloorAttackSim.player)} and body ${JSON.stringify(archiveLowFloorAttack.body)}`
-  );
-  assert(
-    archiveLowFloorAttackSim.player.y - (archiveLowFloorAttack.body.y + archiveLowFloorAttack.body.h) >= 32,
+	  archiveLowFloorAttackSim.step(idle);
+	  runFrames(archiveLowFloorAttackSim, 60, idle);
+	  const archiveLowFloorAttackWarning = runBossUntilWarning(archiveLowFloorAttackSim, "archive-low-floor-boss", 0.65);
+	  Object.assign(archiveLowFloorAttackSim.player, {
+	    x: safeArchiveDodgeX(archiveLowFloorAttackWarning.attackWarnings, archiveLowFloorAttackSim.level.bounds, archiveLowFloorAttackSim.player.w),
+	    y: 18,
+	    vx: 0,
+	    vy: 0,
+	    onGround: false
+	  });
+	  const archiveLowFloorAttack = runArchiveUntil(
+	    archiveLowFloorAttackSim,
+	    "archive-low-floor-boss",
+	    (snapshot) => snapshot.attacks.some((attack) => attack.attackPhase === "impact")
+	  );
+	  const archiveLowFloorImpact = archiveLowFloorAttack.attacks.find((attack) => attack.attackPhase === "impact");
+	  Object.assign(archiveLowFloorAttackSim.player, {
+	    x: archiveLowFloorImpact.x + archiveLowFloorImpact.w / 2 - archiveLowFloorAttackSim.player.w / 2,
+	    y: archiveLowFloorImpact.y + archiveLowFloorImpact.h - archiveLowFloorAttackSim.player.h,
+	    vx: 0,
+	    vy: 0,
+	    onGround: true
+	  });
+	  assert(Boolean(archiveLowFloorAttack), "Expected low-floor archive boss to reach an active attack window");
+	  assert(
+	    archiveLowFloorAttack.attacks.some((attack) => attack.kind === "falling" && attack.attackPhase === "impact" && rectsOverlap(archiveLowFloorAttackSim.player, attack)),
+	    `Expected low-floor archive book impact to cover the sampled player, got player ${JSON.stringify(archiveLowFloorAttackSim.player)} and attacks ${JSON.stringify(archiveLowFloorAttack.attacks)}`
+	  );
+	  assert(
+	    !rectsOverlap(archiveLowFloorAttackSim.player, archiveLowFloorAttack.body),
+	    `Expected low-floor archive body to stay clear during falling books, got player ${JSON.stringify(archiveLowFloorAttackSim.player)} and body ${JSON.stringify(archiveLowFloorAttack.body)}`
+	  );
+	  assert(
+	    archiveLowFloorAttackSim.player.y - (archiveLowFloorAttack.body.y + archiveLowFloorAttack.body.h) >= 32,
     `Expected low-floor archive body to remain visibly above the player during attack, got player ${JSON.stringify(archiveLowFloorAttackSim.player)} and body ${JSON.stringify(archiveLowFloorAttack.body)}`
   );
 
   const archiveAttackSim = new RoomSimulation(archiveLevel);
   Object.assign(archiveAttackSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
-  archiveAttackSim.step(idle);
-  runFrames(archiveAttackSim, 60, idle);
-  Object.assign(archiveAttackSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
-  const archiveAttackTargetY = archiveAttackSim.player.y + archiveAttackSim.player.h / 2;
-  const archiveAttackSnapshot = runBossUntilAttack(archiveAttackSim, "boss-test");
-  assert(archiveAttackSnapshot.attacks.length === 1, `Expected full-health archive boss to fire one index beam, got ${archiveAttackSnapshot.attacks.length}`);
-  const archiveBeam = archiveAttackSnapshot.attacks[0];
-  assert(archiveBeam.kind === "horizontal", `Expected archive boss primary attack to be horizontal, got ${archiveBeam.kind}`);
-  assert(
-    archiveBeam.originX >= archiveAttackSnapshot.body.x - 1 && archiveBeam.originX <= archiveAttackSnapshot.body.x + archiveAttackSnapshot.body.w + 1,
-    `Expected archive index beam to project from the boss side, got origin x ${archiveBeam.originX} for ${JSON.stringify(archiveAttackSnapshot.body)}`
-  );
-  assert(
-    Math.abs(archiveBeam.y + archiveBeam.h / 2 - archiveBeam.originY) <= 2,
-    `Expected archive index beam lane to pass through its projected origin, got ${JSON.stringify(archiveBeam)}`
-  );
-  assert(
-    Math.abs(archiveBeam.originY - archiveAttackTargetY) <= 4,
-    `Expected archive index beam lane to target sampled player y ${archiveAttackTargetY}, got ${archiveBeam.originY}`
-  );
-  Object.assign(archiveAttackSim.player, {
-    x: archiveBeam.x + archiveBeam.w / 2 - 12,
-    y: archiveBeam.y + archiveBeam.h / 2 - archiveAttackSim.player.h / 2,
-    vx: 0,
-    vy: 0,
-    onGround: false
-  });
-  const archiveBeamDeath = archiveAttackSim.step(idle);
-  assert(archiveBeamDeath.died && archiveAttackSim.dead, "Expected active archive index beam to kill the player");
+	  archiveAttackSim.step(idle);
+	  runFrames(archiveAttackSim, 60, idle);
+	  Object.assign(archiveAttackSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+	  const archiveAttackSnapshot = runBossUntilAttack(archiveAttackSim, "boss-test");
+	  assert(
+	    archiveAttackSnapshot.attacks.length >= 2 && archiveAttackSnapshot.attacks.every((attack) => attack.kind === "falling" && attack.attackType === "archive-book"),
+	    `Expected full-health archive boss to drop one volley of multiple falling books, got ${JSON.stringify(archiveAttackSnapshot.attacks)}`
+	  );
+	  const archiveBookImpactSim = new RoomSimulation(archiveLevel);
+	  Object.assign(archiveBookImpactSim.player, { x: 36, y: 18, vx: 0, vy: 0, onGround: false });
+	  archiveBookImpactSim.step(idle);
+	  runFrames(archiveBookImpactSim, 60, idle);
+	  const archiveImpactSnapshot = runArchiveUntil(
+	    archiveBookImpactSim,
+	    "boss-test",
+	    (snapshot) => snapshot.attacks.some((attack) => attack.attackPhase === "impact")
+	  );
+	  const archiveImpact = archiveImpactSnapshot.attacks.find((attack) => attack.attackPhase === "impact");
+	  Object.assign(archiveBookImpactSim.player, {
+	    x: archiveImpact.x + archiveImpact.w / 2 - 12,
+	    y: archiveImpact.y + archiveImpact.h - archiveBookImpactSim.player.h,
+	    vx: 0,
+	    vy: 0,
+	    onGround: true
+	  });
+	  const archiveBookDeath = archiveBookImpactSim.step(idle);
+	  assert(archiveBookDeath.died && archiveBookImpactSim.dead, "Expected active archive book impact to kill the player");
 
-  const archiveRecoverySim = new RoomSimulation(archiveLevel);
+	  const archiveDodgeSim = new RoomSimulation(archiveLevel);
+	  Object.assign(archiveDodgeSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+	  archiveDodgeSim.step(idle);
+	  runFrames(archiveDodgeSim, 60, idle);
+	  const archiveDodgeWarning = runBossUntilWarning(archiveDodgeSim, "boss-test", 0.65);
+	  Object.assign(archiveDodgeSim.player, {
+	    x: safeArchiveDodgeX(archiveDodgeWarning.attackWarnings, archiveDodgeSim.level.bounds, archiveDodgeSim.player.w),
+	    y: 86,
+	    vx: 0,
+	    vy: 0,
+	    onGround: true
+	  });
+	  runFrames(archiveDodgeSim, bossAttackWindupFramesFor("archive-custodian") + bossAttackActiveFramesFor("archive-custodian") + 8, idle);
+	  assert(!archiveDodgeSim.dead, "Expected player to survive archive falling books after moving into a warned safe gap");
+
+	  const archiveRecoverySim = new RoomSimulation(archiveLevel);
   Object.assign(archiveRecoverySim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });
   archiveRecoverySim.step(idle);
   runFrames(archiveRecoverySim, 60, idle);
   const archiveVulnerable = runBossUntilVulnerable(archiveRecoverySim, "boss-test");
   assert(archiveVulnerable.weakSpotKind === "core", `Expected archive boss weak spot to be an exposed core, got ${archiveVulnerable.weakSpotKind}`);
   const archiveFirstHit = upwardHitBoss(archiveRecoverySim, archiveVulnerable);
-  assert(archiveFirstHit.bossHit?.health === 1, "Expected first archive core hit to leave one health for phase two");
-  assert(!archiveFirstHit.bossDefeated, "Expected first archive core hit not to defeat a two-health boss");
-  const archiveAfterHit = archiveRecoverySim.bossSnapshots()[0];
-  assert(archiveAfterHit.recoveryFrames > 0, "Expected archive boss to enter recovery after a nonfatal core hit");
-  assert(archiveAfterHit.attacks.length === 0 && archiveAfterHit.attackWarnings.length === 0, "Expected archive recovery to clear index beam hazards");
-  const archiveImmediateRetry = upwardHitBoss(archiveRecoverySim, archiveAfterHit);
-  assert(archiveImmediateRetry.bossHit === null, "Expected archive boss to ignore immediate repeat core hits during recovery");
-  for (let guard = 0; guard < 180 && archiveRecoverySim.bossSnapshots()[0]?.recoveryFrames > 0; guard += 1) {
-    archiveRecoverySim.step(idle);
-  }
-  const archivePhaseTwoWarning = runBossUntilWarning(archiveRecoverySim, "boss-test", 0.65);
-  assert(
-    archivePhaseTwoWarning.attackWarnings.length === 4 &&
-      archivePhaseTwoWarning.attackWarnings.filter((warning) => warning.kind === "vertical").length === 3,
-    `Expected half-health archive warm-up to add three falling page-shard columns, got ${JSON.stringify(archivePhaseTwoWarning.attackWarnings)}`
-  );
-  const archivePhaseTwoAttack = runBossUntilAttack(archiveRecoverySim, "boss-test");
-  assert(
-    archivePhaseTwoAttack.attacks.length === 4 &&
-      archivePhaseTwoAttack.attacks.some((attack) => attack.kind === "horizontal") &&
-      archivePhaseTwoAttack.attacks.filter((attack) => attack.kind === "vertical").length === 3,
-    `Expected half-health archive attack to combine index beam and page shards, got ${JSON.stringify(archivePhaseTwoAttack.attacks)}`
-  );
-  const archiveFinalVulnerable = runBossUntilVulnerable(archiveRecoverySim, "boss-test");
+	  assert(archiveFirstHit.bossHit?.health === 1, "Expected first archive core hit to leave one health for phase two");
+	  assert(!archiveFirstHit.bossDefeated, "Expected first archive core hit not to defeat a two-health boss");
+	  const archiveAfterHit = archiveRecoverySim.bossSnapshots()[0];
+	  assert(archiveAfterHit.recoveryFrames > 0, "Expected archive boss to enter recovery after a nonfatal core hit");
+	  assert(archiveAfterHit.attacks.length === 0 && archiveAfterHit.attackWarnings.length === 0, "Expected archive recovery to clear falling book hazards");
+	  const archiveImmediateRetry = upwardHitBoss(archiveRecoverySim, archiveAfterHit);
+	  assert(archiveImmediateRetry.bossHit === null, "Expected archive boss to ignore immediate repeat core hits during recovery");
+	  for (let guard = 0; guard < 180 && archiveRecoverySim.bossSnapshots()[0]?.recoveryFrames > 0; guard += 1) {
+	    archiveRecoverySim.step(idle);
+	  }
+	  const archivePhaseTwoWarning = runBossUntilWarning(archiveRecoverySim, "boss-test", 0.65);
+	  assert(
+	    archivePhaseTwoWarning.attackWarnings.length >= 2 &&
+	      archivePhaseTwoWarning.attackWarnings.every((warning) => warning.kind === "falling" && warning.round === 1),
+	    `Expected half-health archive first warm-up to warn falling book round one, got ${JSON.stringify(archivePhaseTwoWarning.attackWarnings)}`
+	  );
+	  const archivePhaseTwoAttack = runBossUntilAttack(archiveRecoverySim, "boss-test");
+	  assert(
+	    archivePhaseTwoAttack.attacks.length >= 2 &&
+	      archivePhaseTwoAttack.attacks.every((attack) => attack.kind === "falling" && attack.round === 1),
+	    `Expected half-health archive first attack to fire falling book round one, got ${JSON.stringify(archivePhaseTwoAttack.attacks)}`
+	  );
+	  Object.assign(archiveRecoverySim.player, { x: 36, y: 18, vx: 0, vy: 0, onGround: false });
+	  const archivePhaseTwoSecondWarning = runArchiveUntil(
+	    archiveRecoverySim,
+	    "boss-test",
+	    (snapshot) => snapshot.attackWarnings.some((warning) => warning.kind === "falling" && warning.round === 2) && snapshot.attacks.length === 0
+	  );
+	  assert(
+	    archivePhaseTwoSecondWarning.attackWarnings.length >= 2 &&
+	      archivePhaseTwoSecondWarning.attackWarnings.every((warning) => warning.round === 2 && warning.attackPhase === "warning"),
+	    `Expected half-health archive to warn a second falling book round before vulnerability, got ${JSON.stringify(archivePhaseTwoSecondWarning.attackWarnings)}`
+	  );
+	  const archivePhaseTwoSecondAttack = runArchiveUntil(
+	    archiveRecoverySim,
+	    "boss-test",
+	    (snapshot) => snapshot.attacks.some((attack) => attack.kind === "falling" && attack.round === 2)
+	  );
+	  assert(
+	    archivePhaseTwoSecondAttack.attacks.length >= 2 &&
+	      archivePhaseTwoSecondAttack.attacks.every((attack) => attack.round === 2 && attack.attackType === "archive-book"),
+	    `Expected half-health archive second attack to fire a second falling book round, got ${JSON.stringify(archivePhaseTwoSecondAttack.attacks)}`
+	  );
+	  const archiveFinalVulnerable = runBossUntilVulnerable(archiveRecoverySim, "boss-test");
   const archiveFinalHit = upwardHitBoss(archiveRecoverySim, archiveFinalVulnerable);
   assert(archiveFinalHit.bossDefeated?.score === 1600, `Expected second archive core hit to defeat the boss, got ${JSON.stringify(archiveFinalHit.bossDefeated)}`);
 

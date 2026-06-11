@@ -359,25 +359,29 @@ const verifyArchiveAttackRender = async (page) => {
   await startAudioGate(page);
   await page.locator("canvas").waitFor({ state: "visible" });
   await waitForLevelIntro(page);
-  await page.waitForFunction(
-    () => {
-      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
-      const windup = effects.match(/archive-attack-boss:archive-windup:(\d+):/);
-      return Boolean(windup && Number(windup[1]) >= 65);
-    },
-    null,
-    { timeout: 9000 }
-  );
-  await page.keyboard.down("ArrowRight");
-  await page.waitForTimeout(450);
-  await page.keyboard.up("ArrowRight");
-  await page.waitForFunction(
-    () => {
-      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
-      const sprites = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
-      return effects.includes("archive-attack:horizontal") && sprites.includes("archive-attack-boss:archive-custodian-clean") && sprites.includes(":attack:");
-    },
-    null,
+	  await page.waitForFunction(
+	    () => {
+	      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+	      const windup = effects.match(/archive-attack-boss:archive-windup:(\d+):/);
+	      return Boolean(windup && Number(windup[1]) >= 20 && effects.includes("archive-book-warning:"));
+	    },
+	    null,
+	    { timeout: 9000 }
+	  );
+	  await page.keyboard.down("ArrowRight");
+	  await page.waitForTimeout(820);
+	  await page.keyboard.up("ArrowRight");
+	  await page.waitForFunction(
+	    () => {
+	      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+	      const sprites = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
+	      return (
+	        (effects.includes("archive-book-falling:") || effects.includes("archive-book-impact:")) &&
+	        sprites.includes("archive-attack-boss:archive-custodian-clean") &&
+	        sprites.includes(":attack:")
+	      );
+	    },
+	    null,
     { timeout: 10000 }
   );
 
@@ -411,14 +415,14 @@ try {
       const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
       const sprites = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
       const windup = effects.match(/render-boss:archive-windup:(\d+):/);
-      return Boolean(windup && Number(windup[1]) >= 65 && sprites.includes("render-boss:archive-custodian-clean"));
+	      return Boolean(windup && Number(windup[1]) >= 20 && sprites.includes("render-boss:archive-custodian-clean"));
     },
     null,
     { timeout: 9000 }
   );
-  await page.keyboard.down("ArrowRight");
-  await page.waitForTimeout(450);
-  await page.keyboard.up("ArrowRight");
+	  await page.keyboard.down("ArrowRight");
+	  await page.waitForTimeout(820);
+	  await page.keyboard.up("ArrowRight");
 
   await page.waitForFunction(
     () => {
@@ -429,9 +433,9 @@ try {
     { timeout: 10000 }
   );
 
-  await page.keyboard.down("ArrowLeft");
-  await page.waitForTimeout(350);
-  await page.keyboard.down("Space");
+	  await page.keyboard.down("ArrowLeft");
+	  await page.waitForTimeout(760);
+	  await page.keyboard.down("Space");
   await page.waitForFunction(
     () => {
       const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
@@ -439,7 +443,7 @@ try {
       return effects.includes("render-boss:defeat-depart") && sprites.includes(":departing:");
     },
     null,
-    { timeout: 2000 }
+	    { timeout: 3000 }
   );
   await page.keyboard.up("Space");
   await page.keyboard.up("ArrowLeft");
