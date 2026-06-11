@@ -318,6 +318,15 @@ try {
   await waitForLevelIntro(page);
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await page.waitForFunction(() => (document.querySelector("[data-level]")?.textContent || "").includes("Boss Defeat Render QA"));
+  await page.waitForFunction(
+    () => {
+      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+      const sprites = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
+      return effects.includes("render-boss:archive-windup") && sprites.includes("render-boss:archive-custodian-clean");
+    },
+    null,
+    { timeout: 9000 }
+  );
 
   await page.waitForFunction(
     () => {

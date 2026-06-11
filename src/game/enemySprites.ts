@@ -3,6 +3,7 @@ import type { BossKind, MonsterKind } from "./types";
 export const BOSS_ATLAS_KEY = "boss-atlas";
 export const STORM_BOSS_CLEAN_KEY = "storm-relay-warden-clean";
 export const CRYO_BOSS_CLEAN_KEY = "cryo-conservator-clean";
+export const ARCHIVE_BOSS_CLEAN_KEY = "archive-custodian-clean";
 export const BOSS_ATLAS_FRAME_WIDTH = 256;
 export const BOSS_ATLAS_FRAME_HEIGHT = 256;
 export const BOSS_STATES_PER_KIND = 4;
@@ -34,6 +35,9 @@ const bossStateFrames: Record<BossSpriteState, number> = {
   attack: 8,
   vulnerable: 12
 };
+
+export const bossStateFrameForCleanSheet = (state: BossSpriteState = "idle", animationFrame = 0): number =>
+  bossStateFrames[state] + (((Math.round(animationFrame) % BOSS_STATE_FRAME_COUNT) + BOSS_STATE_FRAME_COUNT) % BOSS_STATE_FRAME_COUNT);
 
 const monsterBaseFrames: Record<MonsterKind, number> = {
   "sprout-hopper": 0,

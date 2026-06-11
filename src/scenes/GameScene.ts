@@ -15,6 +15,7 @@ import {
   monsterVisualTransformForKind
 } from "../game/enemies";
 import {
+  ARCHIVE_BOSS_CLEAN_KEY,
   BOSS_ATLAS_KEY,
   BOSS_STATE_FRAME_COUNT,
   CRYO_BOSS_CLEAN_KEY,
@@ -23,6 +24,7 @@ import {
   POOF_SHEET_KEY,
   STORM_BOSS_CLEAN_KEY,
   bossFrameForKind,
+  bossStateFrameForCleanSheet,
   monsterFrameForKind,
   type BossSpriteState
 } from "../game/enemySprites";
@@ -2434,6 +2436,7 @@ export class GameScene extends Phaser.Scene {
 
       if (boss.kind === "storm-relay-warden") this.drawStormBossWindupEffect(boss, snapshot, color);
       if (boss.kind === "cryo-conservator") this.drawCryoBossWindupEffect(boss, snapshot, color);
+      if (boss.kind === "archive-custodian") this.drawArchiveBossWindupEffect(boss, snapshot, color);
       for (const attack of snapshot.attacks) {
         this.drawBossAttackEffect(attack, color);
       }
@@ -2511,6 +2514,42 @@ export class GameScene extends Phaser.Scene {
       this.fx.fillCircle(endX, endY, 5.2);
       this.fx.fillStyle(color, 0.2);
       this.fx.fillCircle(endX, endY, 11);
+    }
+  }
+
+  private drawArchiveBossWindupEffect(boss: Boss, snapshot: BossSnapshot, color: number): void {
+    if (snapshot.phase !== "active" || snapshot.recoveryFrames > 0 || bossIsVulnerable(snapshot) || snapshot.attacks.length > 0) return;
+    const windupFrames = bossAttackWindupFramesFor(boss.kind);
+    const cycle = snapshot.activeFrames % bossAttackCycleFramesFor(boss.kind);
+    if (cycle >= windupFrames || snapshot.attackWarnings.length === 0) return;
+    const progress = Math.max(0, Math.min(1, cycle / Math.max(1, windupFrames)));
+    const pulse = Math.sin(this.simulation.tick / 7) * 0.5 + 0.5;
+    if (this.diagnosticsEnabled) {
+      this.bossEffectFrames.push(`${boss.id}:archive-windup:${Math.round(progress * 100)}:${snapshot.attackWarnings.length}`);
+    }
+    for (const warning of snapshot.attackWarnings) {
+      if (warning.kind === "horizontal") {
+        this.fx.fillStyle(color, 0.035 + progress * 0.12);
+        this.fx.fillRoundedRect(warning.x - 4, warning.y - 8, warning.w + 8, warning.h + 16, 8);
+        this.fx.lineStyle(2, color, 0.2 + progress * 0.35);
+        this.fx.lineBetween(warning.x, warning.originY, warning.x + warning.w, warning.originY);
+        this.fx.lineStyle(1, 0xffffff, 0.12 + progress * 0.24);
+        for (let index = 0; index < Math.max(4, Math.floor(warning.w / 52)); index += 1) {
+          const x = warning.x + ((index + 0.5) / Math.max(4, Math.floor(warning.w / 52))) * warning.w;
+          this.fx.strokeRect(x - 5, warning.originY - 9 + Math.sin(this.simulation.tick / 9 + index) * 1.5, 10, 14);
+        }
+      } else {
+        this.fx.fillStyle(color, 0.045 + progress * 0.11);
+        this.fx.fillRoundedRect(warning.x - 4, warning.y, warning.w + 8, warning.h, 7);
+        this.fx.lineStyle(2, color, 0.22 + progress * 0.32);
+        this.fx.lineBetween(warning.originX, warning.y, warning.originX, warning.y + warning.h);
+        const sheets = Math.max(4, Math.floor(warning.h / 44));
+        for (let index = 0; index < sheets; index += 1) {
+          const y = warning.y + ((index + pulse * 0.35) / sheets) * warning.h;
+          this.fx.fillStyle(index % 2 === 0 ? 0xffffff : color, (0.14 + progress * 0.2) * (1 - index / (sheets + 1)));
+          this.fx.fillRect(warning.originX - 6 + Math.sin(this.simulation.tick / 8 + index) * 3, y, 12, 8);
+        }
+      }
     }
   }
 
@@ -2682,14 +2721,21 @@ export class GameScene extends Phaser.Scene {
   private syncBossSprite(id: string, kind: BossKind, snapshot: BossSnapshot, flickerWhite: boolean, introProgress: number): void {
     const useCleanStormSprite = kind === "storm-relay-warden" && this.textures.exists(STORM_BOSS_CLEAN_KEY);
     const useCleanCryoSprite = kind === "cryo-conservator" && this.textures.exists(CRYO_BOSS_CLEAN_KEY);
-    const textureKey = useCleanStormSprite ? STORM_BOSS_CLEAN_KEY : useCleanCryoSprite ? CRYO_BOSS_CLEAN_KEY : BOSS_ATLAS_KEY;
+    const useCleanArchiveSprite = kind === "archive-custodian" && this.textures.exists(ARCHIVE_BOSS_CLEAN_KEY);
+    const textureKey = useCleanStormSprite
+      ? STORM_BOSS_CLEAN_KEY
+      : useCleanCryoSprite
+        ? CRYO_BOSS_CLEAN_KEY
+        : useCleanArchiveSprite
+          ? ARCHIVE_BOSS_CLEAN_KEY
+          : BOSS_ATLAS_KEY;
     if (!this.textures.exists(textureKey)) return;
     const body = snapshot.body;
     const center = rectCenter(body);
     const spriteState = this.bossSpriteState(kind, snapshot, introProgress);
     const stateFrame = this.bossStateAnimationFrame(kind, id, snapshot, spriteState, introProgress);
     const useCleanSingleFrame = useCleanStormSprite || useCleanCryoSprite;
-    const frame = useCleanSingleFrame ? 0 : bossFrameForKind(kind, spriteState, stateFrame);
+    const frame = useCleanSingleFrame ? 0 : useCleanArchiveSprite ? bossStateFrameForCleanSheet(spriteState, stateFrame) : bossFrameForKind(kind, spriteState, stateFrame);
     const activePulse = snapshot.phase === "active" && !useCleanSingleFrame ? Math.sin(this.simulation.tick / 18) * 0.015 : 0;
     const departureProgress =
       snapshot.phase === "departing" ? Math.max(0, Math.min(1, snapshot.departureFrames / Math.max(1, snapshot.departureTotalFrames))) : 0;

@@ -2297,6 +2297,77 @@ try {
     `Expected storm boss recovered cycle to restart before the beam window, got frame ${stormRecovered.activeFrames}`
   );
 
+  const archiveLevel = {
+    ...bossLevel,
+    bosses: [{ ...bossLevel.bosses[0], kind: "archive-custodian", introSeconds: 1, health: 2, score: 1600 }]
+  };
+  assert(
+    bossAttackCycleFramesFor("archive-custodian") > bossAttackCycleFramesFor("cryo-conservator") - 40,
+    `Expected archive boss to use a deliberate readable attack cycle, got ${bossAttackCycleFramesFor("archive-custodian")}`
+  );
+  const archiveWarningSim = new RoomSimulation(archiveLevel);
+  Object.assign(archiveWarningSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
+  archiveWarningSim.step(idle);
+  runFrames(archiveWarningSim, 60, idle);
+  Object.assign(archiveWarningSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  const archiveWarning = runBossUntilWarning(archiveWarningSim, "boss-test", 0.65);
+  assert(archiveWarning.attackWarnings.length === 1, `Expected full-health archive warm-up to warn one index beam, got ${archiveWarning.attackWarnings.length}`);
+  assert(archiveWarning.attackWarnings[0].kind === "horizontal", `Expected archive warm-up to warn a horizontal index beam, got ${archiveWarning.attackWarnings[0].kind}`);
+
+  const archiveAttackSim = new RoomSimulation(archiveLevel);
+  Object.assign(archiveAttackSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
+  archiveAttackSim.step(idle);
+  runFrames(archiveAttackSim, 60, idle);
+  Object.assign(archiveAttackSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  const archiveAttackSnapshot = runBossUntilAttack(archiveAttackSim, "boss-test");
+  assertAttackStartsFromBoss(archiveAttackSnapshot, "archive boss index beam");
+  assert(archiveAttackSnapshot.attacks.length === 1, `Expected full-health archive boss to fire one index beam, got ${archiveAttackSnapshot.attacks.length}`);
+  const archiveBeam = archiveAttackSnapshot.attacks[0];
+  assert(archiveBeam.kind === "horizontal", `Expected archive boss primary attack to be horizontal, got ${archiveBeam.kind}`);
+  Object.assign(archiveAttackSim.player, {
+    x: archiveBeam.x + archiveBeam.w / 2 - 12,
+    y: archiveBeam.y + archiveBeam.h / 2 - archiveAttackSim.player.h / 2,
+    vx: 0,
+    vy: 0,
+    onGround: false
+  });
+  const archiveBeamDeath = archiveAttackSim.step(idle);
+  assert(archiveBeamDeath.died && archiveAttackSim.dead, "Expected active archive index beam to kill the player");
+
+  const archiveRecoverySim = new RoomSimulation(archiveLevel);
+  Object.assign(archiveRecoverySim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });
+  archiveRecoverySim.step(idle);
+  runFrames(archiveRecoverySim, 60, idle);
+  const archiveVulnerable = runBossUntilVulnerable(archiveRecoverySim, "boss-test");
+  assert(archiveVulnerable.weakSpotKind === "core", `Expected archive boss weak spot to be an exposed core, got ${archiveVulnerable.weakSpotKind}`);
+  const archiveFirstHit = upwardHitBoss(archiveRecoverySim, archiveVulnerable);
+  assert(archiveFirstHit.bossHit?.health === 1, "Expected first archive core hit to leave one health for phase two");
+  assert(!archiveFirstHit.bossDefeated, "Expected first archive core hit not to defeat a two-health boss");
+  const archiveAfterHit = archiveRecoverySim.bossSnapshots()[0];
+  assert(archiveAfterHit.recoveryFrames > 0, "Expected archive boss to enter recovery after a nonfatal core hit");
+  assert(archiveAfterHit.attacks.length === 0 && archiveAfterHit.attackWarnings.length === 0, "Expected archive recovery to clear index beam hazards");
+  const archiveImmediateRetry = upwardHitBoss(archiveRecoverySim, archiveAfterHit);
+  assert(archiveImmediateRetry.bossHit === null, "Expected archive boss to ignore immediate repeat core hits during recovery");
+  for (let guard = 0; guard < 180 && archiveRecoverySim.bossSnapshots()[0]?.recoveryFrames > 0; guard += 1) {
+    archiveRecoverySim.step(idle);
+  }
+  const archivePhaseTwoWarning = runBossUntilWarning(archiveRecoverySim, "boss-test", 0.65);
+  assert(
+    archivePhaseTwoWarning.attackWarnings.length === 4 &&
+      archivePhaseTwoWarning.attackWarnings.filter((warning) => warning.kind === "vertical").length === 3,
+    `Expected half-health archive warm-up to add three falling page-shard columns, got ${JSON.stringify(archivePhaseTwoWarning.attackWarnings)}`
+  );
+  const archivePhaseTwoAttack = runBossUntilAttack(archiveRecoverySim, "boss-test");
+  assert(
+    archivePhaseTwoAttack.attacks.length === 4 &&
+      archivePhaseTwoAttack.attacks.some((attack) => attack.kind === "horizontal") &&
+      archivePhaseTwoAttack.attacks.filter((attack) => attack.kind === "vertical").length === 3,
+    `Expected half-health archive attack to combine index beam and page shards, got ${JSON.stringify(archivePhaseTwoAttack.attacks)}`
+  );
+  const archiveFinalVulnerable = runBossUntilVulnerable(archiveRecoverySim, "boss-test");
+  const archiveFinalHit = upwardHitBoss(archiveRecoverySim, archiveFinalVulnerable);
+  assert(archiveFinalHit.bossDefeated?.score === 1600, `Expected second archive core hit to defeat the boss, got ${JSON.stringify(archiveFinalHit.bossDefeated)}`);
+
   const cryoLevel = {
     ...bossLevel,
     bosses: [{ ...bossLevel.bosses[0], kind: "cryo-conservator", introSeconds: 1, health: 2 }]

@@ -73,6 +73,18 @@ const CRYO_FLOOR_ICE_LIFE_FRAMES = 21 * 60;
 const CRYO_FLOOR_ICE_MAX_PATCHES = 4;
 const CRYO_VERTICAL_FLIGHT_EASE = 0.045;
 
+const ARCHIVE_ATTACK_CYCLE_FRAMES = 304;
+const ARCHIVE_ATTACK_WINDUP_FRAMES = 86;
+const ARCHIVE_ATTACK_ACTIVE_FRAMES = 46;
+const ARCHIVE_VULNERABLE_READY_FRAMES = 58;
+const ARCHIVE_HIT_PAUSE_FRAMES = 34;
+const ARCHIVE_HIT_RECOVERY_FRAMES = 118;
+const ARCHIVE_PAGE_SHARD_WIDTH = 18;
+const ARCHIVE_PAGE_SHARD_INSET = 28;
+const ARCHIVE_PAGE_SHARD_SPACING = 86;
+const ARCHIVE_CORE_CLEARANCE = 94;
+const ARCHIVE_VERTICAL_EASE = 0.075;
+
 type BossTimingSource = BossKind | { kind?: BossKind };
 
 const bossKindForTiming = (source?: BossTimingSource): BossKind | undefined => (typeof source === "string" ? source : source?.kind);
@@ -81,6 +93,7 @@ export const bossAttackCycleFramesFor = (source?: BossTimingSource): number => {
   const kind = bossKindForTiming(source);
   if (kind === "storm-relay-warden") return STORM_ATTACK_CYCLE_FRAMES;
   if (kind === "cryo-conservator") return CRYO_ATTACK_CYCLE_FRAMES;
+  if (kind === "archive-custodian") return ARCHIVE_ATTACK_CYCLE_FRAMES;
   return BOSS_ATTACK_CYCLE_FRAMES;
 };
 
@@ -88,6 +101,7 @@ export const bossAttackWindupFramesFor = (source?: BossTimingSource): number => 
   const kind = bossKindForTiming(source);
   if (kind === "storm-relay-warden") return STORM_ATTACK_WINDUP_FRAMES;
   if (kind === "cryo-conservator") return CRYO_ATTACK_WINDUP_FRAMES;
+  if (kind === "archive-custodian") return ARCHIVE_ATTACK_WINDUP_FRAMES;
   return BOSS_ATTACK_WINDUP_FRAMES;
 };
 
@@ -95,6 +109,7 @@ export const bossAttackActiveFramesFor = (source?: BossTimingSource): number => 
   const kind = bossKindForTiming(source);
   if (kind === "storm-relay-warden") return STORM_ATTACK_ACTIVE_FRAMES;
   if (kind === "cryo-conservator") return CRYO_ATTACK_ACTIVE_FRAMES;
+  if (kind === "archive-custodian") return ARCHIVE_ATTACK_ACTIVE_FRAMES;
   return BOSS_ATTACK_ACTIVE_FRAMES;
 };
 
@@ -107,6 +122,8 @@ export const bossVulnerableStartFrameFor = (source?: BossTimingSource): number =
     ? STORM_VULNERABLE_READY_FRAMES
     : bossKindForTiming(source) === "cryo-conservator"
       ? CRYO_VULNERABLE_READY_FRAMES
+      : bossKindForTiming(source) === "archive-custodian"
+        ? ARCHIVE_VULNERABLE_READY_FRAMES
       : BOSS_VULNERABLE_READY_FRAMES);
 
 export const monsterKinds = [
@@ -658,16 +675,19 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
   const playerCenterX = player.x + player.w / 2;
   const playerCenterY = player.y + player.h / 2;
   const arena = bossMovementBounds(boss, size);
-  if ((boss.kind === "storm-relay-warden" || boss.kind === "cryo-conservator") && state.recoveryFrames <= 0) {
+  if ((boss.kind === "storm-relay-warden" || boss.kind === "cryo-conservator" || boss.kind === "archive-custodian") && state.recoveryFrames <= 0) {
     const patrolFrames = bossAttackWindupFramesFor(boss.kind);
     const retargetFrame = Math.max(1, Math.floor(patrolFrames * 0.45));
     if (cycle === retargetFrame) {
-      const attackBounds = { minX: arena.minX + size.w / 2, maxX: arena.maxX + size.w / 2 };
+      const constrainedVerticalBoss = boss.kind === "storm-relay-warden" || boss.kind === "cryo-conservator";
+      const attackBounds = constrainedVerticalBoss
+        ? { minX: arena.minX + size.w / 2, maxX: arena.maxX + size.w / 2 }
+        : { minX: boss.x + 24, maxX: boss.x + boss.w - 24 };
       state.attackX = clamp(playerCenterX, attackBounds.minX, attackBounds.maxX);
       state.attackY = clamp(playerCenterY, boss.y + 22, boss.y + boss.h - 22);
     }
   }
-  if (((boss.kind === "storm-relay-warden" || boss.kind === "cryo-conservator") && state.activeFrames === 1) || cycle === 0) {
+  if (((boss.kind === "storm-relay-warden" || boss.kind === "cryo-conservator" || boss.kind === "archive-custodian") && state.activeFrames === 1) || cycle === 0) {
     const constrainedVerticalBoss = boss.kind === "storm-relay-warden" || boss.kind === "cryo-conservator";
     const attackMinX = constrainedVerticalBoss ? arena.minX + size.w / 2 : boss.x + 24;
     const attackMaxX = constrainedVerticalBoss ? arena.maxX + size.w / 2 : boss.x + boss.w - 24;
@@ -682,6 +702,10 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
   if (boss.kind === "cryo-conservator") {
     advanceCryoConservatorMotion(boss, state, size, cycle, arena);
     advanceCryoConservatorFloorIce(boss, state, cycle, solids);
+    return;
+  }
+  if (boss.kind === "archive-custodian") {
+    advanceArchiveCustodianMotion(boss, state, size, player, cycle, arena);
     return;
   }
 
@@ -708,11 +732,18 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
 };
 
 export const recoverBossAfterHit = (boss: Boss, state: BossRuntimeState): void => {
-  if ((boss.kind !== "storm-relay-warden" && boss.kind !== "cryo-conservator") || state.phase !== "active" || state.health <= 0) return;
+  if (
+    (boss.kind !== "storm-relay-warden" && boss.kind !== "cryo-conservator" && boss.kind !== "archive-custodian") ||
+    state.phase !== "active" ||
+    state.health <= 0
+  ) {
+    return;
+  }
   const cycle = state.activeFrames % bossAttackCycleFramesFor(boss.kind);
   if (cycle < bossVulnerableStartFrameFor(boss.kind)) return;
   state.activeFrames = 0;
-  const recoveryFrames = boss.kind === "cryo-conservator" ? CRYO_HIT_RECOVERY_FRAMES : STORM_HIT_RECOVERY_FRAMES;
+  const recoveryFrames =
+    boss.kind === "cryo-conservator" ? CRYO_HIT_RECOVERY_FRAMES : boss.kind === "archive-custodian" ? ARCHIVE_HIT_RECOVERY_FRAMES : STORM_HIT_RECOVERY_FRAMES;
   state.recoveryFrames = recoveryFrames;
   state.invulnerableFrames = Math.max(state.invulnerableFrames, recoveryFrames + 12);
 };
@@ -786,6 +817,47 @@ export const advanceBossDefeatDeparture = (boss: Boss, state: BossRuntimeState):
   return state.departureFrames >= BOSS_DEFEAT_DEPARTURE_FRAMES;
 };
 
+const archiveUsesPageShards = (boss: Boss, state: BossRuntimeState): boolean =>
+  state.health > 0 && state.health <= Math.ceil(bossHealth(boss) / 2);
+
+const archiveAttackRectsAt = (boss: Boss, state: BossRuntimeState, body: Rect): BossAttackSnapshot[] => {
+  const bodyCenter = rectCenter(body);
+  const direction = finiteNumber(state.attackX, bodyCenter.x) >= bodyCenter.x ? 1 : -1;
+  const originX = direction > 0 ? body.x + body.w * 0.8 : body.x + body.w * 0.2;
+  const originY = clamp(finiteNumber(state.attackY, bodyCenter.y), body.y + body.h * 0.36, body.y + body.h * 0.72);
+  const startX = direction > 0 ? originX - 2 : boss.x + 12;
+  const endX = direction > 0 ? boss.x + boss.w - 12 : originX + 2;
+  const attacks: BossAttackSnapshot[] = [
+    {
+      x: Math.min(startX, endX),
+      y: originY - 8,
+      w: Math.max(24, Math.abs(endX - startX)),
+      h: 16,
+      kind: "horizontal",
+      originX,
+      originY
+    }
+  ];
+
+  if (!archiveUsesPageShards(boss, state)) return attacks;
+  const shardTop = boss.y + 28;
+  const shardBottom = boss.y + boss.h - 16;
+  const shardBaseX = finiteNumber(state.attackX, bodyCenter.x);
+  for (const offset of [-ARCHIVE_PAGE_SHARD_SPACING, 0, ARCHIVE_PAGE_SHARD_SPACING]) {
+    const originX = clamp(shardBaseX + offset, boss.x + ARCHIVE_PAGE_SHARD_INSET, boss.x + boss.w - ARCHIVE_PAGE_SHARD_INSET);
+    attacks.push({
+      x: originX - ARCHIVE_PAGE_SHARD_WIDTH / 2,
+      y: shardTop,
+      w: ARCHIVE_PAGE_SHARD_WIDTH,
+      h: Math.max(24, shardBottom - shardTop),
+      kind: "vertical",
+      originX,
+      originY: shardTop
+    });
+  }
+  return attacks;
+};
+
 export const bossAttackRectsAt = (boss: Boss, state: BossRuntimeState, tick: number): BossAttackSnapshot[] => {
   if (state.phase !== "active" || state.recoveryFrames > 0) return [];
   const cycle = state.activeFrames % bossAttackCycleFramesFor(boss.kind);
@@ -810,6 +882,9 @@ export const bossAttackRectsAt = (boss: Boss, state: BossRuntimeState, tick: num
   }
   if (boss.kind === "cryo-conservator") {
     return cryoAttackLaneXs(boss, state, body).map((originX) => cryoBeamRectForLane(boss, body, originX));
+  }
+  if (boss.kind === "archive-custodian") {
+    return archiveAttackRectsAt(boss, state, body);
   }
   if (boss.kind !== "clockwork-regent") {
     const direction = finiteNumber(state.attackX, bodyCenter.x) >= bodyCenter.x ? 1 : -1;
@@ -846,10 +921,11 @@ export const bossAttackRectsAt = (boss: Boss, state: BossRuntimeState, tick: num
 };
 
 export const bossAttackWarningRectsAt = (boss: Boss, state: BossRuntimeState, tick: number): BossAttackSnapshot[] => {
-  if (boss.kind !== "cryo-conservator" || state.phase !== "active" || state.recoveryFrames > 0) return [];
+  if ((boss.kind !== "cryo-conservator" && boss.kind !== "archive-custodian") || state.phase !== "active" || state.recoveryFrames > 0) return [];
   const cycle = state.activeFrames % bossAttackCycleFramesFor(boss.kind);
   if (cycle >= bossAttackWindupFramesFor(boss.kind) || bossIsVulnerable(state)) return [];
   const body = bossBodyRectAt(boss, state, tick);
+  if (boss.kind === "archive-custodian") return archiveAttackRectsAt(boss, state, body);
   return cryoAttackLaneXs(boss, state, body).map((originX) => cryoBeamRectForLane(boss, body, originX));
 };
 
@@ -930,6 +1006,78 @@ const advanceCryoConservatorFloorIce = (boss: Boss, state: BossRuntimeState, cyc
   }
   state.floorIcePatches.sort((a, b) => b.remainingFrames - a.remainingFrames);
   state.floorIcePatches = state.floorIcePatches.slice(0, CRYO_FLOOR_ICE_MAX_PATCHES);
+};
+
+const advanceArchiveCustodianMotion = (
+  boss: Boss,
+  state: BossRuntimeState,
+  size: { w: number; h: number },
+  player: ActorBody,
+  cycle: number,
+  arena: { minX: number; minY: number; maxX: number; maxY: number }
+): void => {
+  const arenaCenterX = boss.x + boss.w / 2;
+  const highY = arena.minY + size.h * 0.45;
+  const lowY = clamp(boss.y + boss.h - ARCHIVE_CORE_CLEARANCE, arena.minY + size.h / 2, arena.maxY + size.h / 2);
+  if (state.recoveryFrames > 0) {
+    advanceArchiveCustodianRecoveryMotion(state, size, arena, arenaCenterX, highY);
+    return;
+  }
+
+  const windupFrames = bossAttackWindupFramesFor("archive-custodian");
+  const activeEndFrame = bossAttackEndFrameFor("archive-custodian");
+  const playerCenterX = player.x + player.w / 2;
+  const playerCenterY = player.y + player.h / 2;
+  const sideOffset = playerCenterX < arenaCenterX ? size.w * 0.46 : -size.w * 0.46;
+  const lockedSideOffset = finiteNumber(state.attackX, playerCenterX) < arenaCenterX ? size.w * 0.46 : -size.w * 0.46;
+  let targetX = clamp(playerCenterX + sideOffset, arena.minX + size.w / 2, arena.maxX + size.w / 2);
+  let targetY = clamp(playerCenterY - size.h * 0.72, arena.minY + size.h / 2, arena.maxY + size.h / 2);
+
+  if (cycle < windupFrames) {
+    const sway = Math.sin((cycle / Math.max(1, windupFrames)) * Math.PI * 2) * Math.min(30, (arena.maxX - arena.minX) * 0.08);
+    targetX = clamp(targetX + sway, arena.minX + size.w / 2, arena.maxX + size.w / 2);
+    targetY = clamp(highY + Math.sin(cycle / 14) * 8, arena.minY + size.h / 2, arena.maxY + size.h / 2);
+  } else if (cycle < activeEndFrame) {
+    targetX = clamp(finiteNumber(state.attackX, playerCenterX) + lockedSideOffset, arena.minX + size.w / 2, arena.maxX + size.w / 2);
+    targetY = clamp(finiteNumber(state.attackY, playerCenterY) - size.h * 0.48, arena.minY + size.h / 2, arena.maxY + size.h / 2);
+  } else {
+    const descentProgress = clamp((cycle - activeEndFrame) / Math.max(1, ARCHIVE_VULNERABLE_READY_FRAMES), 0, 1);
+    targetX = clamp(finiteNumber(state.attackX, arenaCenterX), arena.minX + size.w / 2, arena.maxX + size.w / 2);
+    targetY = highY + (lowY - highY) * descentProgress;
+  }
+
+  state.targetX = targetX;
+  state.targetY = targetY;
+  const desiredX = targetX - size.w / 2;
+  const desiredY = targetY - size.h / 2;
+  const horizontalEase = cycle < activeEndFrame ? 0.1 : 0.085;
+  state.bodyX += (desiredX - state.bodyX) * horizontalEase;
+  state.bodyY += (desiredY - state.bodyY) * ARCHIVE_VERTICAL_EASE;
+  state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
+  state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
+};
+
+const advanceArchiveCustodianRecoveryMotion = (
+  state: BossRuntimeState,
+  size: { w: number; h: number },
+  arena: { minX: number; minY: number; maxX: number; maxY: number },
+  centerX: number,
+  highY: number
+): void => {
+  const elapsed = ARCHIVE_HIT_RECOVERY_FRAMES - state.recoveryFrames;
+  const pause = elapsed < ARCHIVE_HIT_PAUSE_FRAMES;
+  const targetX = pause ? state.targetX : clamp(centerX + Math.sin(elapsed / 18) * Math.min(42, (arena.maxX - arena.minX) * 0.12), arena.minX + size.w / 2, arena.maxX + size.w / 2);
+  const targetY = pause ? state.targetY : highY;
+  const ease = pause ? 0.06 : 0.085;
+
+  state.targetX = targetX;
+  state.targetY = targetY;
+  state.bodyX += (targetX - size.w / 2 - state.bodyX) * ease;
+  state.bodyY += (targetY - size.h / 2 - state.bodyY) * ease;
+  state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
+  state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
+  state.recoveryFrames = Math.max(0, state.recoveryFrames - 1);
+  if (state.recoveryFrames === 0) state.activeFrames = 0;
 };
 
 const bossNormalVerticalTargetY = (
