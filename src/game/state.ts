@@ -175,14 +175,6 @@ export class RoomSimulation {
       ...cloneActor(this.player),
       id,
       kind: "echo",
-      vx: 0,
-      vy: 0,
-      coyote: 0,
-      jumpBuffer: 0,
-      launchCooldown: 0,
-      launchControlLock: 0,
-      launchFloatFrames: 0,
-      prevJump: false,
       alive: true
     };
   }
@@ -200,11 +192,22 @@ export class RoomSimulation {
   }
 
   private teleportPlayerToStart(): void {
-    this.bossCheckpoint = null;
     this.dead = false;
     this.won = false;
-    this.player = makeActor("player", "player", this.level.start);
+    this.player = this.playerForRewindTarget();
     this.currentRecording = [];
+  }
+
+  private playerForRewindTarget(): ActorBody {
+    if (this.bossCheckpoint) {
+      return {
+        ...cloneActor(this.bossCheckpoint.player),
+        id: "player",
+        kind: "player",
+        alive: true
+      };
+    }
+    return makeActor("player", "player", this.level.start);
   }
 
   resetLifeAttempt(): void {

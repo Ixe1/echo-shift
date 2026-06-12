@@ -3074,6 +3074,21 @@ try {
   assert(bossCheckpointSim.score === 900, `Expected checkpoint restore to preserve score with one death penalty, got ${bossCheckpointSim.score}`);
   assert(bossCheckpointSim.totalFrames === 1, `Expected checkpoint restore to preserve pre-boss frame count, got ${bossCheckpointSim.totalFrames}`);
   assert(bossCheckpointSim.currentRecording.length === 0, "Expected checkpoint restore to start a fresh continuous recording");
+  const checkpointRewindTarget = { x: bossCheckpointSim.player.x, y: bossCheckpointSim.player.y };
+  const checkpointRewindScore = bossCheckpointSim.score;
+  const checkpointRewindFrames = bossCheckpointSim.totalFrames;
+  Object.assign(bossCheckpointSim.player, { x: 150, y: 86, vx: 1.2, vy: 0, onGround: true });
+  bossCheckpointSim.currentRecording = Array.from({ length: 20 }, () => 0);
+  assert(bossCheckpointSim.rewindToEcho(), "Expected checkpoint rewind to anchor an echo");
+  assert(bossCheckpointSim.bossCheckpointActive(), "Rewind should preserve the active boss checkpoint");
+  assert(
+    bossCheckpointSim.player.x === checkpointRewindTarget.x && bossCheckpointSim.player.y === checkpointRewindTarget.y,
+    `Rewind should return player to checkpoint target ${JSON.stringify(checkpointRewindTarget)}, got ${bossCheckpointSim.player.x},${bossCheckpointSim.player.y}`
+  );
+  assert(bossCheckpointSim.echoes.at(-1)?.x === 150 && bossCheckpointSim.echoes.at(-1)?.y === 86, "Checkpoint rewind should leave echo at the current player position");
+  assert(bossCheckpointSim.score === checkpointRewindScore, `Checkpoint rewind should preserve score, got ${bossCheckpointSim.score}`);
+  assert(bossCheckpointSim.totalFrames === checkpointRewindFrames, `Checkpoint rewind should preserve time, got ${bossCheckpointSim.totalFrames}`);
+  assert(bossCheckpointSim.objectState.collectedCores.has("pre-boss-core"), "Checkpoint rewind should preserve collected cores");
 
   const bonusSim = new RoomSimulation(baseLevel);
   runFrames(bonusSim, 60, idle);
@@ -3159,6 +3174,18 @@ try {
   };
   const replay = new RoomSimulation(deterministicLevel);
   for (const input of inputSequence) replay.step(input);
+  Object.assign(replay.player, {
+    vx: 1.75,
+    vy: -4.5,
+    onGround: false,
+    coyote: 3,
+    jumpBuffer: 2,
+    launchCooldown: 5,
+    launchControlLock: 6,
+    launchFloatFrames: 7,
+    prevJump: true,
+    facing: -1
+  });
   assert(replay.rewindToEcho(), "Expected deterministic setup attempt to become an echo");
   const echo = replay.echoes[0];
   const actual = {
@@ -3169,6 +3196,19 @@ try {
   assert(
     actual.x === expected.x && actual.y === expected.y && actual.tick === expected.tick,
     `Echo anchor diverged: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`
+  );
+  assert(
+    echo.vx === 1.75 &&
+      echo.vy === -4.5 &&
+      !echo.onGround &&
+      echo.coyote === 3 &&
+      echo.jumpBuffer === 2 &&
+      echo.launchCooldown === 5 &&
+      echo.launchControlLock === 6 &&
+      echo.launchFloatFrames === 7 &&
+      echo.prevJump &&
+      echo.facing === -1,
+    `Echo anchor should preserve current player motion state, got ${JSON.stringify(echo)}`
   );
   assert(replay.player.x === deterministicLevel.start.x && replay.player.y === deterministicLevel.start.y, "Rewind should teleport the player to start after anchoring echo");
 
