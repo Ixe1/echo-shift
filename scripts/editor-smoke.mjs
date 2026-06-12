@@ -255,7 +255,18 @@ try {
             exit: { x: 850, y: 438, w: 48, h: 62 },
             bounds: { x: 0, y: 0, w: 960, h: 540 },
             solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
-            bosses: [{ id: "legacy-boss", kind: "clockwork-regent", x: 300, y: 180, w: 300, h: 220, entrySide: "right" }],
+            bosses: [
+              {
+                id: "legacy-boss",
+                kind: "clockwork-regent",
+                x: 300,
+                y: 180,
+                w: 300,
+                h: 220,
+                entrySide: "right",
+                checkpoint: { x: 240, y: 352 }
+              }
+            ],
             perfectEchoes: 0,
             medalFrames: { gold: 1800, silver: 2400 },
             hint: ""
@@ -972,8 +983,7 @@ try {
   await page.locator("[data-object-field='soundtrackKey']").selectOption("level-3");
   await page.locator("[data-object-field='kind']").selectOption("cryo-conservator");
   const bossCryoWeakSpot = await page.locator("[data-object-field='weakSpot']").inputValue();
-  const bossCheckpointXBeforeDrag = await objectNumber(page, "checkpointX");
-  const bossCheckpointYBeforeDrag = await objectNumber(page, "checkpointY");
+  const bossCheckpointFieldCount = await page.locator("[data-object-field='checkpointX'], [data-object-field='checkpointY']").count();
   const bossXBeforeDrag = await objectNumber(page, "x");
   const bossYBeforeDrag = await objectNumber(page, "y");
   await page.locator("[data-tool='select']").click();
@@ -984,13 +994,9 @@ try {
   );
   const bossXAfterDrag = await objectNumber(page, "x");
   const bossYAfterDrag = await objectNumber(page, "y");
-  const bossCheckpointXAfterDrag = await objectNumber(page, "checkpointX");
-  const bossCheckpointYAfterDrag = await objectNumber(page, "checkpointY");
   await page.keyboard.press(process.platform === "darwin" ? "Meta+C" : "Control+C");
   const duplicatedBossX = await objectNumber(page, "x");
   const duplicatedBossY = await objectNumber(page, "y");
-  const duplicatedBossCheckpointX = await objectNumber(page, "checkpointX");
-  const duplicatedBossCheckpointY = await objectNumber(page, "checkpointY");
   const duplicatedBossId = await page.locator("[data-object-field='id']").inputValue();
   await openTab(page, "objects");
   await page.locator("[data-object-list] [data-kind='doors'][data-id='smoke-required-door']").click();
@@ -1355,8 +1361,8 @@ try {
   );
   assert(legacyBossExport?.weakSpot === "core", `Expected legacy clockwork boss to export core weak spot, got ${JSON.stringify(legacyBossExport)}`);
   assert(
-    legacyBossExport?.checkpoint?.x === 240 && legacyBossExport?.checkpoint?.y === 352,
-    `Expected legacy boss import to materialize default checkpoint, got ${JSON.stringify(legacyBossExport)}`
+    legacyBossExport && !("checkpoint" in legacyBossExport),
+    `Expected legacy boss import/export to strip editor-authored checkpoint, got ${JSON.stringify(legacyBossExport)}`
   );
   assert(draftPlaytestUrl.includes("playtestDraft=1"), `Expected Playtest button to navigate to playtestDraft=1, got ${draftPlaytestUrl}`);
   assert(draftPlaytestUrl.includes("level=1"), `Expected Playtest button to preserve selected level=1, got ${draftPlaytestUrl}`);
@@ -1643,19 +1649,17 @@ try {
     toolkitBoss?.kind === "cryo-conservator" && toolkitBoss?.weakSpot === "bottom" && toolkitBoss?.soundtrackKey === "level-3",
     `Expected boss kind and weak spot to export, got ${JSON.stringify(toolkitBoss)}`
   );
-  assert(
-    bossCheckpointXAfterDrag - bossCheckpointXBeforeDrag === bossXAfterDrag - bossXBeforeDrag &&
-      bossCheckpointYAfterDrag - bossCheckpointYBeforeDrag === bossYAfterDrag - bossYBeforeDrag,
-    `Expected default boss checkpoint to move with arena, checkpoint ${bossCheckpointXBeforeDrag},${bossCheckpointYBeforeDrag} -> ${bossCheckpointXAfterDrag},${bossCheckpointYAfterDrag}; boss ${bossXBeforeDrag},${bossYBeforeDrag} -> ${bossXAfterDrag},${bossYAfterDrag}`
-  );
+  assert(bossCheckpointFieldCount === 0, `Expected boss inspector not to expose checkpoint fields, got ${bossCheckpointFieldCount}`);
+  assert(bossXAfterDrag !== bossXBeforeDrag && bossYAfterDrag !== bossYBeforeDrag, `Expected boss arena drag to move boss, got ${bossXBeforeDrag},${bossYBeforeDrag} -> ${bossXAfterDrag},${bossYAfterDrag}`);
+  assert(!("checkpoint" in toolkitBoss), `Expected new boss to export without checkpoint, got ${JSON.stringify(toolkitBoss)}`);
   assert(duplicatedBossId !== "smoke-boss", `Expected duplicated boss to get a new id, got ${duplicatedBossId}`);
   assert(
-    duplicatedBossCheckpointX === duplicatedBossX - 60 && duplicatedBossCheckpointY === duplicatedBossY + (toolkitDuplicatedBoss?.h || 0) - 48,
-    `Expected duplicated boss checkpoint to follow copied arena, got boss ${duplicatedBossX},${duplicatedBossY} ${JSON.stringify(toolkitDuplicatedBoss)} checkpoint ${duplicatedBossCheckpointX},${duplicatedBossCheckpointY}`
+    toolkitDuplicatedBoss?.x === duplicatedBossX && toolkitDuplicatedBoss?.y === duplicatedBossY,
+    `Expected duplicated boss to export at copied arena position, got boss ${duplicatedBossX},${duplicatedBossY} ${JSON.stringify(toolkitDuplicatedBoss)}`
   );
   assert(
-    toolkitDuplicatedBoss?.checkpoint?.x === duplicatedBossCheckpointX && toolkitDuplicatedBoss?.checkpoint?.y === duplicatedBossCheckpointY,
-    `Expected duplicated boss checkpoint to export, got ${JSON.stringify(toolkitDuplicatedBoss)}`
+    toolkitDuplicatedBoss && !("checkpoint" in toolkitDuplicatedBoss),
+    `Expected duplicated boss to export without checkpoint, got ${JSON.stringify(toolkitDuplicatedBoss)}`
   );
   assert(renamedTimerExists, "Expected timed switch rename to export");
   assert(

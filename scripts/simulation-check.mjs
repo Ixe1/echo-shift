@@ -858,6 +858,27 @@ try {
     throw new Error(`Expected boss ${bossId} to show an attack warning`);
   };
 
+  const assertBossMotionSmoothForFrames = (simulation, bossId, frames, maxAxisStep, label) => {
+    let previous = simulation.bossSnapshots().find((boss) => boss.id === bossId);
+    let maxDx = 0;
+    let maxDy = 0;
+    for (let frameIndex = 0; frameIndex < frames; frameIndex += 1) {
+      simulation.step(idle);
+      const current = simulation.bossSnapshots().find((boss) => boss.id === bossId);
+      assert(previous && current, `Expected ${label} snapshots to remain available while checking boss motion`);
+      const dx = Math.abs(current.body.x - previous.body.x);
+      const dy = Math.abs(current.body.y - previous.body.y);
+      maxDx = Math.max(maxDx, dx);
+      maxDy = Math.max(maxDy, dy);
+      assert(
+        dx <= maxAxisStep && dy <= maxAxisStep,
+        `Expected ${label} to avoid zappy movement, moved ${JSON.stringify({ dx, dy, maxAxisStep, previous: previous.body, current: current.body })}`
+      );
+      previous = current;
+    }
+    return { snapshot: previous, maxDx, maxDy };
+  };
+
   const upwardHitBoss = (simulation, snapshot) => {
     const spot = snapshot.weakSpot;
     const playerWidth = simulation.player.w || 24;
@@ -2144,8 +2165,8 @@ try {
     bossAttackCycleFramesFor(stormMissedVulnerable) - (stormMissedVulnerable.activeFrames % bossAttackCycleFramesFor(stormMissedVulnerable));
   runFrames(stormMissedCycleSim, stormFramesUntilNextCycle, idle);
   const stormMissedLiftStart = stormMissedCycleSim.bossSnapshots()[0];
-  runFrames(stormMissedCycleSim, 12, idle);
-  const stormMissedLiftLater = stormMissedCycleSim.bossSnapshots()[0];
+  const stormMissedSmoothMotion = assertBossMotionSmoothForFrames(stormMissedCycleSim, "tall-boss", 12, 7.5, "storm missed-window lift");
+  const stormMissedLiftLater = stormMissedSmoothMotion.snapshot;
   const stormMissedLiftDelta = stormMissedLiftStart.body.y - stormMissedLiftLater.body.y;
   assert(
     stormMissedLiftDelta > 0.2 && stormMissedLiftDelta < 12,
@@ -2534,8 +2555,8 @@ try {
     bossAttackCycleFramesFor(archiveMissedVulnerable) - (archiveMissedVulnerable.activeFrames % bossAttackCycleFramesFor(archiveMissedVulnerable));
   runFrames(archiveMissedCycleSim, archiveFramesUntilNextCycle, idle);
   const archiveMissedLiftStart = archiveMissedCycleSim.bossSnapshots()[0];
-  runFrames(archiveMissedCycleSim, 12, idle);
-  const archiveMissedLiftLater = archiveMissedCycleSim.bossSnapshots()[0];
+  const archiveMissedSmoothMotion = assertBossMotionSmoothForFrames(archiveMissedCycleSim, "archive-low-floor-boss", 12, 7.5, "archive missed-window lift");
+  const archiveMissedLiftLater = archiveMissedSmoothMotion.snapshot;
   const archiveMissedLiftDelta = archiveMissedLiftStart.body.y - archiveMissedLiftLater.body.y;
   assert(
     archiveMissedLiftDelta > 0.2 && archiveMissedLiftDelta < 12,
@@ -2699,8 +2720,8 @@ try {
     bossAttackCycleFramesFor(cryoMissedVulnerable) - (cryoMissedVulnerable.activeFrames % bossAttackCycleFramesFor(cryoMissedVulnerable));
   runFrames(cryoMissedCycleSim, cryoFramesUntilNextCycle, idle);
   const cryoMissedLiftStart = cryoMissedCycleSim.bossSnapshots()[0];
-  runFrames(cryoMissedCycleSim, 12, idle);
-  const cryoMissedLiftLater = cryoMissedCycleSim.bossSnapshots()[0];
+  const cryoMissedSmoothMotion = assertBossMotionSmoothForFrames(cryoMissedCycleSim, "boss-test", 12, 7.5, "cryo missed-window lift");
+  const cryoMissedLiftLater = cryoMissedSmoothMotion.snapshot;
   const cryoMissedLiftDelta = cryoMissedLiftStart.body.y - cryoMissedLiftLater.body.y;
   assert(
     cryoMissedLiftDelta > 0.2 && cryoMissedLiftDelta < 12,

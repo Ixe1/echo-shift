@@ -89,12 +89,13 @@ const readBossAlignment = async (page, bossId) =>
     };
   }, bossId);
 
-const alignPlayerWithBossWeakSpot = async (page, bossId, timeoutMs = 2600) => {
+const alignPlayerWithBossWeakSpot = async (page, bossId, timeoutMs = 2600, options = {}) => {
   const startedAt = Date.now();
   let heldKey = null;
   try {
     while (Date.now() - startedAt < timeoutMs) {
       const alignment = await readBossAlignment(page, bossId);
+      if (options.stopOnVulnerable && alignment.vulnerable) return alignment;
       const delta = alignment.weakCenterX - alignment.playerCenterX;
       if (Math.abs(delta) <= 12) return alignment;
       const nextKey = delta > 0 ? "ArrowRight" : "ArrowLeft";
@@ -561,7 +562,7 @@ try {
 	    null,
 	    { timeout: 10000 }
 	  );
-  await alignPlayerWithBossWeakSpot(page, "render-boss", 1800).catch(() => undefined);
+  await alignPlayerWithBossWeakSpot(page, "render-boss", 1800, { stopOnVulnerable: true }).catch(() => undefined);
   await page.waitForFunction(
     () => {
       const frames = document.documentElement.dataset.echoShiftBossSpriteFrames || "";

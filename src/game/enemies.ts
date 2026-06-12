@@ -92,6 +92,25 @@ const ARCHIVE_BOOK_VOLLEY_SPACING = 120;
 const ARCHIVE_BOOK_SECOND_VOLLEY_START_FRAME = 112;
 const ARCHIVE_BOOK_IMPACT_FRAMES = 12;
 
+const easeBodyAxis = (current: number, desired: number, ease: number, maxStep: number): number => {
+  const easedStep = (desired - current) * ease;
+  return current + clamp(easedStep, -maxStep, maxStep);
+};
+
+const easeBossBodyToward = (
+  state: BossRuntimeState,
+  arena: { minX: number; minY: number; maxX: number; maxY: number },
+  desiredX: number,
+  desiredY: number,
+  easeX: number,
+  easeY: number,
+  maxStepX: number,
+  maxStepY: number
+): void => {
+  state.bodyX = clamp(easeBodyAxis(state.bodyX, desiredX, easeX, maxStepX), arena.minX, arena.maxX);
+  state.bodyY = clamp(easeBodyAxis(state.bodyY, desiredY, easeY, maxStepY), arena.minY, arena.maxY);
+};
+
 type BossTimingSource = BossKind | { kind?: BossKind };
 
 const bossKindForTiming = (source?: BossTimingSource): BossKind | undefined => (typeof source === "string" ? source : source?.kind);
@@ -741,10 +760,7 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
   const desiredX = state.targetX - size.w / 2;
   const desiredY = state.targetY - size.h / 2;
   const ease = cycle < windupFrames ? 0.1 : cycle < activeEndFrame ? 0.18 : 0.12;
-  state.bodyX += (desiredX - state.bodyX) * ease;
-  state.bodyY += (desiredY - state.bodyY) * ease;
-  state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
-  state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
+  easeBossBodyToward(state, arena, desiredX, desiredY, ease, ease, 7.5, 6.2);
 };
 
 export const recoverBossAfterHit = (boss: Boss, state: BossRuntimeState): void => {
@@ -1176,10 +1192,7 @@ const advanceArchiveCustodianMotion = (
   const desiredX = targetX - size.w / 2;
   const desiredY = targetY - size.h / 2;
   const horizontalEase = cycle < firstActiveEndFrame || cycle < lastVolleyEndFrame ? 0.1 : 0.085;
-  state.bodyX += (desiredX - state.bodyX) * horizontalEase;
-  state.bodyY += (desiredY - state.bodyY) * ARCHIVE_VERTICAL_EASE;
-  state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
-  state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
+  easeBossBodyToward(state, arena, desiredX, desiredY, horizontalEase, ARCHIVE_VERTICAL_EASE, 6.2, 4.4);
 };
 
 const advanceArchiveCustodianRecoveryMotion = (
@@ -1197,10 +1210,7 @@ const advanceArchiveCustodianRecoveryMotion = (
 
   state.targetX = targetX;
   state.targetY = targetY;
-  state.bodyX += (targetX - size.w / 2 - state.bodyX) * ease;
-  state.bodyY += (targetY - size.h / 2 - state.bodyY) * ease;
-  state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
-  state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
+  easeBossBodyToward(state, arena, targetX - size.w / 2, targetY - size.h / 2, ease, ease, 5.2, 4.2);
   state.recoveryFrames = Math.max(0, state.recoveryFrames - 1);
   if (state.recoveryFrames === 0) state.activeFrames = 0;
 };
@@ -1251,10 +1261,7 @@ const advanceStormRelayMotion = (
   const desiredY = targetY - size.h / 2;
   const windupFrames = bossAttackWindupFramesFor("storm-relay-warden");
   const horizontalEase = cycle < windupFrames ? 0.08 : cycle < activeEndFrame ? 0.14 : STORM_VERTICAL_FLIGHT_EASE;
-  state.bodyX += (desiredX - state.bodyX) * horizontalEase;
-  state.bodyY += (desiredY - state.bodyY) * STORM_VERTICAL_FLIGHT_EASE;
-  state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
-  state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
+  easeBossBodyToward(state, arena, desiredX, desiredY, horizontalEase, STORM_VERTICAL_FLIGHT_EASE, 7.2, 4.8);
 };
 
 const advanceStormRelayRecoveryMotion = (
@@ -1284,10 +1291,7 @@ const advanceStormRelayRecoveryMotion = (
 
   state.targetX = targetX;
   state.targetY = targetY;
-  state.bodyX += (targetX - size.w / 2 - state.bodyX) * ease;
-  state.bodyY += (targetY - size.h / 2 - state.bodyY) * ease;
-  state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
-  state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
+  easeBossBodyToward(state, arena, targetX - size.w / 2, targetY - size.h / 2, ease, ease, 6.4, 4.8);
   state.recoveryFrames = Math.max(0, state.recoveryFrames - 1);
   if (state.recoveryFrames === 0) state.activeFrames = 0;
 };
@@ -1322,10 +1326,7 @@ const advanceCryoConservatorMotion = (
   const desiredX = state.targetX - size.w / 2;
   const desiredY = targetY - size.h / 2;
   const horizontalEase = cycle < windupFrames ? 0.075 : cycle < activeEndFrame ? 0.12 : CRYO_VERTICAL_FLIGHT_EASE;
-  state.bodyX += (desiredX - state.bodyX) * horizontalEase;
-  state.bodyY += (desiredY - state.bodyY) * CRYO_VERTICAL_FLIGHT_EASE;
-  state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
-  state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
+  easeBossBodyToward(state, arena, desiredX, desiredY, horizontalEase, CRYO_VERTICAL_FLIGHT_EASE, 6.6, 4.4);
 };
 
 const advanceCryoConservatorRecoveryMotion = (
@@ -1355,10 +1356,7 @@ const advanceCryoConservatorRecoveryMotion = (
 
   state.targetX = targetX;
   state.targetY = targetY;
-  state.bodyX += (targetX - size.w / 2 - state.bodyX) * ease;
-  state.bodyY += (targetY - size.h / 2 - state.bodyY) * ease;
-  state.bodyX = clamp(state.bodyX, arena.minX, arena.maxX);
-  state.bodyY = clamp(state.bodyY, arena.minY, arena.maxY);
+  easeBossBodyToward(state, arena, targetX - size.w / 2, targetY - size.h / 2, ease, ease, 5.8, 4.4);
   state.recoveryFrames = Math.max(0, state.recoveryFrames - 1);
   if (state.recoveryFrames === 0) state.activeFrames = 0;
 };
