@@ -29,7 +29,7 @@ export class MenuScene extends Phaser.Scene {
         <div class="menu-shell">
           <section class="brand-block">
             <img class="brand-logo" src="/assets/echo-shift-logo.png" alt="Echo Shift" />
-            <p class="tagline">Rewind to leave reliable echoes in place, then cooperate with your anchored selves through five compact time-shift rooms.</p>
+            <p class="tagline">Rewind to leave reliable echoes in place, then cooperate with your anchored selves through ${levels.length} compact time-shift rooms.</p>
           </section>
           <section class="panel menu-panel">
             <h1>${draftPlaytest ? "Draft Playtest" : "Main Menu"}</h1>
