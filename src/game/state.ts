@@ -5,6 +5,7 @@ import {
   BOSS_DEFEAT_DEPARTURE_FRAMES,
   MONSTER_BOUNCE_SPEED,
   actorKillsMonster,
+  bossAttackCycleFramesFor,
   advanceBossDefeatDeparture,
   advanceBossActiveMotion,
   bossAttackWarningRectsAt,
@@ -45,7 +46,8 @@ import {
   type EchoRecording
 } from "./recording";
 import { finalScoreForLevel, timeBonusForFrames } from "./scoring";
-import type { ActorBody, Boss, BossSnapshot, InputFrame, Level, Monster, Rect, SimulationSnapshot, StepEvents } from "./types";
+import { TERRAIN_TILE_SIZE } from "./terrainMaterials";
+import type { ActorBody, Boss, BossAttackSnapshot, BossSnapshot, InputFrame, Level, Monster, Rect, SimulationSnapshot, Solid, StepEvents } from "./types";
 
 const MIN_ECHO_FRAMES = 18;
 const LAUNCH_PAD_FACE_TOLERANCE = 3;
@@ -66,6 +68,9 @@ type BossCheckpoint = {
   currentAttemptCollectedCoreIds: Set<string>;
   currentAttemptKilledMonsterIds: Map<string, number>;
   currentAttemptDefeatedBossIds: Map<string, number>;
+  runtimeSolids: Solid[];
+  terrainRevision: number;
+  handledArchiveImpactKeys: Set<string>;
   tick: number;
   totalFrames: number;
   score: number;
@@ -95,6 +100,8 @@ const setsMatch = (a: Set<string>, b: Set<string>): boolean => {
 const cloneBossStates = (states: Map<string, BossRuntimeState>): Map<string, BossRuntimeState> =>
   new Map([...states.entries()].map(([id, state]) => [id, { ...state, floorIcePatches: state.floorIcePatches.map((patch) => ({ ...patch })) }]));
 
+const cloneSolids = (solids: Solid[]): Solid[] => solids.map((solid) => ({ ...solid }));
+
 const cloneEchoRecordings = (recordings: EchoRecording[]): EchoRecording[] =>
   recordings.map((recording) => ({
     ...recording,
@@ -117,6 +124,9 @@ export class RoomSimulation {
   won = false;
   readonly killedMonsterIds = new Set<string>();
   readonly bossStates = new Map<string, BossRuntimeState>();
+  private runtimeSolids: Solid[] = [];
+  private terrainRevision = 0;
+  private readonly handledArchiveImpactKeys = new Set<string>();
   private readonly currentAttemptCollectedCoreIds = new Set<string>();
   private readonly currentAttemptKilledMonsterIds = new Map<string, number>();
   private readonly currentAttemptDefeatedBossIds = new Map<string, number>();
@@ -169,6 +179,7 @@ export class RoomSimulation {
     this.objectState = createObjectState(this.level);
     this.killedMonsterIds.clear();
     this.resetBossStates();
+    this.resetRuntimeTerrain();
     if (!keepRecording) this.currentRecording = [];
   }
 
@@ -252,7 +263,7 @@ export class RoomSimulation {
 
     const platforms = platformFramesAt(this.level.platforms, this.tick);
     const doors = closedDoorRects(this.level, this.objectState.openDoors);
-    const solids = this.level.solids;
+    const solids = this.runtimeSolids;
     const baseDynamic = {
       oneWays: this.level.oneWays,
       conveyors: this.level.conveyors,
@@ -317,7 +328,7 @@ export class RoomSimulation {
       this.markPlayerDead(events);
     }
 
-    if (!this.dead && this.exitUnlocked() && rectsOverlap(this.player, this.level.exit)) {
+    if (!this.dead && !this.finalBossDefeatCompletesLevel() && this.exitUnlocked() && rectsOverlap(this.player, this.level.exit)) {
       this.won = true;
       events.won = true;
     }
@@ -336,6 +347,8 @@ export class RoomSimulation {
       collectedCores: new Set(this.objectState.collectedCores),
       blockedLasers: new Set(this.objectState.blockedLasers),
       crates: new Map([...this.objectState.crates.entries()].map(([id, rect]) => [id, { ...rect }])),
+      solids: cloneSolids(this.runtimeSolids),
+      terrainRevision: this.terrainRevision,
       killedMonsters: new Set(this.killedMonsterIds),
       bosses: this.bossSnapshots(),
       exitUnlocked: this.exitUnlocked(),
@@ -368,6 +381,10 @@ export class RoomSimulation {
     const bosses = this.level.bosses || [];
     if (bosses.length === 0) return true;
     return bosses.every((boss) => this.bossStates.get(boss.id)?.phase === "defeated");
+  }
+
+  finalBossDefeatCompletesLevel(): boolean {
+    return this.level.completion === "boss-defeat";
   }
 
   bossCheckpointActive(): boolean {
@@ -419,6 +436,9 @@ export class RoomSimulation {
       currentAttemptCollectedCoreIds: new Set(this.currentAttemptCollectedCoreIds),
       currentAttemptKilledMonsterIds: new Map(this.currentAttemptKilledMonsterIds),
       currentAttemptDefeatedBossIds: new Map(this.currentAttemptDefeatedBossIds),
+      runtimeSolids: cloneSolids(this.runtimeSolids),
+      terrainRevision: this.terrainRevision,
+      handledArchiveImpactKeys: new Set(this.handledArchiveImpactKeys),
       tick: this.tick,
       totalFrames: this.totalFrames,
       score: this.score,
@@ -480,6 +500,79 @@ export class RoomSimulation {
     for (const [id, score] of checkpoint.currentAttemptKilledMonsterIds) this.currentAttemptKilledMonsterIds.set(id, score);
     this.currentAttemptDefeatedBossIds.clear();
     for (const [id, score] of checkpoint.currentAttemptDefeatedBossIds) this.currentAttemptDefeatedBossIds.set(id, score);
+    this.runtimeSolids = cloneSolids(checkpoint.runtimeSolids);
+    this.terrainRevision = checkpoint.terrainRevision;
+    this.handledArchiveImpactKeys.clear();
+    for (const key of checkpoint.handledArchiveImpactKeys) this.handledArchiveImpactKeys.add(key);
+  }
+
+  private resetRuntimeTerrain(): void {
+    this.runtimeSolids = cloneSolids(this.level.solids);
+    this.terrainRevision += 1;
+    this.handledArchiveImpactKeys.clear();
+  }
+
+  private archiveImpactKey(boss: Boss, state: BossRuntimeState, attack: BossAttackSnapshot): string {
+    const cycleIndex = Math.floor(state.activeFrames / Math.max(1, bossAttackCycleFramesFor(boss.kind)));
+    return `${boss.id}:${cycleIndex}:${attack.round || 1}:${Math.round(attack.originX)}`;
+  }
+
+  private applyArchiveBookErosion(boss: Boss, state: BossRuntimeState, attacks: BossAttackSnapshot[]): void {
+    if (boss.kind !== "archive-custodian") return;
+    for (const attack of attacks) {
+      if (attack.attackType !== "archive-book" || attack.attackPhase !== "impact") continue;
+      if ((attack.progress || 0) < 0.999) continue;
+      const key = this.archiveImpactKey(boss, state, attack);
+      if (this.handledArchiveImpactKeys.has(key)) continue;
+      this.handledArchiveImpactKeys.add(key);
+      this.erodeSolidAtArchiveImpact(attack);
+    }
+  }
+
+  private erodeSolidAtArchiveImpact(attack: BossAttackSnapshot): void {
+    const impactBottom = attack.y + attack.h;
+    const laneLeft = attack.originX - attack.w / 2;
+    const laneRight = attack.originX + attack.w / 2;
+    const candidate = this.runtimeSolids
+      .map((solid, index) => ({ solid, index }))
+      .filter(
+        ({ solid }) =>
+          solid.erodesWith === "archive-book" &&
+          solid.collision !== "decorative" &&
+          solid.x < laneRight &&
+          solid.x + solid.w > laneLeft &&
+          Math.abs(solid.y - impactBottom) <= 4
+      )
+      .sort((a, b) => a.solid.y - b.solid.y || a.index - b.index)[0];
+    if (!candidate) return;
+
+    const { solid, index } = candidate;
+    const tileCount = solid.erosionTiles === 2 ? 2 : 1;
+    const erodeWidth = Math.min(solid.w, tileCount * TERRAIN_TILE_SIZE);
+    const solidRight = solid.x + solid.w;
+    const rawLeft = solid.x + Math.round((attack.originX - solid.x - erodeWidth / 2) / TERRAIN_TILE_SIZE) * TERRAIN_TILE_SIZE;
+    const erodeLeft = Math.max(solid.x, Math.min(rawLeft, solidRight - erodeWidth));
+    const erodeRight = Math.min(solidRight, erodeLeft + erodeWidth);
+
+    const nextPieces: Solid[] = [];
+    if (erodeLeft - solid.x >= 1) {
+      nextPieces.push({
+        ...solid,
+        id: `${solid.id}:l${this.terrainRevision}`,
+        w: erodeLeft - solid.x
+      });
+    }
+    if (solidRight - erodeRight >= 1) {
+      nextPieces.push({
+        ...solid,
+        id: `${solid.id}:r${this.terrainRevision}`,
+        x: erodeRight,
+        w: solidRight - erodeRight
+      });
+    }
+
+    this.runtimeSolids.splice(index, 1, ...nextPieces);
+    this.terrainRevision += 1;
   }
 
   private updateMonsters(events: StepEvents, previousPlayerY: number): void {
@@ -522,7 +615,14 @@ export class RoomSimulation {
           state.phase = "defeated";
           state.departureFrames = state.departureFrames || 0;
           events.bossDepartureFinished = boss.id;
-          if (this.exitUnlocked()) events.bossPortalUnlocked = true;
+          if (this.exitUnlocked()) {
+            if (this.finalBossDefeatCompletesLevel()) {
+              this.won = true;
+              events.won = true;
+            } else {
+              events.bossPortalUnlocked = true;
+            }
+          }
         }
         continue;
       }
@@ -545,7 +645,7 @@ export class RoomSimulation {
       } else if (state.phase === "active") {
         state.activeFrames += 1;
         state.invulnerableFrames = Math.max(0, state.invulnerableFrames - 1);
-        advanceBossActiveMotion(boss, state, this.player, this.level.solids);
+        advanceBossActiveMotion(boss, state, this.player, this.runtimeSolids);
       }
 
       if (state.phase !== "active") continue;
@@ -555,8 +655,9 @@ export class RoomSimulation {
         continue;
       }
 
-      const attacks = bossAttackRectsAt(boss, state, this.tick, this.level.solids);
-      const floorShocks = bossFloorShockRectsAt(boss, state, this.tick, this.level.solids);
+      const attacks = bossAttackRectsAt(boss, state, this.tick, this.runtimeSolids);
+      this.applyArchiveBookErosion(boss, state, attacks);
+      const floorShocks = bossFloorShockRectsAt(boss, state, this.tick, this.runtimeSolids);
       if (
         (bossBodyDamages(state) && rectsOverlap(this.player, body)) ||
         attacks.some((attack) => rectsOverlap(this.player, attack)) ||
@@ -628,6 +729,9 @@ export class RoomSimulation {
         currentAttemptCollectedCoreIds: new Set(this.currentAttemptCollectedCoreIds),
         currentAttemptKilledMonsterIds: new Map(this.currentAttemptKilledMonsterIds),
         currentAttemptDefeatedBossIds: new Map(this.currentAttemptDefeatedBossIds),
+        runtimeSolids: cloneSolids(this.runtimeSolids),
+        terrainRevision: this.terrainRevision,
+        handledArchiveImpactKeys: new Set(this.handledArchiveImpactKeys),
         score: this.score
       };
     }
@@ -668,10 +772,10 @@ export class RoomSimulation {
           body,
           weakSpot,
           weakSpotKind: bossWeakSpot(boss),
-          attackWarnings: bossAttackWarningRectsAt(boss, state, this.tick, this.level.solids),
-          attacks: bossAttackRectsAt(boss, state, this.tick, this.level.solids),
-          floorShocks: bossFloorShockRectsAt(boss, state, this.tick, this.level.solids),
-          floorIce: bossFloorIceRectsAt(boss, state, this.tick, this.level.solids)
+          attackWarnings: bossAttackWarningRectsAt(boss, state, this.tick, this.runtimeSolids),
+          attacks: bossAttackRectsAt(boss, state, this.tick, this.runtimeSolids),
+          floorShocks: bossFloorShockRectsAt(boss, state, this.tick, this.runtimeSolids),
+          floorIce: bossFloorIceRectsAt(boss, state, this.tick, this.runtimeSolids)
         }
       ];
     });
@@ -680,7 +784,7 @@ export class RoomSimulation {
   private currentBossFloorIceRects(): Rect[] {
     return (this.level.bosses || []).flatMap((boss) => {
       const state = this.bossStates.get(boss.id);
-      return state ? bossFloorIceRectsAt(boss, state, this.tick, this.level.solids) : [];
+      return state ? bossFloorIceRectsAt(boss, state, this.tick, this.runtimeSolids) : [];
     });
   }
 

@@ -176,6 +176,8 @@ type RenderView = {
   collectedCores: Set<string>;
   blockedLasers: Set<string>;
   crates: Map<string, Rect>;
+  solids: Solid[];
+  terrainRevision: number;
   killedMonsters: Set<string>;
   bosses: BossSnapshot[];
   exitUnlocked: boolean;
@@ -288,6 +290,7 @@ export class GameScene extends Phaser.Scene {
   private perfSamples: Array<{ delta: number; update: number; render: number }> = [];
   private perfLastUpdate = 0;
   private readonly renderEchoes: ActorBody[] = [];
+  private renderSolids: Solid[] = [];
   private readonly renderView: RenderView = {
     player: null as unknown as ActorBody,
     echoes: this.renderEchoes,
@@ -296,6 +299,8 @@ export class GameScene extends Phaser.Scene {
     collectedCores: new Set(),
     blockedLasers: new Set(),
     crates: new Map(),
+    solids: [],
+    terrainRevision: 0,
     killedMonsters: new Set(),
     bosses: [],
     exitUnlocked: true,
@@ -466,6 +471,7 @@ export class GameScene extends Phaser.Scene {
     this.perfSamples = [];
     this.perfLastUpdate = 0;
     this.renderEchoes.length = 0;
+    this.renderSolids = [];
     this.exitSprite = undefined;
     this.backgroundImages = [];
     this.backgroundImageTint = null;
@@ -1293,6 +1299,7 @@ export class GameScene extends Phaser.Scene {
     this.structureOutlines.clear();
     this.fx.clear();
     if (!this.lowChurnGraphics) this.syncBackgroundAmbience(snapshot.tick);
+    this.syncRuntimeSolids(snapshot.solids);
     this.drawConveyors();
     this.drawPlatforms(snapshot.tick);
     this.drawHazards();
@@ -1308,7 +1315,7 @@ export class GameScene extends Phaser.Scene {
     this.drawDrones(snapshot.tick, snapshot.activePlates);
     this.drawMonsters(snapshot.tick, snapshot.killedMonsters);
     this.drawBosses(snapshot.bosses);
-    if (snapshot.exitUnlocked) this.drawExit(this.level.exit, snapshot.won);
+    if (snapshot.exitUnlocked && this.level.completion !== "boss-defeat") this.drawExit(this.level.exit, snapshot.won);
     this.drawEchoes(snapshot.echoes);
     this.drawActor(snapshot.player, snapshot.dead ? 0xff4f8b : 0x43f7ff, 1);
     this.drawFxBursts();
@@ -1320,7 +1327,7 @@ export class GameScene extends Phaser.Scene {
 
   private liveRenderView(): RenderView {
     const simulation = this.simulation;
-    const objectState = simulation.objectState;
+    const simulationSnapshot = simulation.snapshot();
     this.renderEchoes.length = 0;
     for (const echo of simulation.echoes) {
       if (echo.alive) this.renderEchoes.push(echo);
@@ -1328,23 +1335,25 @@ export class GameScene extends Phaser.Scene {
 
     const view = this.renderView;
     view.player = this.deathPresentation?.actor || simulation.player;
-    view.activePlates = objectState.activePlates;
-    view.openDoors = objectState.openDoors;
-    view.collectedCores = objectState.collectedCores;
-    view.blockedLasers = objectState.blockedLasers;
-    view.crates = objectState.crates;
-    view.killedMonsters = simulation.killedMonsterIds;
-    view.bosses = simulation.bossSnapshots();
-    view.exitUnlocked = simulation.exitUnlocked();
-    view.bossCheckpointActive = simulation.bossCheckpointActive();
-    view.bossCheckpointBossId = simulation.bossCheckpointBossId();
-    view.tick = simulation.tick;
-    view.totalFrames = simulation.totalFrames;
-    view.score = simulation.score;
-    view.deaths = simulation.deaths;
-    view.livesRemaining = simulation.livesRemaining();
-    view.dead = simulation.dead || Boolean(this.deathPresentation);
-    view.won = simulation.won;
+    view.activePlates = simulationSnapshot.activePlates;
+    view.openDoors = simulationSnapshot.openDoors;
+    view.collectedCores = simulationSnapshot.collectedCores;
+    view.blockedLasers = simulationSnapshot.blockedLasers;
+    view.crates = simulationSnapshot.crates;
+    view.solids = simulationSnapshot.solids;
+    view.terrainRevision = simulationSnapshot.terrainRevision;
+    view.killedMonsters = simulationSnapshot.killedMonsters;
+    view.bosses = simulationSnapshot.bosses;
+    view.exitUnlocked = simulationSnapshot.exitUnlocked;
+    view.bossCheckpointActive = simulationSnapshot.bossCheckpointActive;
+    view.bossCheckpointBossId = simulationSnapshot.bossCheckpointBossId;
+    view.tick = simulationSnapshot.tick;
+    view.totalFrames = simulationSnapshot.totalFrames;
+    view.score = simulationSnapshot.score;
+    view.deaths = simulationSnapshot.deaths;
+    view.livesRemaining = simulationSnapshot.livesRemaining;
+    view.dead = simulationSnapshot.dead || Boolean(this.deathPresentation);
+    view.won = simulationSnapshot.won;
     return view;
   }
 
@@ -1567,13 +1576,17 @@ export class GameScene extends Phaser.Scene {
     this.staticTerrainDecorPropFrames = [];
     this.staticSolidOutlineRects = [];
     this.structureOutlines.clear();
-    this.syncStaticSolids();
     this.syncStaticOneWayPlatforms();
     this.syncStaticHazards();
   }
 
-  private syncStaticSolids(): void {
-    for (const solid of this.level.solids) {
+  private syncRuntimeSolids(solids: Solid[]): void {
+    this.renderSolids = solids;
+    this.staticSolidAssetFrames = [];
+    this.staticTerrainDecorFrames = [];
+    this.staticTerrainDecorPropFrames = [];
+    this.staticSolidOutlineRects = [];
+    for (const solid of solids) {
       const frame = this.solidFrame(solid);
       const material = terrainMaterialForSolid(solid);
       const depth = solidRenderDepth(solid);
@@ -1581,9 +1594,9 @@ export class GameScene extends Phaser.Scene {
       const surfaceIds = this.syncStaticSolidSurfaceAssets(solid, material, depth);
       const propIds = this.syncStaticTerrainDecorProps(solid, material, depth);
       this.staticSolidAssetFrames.push(`${solid.id}:${frame}:${material}:${tileIds.length}:${solidCollisionFor(solid)}:${depth.toFixed(3)}`);
-      for (const tileId of tileIds) this.markStaticObjectAsset(tileId);
-      for (const surfaceId of surfaceIds) this.markStaticObjectAsset(surfaceId);
-      for (const propId of propIds) this.markStaticObjectAsset(propId);
+      for (const tileId of tileIds) this.activeObjectAssetIds.add(tileId);
+      for (const surfaceId of surfaceIds) this.activeObjectAssetIds.add(surfaceId);
+      for (const propId of propIds) this.activeObjectAssetIds.add(propId);
       this.drawSolidReadabilityOutline(solid);
     }
   }
@@ -2019,7 +2032,7 @@ export class GameScene extends Phaser.Scene {
 
   private solidSurfaceTopSegments(solid: Solid): Array<{ side: "top"; from: number; to: number }> {
     let segments: Array<{ from: number; to: number }> = [{ from: solid.x, to: solid.x + solid.w }];
-    for (const neighbor of this.level.solids) {
+    for (const neighbor of this.renderSolids) {
       if (neighbor === solid) continue;
       const horizontalOverlap = this.overlapSpan(solid.x, solid.x + solid.w, neighbor.x, neighbor.x + neighbor.w);
       if (horizontalOverlap && this.sameCoordinate(neighbor.y + neighbor.h, solid.y)) {
@@ -2077,7 +2090,7 @@ export class GameScene extends Phaser.Scene {
     const startClearance = { x: this.level.start.x - 30, y: this.level.start.y - 64, w: 72, h: 92 };
     if (rectsOverlap(padded, startClearance) || rectsOverlap(padded, this.level.exit)) return false;
     const blockers: Rect[] = [
-      ...this.level.solids.filter(
+      ...this.renderSolids.filter(
         (blocker) => blocker !== solid && solidCollisionFor(blocker) !== "decorative" && blocker.y < rect.y + rect.h - 0.01
       )
     ];
@@ -3374,7 +3387,7 @@ export class GameScene extends Phaser.Scene {
 
   private syncExitSprite(snapshot: RenderView): void {
     if (!this.textures.exists("time-effects")) return;
-    if (!snapshot.exitUnlocked) {
+    if (!snapshot.exitUnlocked || this.level.completion === "boss-defeat") {
       this.exitSprite?.setVisible(false);
       return;
     }
@@ -3439,7 +3452,7 @@ export class GameScene extends Phaser.Scene {
       right: [{ from: solid.y, to: solid.y + solid.h }]
     };
 
-    for (const neighbor of this.level.solids) {
+    for (const neighbor of this.renderSolids) {
       if (neighbor === solid || this.solidFrame(neighbor) !== frame || terrainMaterialForSolid(neighbor) !== material) continue;
       const horizontalOverlap = this.overlapSpan(solid.x, solid.x + solid.w, neighbor.x, neighbor.x + neighbor.w);
       const verticalOverlap = this.overlapSpan(solid.y, solid.y + solid.h, neighbor.y, neighbor.y + neighbor.h);

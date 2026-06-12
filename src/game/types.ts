@@ -36,6 +36,7 @@ export type ActorBody = Rect & {
 export type SolidSprite = "auto" | "floor" | "wall" | "block" | "warning";
 export type SolidCollision = "solid" | "top-only" | "decorative";
 export type SolidDecorDensity = "auto" | "off" | "low" | "medium" | "high";
+export type SolidErosionTrigger = "archive-book";
 export type TerrainMaterial =
   | "metal-lab"
   | "glass-energy"
@@ -53,6 +54,8 @@ export type Solid = Rect & {
   material?: TerrainMaterial;
   collision?: SolidCollision;
   decorDensity?: SolidDecorDensity;
+  erodesWith?: SolidErosionTrigger;
+  erosionTiles?: 1 | 2;
 };
 
 export type MovingPlatform = Rect & {
@@ -296,6 +299,8 @@ export type LevelScoreSettings = {
   timeBonusPerSecond: number;
 };
 
+export type LevelCompletion = "exit" | "boss-defeat";
+
 export type Level = {
   id: string;
   index: number;
@@ -303,6 +308,7 @@ export type Level = {
   subtitle: string;
   motionModel?: "anchored";
   soundtrackKey?: LevelSoundtrackKey;
+  completion?: LevelCompletion;
   backgroundKey?: LevelBackgroundKey;
   backgroundAmbience?: LevelBackgroundAmbience;
   start: Vec2;
@@ -389,6 +395,8 @@ export type SimulationSnapshot = {
   collectedCores: Set<string>;
   blockedLasers: Set<string>;
   crates: Map<string, Rect>;
+  solids: Solid[];
+  terrainRevision: number;
   killedMonsters: Set<string>;
   bosses: BossSnapshot[];
   exitUnlocked: boolean;

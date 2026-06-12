@@ -21,7 +21,7 @@ const artifacts = {
   desktopNext: `${outDir}/next-desktop.png`,
   desktopCoreRoom: `${outDir}/core-room-desktop.png`,
   desktopHeldOpenComplete: `${outDir}/held-open-complete-desktop.png`,
-  desktopLiftPhaseComplete: `${outDir}/lift-phase-complete-desktop.png`,
+  desktopTimberBoss: `${outDir}/timber-boss-floor-desktop.png`,
   draftDisabledDrone: `${outDir}/draft-disabled-drone.png`,
   draftLegacySolidSprites: `${outDir}/draft-legacy-solid-sprites.png`,
   draftMovingLaserOrigin: `${outDir}/draft-moving-laser-origin.png`,
@@ -495,9 +495,9 @@ try {
   const desktopMusicLoadingPhase = await page.evaluate(() => document.documentElement.dataset.echoShiftMusicLoading || "");
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await page.screenshot({ path: artifacts.desktopGame });
-  await page.keyboard.down("KeyD");
+  await page.keyboard.down("KeyA");
   await page.waitForTimeout(700);
-  await page.keyboard.up("KeyD");
+  await page.keyboard.up("KeyA");
   await page.keyboard.down("KeyR");
   await page.waitForTimeout(100);
   await page.keyboard.up("KeyR");
@@ -567,13 +567,13 @@ try {
   await startAudioGate(page);
   await page.locator("[data-levels]").waitFor({ state: "visible" });
   await page.locator("[data-levels]").click();
-  await page.locator("[data-level='4']").click();
-  await waitForGameLevel(page, "5. Sunken Clockwork");
+  await page.locator("[data-level='3']").click();
+  await waitForGameLevel(page, "4. Timber Archive");
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
-  const liftPhaseTilePhasesBefore = await page.evaluate(() => document.documentElement.dataset.echoShiftTileAssetPhases || "");
-  const liftPhaseTilePhasesAfter = await page.evaluate(() => document.documentElement.dataset.echoShiftTileAssetPhases || "");
-  const liftPhaseCompletionTitle = "Route preview skipped";
-  await page.screenshot({ path: artifacts.desktopLiftPhaseComplete });
+  const timberBossSolidFrames = await page.evaluate(() => document.documentElement.dataset.echoShiftSolidAssetFrames || "");
+  const timberBossExitUnlocked = await page.evaluate(() => document.documentElement.dataset.echoShiftExitUnlocked || "");
+  const timberBossPreviewTitle = "Archive boss preview skipped";
+  await page.screenshot({ path: artifacts.desktopTimberBoss });
 
   const disabledDroneLevel = draftLevel({
     name: "Disabled Drone Render",
@@ -830,13 +830,8 @@ try {
       heldOpenSolidFrames.includes("mid-ledge:0"),
     `Expected legacy Held Open ledges to use floor sprite frames, got ${heldOpenSolidFrames}`
   );
-  assert(
-    liftPhaseTilePhasesBefore.includes("platform:lift-a:") &&
-      liftPhaseTilePhasesBefore.includes("platform:lift-a2:") &&
-      liftPhaseTilePhasesAfter.includes("platform:lift-a:") &&
-      liftPhaseTilePhasesAfter.includes("platform:lift-a2:"),
-    `Expected moving platform tile phase to remain object-anchored, got ${liftPhaseTilePhasesBefore} -> ${liftPhaseTilePhasesAfter}`
-  );
+  assert(timberBossSolidFrames.includes("archive-boss-floor:0:wood-archive"), `Expected Timber Archive boss floor to render as wood terrain, got ${timberBossSolidFrames}`);
+  assert(timberBossExitUnlocked === "false", `Expected final boss level exit to stay hidden/locked before boss defeat, got ${timberBossExitUnlocked}`);
   assert(
     disabledDroneStates.includes("disabled-drone:inactive"),
     `Expected draft disabled drone to render inactive, got ${disabledDroneStates}`
@@ -878,7 +873,7 @@ try {
   assert(deathPauseModalDuringFall === 0, `Expected pause button to be ignored during death presentation, got ${deathPauseModalDuringFall} modals`);
   assert(deathPauseModalAfterRespawn === 0, `Expected death respawn to leave no pause modal, got ${deathPauseModalAfterRespawn} modals`);
   assert(deathPauseLivesText === "2", `Expected guarded death respawn to leave 2 lives, got ${deathPauseLivesText}`);
-  assert(levelButtons === 5, `Expected 5 level buttons, got ${levelButtons}`);
+  assert(levelButtons === 4, `Expected 4 level buttons, got ${levelButtons}`);
   assert(touchControlsVisible, "Mobile touch controls were not visible in-game");
   assert(mobileIntroVisible, "Expected level intro cutscene to appear on mobile");
   assert(tabletTouchControlsVisible, "Tablet touch controls were not visible in-game");
@@ -909,9 +904,9 @@ try {
         corePixels,
         heldOpenSolidFrames,
         heldOpenCompletionTitle,
-        liftPhaseTilePhasesBefore,
-        liftPhaseTilePhasesAfter,
-        liftPhaseCompletionTitle,
+        timberBossSolidFrames,
+        timberBossExitUnlocked,
+        timberBossPreviewTitle,
         disabledDroneStates,
         legacySolidSpriteFrames,
         laserSpriteTransformsBefore,

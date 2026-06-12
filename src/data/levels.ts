@@ -11,7 +11,7 @@ const s = (
   w: number,
   h: number,
   tone: Solid["tone"] = "steel",
-  options: Partial<Pick<Solid, "sprite" | "material" | "collision">> = {}
+  options: Partial<Pick<Solid, "sprite" | "material" | "collision" | "decorDensity" | "erodesWith" | "erosionTiles">> = {}
 ): Solid => ({
   id,
   x,
@@ -185,17 +185,18 @@ const sourceLevels: Level[] = [
     name: "Timber Archive",
     subtitle: "A core behind the old stacks",
     soundtrackKey: "level-4",
+    completion: "boss-defeat",
     backgroundKey: "level-4-timber-archive-fit",
     backgroundAmbience: { preset: "data", intensity: 0.36, color: "#45f2a2", drift: 0.4, flicker: 0.24, particles: 0.26 },
     start: { x: 56, y: 450 },
     exit: r(3460, 438, 48, 62),
     bounds: bounds(3600),
     solids: [
-      ...themedFrame(3600, 500, [[820, 98], [1260, 90], [2100, 90], [2680, 90], [3240, 78]], "wood-archive"),
+      ...themedFrame(3600, 500, [[820, 98], [1260, 90], [2100, 90], [2520, 820]], "wood-archive"),
       s("key-ledge", 980, 410, 154, 18, "steel", { sprite: "floor", material: "wood-archive", collision: "top-only" }),
       s("drop-step", 1380, 438, 82, 18, "steel", { sprite: "floor", material: "wood-archive", collision: "top-only" }),
       s("core-approach", 1820, 430, 190, 18, "steel", { sprite: "floor", material: "wood-archive", collision: "top-only" }),
-      s("exit-approach", 2860, 438, 220, 18, "steel", { sprite: "floor", material: "glass-energy", collision: "top-only" })
+      s("archive-boss-floor", 2520, 500, 820, 60, "dark", { sprite: "floor", material: "wood-archive", erodesWith: "archive-book", erosionTiles: 2 })
     ],
     plates: [p("plate-c", 190, 492, 70, 8)],
     doors: [
@@ -205,35 +206,24 @@ const sourceLevels: Level[] = [
     cores: [{ id: "core-c", ...r(930, 466, 24, 24), label: "C", size: "large" }],
     hazards: [h("core-spark", 1580, 496, 58, 4), h("lock-spark", 2320, 496, 58, 4)],
     drones: [d("drone-g", 1640, 472, 30, 24, "x", 110, 180, 1.2), d("drone-h", 3090, 360, 30, 24, "x", 130, 220)],
+    bosses: [
+      {
+        id: "archive-custodian-final",
+        kind: "archive-custodian",
+        x: 2520,
+        y: 118,
+        w: 820,
+        h: 382,
+        entrySide: "center",
+        soundtrackKey: "final-boss",
+        checkpoint: { x: 2580, y: 450 },
+        introSeconds: 8,
+        health: 4,
+        score: 5000
+      }
+    ],
     score: score(3420),
-    hint: "Hold the archive gate with an echo, then climb the old stacks for the core."
-  },
-  {
-    id: "lift-phase",
-    index: 4,
-    name: "Sunken Clockwork",
-    subtitle: "The final lift moves through buried time",
-    soundtrackKey: "level-5",
-    backgroundKey: "level-5-sunken-clockwork-fit",
-    backgroundAmbience: { preset: "reactor", intensity: 0.24, color: "#ffe35a", drift: 0.18, flicker: 0.32, particles: 0.18 },
-    start: { x: 58, y: 450 },
-    exit: r(3260, 438, 48, 62),
-    bounds: bounds(3400),
-    solids: [
-      ...themedFrame(3400, 500, [[430, 90], [1150, 90], [1720, 90], [2500, 50]], "sand-ruin"),
-      s("left-rise", 210, 432, 110, 18, "steel", { sprite: "floor", material: "sand-ruin", collision: "top-only" }),
-      s("right-rise", 840, 392, 266, 18, "steel", { sprite: "floor", material: "sand-ruin", collision: "top-only" }),
-      s("sync-ledge", 1480, 360, 160, 18, "steel", { sprite: "floor", material: "warning-industrial", collision: "top-only" }),
-      s("upper-transfer", 2100, 374, 220, 18, "steel", { sprite: "floor", material: "sand-ruin", collision: "top-only" }),
-      s("landing-run", 2730, 430, 210, 18, "steel", { sprite: "floor", material: "glass-energy", collision: "top-only" })
-    ],
-    platforms: [
-      m("lift-a", 514, 430, 120, 18, "y", 92, 210),
-      m("lift-a2", 1830, 438, 120, 18, "y", 72, 180, 1.4)
-    ],
-    drones: [d("drone-i", 1340, 472, 30, 24, "x", 100, 170), d("drone-j", 2960, 444, 30, 24, "y", 38, 160, 0.8)],
-    score: score(3000),
-    hint: "Watch one cycle of the buried lifts, then commit across the final clockwork gaps."
+    hint: "Hold the archive gate with an echo, climb the old stacks for the core, then survive the Custodian as the archive floor breaks apart."
   }
 ];
 

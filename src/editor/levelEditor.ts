@@ -47,6 +47,7 @@ import type {
   Level,
   LevelBackgroundAmbience,
   LevelBackgroundAmbiencePreset,
+  LevelCompletion,
   MovingLaser,
   MovingPlatform,
   Monster,
@@ -178,6 +179,8 @@ const HIT_TOLERANCE_PX = 8;
 const SURFACE_SNAP_DISTANCE = 24;
 const PLAYER_RECT = { w: 24, h: 34 };
 const CLOSED_GATE_MAX_TOP = 220;
+const levelCompletionValues = ["exit", "boss-defeat"] as const satisfies readonly LevelCompletion[];
+const solidErosionTriggerValues = ["archive-book"] as const;
 
 const collectionLabels: Record<RectCollection, string> = {
   solids: "Solids",
@@ -269,6 +272,16 @@ const solidDecorDensityOptions: SelectOption[] = [
   ...solidDecorDensityValues.map((value) => ({ value, label: solidDecorDensityLabels[value] }))
 ];
 
+const levelCompletionOptions: SelectOption[] = [
+  { value: "exit", label: "Exit portal" },
+  { value: "boss-defeat", label: "Boss defeat" }
+];
+
+const solidErosionOptions: SelectOption[] = [
+  { value: "", label: "None" },
+  { value: "archive-book", label: "Archive books" }
+];
+
 const cloneLevels = (items: Level[]): Level[] => JSON.parse(JSON.stringify(items)) as Level[];
 
 const stripEditorBossCheckpoints = (level: Level): Level => {
@@ -349,6 +362,14 @@ const csvToList = (value: string): string[] =>
     .filter(Boolean);
 
 const listToCsv = (value: string[] | undefined): string => (value || []).join(", ");
+
+const normalizeLevelCompletion = (value: unknown): LevelCompletion | undefined =>
+  levelCompletionValues.includes(value as LevelCompletion) ? (value as LevelCompletion) : undefined;
+
+const normalizeSolidErosionTrigger = (value: unknown): Solid["erodesWith"] =>
+  solidErosionTriggerValues.includes(value as (typeof solidErosionTriggerValues)[number]) ? (value as Solid["erodesWith"]) : undefined;
+
+const normalizeSolidErosionTiles = (value: unknown): Solid["erosionTiles"] => (Number(value) === 2 ? 2 : Number(value) === 1 ? 1 : undefined);
 
 const replaceReferenceList = (value: string[] | undefined, previousId: string, nextId: string): string[] => [
   ...new Set((value || []).map((item) => (item === previousId ? nextId : item)))
@@ -646,6 +667,7 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number, draftAnch
     ? normalizeBackgroundAmbience(value.backgroundAmbience as LevelBackgroundAmbience)
     : undefined;
   const anchoredMotion = draftAnchored || usesAnchoredMotionModel(value);
+  const importedCompletion = normalizeLevelCompletion(value.completion);
 
   const level: Level = {
     id: String(value.id || `level-${fallbackIndex + 1}`),
@@ -654,6 +676,7 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number, draftAnch
     subtitle: String(value.subtitle || ""),
     motionModel: ANCHORED_MOTION_MODEL,
     ...(importedSoundtrackKey ? { soundtrackKey: importedSoundtrackKey } : {}),
+    ...(importedCompletion ? { completion: importedCompletion } : {}),
     ...(importedBackgroundKey ? { backgroundKey: importedBackgroundKey } : {}),
     ...(importedBackgroundAmbience ? { backgroundAmbience: importedBackgroundAmbience } : {}),
     start: {
@@ -718,7 +741,9 @@ const normalizeObject = (value: unknown, kind: RectCollection, usedIds: Set<stri
       sprite: normalizeSolidSprite(record.sprite),
       material: normalizeTerrainMaterial(record.material),
       collision: normalizeSolidCollision(record.collision),
-      decorDensity: normalizeSolidDecorDensity(record.decorDensity)
+      decorDensity: normalizeSolidDecorDensity(record.decorDensity),
+      erodesWith: normalizeSolidErosionTrigger(record.erodesWith),
+      erosionTiles: normalizeSolidErosionTiles(record.erosionTiles)
     });
   }
   if (kind === "conveyors") {
@@ -1184,6 +1209,10 @@ class LevelEditor {
     } else if (field === "soundtrackKey") {
       if (isLevelSoundtrackKey(value)) level.soundtrackKey = value;
       else delete level.soundtrackKey;
+    } else if (field === "completion") {
+      const completion = normalizeLevelCompletion(value);
+      if (completion && completion !== "exit") level.completion = completion;
+      else delete level.completion;
     } else if (field === "backgroundKey") {
       if (isLevelBackgroundKey(value)) level.backgroundKey = value;
       else delete level.backgroundKey;
@@ -1355,6 +1384,23 @@ class LevelEditor {
       const density = normalizeSolidDecorDensity(String(value).trim());
       if (density) record.decorDensity = density;
       else delete record.decorDensity;
+      return;
+    }
+    if (field === "erodesWith") {
+      const erosion = normalizeSolidErosionTrigger(String(value).trim());
+      if (erosion) {
+        record.erodesWith = erosion;
+        if (normalizeSolidErosionTiles(record.erosionTiles) === undefined) record.erosionTiles = 1;
+      } else {
+        delete record.erodesWith;
+        delete record.erosionTiles;
+      }
+      return;
+    }
+    if (field === "erosionTiles") {
+      const tiles = normalizeSolidErosionTiles(value);
+      if (tiles) record.erosionTiles = tiles;
+      else delete record.erosionTiles;
       return;
     }
     if (field === "size") {
@@ -2196,6 +2242,7 @@ class LevelEditor {
           ${this.numberField("W", "bounds.w", level.bounds.w, "level")}
           ${this.numberField("H", "bounds.h", level.bounds.h, "level")}
         </div>
+        ${this.selectField("Completion", "completion", level.completion || "exit", levelCompletionOptions, "level")}
         ${this.soundtrackField(level)}
         ${this.backgroundField(level)}
         ${this.backgroundAmbienceField(level)}
@@ -2276,6 +2323,11 @@ class LevelEditor {
           ${this.selectField("Collision", "collision", String(record.collision || ""), solidCollisionOptions)}
           ${this.selectField("Decor", "decorDensity", String(record.decorDensity || ""), solidDecorDensityOptions)}
           ${this.selectField("Tone", "tone", String(record.tone || ""), ["", "steel", "glass", "warning", "dark"])}
+          ${this.selectField("Erodes With", "erodesWith", String(record.erodesWith || ""), solidErosionOptions)}
+          ${this.selectField("Erosion Tiles", "erosionTiles", String(record.erosionTiles || 1), [
+            { value: "1", label: "1" },
+            { value: "2", label: "2" }
+          ])}
         </div>
       `;
     }
@@ -2584,6 +2636,9 @@ class LevelEditor {
     if (level.soundtrackKey && !isLevelSoundtrackKey(level.soundtrackKey)) {
       messages.push({ severity: "error", text: `${level.name} references an unknown level soundtrack ${level.soundtrackKey}.` });
     }
+    if (level.completion && !levelCompletionValues.includes(level.completion)) {
+      messages.push({ severity: "error", text: `${level.name} has invalid completion mode ${String(level.completion)}.` });
+    }
     if (level.backgroundKey && !isLevelBackgroundKey(level.backgroundKey)) {
       messages.push({ severity: "error", text: `${level.name} references an unknown level background ${level.backgroundKey}.` });
     }
@@ -2608,8 +2663,11 @@ class LevelEditor {
     if (!rectInside(this.startRectForLevel(level), level.bounds)) {
       messages.push({ severity: "error", text: `${level.name} start footprint is outside bounds.` });
     }
-    if (!rectInside(level.exit, level.bounds)) {
+    if (level.completion !== "boss-defeat" && !rectInside(level.exit, level.bounds)) {
       messages.push({ severity: "error", text: `${level.name} exit is outside bounds.` });
+    }
+    if (level.completion === "boss-defeat" && readCollection(level, "bosses").length === 0) {
+      messages.push({ severity: "warning", text: `${level.name} completes on boss defeat but has no boss arena.` });
     }
     if (level.score.lives !== null && (!Number.isInteger(level.score.lives) || level.score.lives <= 0)) {
       messages.push({ severity: "error", text: `${level.name} lives must be unlimited or a positive integer.` });
@@ -2646,6 +2704,21 @@ class LevelEditor {
           }
           if (!Number.isFinite(moving.period) || moving.period <= 0) {
             messages.push({ severity: "error", text: `${level.name}:${object.id} has invalid movement period.` });
+          }
+        }
+        if (kind === "solids") {
+          const solid = object as Solid;
+          if (solid.erodesWith && !solidErosionTriggerValues.includes(solid.erodesWith)) {
+            messages.push({ severity: "error", text: `${level.name}:${solid.id} has invalid erosion trigger ${String(solid.erodesWith)}.` });
+          }
+          if (solid.erodesWith && solid.collision === "decorative") {
+            messages.push({ severity: "warning", text: `${level.name}:${solid.id} is decorative and will not erode in gameplay.` });
+          }
+          if (solid.erodesWith && normalizeSolidErosionTiles(solid.erosionTiles) === undefined) {
+            messages.push({ severity: "warning", text: `${level.name}:${solid.id} should use 1 or 2 erosion tiles.` });
+          }
+          if (solid.erodesWith === "archive-book" && !(level.bosses || []).some((boss) => boss.kind === "archive-custodian")) {
+            messages.push({ severity: "warning", text: `${level.name}:${solid.id} erodes from archive books, but the level has no Archive Custodian.` });
           }
         }
         if (kind === "monsters") {

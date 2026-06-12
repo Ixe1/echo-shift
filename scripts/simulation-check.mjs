@@ -1004,7 +1004,17 @@ try {
     }
   };
 
-  assert(levels.length === 5, `Expected 5 handcrafted levels, found ${levels.length}`);
+  assert(levels.length === 4, `Expected 4 handcrafted levels, found ${levels.length}`);
+  assert(levels[3].id === "relay-key", `Expected Timber Archive to be the final campaign level, got ${levels[3].id}`);
+  assert(levels[3].completion === "boss-defeat", "Expected Timber Archive to complete on boss defeat");
+  assert(
+    (levels[3].bosses || []).some((boss) => boss.kind === "archive-custodian" && boss.soundtrackKey === "final-boss"),
+    "Expected final Timber Archive level to include an Archive Custodian using final boss music"
+  );
+  assert(
+    levels[3].solids.some((solid) => solid.id === "archive-boss-floor" && solid.erodesWith === "archive-book" && solid.erosionTiles === 2),
+    "Expected Timber Archive boss floor to be archive-book erodible"
+  );
   assert(levels.some((level) => (level.plates || []).length > 0), "Expected at least one pressure-plate level");
   assert(levels.some((level) => (level.doors || []).length > 0), "Expected at least one door level");
   assert(levels.some((level) => (level.lasers || []).length > 0), "Expected at least one laser level");
@@ -1051,7 +1061,6 @@ try {
   assert(backgroundForLevel(levels[1], 1).key === "level-2-rainhouse-relay-fit", "Expected Level 2 to use Rainhouse Relay full-plate background");
   assert(backgroundForLevel(levels[2], 2).key === "level-3-cryo-grove-fit", "Expected Level 3 to use Cryo Grove full-plate background");
   assert(backgroundForLevel(levels[3], 3).key === "level-4-timber-archive-fit", "Expected Level 4 to use Timber Archive full-plate background");
-  assert(backgroundForLevel(levels[4], 4).key === "level-5-sunken-clockwork-fit", "Expected Level 5 to use Sunken Clockwork full-plate background");
   assert(
     levels.every((level, index) => backgroundForLevel(level, index).renderMode === "fit-level"),
     "Expected campaign levels to use fit-level background render mode"
@@ -1072,11 +1081,10 @@ try {
   assert(soundtrackForLevel(tutorialLevel).key === "tutorial", "Expected tutorial soundtrack key to resolve");
   assert(soundtrackForLevel({ ...levels[0], soundtrackKey: "tutorial" }).key === "tutorial", "Expected explicit tutorial soundtrack key to override index fallback");
   assert(soundtrackForLevel(levels[3], 3).key === "level-4", "Expected Level 4 to use Level 4 music");
-  assert(soundtrackForLevel(levels[4], 4).key === "level-5", "Expected Level 5 to use Level 5 music");
-  assert(soundtrackForLevel({ ...levels[4], soundtrackKey: undefined }, 5).key === "level-1", "Expected missing retired level-6 slot to use safe fallback");
-  assert(soundtrackForLevel({ ...levels[4], soundtrackKey: "missing-track" }, 5).key === "level-1", "Expected unknown soundtrack key to use safe fallback");
-  assert(soundtrackForLevel({ ...levels[4], soundtrackKey: "menu" }, 5).key === "level-1", "Expected menu soundtrack key to be ignored for levels");
-  assert(soundtrackForLevel({ ...levels[4], soundtrackKey: "boss" }, 5).key === "level-1", "Expected boss music key to be ignored for level music");
+  assert(soundtrackForLevel({ ...levels[3], soundtrackKey: undefined }, 5).key === "level-1", "Expected missing retired level-6 slot to use safe fallback");
+  assert(soundtrackForLevel({ ...levels[3], soundtrackKey: "missing-track" }, 5).key === "level-1", "Expected unknown soundtrack key to use safe fallback");
+  assert(soundtrackForLevel({ ...levels[3], soundtrackKey: "menu" }, 5).key === "level-1", "Expected menu soundtrack key to be ignored for levels");
+  assert(soundtrackForLevel({ ...levels[3], soundtrackKey: "boss" }, 5).key === "level-1", "Expected boss music key to be ignored for levels");
   assert(soundtrackForLevel({ ...levels[0], index: 9, soundtrackKey: undefined }, 1).key === "level-2", "Expected auto soundtrack fallback to use runtime level slot, not authored index");
   assert(soundtrackForBoss({ soundtrackKey: "level-3" }).key === "level-3", "Expected boss soundtrack override to allow level MP3 keys");
   assert(soundtrackForBoss({ soundtrackKey: "tutorial" }).key === "tutorial", "Expected boss soundtrack override to allow tutorial MP3");
@@ -2265,6 +2273,33 @@ try {
   assert(portalUnlockEvent?.bossPortalUnlocked, "Expected exit portal to unlock after boss departure finishes");
   assert(bossIntroSim.exitUnlocked(), "Expected boss level exit to unlock after boss departure");
   assert(bossIntroSim.bossStates.get("boss-test")?.phase === "defeated", "Expected boss to be marked defeated after departure finishes");
+
+  const bossDefeatCompletionLevel = {
+    ...bossLevel,
+    completion: "boss-defeat"
+  };
+  const bossDefeatCompletionExitSim = new RoomSimulation(bossDefeatCompletionLevel);
+  Object.assign(bossDefeatCompletionExitSim.player, { x: bossDefeatCompletionLevel.exit.x, y: bossDefeatCompletionLevel.exit.y, vx: 0, vy: 0 });
+  bossDefeatCompletionExitSim.step(idle);
+  assert(!bossDefeatCompletionExitSim.won, "Boss-defeat completion should ignore exit contact before the boss is defeated");
+  const bossDefeatCompletionSim = new RoomSimulation(bossDefeatCompletionLevel);
+  bossDefeatCompletionSim.player.x = bossDefeatCompletionLevel.start.x;
+  bossDefeatCompletionSim.step(idle);
+  runFrames(bossDefeatCompletionSim, 17 * 60 - 1, idle);
+  const bossDefeatCompletionVulnerable = runBossUntilVulnerable(bossDefeatCompletionSim, "boss-test");
+  const bossDefeatCompletionHit = upwardHitBoss(bossDefeatCompletionSim, bossDefeatCompletionVulnerable);
+  assert(bossDefeatCompletionHit.bossDefeated?.id === "boss-test", "Expected boss-defeat completion fixture to defeat the boss");
+  let bossDefeatCompletionEvent = null;
+  for (let guard = 0; guard < bossDefeatCompletionVulnerable.departureTotalFrames + 30; guard += 1) {
+    const event = bossDefeatCompletionSim.step(idle);
+    if (event.won) {
+      bossDefeatCompletionEvent = event;
+      break;
+    }
+  }
+  assert(bossDefeatCompletionEvent?.won, "Expected boss-defeat level to complete when defeated boss departure finishes");
+  assert(!bossDefeatCompletionEvent.bossPortalUnlocked, "Boss-defeat completion should not emit portal unlock");
+  assert(bossDefeatCompletionSim.won, "Expected boss-defeat completion simulation to be won");
   const stormRecoverySim = new RoomSimulation(stormLaneLevel);
   Object.assign(stormRecoverySim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });
   stormRecoverySim.step(idle);
@@ -2540,6 +2575,72 @@ try {
 	  });
 	  const archiveBookDeath = archiveBookImpactSim.step(idle);
 	  assert(archiveBookDeath.died && archiveBookImpactSim.dead, "Expected active archive book impact to kill the player");
+
+  const runArchiveUntilFinalImpact = (simulation, bossId) =>
+    runArchiveUntil(
+      simulation,
+      bossId,
+      (snapshot) => snapshot.attacks.some((attack) => attack.attackPhase === "impact" && (attack.progress || 0) >= 0.999),
+      420
+    );
+  const archiveNoErosionSim = new RoomSimulation(archiveLowFloorLevel);
+  Object.assign(archiveNoErosionSim.player, {
+    x: archiveLowFloorLevel.start.x,
+    y: 280 - archiveNoErosionSim.player.h,
+    vx: 0,
+    vy: 0,
+    onGround: true
+  });
+  archiveNoErosionSim.step(idle);
+  runFrames(archiveNoErosionSim, 60, idle);
+  Object.assign(archiveNoErosionSim.player, { x: 36, y: 18, vx: 0, vy: 0, onGround: false });
+  const noErosionRevision = archiveNoErosionSim.snapshot().terrainRevision;
+  runArchiveUntilFinalImpact(archiveNoErosionSim, "archive-low-floor-boss");
+  const noErosionFloor = archiveNoErosionSim.snapshot().solids.filter((solid) => solid.id === "floor");
+  assert(archiveNoErosionSim.snapshot().terrainRevision === noErosionRevision, "Expected unmarked archive floor to leave terrain revision unchanged");
+  assert(noErosionFloor.length === 1 && noErosionFloor[0].w === 860, `Expected unmarked archive floor not to erode, got ${JSON.stringify(noErosionFloor)}`);
+
+  const archiveErosionLevel = {
+    ...archiveLowFloorLevel,
+    id: "archive-floor-erosion",
+    solids: [
+      { id: "erode-floor", x: 0, y: 280, w: 860, h: 60, erodesWith: "archive-book", erosionTiles: 2 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 340 },
+      { id: "right-wall", x: 860, y: 0, w: 20, h: 340 }
+    ]
+  };
+  const archiveErosionSim = new RoomSimulation(archiveErosionLevel);
+  Object.assign(archiveErosionSim.player, {
+    x: archiveErosionLevel.start.x,
+    y: 280 - archiveErosionSim.player.h,
+    vx: 0,
+    vy: 0,
+    onGround: true
+  });
+  archiveErosionSim.step(idle);
+  runFrames(archiveErosionSim, 60, idle);
+  Object.assign(archiveErosionSim.player, { x: 36, y: 18, vx: 0, vy: 0, onGround: false });
+  const preErosionRevision = archiveErosionSim.snapshot().terrainRevision;
+  const archiveFinalImpact = runArchiveUntilFinalImpact(archiveErosionSim, "archive-low-floor-boss");
+  const finalImpactBook = archiveFinalImpact.attacks.find((attack) => attack.attackPhase === "impact" && (attack.progress || 0) >= 0.999);
+  const finalImpactCount = archiveFinalImpact.attacks.filter((attack) => attack.attackPhase === "impact" && (attack.progress || 0) >= 0.999).length;
+  assert(finalImpactBook, `Expected final archive impact before erosion, got ${JSON.stringify(archiveFinalImpact.attacks)}`);
+  const erodedSnapshot = archiveErosionSim.snapshot();
+  const erodedPieces = erodedSnapshot.solids.filter((solid) => solid.id.startsWith("erode-floor"));
+  const erodedWidth = erodedPieces.reduce((sum, solid) => sum + solid.w, 0);
+  assert(erodedSnapshot.terrainRevision > preErosionRevision, "Expected archive floor erosion to bump terrain revision");
+  assert(erodedPieces.length >= 1, `Expected erodible floor to leave runtime pieces, got ${JSON.stringify(erodedSnapshot.solids)}`);
+  assert(erodedWidth === 860 - finalImpactCount * 64, `Expected each final-impact book pile to erode two 32px chunks, got remaining width ${erodedWidth}`);
+  assert(
+    !erodedPieces.some((solid) => solid.x < finalImpactBook.originX && solid.x + solid.w > finalImpactBook.originX),
+    `Expected eroded floor to leave a gap at impact x ${finalImpactBook.originX}, got ${JSON.stringify(erodedPieces)}`
+  );
+  archiveErosionSim.resetLifeAttempt();
+  const restoredErosionFloor = archiveErosionSim.snapshot().solids.filter((solid) => solid.id === "erode-floor");
+  assert(
+    restoredErosionFloor.length === 1 && restoredErosionFloor[0].w === 860,
+    `Expected boss checkpoint reset to restore eroded floor, got ${JSON.stringify(restoredErosionFloor)}`
+  );
 
 	  const archiveDodgeSim = new RoomSimulation(archiveLevel);
 	  Object.assign(archiveDodgeSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });

@@ -40,6 +40,7 @@ const optionalCoreSize = (value: unknown): boolean => value === undefined || val
 const optionalLevelSoundtrackKey = (value: unknown): boolean => value === undefined || isLevelSoundtrackKey(value);
 const optionalBossSoundtrackKey = (value: unknown): boolean => value === undefined || isBossSoundtrackKey(value);
 const optionalLevelBackgroundKey = (value: unknown): boolean => value === undefined || isLevelBackgroundKey(value);
+const optionalLevelCompletion = (value: unknown): boolean => value === undefined || value === "exit" || value === "boss-defeat";
 const optionalBackgroundAmbience = (value: unknown): boolean =>
   value === undefined ||
   (isRecord(value) &&
@@ -94,13 +95,17 @@ const solidCollisionValue = (value: unknown): boolean =>
 
 const solidDecorDensityValue = (value: unknown): boolean =>
   value === undefined || solidDecorDensityValues.includes(value as (typeof solidDecorDensityValues)[number]);
+const solidErosionTriggerValue = (value: unknown): boolean => value === undefined || value === "archive-book";
+const solidErosionTilesValue = (value: unknown): boolean => value === undefined || value === 1 || value === 2;
 
 const solidLike = (value: unknown): boolean =>
   objectRectLike(value) &&
   optionalString(value.tone) &&
   solidSpriteValue(value.sprite) &&
   solidCollisionValue(value.collision) &&
-  solidDecorDensityValue(value.decorDensity);
+  solidDecorDensityValue(value.decorDensity) &&
+  solidErosionTriggerValue(value.erodesWith) &&
+  solidErosionTilesValue(value.erosionTiles);
 const oneWayLike = (value: unknown): boolean => objectRectLike(value);
 const conveyorLike = (value: unknown): boolean =>
   objectRectLike(value) && (value.direction === -1 || value.direction === 1) && finiteValue(value.speed) && value.speed >= 0;
@@ -173,6 +178,7 @@ const levelLike = (value: unknown): value is Level => {
     stringValue(value.name) &&
     stringValue(value.subtitle) &&
     optionalLevelSoundtrackKey(value.soundtrackKey) &&
+    optionalLevelCompletion(value.completion) &&
     optionalLevelBackgroundKey(value.backgroundKey) &&
     optionalBackgroundAmbience(value.backgroundAmbience) &&
     isRecord(value.start) &&
