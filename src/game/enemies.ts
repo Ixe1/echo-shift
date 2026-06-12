@@ -198,6 +198,7 @@ export type BossRuntimeState = {
   targetY: number;
   attackX: number;
   attackY: number;
+  attackSequence: number;
   recoveryFrames: number;
   departureFrames: number;
   departureStartX: number;
@@ -665,6 +666,7 @@ export const createBossRuntimeState = (boss: Boss): BossRuntimeState => {
     targetY: center.y,
     attackX: center.x,
     attackY: center.y,
+    attackSequence: 0,
     recoveryFrames: 0,
     departureFrames: 0,
     departureStartX: body.x,
@@ -697,6 +699,7 @@ export const settleBossAtIntroEnd = (boss: Boss, state: BossRuntimeState): void 
   state.targetY = center.y;
   state.attackX = center.x;
   state.attackY = center.y;
+  state.attackSequence = 0;
   state.recoveryFrames = 0;
   state.motionMinY = undefined;
   state.motionMaxY = undefined;
@@ -782,6 +785,7 @@ export const recoverBossAfterHit = (boss: Boss, state: BossRuntimeState): void =
   const cycle = state.activeFrames % bossAttackCycleFramesFor(boss.kind);
   if (cycle < bossVulnerableStartFrameFor(boss.kind)) return;
   state.activeFrames = 0;
+  if (boss.kind === "archive-custodian") state.attackSequence += 1;
   const recoveryFrames =
     boss.kind === "cryo-conservator" ? CRYO_HIT_RECOVERY_FRAMES : boss.kind === "archive-custodian" ? ARCHIVE_HIT_RECOVERY_FRAMES : STORM_HIT_RECOVERY_FRAMES;
   state.recoveryFrames = recoveryFrames;

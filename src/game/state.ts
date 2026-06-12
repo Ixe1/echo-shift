@@ -537,7 +537,7 @@ export class RoomSimulation {
 
   private archiveImpactKey(boss: Boss, state: BossRuntimeState, attack: BossAttackSnapshot): string {
     const cycleIndex = Math.floor(state.activeFrames / Math.max(1, bossAttackCycleFramesFor(boss.kind)));
-    return `${boss.id}:${cycleIndex}:${attack.round || 1}:${Math.round(attack.originX)}`;
+    return `${boss.id}:${state.attackSequence}:${cycleIndex}:${attack.round || 1}:${Math.round(attack.originX)}`;
   }
 
   private applyArchiveBookErosion(boss: Boss, state: BossRuntimeState, attacks: BossAttackSnapshot[]): void {

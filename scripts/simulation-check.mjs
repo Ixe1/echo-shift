@@ -2669,6 +2669,11 @@ try {
     }
     throw new Error(`Expected archive boss ${bossId} to erode terrain`);
   };
+  const handledArchiveImpactCount = (simulation) => {
+    const handled = simulation.handledArchiveImpactKeys;
+    assert(handled instanceof Set, "Expected RoomSimulation archive impact keys to be inspectable in simulation checks");
+    return handled.size;
+  };
   const archiveNoErosionSim = new RoomSimulation(archiveLowFloorLevel);
   Object.assign(archiveNoErosionSim.player, {
     x: archiveLowFloorLevel.start.x,
@@ -2761,6 +2766,44 @@ try {
   assert(
     restoredErosionFloor.length === 1 && restoredErosionFloor[0].w === 860 && restoredErosionFloor[0].h === 128,
     `Expected boss checkpoint reset to restore eroded floor, got ${JSON.stringify(restoredErosionFloor)}`
+  );
+
+  const archivePostRecoveryErosionSim = new RoomSimulation(archiveErosionLevel);
+  Object.assign(archivePostRecoveryErosionSim.player, {
+    x: archiveErosionLevel.start.x,
+    y: 280 - archivePostRecoveryErosionSim.player.h,
+    vx: 0,
+    vy: 0,
+    onGround: true
+  });
+  archivePostRecoveryErosionSim.step(idle);
+  runFrames(archivePostRecoveryErosionSim, 60, idle);
+  const repeatedArchiveTarget = { x: 36, y: 18, vx: 0, vy: 0, onGround: false };
+  Object.assign(archivePostRecoveryErosionSim.player, repeatedArchiveTarget);
+  runArchiveUntilFinalImpact(archivePostRecoveryErosionSim, "archive-low-floor-boss");
+  const handledBeforeRecoveryHit = handledArchiveImpactCount(archivePostRecoveryErosionSim);
+  assert(handledBeforeRecoveryHit >= 1, "Expected first archive impact to register handled erosion keys before recovery");
+  const archivePostRecoveryVulnerable = runBossUntilVulnerable(archivePostRecoveryErosionSim, "archive-low-floor-boss");
+  const archivePostRecoveryHit = upwardHitBoss(archivePostRecoveryErosionSim, archivePostRecoveryVulnerable);
+  assert(archivePostRecoveryHit.bossHit?.health === 1, "Expected archive recovery erosion test to leave one boss health");
+  for (let guard = 0; guard < 180 && archivePostRecoveryErosionSim.bossSnapshots()[0]?.recoveryFrames > 0; guard += 1) {
+    archivePostRecoveryErosionSim.step(idle);
+  }
+  Object.assign(archivePostRecoveryErosionSim.player, repeatedArchiveTarget);
+  const postRecoveryRevision = archivePostRecoveryErosionSim.snapshot().terrainRevision;
+  const handledBeforePostRecoveryImpact = handledArchiveImpactCount(archivePostRecoveryErosionSim);
+  runArchiveUntilFinalImpact(archivePostRecoveryErosionSim, "archive-low-floor-boss");
+  const handledAfterPostRecoveryImpact = handledArchiveImpactCount(archivePostRecoveryErosionSim);
+  assert(
+    handledAfterPostRecoveryImpact > handledBeforePostRecoveryImpact,
+    `Expected archive impact keys to advance after nonfatal recovery, got before ${handledBeforePostRecoveryImpact} and after ${handledAfterPostRecoveryImpact}`
+  );
+  if (archivePostRecoveryErosionSim.snapshot().terrainRevision === postRecoveryRevision) {
+    runArchiveUntilErosion(archivePostRecoveryErosionSim, "archive-low-floor-boss", postRecoveryRevision);
+  }
+  assert(
+    archivePostRecoveryErosionSim.snapshot().terrainRevision > postRecoveryRevision,
+    "Expected archive floor to remain erodible after nonfatal boss recovery"
   );
 
 	  const archiveDodgeSim = new RoomSimulation(archiveLevel);
