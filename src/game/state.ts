@@ -41,6 +41,7 @@ import {
   inputFrameAt,
   cloneInputFrame,
   recordInputFrame,
+  trimRecording,
   type EchoRecording
 } from "./recording";
 import { finalScoreForLevel, timeBonusForFrames } from "./scoring";
@@ -140,7 +141,8 @@ export class RoomSimulation {
   }
 
   rewindToEcho(): boolean {
-    const added = this.currentRecording.length >= MIN_ECHO_FRAMES;
+    const frames = trimRecording(this.currentRecording);
+    const added = frames.length >= MIN_ECHO_FRAMES;
     if (added) {
       const echo = this.echoAnchorFromPlayer(`echo-${this.echoRecordings.length + 1}`);
       this.echoRecordings.push({

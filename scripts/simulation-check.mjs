@@ -766,6 +766,7 @@ const server = await createServer({
 try {
   const { RoomSimulation } = await server.ssrLoadModule("/src/game/state.ts");
   const { makeActor } = await server.ssrLoadModule("/src/game/player.ts");
+  const { encodeInputFrame } = await server.ssrLoadModule("/src/game/recording.ts");
   const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
   const { level1SpringtideSprint } = await server.ssrLoadModule("/src/data/level-1-springtide-sprint.ts");
   const { tutorialLevel } = await server.ssrLoadModule("/src/data/tutorialLevel.ts");
@@ -1344,13 +1345,18 @@ try {
   assert(coreFarmingSim.totalFrames === coreFarmingFramesBeforeRewind, `Short rewind should preserve visible time, got ${coreFarmingSim.totalFrames}`);
   assert(coreFarmingSim.objectState.collectedCores.has("core-a"), "Short rewind should preserve collected cores");
   assert(coreFarmingSim.player.x === coreLevel.start.x && coreFarmingSim.player.y === coreLevel.start.y, "Short rewind should still return the player to start");
+  const paddedIdleRewindSim = new RoomSimulation(baseLevel);
+  paddedIdleRewindSim.step(right);
+  runFrames(paddedIdleRewindSim, 17, idle);
+  assert(!paddedIdleRewindSim.rewindToEcho(), "Sub-threshold input padded by idle frames should not create an echo");
+  assert(paddedIdleRewindSim.echoRecordings.length === 0, "Padded-idle rewind should not store an echo recording");
 
   const echoCoreLevel = {
     ...baseLevel,
     cores: [{ id: "core-echo", x: 118, y: 88, w: 20, h: 20 }]
   };
   const echoCoreSim = new RoomSimulation(echoCoreLevel);
-  runFrames(echoCoreSim, 20, idle);
+  runFrames(echoCoreSim, 20, right);
   Object.assign(echoCoreSim.player, { x: 118, y: 86, vx: 0, vy: 0, onGround: true });
   const echoCoreFramesBeforeRewind = echoCoreSim.totalFrames;
   assert(echoCoreSim.rewindToEcho(), "Expected core setup attempt to become an echo");
@@ -1906,6 +1912,7 @@ try {
   assert(monsterStompSim.killedMonsterIds.has("stompable-test"), "Expected killed monster to persist in current attempt");
   assert(monsterStompSim.score === 250, `Expected monster score reward, got ${monsterStompSim.score}`);
   runFrames(monsterStompSim, 20, idle);
+  monsterStompSim.currentRecording = Array.from({ length: 20 }, () => encodeInputFrame(right));
   assert(monsterStompSim.rewindToEcho(), "Expected monster stomp timeline to anchor an echo");
   assert(monsterStompSim.killedMonsterIds.has("stompable-test"), "Rewind should preserve killed monsters");
   assert(monsterStompSim.score === 250, `Rewind should preserve current monster score, got ${monsterStompSim.score}`);
@@ -3078,7 +3085,7 @@ try {
   const checkpointRewindScore = bossCheckpointSim.score;
   const checkpointRewindFrames = bossCheckpointSim.totalFrames;
   Object.assign(bossCheckpointSim.player, { x: 150, y: 86, vx: 1.2, vy: 0, onGround: true });
-  bossCheckpointSim.currentRecording = Array.from({ length: 20 }, () => 0);
+  bossCheckpointSim.currentRecording = Array.from({ length: 20 }, () => encodeInputFrame(right));
   assert(bossCheckpointSim.rewindToEcho(), "Expected checkpoint rewind to anchor an echo");
   assert(bossCheckpointSim.bossCheckpointActive(), "Rewind should preserve the active boss checkpoint");
   assert(
