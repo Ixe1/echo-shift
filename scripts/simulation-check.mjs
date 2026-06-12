@@ -2327,6 +2327,17 @@ try {
       }
     ]
   };
+  const archiveSteppedFloorLevel = {
+    ...archiveLowFloorLevel,
+    id: "archive-stepped-floor-targeting",
+    start: { x: 129, y: 226 },
+    solids: [
+      { id: "floor", x: 0, y: 280, w: 860, h: 60 },
+      { id: "archive-left-shelf", x: 96, y: 220, w: 66, h: 16, collision: "top-only" },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 340 },
+      { id: "right-wall", x: 860, y: 0, w: 20, h: 340 }
+    ]
+  };
 	  assert(
 	    bossAttackCycleFramesFor("archive-custodian") > bossAttackCycleFramesFor("cryo-conservator") - 40,
 	    `Expected archive boss to use a deliberate readable attack cycle, got ${bossAttackCycleFramesFor("archive-custodian")}`
@@ -2424,6 +2435,44 @@ try {
     `Expected low-floor archive body to remain visibly above the player during attack, got player ${JSON.stringify(archiveLowFloorAttackSim.player)} and body ${JSON.stringify(archiveLowFloorAttack.body)}`
   );
 
+  const archiveSteppedWarningSim = new RoomSimulation(archiveSteppedFloorLevel);
+  Object.assign(archiveSteppedWarningSim.player, {
+    x: archiveSteppedFloorLevel.start.x,
+    y: 280 - archiveSteppedWarningSim.player.h,
+    vx: 0,
+    vy: 0,
+    onGround: true
+  });
+  archiveSteppedWarningSim.step(idle);
+  runFrames(archiveSteppedWarningSim, 60, idle);
+  const archiveSteppedWarning = runBossUntilWarning(archiveSteppedWarningSim, "archive-low-floor-boss", 0.65);
+  const archiveShelfWarning = archiveSteppedWarning.attackWarnings.find((warning) => warning.originX < 170);
+  const archiveFloorWarning = archiveSteppedWarning.attackWarnings.find((warning) => warning.originX > 250);
+  assert(
+    archiveShelfWarning && Math.round(archiveShelfWarning.y + archiveShelfWarning.h) === 220,
+    `Expected archive shelf warning to land on the raised shelf, got ${JSON.stringify(archiveSteppedWarning.attackWarnings)}`
+  );
+  assert(
+    archiveFloorWarning && Math.round(archiveFloorWarning.y + archiveFloorWarning.h) === 280,
+    `Expected archive floor warning to land on the lower floor, got ${JSON.stringify(archiveSteppedWarning.attackWarnings)}`
+  );
+  Object.assign(archiveSteppedWarningSim.player, { x: 36, y: 18, vx: 0, vy: 0, onGround: false });
+  const archiveSteppedImpact = runArchiveUntil(
+    archiveSteppedWarningSim,
+    "archive-low-floor-boss",
+    (snapshot) => snapshot.attacks.some((attack) => attack.attackPhase === "impact")
+  );
+  const archiveShelfImpact = archiveSteppedImpact.attacks.find((attack) => attack.attackPhase === "impact" && attack.originX < 170);
+  const archiveFloorImpact = archiveSteppedImpact.attacks.find((attack) => attack.attackPhase === "impact" && attack.originX > 250);
+  assert(
+    archiveShelfImpact && Math.round(archiveShelfImpact.y + archiveShelfImpact.h) === 220,
+    `Expected archive shelf impact to land on the raised shelf, got ${JSON.stringify(archiveSteppedImpact.attacks)}`
+  );
+  assert(
+    archiveFloorImpact && Math.round(archiveFloorImpact.y + archiveFloorImpact.h) === 280,
+    `Expected archive floor impact to land on the lower floor, got ${JSON.stringify(archiveSteppedImpact.attacks)}`
+  );
+
   const archiveAttackSim = new RoomSimulation(archiveLevel);
   Object.assign(archiveAttackSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
 	  archiveAttackSim.step(idle);
@@ -2468,6 +2517,30 @@ try {
 	  });
 	  runFrames(archiveDodgeSim, bossAttackWindupFramesFor("archive-custodian") + bossAttackActiveFramesFor("archive-custodian") + 8, idle);
 	  assert(!archiveDodgeSim.dead, "Expected player to survive archive falling books after moving into a warned safe gap");
+
+  const archiveMissedCycleSim = new RoomSimulation(archiveLowFloorLevel);
+  Object.assign(archiveMissedCycleSim.player, {
+    x: archiveLowFloorLevel.start.x,
+    y: 280 - archiveMissedCycleSim.player.h,
+    vx: 0,
+    vy: 0,
+    onGround: true
+  });
+  archiveMissedCycleSim.step(idle);
+  runFrames(archiveMissedCycleSim, 60, idle);
+  const archiveMissedVulnerable = runBossUntilVulnerable(archiveMissedCycleSim, "archive-low-floor-boss");
+  Object.assign(archiveMissedCycleSim.player, { x: 36, y: 18, vx: 0, vy: 0, onGround: false });
+  const archiveFramesUntilNextCycle =
+    bossAttackCycleFramesFor(archiveMissedVulnerable) - (archiveMissedVulnerable.activeFrames % bossAttackCycleFramesFor(archiveMissedVulnerable));
+  runFrames(archiveMissedCycleSim, archiveFramesUntilNextCycle, idle);
+  const archiveMissedLiftStart = archiveMissedCycleSim.bossSnapshots()[0];
+  runFrames(archiveMissedCycleSim, 12, idle);
+  const archiveMissedLiftLater = archiveMissedCycleSim.bossSnapshots()[0];
+  const archiveMissedLiftDelta = archiveMissedLiftStart.body.y - archiveMissedLiftLater.body.y;
+  assert(
+    archiveMissedLiftDelta > 0.2 && archiveMissedLiftDelta < 12,
+    `Expected archive boss to lift gradually after a missed core window, moved ${archiveMissedLiftDelta}px from ${archiveMissedLiftStart.body.y} to ${archiveMissedLiftLater.body.y}`
+  );
 
 	  const archiveRecoverySim = new RoomSimulation(archiveLevel);
   Object.assign(archiveRecoverySim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });
@@ -2615,6 +2688,24 @@ try {
   const cryoIceStep = cryoIceSim.step(idle);
   assert(!cryoIceStep.died && !cryoIceSim.dead, "Expected post-beam cryo floor ice not to kill the player");
   assert(cryoIceSim.player.vx > 1.9, `Expected cryo floor ice to preserve slide velocity, got ${cryoIceSim.player.vx}`);
+
+  const cryoMissedCycleSim = new RoomSimulation(cryoLevel);
+  Object.assign(cryoMissedCycleSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
+  cryoMissedCycleSim.step(idle);
+  runFrames(cryoMissedCycleSim, 60, idle);
+  const cryoMissedVulnerable = runBossUntilVulnerable(cryoMissedCycleSim, "boss-test");
+  Object.assign(cryoMissedCycleSim.player, { x: 32, y: 18, vx: 0, vy: 0, onGround: false });
+  const cryoFramesUntilNextCycle =
+    bossAttackCycleFramesFor(cryoMissedVulnerable) - (cryoMissedVulnerable.activeFrames % bossAttackCycleFramesFor(cryoMissedVulnerable));
+  runFrames(cryoMissedCycleSim, cryoFramesUntilNextCycle, idle);
+  const cryoMissedLiftStart = cryoMissedCycleSim.bossSnapshots()[0];
+  runFrames(cryoMissedCycleSim, 12, idle);
+  const cryoMissedLiftLater = cryoMissedCycleSim.bossSnapshots()[0];
+  const cryoMissedLiftDelta = cryoMissedLiftStart.body.y - cryoMissedLiftLater.body.y;
+  assert(
+    cryoMissedLiftDelta > 0.2 && cryoMissedLiftDelta < 12,
+    `Expected cryo boss to lift gradually after a missed weak point, moved ${cryoMissedLiftDelta}px from ${cryoMissedLiftStart.body.y} to ${cryoMissedLiftLater.body.y}`
+  );
 
   const cryoStandingHitSim = new RoomSimulation(cryoLevel);
   Object.assign(cryoStandingHitSim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });

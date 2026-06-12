@@ -74,6 +74,44 @@ const readBossSpriteWidth = async (page) =>
     return Number(size.split("x")[0]);
   });
 
+const readBossAlignment = async (page, bossId) =>
+  page.evaluate((id) => {
+    const [playerX = "0", , playerW = "0"] = (document.documentElement.dataset.echoShiftPlayerRect || "").split(",");
+    const weakSpot = (document.documentElement.dataset.echoShiftBossWeakSpotRects || "")
+      .split("|")
+      .find((entry) => entry.startsWith(`${id}:`));
+    const [, rect = "0,0,0,0", , guardState = "guarded"] = weakSpot?.split(":") || [];
+    const [weakX = "0", , weakW = "0"] = rect.split(",");
+    return {
+      playerCenterX: Number(playerX) + Number(playerW) / 2,
+      weakCenterX: Number(weakX) + Number(weakW) / 2,
+      vulnerable: guardState === "vulnerable"
+    };
+  }, bossId);
+
+const alignPlayerWithBossWeakSpot = async (page, bossId, timeoutMs = 1400) => {
+  const startedAt = Date.now();
+  let heldKey = null;
+  try {
+    while (Date.now() - startedAt < timeoutMs) {
+      const alignment = await readBossAlignment(page, bossId);
+      const delta = alignment.weakCenterX - alignment.playerCenterX;
+      if (Math.abs(delta) <= 10) return alignment;
+      const nextKey = delta > 0 ? "ArrowRight" : "ArrowLeft";
+      if (heldKey !== nextKey) {
+        if (heldKey) await page.keyboard.up(heldKey);
+        await page.keyboard.down(nextKey);
+        heldKey = nextKey;
+      }
+      await page.waitForTimeout(Math.min(90, Math.max(24, Math.abs(delta) * 5)));
+    }
+  } finally {
+    if (heldKey) await page.keyboard.up(heldKey);
+  }
+  const alignment = await readBossAlignment(page, bossId);
+  throw new Error(`Expected player to align with boss weak spot, got ${JSON.stringify(alignment)}`);
+};
+
 const draftLevel = {
   id: "boss-defeat-render-qa",
   index: 0,
@@ -369,7 +407,7 @@ const verifyArchiveAttackRender = async (page) => {
 	    { timeout: 9000 }
 	  );
 	  await page.keyboard.down("ArrowRight");
-	  await page.waitForTimeout(820);
+	  await page.waitForTimeout(730);
 	  await page.keyboard.up("ArrowRight");
 	  await page.waitForFunction(
 	    () => {
@@ -420,10 +458,26 @@ try {
     null,
     { timeout: 9000 }
   );
-	  await page.keyboard.down("ArrowRight");
-	  await page.waitForTimeout(820);
-	  await page.keyboard.up("ArrowRight");
+		  await page.keyboard.down("ArrowRight");
+		  await page.waitForTimeout(820);
+		  await page.keyboard.up("ArrowRight");
 
+	  await page.waitForFunction(
+	    () => {
+	      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+	      const sprites = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
+	      return (
+	        sprites.includes("render-boss:") &&
+	        sprites.includes(":active:guarded") &&
+	        !sprites.includes(":attack:") &&
+	        !effects.includes("archive-book-falling:") &&
+	        !effects.includes("archive-book-impact:")
+	      );
+	    },
+	    null,
+	    { timeout: 10000 }
+	  );
+  await alignPlayerWithBossWeakSpot(page, "render-boss");
   await page.waitForFunction(
     () => {
       const frames = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
@@ -433,9 +487,7 @@ try {
     { timeout: 10000 }
   );
 
-	  await page.keyboard.down("ArrowLeft");
-	  await page.waitForTimeout(760);
-	  await page.keyboard.down("Space");
+		  await page.keyboard.down("Space");
   await page.waitForFunction(
     () => {
       const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
@@ -444,11 +496,10 @@ try {
     },
     null,
 	    { timeout: 3000 }
-  );
-  await page.keyboard.up("Space");
-  await page.keyboard.up("ArrowLeft");
+	  );
+	  await page.keyboard.up("Space");
 
-  const early = await readDepartureEffect(page);
+	  const early = await readDepartureEffect(page);
   assert(early.total === 170, `Expected 170-frame boss departure diagnostic, got ${JSON.stringify(early)}`);
   assert(early.bursts > 0, `Expected active defeat overlay bursts early in departure, got ${JSON.stringify(early)}`);
   assert(

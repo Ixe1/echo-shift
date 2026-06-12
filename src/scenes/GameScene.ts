@@ -2660,8 +2660,9 @@ export class GameScene extends Phaser.Scene {
     if (snapshot.phase !== "active" || snapshot.recoveryFrames > 0 || bossIsVulnerable(snapshot) || snapshot.attacks.length > 0) return;
     const windupFrames = bossAttackWindupFramesFor(boss.kind);
     const cycle = snapshot.activeFrames % bossAttackCycleFramesFor(boss.kind);
-    if (cycle >= windupFrames || snapshot.attackWarnings.length === 0) return;
-    const progress = Math.max(0, Math.min(1, cycle / Math.max(1, windupFrames)));
+    if (snapshot.attackWarnings.length === 0) return;
+    const warningProgress = snapshot.attackWarnings.reduce((max, warning) => Math.max(max, warning.progress ?? 0), 0);
+    const progress = Math.max(0, Math.min(1, Math.max(warningProgress, Math.min(cycle, windupFrames) / Math.max(1, windupFrames))));
     const pulse = Math.sin(this.simulation.tick / 7) * 0.5 + 0.5;
     if (this.diagnosticsEnabled) {
       this.bossEffectFrames.push(`${boss.id}:archive-windup:${Math.round(progress * 100)}:${snapshot.attackWarnings.length}`);
@@ -3201,6 +3202,7 @@ export class GameScene extends Phaser.Scene {
 
   private exposeRenderDiagnostics(snapshot: RenderView): void {
     if (!this.diagnosticsEnabled) return;
+    const formatRect = (rect: Rect) => `${Math.round(rect.x)},${Math.round(rect.y)},${Math.round(rect.w)},${Math.round(rect.h)}`;
     document.documentElement.dataset.echoShiftVisibleEchoTints = snapshot.echoes
       .map((echo) => `${echo.id}:${this.echoTint(echo).toString(16)}`)
       .join(",");
@@ -3219,6 +3221,10 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftCoreSpriteFrames = this.coreSpriteFrames.join("|");
     document.documentElement.dataset.echoShiftExitUnlocked = snapshot.exitUnlocked ? "true" : "false";
     document.documentElement.dataset.echoShiftBossCheckpoint = snapshot.bossCheckpointActive ? "active" : "idle";
+    document.documentElement.dataset.echoShiftPlayerRect = formatRect(snapshot.player);
+    document.documentElement.dataset.echoShiftBossWeakSpotRects = snapshot.bosses
+      .map((boss) => `${boss.id}:${formatRect(boss.weakSpot)}:${boss.phase}:${bossIsVulnerable(boss) ? "vulnerable" : "guarded"}`)
+      .join("|");
     document.documentElement.dataset.echoShiftEchoSensorAssetFrames = this.echoSensorAssetFrames.join("|");
     document.documentElement.dataset.echoShiftLaunchPadSpriteFrames = this.launchPadSpriteFrames.join("|");
     document.documentElement.dataset.echoShiftHazardVentSpriteFrames = this.hazardVentSpriteFrames.join("|");

@@ -79,6 +79,7 @@ const ARCHIVE_ATTACK_ACTIVE_FRAMES = 56;
 const ARCHIVE_VULNERABLE_READY_FRAMES = 134;
 const ARCHIVE_HIT_PAUSE_FRAMES = 34;
 const ARCHIVE_HIT_RECOVERY_FRAMES = 118;
+const ARCHIVE_NORMAL_RISE_FRAMES = 86;
 const ARCHIVE_CORE_CLEARANCE = 94;
 const ARCHIVE_VERTICAL_EASE = 0.095;
 const ARCHIVE_BOOK_DROP_WIDTH = 38;
@@ -863,8 +864,20 @@ const archiveWarningVolleyWindow = (boss: Boss, state: BossRuntimeState, cycle: 
 const archiveLastVolleyEndFrame = (boss: Boss, state: BossRuntimeState): number =>
   archiveVolleyWindowsFor(boss, state).reduce((latest, window) => Math.max(latest, window.activeEnd), 0);
 
-const archiveBookLandingY = (boss: Boss, solids: Solid[] = []): number => {
+const archiveBookLandingY = (boss: Boss, solids: Solid[] = [], originX = boss.x + boss.w / 2, width = ARCHIVE_BOOK_WARNING_WIDTH): number => {
+  const laneLeft = originX - width / 2;
+  const laneRight = originX + width / 2;
   const floorY = solids
+    .filter(
+      (solid) =>
+        solid.collision !== "decorative" &&
+        solid.y > boss.y + 20 &&
+        solid.x < laneRight &&
+        solid.x + solid.w > laneLeft
+    )
+    .reduce((lowest, solid) => Math.min(lowest, solid.y), Number.POSITIVE_INFINITY);
+  if (Number.isFinite(floorY)) return floorY;
+  const arenaFloorY = solids
     .filter(
       (solid) =>
         solid.collision !== "decorative" &&
@@ -873,7 +886,7 @@ const archiveBookLandingY = (boss: Boss, solids: Solid[] = []): number => {
         solid.x + solid.w > boss.x
     )
     .reduce((lowest, solid) => Math.min(lowest, solid.y), Number.POSITIVE_INFINITY);
-  return Number.isFinite(floorY) ? floorY : boss.y + boss.h - 12;
+  return Number.isFinite(arenaFloorY) ? arenaFloorY : boss.y + boss.h - 12;
 };
 
 const archiveBookLandingCenters = (boss: Boss, state: BossRuntimeState, body: Rect, round: number): number[] => {
@@ -892,21 +905,23 @@ const archiveBookWarningRectsAt = (boss: Boss, state: BossRuntimeState, body: Re
   const window = archiveWarningVolleyWindow(boss, state, cycle);
   if (!window) return [];
   const progress = clamp((cycle - window.start) / Math.max(1, ARCHIVE_ATTACK_WINDUP_FRAMES), 0, 1);
-  const landingY = archiveBookLandingY(boss, solids);
-  return archiveBookLandingCenters(boss, state, body, window.round).map((originX, index) => ({
-    x: originX - ARCHIVE_BOOK_WARNING_WIDTH / 2,
-    y: landingY - ARCHIVE_BOOK_WARNING_HEIGHT,
-    w: ARCHIVE_BOOK_WARNING_WIDTH,
-    h: ARCHIVE_BOOK_WARNING_HEIGHT,
-    kind: "falling",
-    attackType: "archive-book",
-    attackPhase: "warning",
-    originX,
-    originY: boss.y + 24,
-    round: window.round,
-    variant: index % 2,
-    progress
-  }));
+  return archiveBookLandingCenters(boss, state, body, window.round).map((originX, index) => {
+    const landingY = archiveBookLandingY(boss, solids, originX, ARCHIVE_BOOK_WARNING_WIDTH);
+    return {
+      x: originX - ARCHIVE_BOOK_WARNING_WIDTH / 2,
+      y: landingY - ARCHIVE_BOOK_WARNING_HEIGHT,
+      w: ARCHIVE_BOOK_WARNING_WIDTH,
+      h: ARCHIVE_BOOK_WARNING_HEIGHT,
+      kind: "falling",
+      attackType: "archive-book",
+      attackPhase: "warning",
+      originX,
+      originY: boss.y + 24,
+      round: window.round,
+      variant: index % 2,
+      progress
+    };
+  });
 };
 
 const archiveAttackRectsAt = (boss: Boss, state: BossRuntimeState, body: Rect, cycle: number, solids: Solid[] = []): BossAttackSnapshot[] => {
@@ -914,11 +929,16 @@ const archiveAttackRectsAt = (boss: Boss, state: BossRuntimeState, body: Rect, c
   if (!window) return [];
   const activeFrame = cycle - window.activeStart;
   const progress = clamp(activeFrame / Math.max(1, ARCHIVE_ATTACK_ACTIVE_FRAMES - 1), 0, 1);
-  const landingY = archiveBookLandingY(boss, solids);
   const spawnY = boss.y + 14;
   const impact = activeFrame >= ARCHIVE_ATTACK_ACTIVE_FRAMES - ARCHIVE_BOOK_IMPACT_FRAMES;
   const fallProgress = clamp(activeFrame / Math.max(1, ARCHIVE_ATTACK_ACTIVE_FRAMES - ARCHIVE_BOOK_IMPACT_FRAMES), 0, 1);
   return archiveBookLandingCenters(boss, state, body, window.round).map((originX, index) => {
+    const landingY = archiveBookLandingY(
+      boss,
+      solids,
+      originX,
+      impact ? ARCHIVE_BOOK_IMPACT_WIDTH : ARCHIVE_BOOK_DROP_WIDTH
+    );
     if (impact) {
       return {
         x: originX - ARCHIVE_BOOK_IMPACT_WIDTH / 2,
@@ -1130,16 +1150,21 @@ const advanceArchiveCustodianMotion = (
   const playerCenterY = player.y + player.h / 2;
   const sideOffset = playerCenterX < arenaCenterX ? size.w * 0.46 : -size.w * 0.46;
   const lockedSideOffset = finiteNumber(state.attackX, playerCenterX) < arenaCenterX ? size.w * 0.46 : -size.w * 0.46;
+  const currentCenterY = finiteNumber(state.bodyY, lowY - size.h / 2) + size.h / 2;
+  const riseStartY = currentCenterY > highY + size.h * 0.22 ? lowY : highY;
+  const riseProgress = clamp(cycle / Math.max(1, ARCHIVE_NORMAL_RISE_FRAMES), 0, 1);
+  const attackAltitudeY = riseStartY + (highY - riseStartY) * riseProgress;
+  const altitudeBobScale = riseStartY === lowY ? riseProgress : 1;
   let targetX = clamp(playerCenterX + sideOffset, arena.minX + size.w / 2, arena.maxX + size.w / 2);
   let targetY = clamp(playerCenterY - size.h * 0.72, arena.minY + size.h / 2, arena.maxY + size.h / 2);
 
   if (cycle < windupFrames) {
     const sway = Math.sin((cycle / Math.max(1, windupFrames)) * Math.PI * 2) * Math.min(30, (arena.maxX - arena.minX) * 0.08);
     targetX = clamp(targetX + sway, arena.minX + size.w / 2, arena.maxX + size.w / 2);
-    targetY = clamp(highY + Math.sin(cycle / 14) * 8, arena.minY + size.h / 2, arena.maxY + size.h / 2);
+    targetY = clamp(attackAltitudeY + Math.sin(cycle / 14) * 8 * altitudeBobScale, arena.minY + size.h / 2, arena.maxY + size.h / 2);
   } else if (cycle < lastVolleyEndFrame) {
     targetX = clamp(finiteNumber(state.attackX, playerCenterX) + lockedSideOffset, arena.minX + size.w / 2, arena.maxX + size.w / 2);
-    targetY = clamp(highY + Math.sin(cycle / 10) * 4, arena.minY + size.h / 2, arena.maxY + size.h / 2);
+    targetY = clamp(attackAltitudeY + Math.sin(cycle / 10) * 4 * altitudeBobScale, arena.minY + size.h / 2, arena.maxY + size.h / 2);
   } else {
     const descentProgress = clamp((cycle - lastVolleyEndFrame) / Math.max(1, bossVulnerableStartFrameFor("archive-custodian") - lastVolleyEndFrame), 0, 1);
     targetX = clamp(finiteNumber(state.attackX, arenaCenterX), arena.minX + size.w / 2, arena.maxX + size.w / 2);
