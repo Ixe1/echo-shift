@@ -2586,6 +2586,7 @@ try {
     onGround: true
   });
   const archiveDeepTrackingWarning = runBossUntilWarning(archiveDeepTrackingSim, "archive-low-floor-boss", 0.65);
+  const deepWarningOriginY = Math.min(...archiveDeepTrackingWarning.attackWarnings.map((warning) => warning.originY));
   Object.assign(archiveDeepTrackingSim.player, {
     x: safeArchiveDodgeX(archiveDeepTrackingWarning.attackWarnings, archiveDeepTrackingSim.level.bounds, archiveDeepTrackingSim.player.w),
     y: 620 - archiveDeepTrackingSim.player.h,
@@ -2612,6 +2613,10 @@ try {
   assert(
     deepArchiveBodyCenterY <= deepPlayerCenterY - 90,
     `Expected archive boss to stay in the upper player viewport, got boss center ${deepArchiveBodyCenterY} and player center ${deepPlayerCenterY}`
+  );
+  assert(
+    deepWarningOriginY > deepBoss.y + 90 && archiveDeepTrackingImpact?.originY > deepBoss.y + 90,
+    `Expected archive book origins to follow the lowered boss body, got warning origin ${deepWarningOriginY}, impact origin ${archiveDeepTrackingImpact?.originY}, boss y ${deepBoss.y}`
   );
   assert(
     archiveDeepTrackingImpact && Math.round(archiveDeepTrackingImpact.y + archiveDeepTrackingImpact.h) === 620,

@@ -2701,7 +2701,7 @@ export class GameScene extends Phaser.Scene {
         const pageCount = 3;
         for (let index = 0; index < pageCount; index += 1) {
           const x = centerX + (index - 1) * warning.w * 0.24 + Math.sin(this.simulation.tick / 8 + index) * 2;
-          const y = Math.max(boss.y + 30, warning.originY + index * 10 + warnProgress * 18);
+          const y = Math.max(snapshot.body.y + 12, warning.originY + index * 10 + warnProgress * 18);
           this.fx.fillStyle(index % 2 === 0 ? 0xffefbd : 0xffffff, 0.16 + warnProgress * 0.24);
           this.fx.fillRect(x - 5, y, 10, 7);
           this.fx.lineStyle(1, 0x3b2512, 0.18 + warnProgress * 0.14);

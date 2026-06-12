@@ -931,6 +931,7 @@ const archiveBookWarningRectsAt = (boss: Boss, state: BossRuntimeState, body: Re
   const window = archiveWarningVolleyWindow(boss, state, cycle);
   if (!window) return [];
   const progress = clamp((cycle - window.start) / Math.max(1, ARCHIVE_ATTACK_WINDUP_FRAMES), 0, 1);
+  const originY = body.y + body.h * 0.32;
   return archiveBookLandingCenters(boss, state, body, window.round).map((originX, index) => {
     const landingY = archiveBookLandingY(boss, solids, originX, ARCHIVE_BOOK_WARNING_WIDTH);
     return {
@@ -942,7 +943,7 @@ const archiveBookWarningRectsAt = (boss: Boss, state: BossRuntimeState, body: Re
       attackType: "archive-book",
       attackPhase: "warning",
       originX,
-      originY: boss.y + 24,
+      originY,
       round: window.round,
       variant: index % 2,
       progress
@@ -955,7 +956,7 @@ const archiveAttackRectsAt = (boss: Boss, state: BossRuntimeState, body: Rect, c
   if (!window) return [];
   const activeFrame = cycle - window.activeStart;
   const progress = clamp(activeFrame / Math.max(1, ARCHIVE_ATTACK_ACTIVE_FRAMES - 1), 0, 1);
-  const spawnY = boss.y + 14;
+  const spawnY = body.y + body.h * 0.22;
   const impact = activeFrame >= ARCHIVE_ATTACK_ACTIVE_FRAMES - ARCHIVE_BOOK_IMPACT_FRAMES;
   const fallProgress = clamp(activeFrame / Math.max(1, ARCHIVE_ATTACK_ACTIVE_FRAMES - ARCHIVE_BOOK_IMPACT_FRAMES), 0, 1);
   return archiveBookLandingCenters(boss, state, body, window.round).map((originX, index) => {
