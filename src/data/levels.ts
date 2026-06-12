@@ -190,13 +190,13 @@ const sourceLevels: Level[] = [
     backgroundAmbience: { preset: "data", intensity: 0.36, color: "#45f2a2", drift: 0.4, flicker: 0.24, particles: 0.26 },
     start: { x: 56, y: 450 },
     exit: r(3460, 438, 48, 62),
-    bounds: bounds(3600),
+    bounds: r(0, 0, 3600, 660),
     solids: [
       ...themedFrame(3600, 500, [[820, 98], [1260, 90], [2100, 90], [2520, 820]], "wood-archive"),
       s("key-ledge", 980, 410, 154, 18, "steel", { sprite: "floor", material: "wood-archive", collision: "top-only" }),
       s("drop-step", 1380, 438, 82, 18, "steel", { sprite: "floor", material: "wood-archive", collision: "top-only" }),
       s("core-approach", 1820, 430, 190, 18, "steel", { sprite: "floor", material: "wood-archive", collision: "top-only" }),
-      s("archive-boss-floor", 2520, 500, 820, 60, "dark", { sprite: "floor", material: "wood-archive", erodesWith: "archive-book", erosionTiles: 2 })
+      s("archive-boss-floor", 2520, 500, 820, 128, "dark", { sprite: "floor", material: "wood-archive", erodesWith: "archive-book", erosionTiles: 2 })
     ],
     plates: [p("plate-c", 190, 492, 70, 8)],
     doors: [

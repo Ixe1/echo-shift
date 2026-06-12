@@ -1228,14 +1228,17 @@ try {
   const monsterPeriodAfterDrag = Number(await page.locator("[data-object-field='period']").inputValue());
   const monsterExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0].monsters.find((monster) => monster.id === "smoke-monster");
 
-  await page.locator("[data-level-select]").selectOption("4");
-  await openTab(page, "objects");
-  await page.locator("[data-object-list] [data-id='lift-a']").click();
+  await dragToolToWorld(page, "platforms", { x: 720, y: 420 });
+  await page.locator("[data-object-field='id']").fill("smoke-platform-path");
+  await dispatchChange(page.locator("[data-object-field='id']"));
+  await page.locator("[data-object-field='axis']").selectOption("y");
   const platformSpeedBeforeDrag = Number(await page.locator("[data-object-field='speed']").inputValue());
   const platformPeriodBeforeDrag = Number(await page.locator("[data-object-field='period']").inputValue());
   const platformHandleX = (await objectNumber(page, "x")) + (await objectNumber(page, "w")) / 2;
+  const platformPathStartBeforeDrag = Number(await page.locator("[data-object-field='pathStart']").inputValue());
+  const platformPathEndBeforeDrag = Number(await page.locator("[data-object-field='pathEnd']").inputValue());
   await page.locator("[data-tool='select']").click();
-  await dragWorld(page, { x: platformHandleX, y: 338 }, { x: platformHandleX, y: 320 });
+  await dragWorld(page, { x: platformHandleX, y: platformPathStartBeforeDrag }, { x: platformHandleX, y: platformPathStartBeforeDrag - 20 });
   const platformPathStartAfterDrag = Number(await page.locator("[data-object-field='pathStart']").inputValue());
   const platformSpeedAfterDrag = Number(await page.locator("[data-object-field='speed']").inputValue());
   const platformPeriodAfterDrag = Number(await page.locator("[data-object-field='period']").inputValue());
@@ -1249,8 +1252,8 @@ try {
   const platformPathStartAfterResize = await objectNumber(page, "pathStart");
   const platformPathEndAfterResize = await objectNumber(page, "pathEnd");
   const platformEndpointValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
-  const platformExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[4].platforms.find(
-    (platform) => platform.id === "lift-a"
+  const platformExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0].platforms.find(
+    (platform) => platform.id === "smoke-platform-path"
   );
   await page.locator("[data-level-select]").selectOption("0");
 
@@ -1789,7 +1792,10 @@ try {
     monsterExport.y === 420 && monsterExport.distance === 80,
     `Expected exported monster origin/distance to follow dragged path start, got ${JSON.stringify(monsterExport)}`
   );
-  assert(platformPathStartAfterDrag === 320, `Expected draggable platform endpoint to set start to 320, got ${platformPathStartAfterDrag}`);
+  assert(
+    platformPathStartAfterDrag < platformPathStartBeforeDrag,
+    `Expected draggable platform endpoint to move start upward from ${platformPathStartBeforeDrag}, got ${platformPathStartAfterDrag}`
+  );
   assert(
     platformSpeedAfterDrag === platformSpeedBeforeDrag && platformPeriodAfterDrag > platformPeriodBeforeDrag,
     `Expected draggable platform endpoint to preserve speed and recalculate period, got ${JSON.stringify({
@@ -1797,8 +1803,14 @@ try {
       period: [platformPeriodBeforeDrag, platformPeriodAfterDrag]
     })}`
   );
-  assert(platformExport.y === 320, `Expected exported platform origin y to match anchored path start 320, got ${platformExport.y}`);
-  assert(platformExport.distance === 200, `Expected exported platform travel distance 200 after endpoint edit, got ${platformExport.distance}`);
+  assert(
+    platformExport.y === platformPathStartAfterDrag,
+    `Expected exported platform origin y to match anchored path start ${platformPathStartAfterDrag}, got ${platformExport.y}`
+  );
+  assert(
+    platformExport.distance === platformPathEndBeforeDrag - platformPathStartAfterDrag,
+    `Expected exported platform travel distance to match edited endpoints, got ${platformExport.distance}`
+  );
   assert(
     platformResizeHeightAfter > platformResizeHeightBefore,
     `Expected moving platform bottom handle to resize height, got ${platformResizeHeightBefore} -> ${platformResizeHeightAfter}`

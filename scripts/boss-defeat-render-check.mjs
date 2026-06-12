@@ -65,6 +65,63 @@ const readCameraSample = async (page) =>
     return { raw, zoom: Number(zoom), x: Number(x), y: Number(y) };
   });
 
+const readPlayerRect = async (page) =>
+  page.evaluate(() => {
+    const [x = "0", y = "0", w = "24", h = "34"] = (document.documentElement.dataset.echoShiftPlayerRect || "").split(",");
+    return { x: Number(x), y: Number(y), w: Number(w), h: Number(h) };
+  });
+
+const movePlayerTowardX = async (page, targetX, timeoutMs = 1300) => {
+  const startedAt = Date.now();
+  let heldKey = null;
+  try {
+    while (Date.now() - startedAt < timeoutMs) {
+      const player = await readPlayerRect(page);
+      const delta = targetX - player.x;
+      if (Math.abs(delta) <= 8) return player;
+      const nextKey = delta > 0 ? "ArrowRight" : "ArrowLeft";
+      if (heldKey !== nextKey) {
+        if (heldKey) await page.keyboard.up(heldKey);
+        await page.keyboard.down(nextKey);
+        heldKey = nextKey;
+      }
+      await page.waitForTimeout(Math.min(90, Math.max(28, Math.abs(delta) * 4)));
+    }
+  } finally {
+    if (heldKey) await page.keyboard.up(heldKey);
+  }
+  return readPlayerRect(page);
+};
+
+const dodgeArchiveWarnings = async (page, bounds) => {
+  const targetX = await page.evaluate((levelBounds) => {
+    const player = (() => {
+      const [x = "0", , w = "24", h = "34"] = (document.documentElement.dataset.echoShiftPlayerRect || "").split(",");
+      return { x: Number(x), w: Number(w), h: Number(h) };
+    })();
+    const warnings = (document.documentElement.dataset.echoShiftBossEffectFrames || "")
+      .split("|")
+      .filter((entry) => entry.startsWith("archive-book-warning:"))
+      .flatMap((entry) => {
+        const parts = entry.split(":");
+        const [x = "0"] = (parts[3] || "0,0").split(",");
+        const [w = "0"] = (parts[4] || "0x0").split("x");
+        return [{ x: Number(x), w: Number(w) }];
+      })
+      .sort((a, b) => a.x - b.x);
+    const candidates = [levelBounds.x + 32, levelBounds.x + levelBounds.w - player.w - 32];
+    for (let index = 0; index < warnings.length - 1; index += 1) {
+      const left = warnings[index].x + warnings[index].w;
+      const right = warnings[index + 1].x;
+      if (right - left >= player.w + 10) candidates.push((left + right - player.w) / 2);
+    }
+    return candidates
+      .filter((x) => !warnings.some((warning) => x < warning.x + warning.w && x + player.w > warning.x))
+      .sort((a, b) => Math.abs(a - player.x) - Math.abs(b - player.x))[0] ?? levelBounds.x + 32;
+  }, bounds);
+  return movePlayerTowardX(page, targetX);
+};
+
 const readBossSpriteWidth = async (page) =>
   page.evaluate(() => {
     const entry = (document.documentElement.dataset.echoShiftBossSpriteFrames || "")
@@ -543,9 +600,7 @@ try {
     null,
     { timeout: 9000 }
   );
-		  await page.keyboard.down("ArrowRight");
-		  await page.waitForTimeout(820);
-		  await page.keyboard.up("ArrowRight");
+  await dodgeArchiveWarnings(page, draftLevel.bounds);
 
 	  await page.waitForFunction(
 	    () => {

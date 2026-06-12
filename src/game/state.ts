@@ -102,6 +102,29 @@ const cloneBossStates = (states: Map<string, BossRuntimeState>): Map<string, Bos
 
 const cloneSolids = (solids: Solid[]): Solid[] => solids.map((solid) => ({ ...solid }));
 
+const solidHasDefaultFullCollision = (solid: Solid): boolean => solid.collision === undefined || solid.collision === "solid";
+
+const solidLooksLikeErodibleFloor = (solid: Solid): boolean => {
+  const floorLikeId = solid.id === "floor" || solid.id.startsWith("floor-") || solid.id.includes("floor");
+  return solidHasDefaultFullCollision(solid) && (solid.sprite === "floor" || floorLikeId) && solid.w >= TERRAIN_TILE_SIZE;
+};
+
+const archiveErosionHash = (value: string): number => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+};
+
+const archiveImpactShouldErode = (impactKey: string): boolean => archiveErosionHash(impactKey) % 2 === 0;
+
+const archiveImpactTileCount = (impactKey: string, maxTiles: 1 | 2): 1 | 2 => {
+  if (maxTiles === 1) return 1;
+  return archiveErosionHash(`${impactKey}:tiles`) % 2 === 0 ? 1 : 2;
+};
+
 const cloneEchoRecordings = (recordings: EchoRecording[]): EchoRecording[] =>
   recordings.map((recording) => ({
     ...recording,
@@ -384,7 +407,7 @@ export class RoomSimulation {
   }
 
   finalBossDefeatCompletesLevel(): boolean {
-    return this.level.completion === "boss-defeat";
+    return this.level.completion === "boss-defeat" && (this.level.bosses || []).length > 0;
   }
 
   bossCheckpointActive(): boolean {
@@ -525,11 +548,13 @@ export class RoomSimulation {
       const key = this.archiveImpactKey(boss, state, attack);
       if (this.handledArchiveImpactKeys.has(key)) continue;
       this.handledArchiveImpactKeys.add(key);
-      this.erodeSolidAtArchiveImpact(attack);
+      this.erodeSolidAtArchiveImpact(attack, key);
     }
   }
 
-  private erodeSolidAtArchiveImpact(attack: BossAttackSnapshot): void {
+  private erodeSolidAtArchiveImpact(attack: BossAttackSnapshot, impactKey: string): void {
+    if (!archiveImpactShouldErode(impactKey)) return;
+
     const impactBottom = attack.y + attack.h;
     const laneLeft = attack.originX - attack.w / 2;
     const laneRight = attack.originX + attack.w / 2;
@@ -538,7 +563,7 @@ export class RoomSimulation {
       .filter(
         ({ solid }) =>
           solid.erodesWith === "archive-book" &&
-          solid.collision !== "decorative" &&
+          solidLooksLikeErodibleFloor(solid) &&
           solid.x < laneRight &&
           solid.x + solid.w > laneLeft &&
           Math.abs(solid.y - impactBottom) <= 4
@@ -547,9 +572,11 @@ export class RoomSimulation {
     if (!candidate) return;
 
     const { solid, index } = candidate;
-    const tileCount = solid.erosionTiles === 2 ? 2 : 1;
+    const tileCount = archiveImpactTileCount(impactKey, solid.erosionTiles === 2 ? 2 : 1);
     const erodeWidth = Math.min(solid.w, tileCount * TERRAIN_TILE_SIZE);
+    const erodeDepth = Math.min(solid.h, TERRAIN_TILE_SIZE);
     const solidRight = solid.x + solid.w;
+    const solidBottom = solid.y + solid.h;
     const rawLeft = solid.x + Math.round((attack.originX - solid.x - erodeWidth / 2) / TERRAIN_TILE_SIZE) * TERRAIN_TILE_SIZE;
     const erodeLeft = Math.max(solid.x, Math.min(rawLeft, solidRight - erodeWidth));
     const erodeRight = Math.min(solidRight, erodeLeft + erodeWidth);
@@ -558,16 +585,26 @@ export class RoomSimulation {
     if (erodeLeft - solid.x >= 1) {
       nextPieces.push({
         ...solid,
-        id: `${solid.id}:l${this.terrainRevision}`,
+        id: `${solid.id}:tl${this.terrainRevision}`,
+        h: erodeDepth,
         w: erodeLeft - solid.x
       });
     }
     if (solidRight - erodeRight >= 1) {
       nextPieces.push({
         ...solid,
-        id: `${solid.id}:r${this.terrainRevision}`,
+        id: `${solid.id}:tr${this.terrainRevision}`,
         x: erodeRight,
+        h: erodeDepth,
         w: solidRight - erodeRight
+      });
+    }
+    if (solidBottom - (solid.y + erodeDepth) >= 1) {
+      nextPieces.push({
+        ...solid,
+        id: `${solid.id}:b${this.terrainRevision}`,
+        y: solid.y + erodeDepth,
+        h: solidBottom - (solid.y + erodeDepth)
       });
     }
 

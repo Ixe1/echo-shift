@@ -887,11 +887,12 @@ try {
       .filter((solid) => solid.w >= playerWidth && solid.y >= spot.y)
       .reduce((min, solid) => Math.min(min, solid.y), Number.POSITIVE_INFINITY);
     const standingTop = Number.isFinite(floorTop) ? floorTop - simulation.player.h - 1 : spot.y + spot.h + 2;
+    const hitTop = snapshot.weakSpotKind === "core" ? spot.y + spot.h - 6 : Math.min(spot.y + spot.h + 2, standingTop);
     Object.assign(simulation.player, {
       x: spot.x + spot.w / 2 - playerWidth / 2,
-      y: Math.min(spot.y + spot.h + 2, standingTop),
+      y: hitTop,
       vx: 0,
-      vy: -8,
+      vy: snapshot.weakSpotKind === "core" ? -14 : -8,
       onGround: false
     });
     return simulation.step(idle);
@@ -2300,6 +2301,15 @@ try {
   assert(bossDefeatCompletionEvent?.won, "Expected boss-defeat level to complete when defeated boss departure finishes");
   assert(!bossDefeatCompletionEvent.bossPortalUnlocked, "Boss-defeat completion should not emit portal unlock");
   assert(bossDefeatCompletionSim.won, "Expected boss-defeat completion simulation to be won");
+  const noBossDefeatCompletionLevel = {
+    ...baseLevel,
+    completion: "boss-defeat",
+    bosses: []
+  };
+  const noBossDefeatCompletionSim = new RoomSimulation(noBossDefeatCompletionLevel);
+  Object.assign(noBossDefeatCompletionSim.player, { x: noBossDefeatCompletionLevel.exit.x, y: noBossDefeatCompletionLevel.exit.y, vx: 0, vy: 0 });
+  const noBossDefeatCompletion = noBossDefeatCompletionSim.step(idle);
+  assert(noBossDefeatCompletion.won && noBossDefeatCompletionSim.won, "Boss-defeat levels without bosses should fall back to normal exit completion");
   const stormRecoverySim = new RoomSimulation(stormLaneLevel);
   Object.assign(stormRecoverySim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });
   stormRecoverySim.step(idle);
@@ -2546,6 +2556,68 @@ try {
     `Expected archive floor impact to land on the lower floor, got ${JSON.stringify(archiveSteppedImpact.attacks)}`
   );
 
+  const archiveDeepTrackingLevel = {
+    ...archiveLowFloorLevel,
+    id: "archive-deep-floor-tracking",
+    start: { x: 220, y: 586 },
+    exit: { x: 760, y: 582, w: 32, h: 38 },
+    bounds: { x: 0, y: 0, w: 860, h: 780 },
+    solids: [
+      { id: "floor", x: 0, y: 620, w: 860, h: 160 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 780 },
+      { id: "right-wall", x: 860, y: 0, w: 20, h: 780 }
+    ]
+  };
+  const archiveDeepTrackingSim = new RoomSimulation(archiveDeepTrackingLevel);
+  Object.assign(archiveDeepTrackingSim.player, {
+    x: archiveDeepTrackingLevel.start.x,
+    y: 226,
+    vx: 0,
+    vy: 0,
+    onGround: false
+  });
+  archiveDeepTrackingSim.step(idle);
+  runFrames(archiveDeepTrackingSim, 60, idle);
+  Object.assign(archiveDeepTrackingSim.player, {
+    x: archiveDeepTrackingLevel.start.x,
+    y: 620 - archiveDeepTrackingSim.player.h,
+    vx: 0,
+    vy: 0,
+    onGround: true
+  });
+  const archiveDeepTrackingWarning = runBossUntilWarning(archiveDeepTrackingSim, "archive-low-floor-boss", 0.65);
+  Object.assign(archiveDeepTrackingSim.player, {
+    x: safeArchiveDodgeX(archiveDeepTrackingWarning.attackWarnings, archiveDeepTrackingSim.level.bounds, archiveDeepTrackingSim.player.w),
+    y: 620 - archiveDeepTrackingSim.player.h,
+    vx: 0,
+    vy: 0,
+    onGround: true
+  });
+  const archiveDeepTrackingAttack = runArchiveUntil(
+    archiveDeepTrackingSim,
+    "archive-low-floor-boss",
+    (snapshot) => snapshot.attacks.some((attack) => attack.attackPhase === "impact")
+  );
+  const archiveDeepTrackingImpact = archiveDeepTrackingAttack.attacks.find((attack) => attack.attackPhase === "impact");
+  const deepBoss = archiveDeepTrackingLevel.bosses[0];
+  const deepBossBodyH = Math.max(58, Math.min(150, deepBoss.h * 0.45));
+  const deepBossMarginY = Math.min(24, Math.max(6, deepBoss.h * 0.05));
+  const originalArchiveMaxCenterY = deepBoss.y + deepBoss.h - deepBossMarginY - deepBossBodyH / 2;
+  const deepArchiveBodyCenterY = archiveDeepTrackingAttack.body.y + archiveDeepTrackingAttack.body.h / 2;
+  const deepPlayerCenterY = archiveDeepTrackingSim.player.y + archiveDeepTrackingSim.player.h / 2;
+  assert(
+    deepArchiveBodyCenterY > originalArchiveMaxCenterY + 120,
+    `Expected archive boss to track below original arena max center ${originalArchiveMaxCenterY}, got ${deepArchiveBodyCenterY}`
+  );
+  assert(
+    deepArchiveBodyCenterY <= deepPlayerCenterY - 90,
+    `Expected archive boss to stay in the upper player viewport, got boss center ${deepArchiveBodyCenterY} and player center ${deepPlayerCenterY}`
+  );
+  assert(
+    archiveDeepTrackingImpact && Math.round(archiveDeepTrackingImpact.y + archiveDeepTrackingImpact.h) === 620,
+    `Expected deep archive book impact to land on the player's current lower floor, got ${JSON.stringify(archiveDeepTrackingAttack.attacks)}`
+  );
+
   const archiveAttackSim = new RoomSimulation(archiveLevel);
   Object.assign(archiveAttackSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
 	  archiveAttackSim.step(idle);
@@ -2583,6 +2655,15 @@ try {
       (snapshot) => snapshot.attacks.some((attack) => attack.attackPhase === "impact" && (attack.progress || 0) >= 0.999),
       420
     );
+  const runArchiveUntilErosion = (simulation, bossId, previousRevision, maxFrames = 1800) => {
+    for (let frameIndex = 0; frameIndex < maxFrames; frameIndex += 1) {
+      simulation.step(idle);
+      const snapshot = simulation.snapshot();
+      const bossSnapshot = simulation.bossSnapshots().find((boss) => boss.id === bossId);
+      if (snapshot.terrainRevision > previousRevision && bossSnapshot) return bossSnapshot;
+    }
+    throw new Error(`Expected archive boss ${bossId} to erode terrain`);
+  };
   const archiveNoErosionSim = new RoomSimulation(archiveLowFloorLevel);
   Object.assign(archiveNoErosionSim.player, {
     x: archiveLowFloorLevel.start.x,
@@ -2600,11 +2681,37 @@ try {
   assert(archiveNoErosionSim.snapshot().terrainRevision === noErosionRevision, "Expected unmarked archive floor to leave terrain revision unchanged");
   assert(noErosionFloor.length === 1 && noErosionFloor[0].w === 860, `Expected unmarked archive floor not to erode, got ${JSON.stringify(noErosionFloor)}`);
 
+  const archiveMarkedBlockLevel = {
+    ...archiveLowFloorLevel,
+    id: "archive-block-erosion-guard",
+    solids: [
+      { id: "erode-block", x: 0, y: 280, w: 860, h: 60, sprite: "block", erodesWith: "archive-book", erosionTiles: 2 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 340 },
+      { id: "right-wall", x: 860, y: 0, w: 20, h: 340 }
+    ]
+  };
+  const archiveMarkedBlockSim = new RoomSimulation(archiveMarkedBlockLevel);
+  Object.assign(archiveMarkedBlockSim.player, {
+    x: archiveMarkedBlockLevel.start.x,
+    y: 280 - archiveMarkedBlockSim.player.h,
+    vx: 0,
+    vy: 0,
+    onGround: true
+  });
+  archiveMarkedBlockSim.step(idle);
+  runFrames(archiveMarkedBlockSim, 60, idle);
+  Object.assign(archiveMarkedBlockSim.player, { x: 36, y: 18, vx: 0, vy: 0, onGround: false });
+  const markedBlockRevision = archiveMarkedBlockSim.snapshot().terrainRevision;
+  runArchiveUntilFinalImpact(archiveMarkedBlockSim, "archive-low-floor-boss");
+  const markedBlockSolids = archiveMarkedBlockSim.snapshot().solids.filter((solid) => solid.id === "erode-block");
+  assert(archiveMarkedBlockSim.snapshot().terrainRevision === markedBlockRevision, "Expected marked non-floor block not to erode");
+  assert(markedBlockSolids.length === 1 && markedBlockSolids[0].w === 860, `Expected marked non-floor block to stay intact, got ${JSON.stringify(markedBlockSolids)}`);
+
   const archiveErosionLevel = {
     ...archiveLowFloorLevel,
     id: "archive-floor-erosion",
     solids: [
-      { id: "erode-floor", x: 0, y: 280, w: 860, h: 60, erodesWith: "archive-book", erosionTiles: 2 },
+      { id: "erode-floor", x: 0, y: 280, w: 860, h: 128, erodesWith: "archive-book", erosionTiles: 2 },
       { id: "left-wall", x: -20, y: 0, w: 20, h: 340 },
       { id: "right-wall", x: 860, y: 0, w: 20, h: 340 }
     ]
@@ -2621,24 +2728,33 @@ try {
   runFrames(archiveErosionSim, 60, idle);
   Object.assign(archiveErosionSim.player, { x: 36, y: 18, vx: 0, vy: 0, onGround: false });
   const preErosionRevision = archiveErosionSim.snapshot().terrainRevision;
-  const archiveFinalImpact = runArchiveUntilFinalImpact(archiveErosionSim, "archive-low-floor-boss");
-  const finalImpactBook = archiveFinalImpact.attacks.find((attack) => attack.attackPhase === "impact" && (attack.progress || 0) >= 0.999);
-  const finalImpactCount = archiveFinalImpact.attacks.filter((attack) => attack.attackPhase === "impact" && (attack.progress || 0) >= 0.999).length;
-  assert(finalImpactBook, `Expected final archive impact before erosion, got ${JSON.stringify(archiveFinalImpact.attacks)}`);
+  const archiveFinalImpact = runArchiveUntilErosion(archiveErosionSim, "archive-low-floor-boss", preErosionRevision);
+  const finalImpactBooks = archiveFinalImpact.attacks.filter((attack) => attack.attackPhase === "impact" && (attack.progress || 0) >= 0.999);
+  assert(finalImpactBooks.length >= 1, `Expected final archive impact before erosion, got ${JSON.stringify(archiveFinalImpact.attacks)}`);
   const erodedSnapshot = archiveErosionSim.snapshot();
   const erodedPieces = erodedSnapshot.solids.filter((solid) => solid.id.startsWith("erode-floor"));
-  const erodedWidth = erodedPieces.reduce((sum, solid) => sum + solid.w, 0);
+  const originalErosionArea = 860 * 128;
+  const erodedArea = originalErosionArea - erodedPieces.reduce((sum, solid) => sum + solid.w * solid.h, 0);
+  const topLayerArea = erodedPieces.filter((solid) => solid.y === 280 && solid.h === 32).reduce((sum, solid) => sum + solid.w * solid.h, 0);
+  const lowerLayer = erodedPieces.find((solid) => solid.y === 312 && solid.w === 860 && solid.h === 96);
   assert(erodedSnapshot.terrainRevision > preErosionRevision, "Expected archive floor erosion to bump terrain revision");
   assert(erodedPieces.length >= 1, `Expected erodible floor to leave runtime pieces, got ${JSON.stringify(erodedSnapshot.solids)}`);
-  assert(erodedWidth === 860 - finalImpactCount * 64, `Expected each final-impact book pile to erode two 32px chunks, got remaining width ${erodedWidth}`);
   assert(
-    !erodedPieces.some((solid) => solid.x < finalImpactBook.originX && solid.x + solid.w > finalImpactBook.originX),
-    `Expected eroded floor to leave a gap at impact x ${finalImpactBook.originX}, got ${JSON.stringify(erodedPieces)}`
+    erodedArea >= 32 * 32 && erodedArea <= finalImpactBooks.length * 2 * 32 * 32 && erodedArea % (32 * 32) === 0,
+    `Expected successful book piles to chip 1-2 top-surface tiles each, got eroded area ${erodedArea} from ${JSON.stringify(erodedPieces)}`
+  );
+  assert(
+    lowerLayer && lowerLayer.erodesWith === "archive-book",
+    `Expected erosion to preserve a deeper erodible floor layer instead of deleting full columns, got ${JSON.stringify(erodedPieces)}`
+  );
+  assert(
+    topLayerArea === 860 * 32 - erodedArea,
+    `Expected only the top 32px layer to lose chipped area, got top layer area ${topLayerArea} and eroded area ${erodedArea}`
   );
   archiveErosionSim.resetLifeAttempt();
   const restoredErosionFloor = archiveErosionSim.snapshot().solids.filter((solid) => solid.id === "erode-floor");
   assert(
-    restoredErosionFloor.length === 1 && restoredErosionFloor[0].w === 860,
+    restoredErosionFloor.length === 1 && restoredErosionFloor[0].w === 860 && restoredErosionFloor[0].h === 128,
     `Expected boss checkpoint reset to restore eroded floor, got ${JSON.stringify(restoredErosionFloor)}`
   );
 

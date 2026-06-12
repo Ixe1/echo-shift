@@ -91,6 +91,10 @@ const ARCHIVE_BOOK_WARNING_HEIGHT = 12;
 const ARCHIVE_BOOK_VOLLEY_SPACING = 120;
 const ARCHIVE_BOOK_SECOND_VOLLEY_START_FRAME = 112;
 const ARCHIVE_BOOK_IMPACT_FRAMES = 12;
+const ARCHIVE_BOOK_LANDING_SAMPLE_WIDTH = 24;
+const ARCHIVE_VIEWPORT_WORLD_HEIGHT = 540 / 1.152;
+const ARCHIVE_ATTACK_VIEWPORT_OFFSET_Y = ARCHIVE_VIEWPORT_WORLD_HEIGHT * 0.32;
+const ARCHIVE_VULNERABLE_VIEWPORT_OFFSET_Y = 64;
 
 const easeBodyAxis = (current: number, desired: number, ease: number, maxStep: number): number => {
   const easedStep = (desired - current) * ease;
@@ -198,6 +202,8 @@ export type BossRuntimeState = {
   departureFrames: number;
   departureStartX: number;
   departureStartY: number;
+  motionMinY?: number;
+  motionMaxY?: number;
   floorIcePatches: BossFloorIceSnapshot[];
 };
 
@@ -692,6 +698,8 @@ export const settleBossAtIntroEnd = (boss: Boss, state: BossRuntimeState): void 
   state.attackX = center.x;
   state.attackY = center.y;
   state.recoveryFrames = 0;
+  state.motionMinY = undefined;
+  state.motionMaxY = undefined;
   state.floorIcePatches = [];
 };
 
@@ -792,9 +800,10 @@ export const bossBodyRectAt = (boss: Boss, state: BossRuntimeState, _tick: numbe
   }
   if (state.phase === "active") {
     const arena = bossMovementBounds(boss, size);
+    const activeArena = bossActiveMovementBounds(boss, state, size);
     return {
       x: clamp(finiteNumber(state.bodyX, bossRestingBodyRect(boss).x), arena.minX, arena.maxX),
-      y: clamp(finiteNumber(state.bodyY, bossRestingBodyRect(boss).y), arena.minY, arena.maxY),
+      y: clamp(finiteNumber(state.bodyY, bossRestingBodyRect(boss).y), activeArena.minY, activeArena.maxY),
       w: size.w,
       h: size.h
     };
@@ -881,8 +890,9 @@ const archiveLastVolleyEndFrame = (boss: Boss, state: BossRuntimeState): number 
   archiveVolleyWindowsFor(boss, state).reduce((latest, window) => Math.max(latest, window.activeEnd), 0);
 
 const archiveBookLandingY = (boss: Boss, solids: Solid[] = [], originX = boss.x + boss.w / 2, width = ARCHIVE_BOOK_WARNING_WIDTH): number => {
-  const laneLeft = originX - width / 2;
-  const laneRight = originX + width / 2;
+  const sampleWidth = Math.min(width, ARCHIVE_BOOK_LANDING_SAMPLE_WIDTH);
+  const laneLeft = originX - sampleWidth / 2;
+  const laneRight = originX + sampleWidth / 2;
   const floorY = solids
     .filter(
       (solid) =>
@@ -1149,11 +1159,17 @@ const advanceArchiveCustodianMotion = (
   size: { w: number; h: number },
   player: ActorBody,
   cycle: number,
-  arena: { minX: number; minY: number; maxX: number; maxY: number }
+  staticArena: { minX: number; minY: number; maxX: number; maxY: number }
 ): void => {
+  const arena = archiveCustodianMovementBounds(boss, state, size, player, staticArena);
   const arenaCenterX = boss.x + boss.w / 2;
-  const highY = arena.minY + size.h * 0.45;
-  const lowY = clamp(boss.y + boss.h - ARCHIVE_CORE_CLEARANCE, arena.minY + size.h / 2, arena.maxY + size.h / 2);
+  const playerCenterY = player.y + player.h / 2;
+  const highY = clamp(Math.max(arena.minY + size.h / 2, playerCenterY - ARCHIVE_ATTACK_VIEWPORT_OFFSET_Y), arena.minY + size.h / 2, arena.maxY + size.h / 2);
+  const lowY = clamp(
+    Math.max(boss.y + boss.h - ARCHIVE_CORE_CLEARANCE, playerCenterY - ARCHIVE_VULNERABLE_VIEWPORT_OFFSET_Y, highY + size.h * 0.45),
+    arena.minY + size.h / 2,
+    arena.maxY + size.h / 2
+  );
   if (state.recoveryFrames > 0) {
     advanceArchiveCustodianRecoveryMotion(state, size, arena, arenaCenterX, highY);
     return;
@@ -1163,7 +1179,6 @@ const advanceArchiveCustodianMotion = (
   const firstActiveEndFrame = bossAttackEndFrameFor("archive-custodian");
   const lastVolleyEndFrame = archiveLastVolleyEndFrame(boss, state);
   const playerCenterX = player.x + player.w / 2;
-  const playerCenterY = player.y + player.h / 2;
   const sideOffset = playerCenterX < arenaCenterX ? size.w * 0.46 : -size.w * 0.46;
   const lockedSideOffset = finiteNumber(state.attackX, playerCenterX) < arenaCenterX ? size.w * 0.46 : -size.w * 0.46;
   const currentCenterY = finiteNumber(state.bodyY, lowY - size.h / 2) + size.h / 2;
@@ -1444,6 +1459,35 @@ const bossMovementBounds = (boss: Boss, size: { w: number; h: number }): { minX:
     maxX: Math.max(boss.x + marginX, boss.x + boss.w - marginX - size.w),
     maxY: Math.max(minY, boss.y + boss.h - marginY - size.h)
   };
+};
+
+const bossActiveMovementBounds = (
+  boss: Boss,
+  state: BossRuntimeState,
+  size: { w: number; h: number }
+): { minX: number; minY: number; maxX: number; maxY: number } => {
+  const arena = bossMovementBounds(boss, size);
+  if (boss.kind !== "archive-custodian") return arena;
+  const minY = finiteNumber(state.motionMinY, arena.minY);
+  const maxY = Math.max(minY, finiteNumber(state.motionMaxY, arena.maxY));
+  return { ...arena, minY, maxY };
+};
+
+const archiveCustodianMovementBounds = (
+  boss: Boss,
+  state: BossRuntimeState,
+  size: { w: number; h: number },
+  player: ActorBody,
+  arena: { minX: number; minY: number; maxX: number; maxY: number }
+): { minX: number; minY: number; maxX: number; maxY: number } => {
+  const playerCenterY = player.y + player.h / 2;
+  const desiredHighCenterY = Math.max(arena.minY + size.h / 2, playerCenterY - ARCHIVE_ATTACK_VIEWPORT_OFFSET_Y);
+  const desiredLowCenterY = Math.max(boss.y + boss.h - ARCHIVE_CORE_CLEARANCE, playerCenterY - ARCHIVE_VULNERABLE_VIEWPORT_OFFSET_Y);
+  const currentTopY = finiteNumber(state.bodyY, arena.maxY);
+  const maxY = Math.max(arena.maxY, desiredHighCenterY - size.h / 2, desiredLowCenterY - size.h / 2, currentTopY);
+  state.motionMinY = arena.minY;
+  state.motionMaxY = maxY;
+  return { ...arena, maxY };
 };
 
 const bossEntryBodyRect = (boss: Boss, size: { w: number; h: number }, target: Rect): Rect => {

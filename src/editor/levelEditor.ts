@@ -371,6 +371,13 @@ const normalizeSolidErosionTrigger = (value: unknown): Solid["erodesWith"] =>
 
 const normalizeSolidErosionTiles = (value: unknown): Solid["erosionTiles"] => (Number(value) === 2 ? 2 : Number(value) === 1 ? 1 : undefined);
 
+const solidHasDefaultFullCollision = (solid: Solid): boolean => solid.collision === undefined || solid.collision === "solid";
+
+const solidLooksLikeErodibleFloor = (solid: Solid): boolean => {
+  const floorLikeId = solid.id === "floor" || solid.id.startsWith("floor-") || solid.id.includes("floor");
+  return solidHasDefaultFullCollision(solid) && (solid.sprite === "floor" || floorLikeId) && solid.w >= GRID * 2;
+};
+
 const replaceReferenceList = (value: string[] | undefined, previousId: string, nextId: string): string[] => [
   ...new Set((value || []).map((item) => (item === previousId ? nextId : item)))
 ];
@@ -2667,7 +2674,7 @@ class LevelEditor {
       messages.push({ severity: "error", text: `${level.name} exit is outside bounds.` });
     }
     if (level.completion === "boss-defeat" && readCollection(level, "bosses").length === 0) {
-      messages.push({ severity: "warning", text: `${level.name} completes on boss defeat but has no boss arena.` });
+      messages.push({ severity: "error", text: `${level.name} completes on boss defeat but has no boss arena.` });
     }
     if (level.score.lives !== null && (!Number.isInteger(level.score.lives) || level.score.lives <= 0)) {
       messages.push({ severity: "error", text: `${level.name} lives must be unlimited or a positive integer.` });
@@ -2711,11 +2718,11 @@ class LevelEditor {
           if (solid.erodesWith && !solidErosionTriggerValues.includes(solid.erodesWith)) {
             messages.push({ severity: "error", text: `${level.name}:${solid.id} has invalid erosion trigger ${String(solid.erodesWith)}.` });
           }
-          if (solid.erodesWith && solid.collision === "decorative") {
-            messages.push({ severity: "warning", text: `${level.name}:${solid.id} is decorative and will not erode in gameplay.` });
+          if (solid.erodesWith && !solidLooksLikeErodibleFloor(solid)) {
+            messages.push({ severity: "error", text: `${level.name}:${solid.id} erosion requires a full-collision floor solid at least two tiles wide.` });
           }
           if (solid.erodesWith && normalizeSolidErosionTiles(solid.erosionTiles) === undefined) {
-            messages.push({ severity: "warning", text: `${level.name}:${solid.id} should use 1 or 2 erosion tiles.` });
+            messages.push({ severity: "error", text: `${level.name}:${solid.id} should use 1 or 2 erosion tiles.` });
           }
           if (solid.erodesWith === "archive-book" && !(level.bosses || []).some((boss) => boss.kind === "archive-custodian")) {
             messages.push({ severity: "warning", text: `${level.name}:${solid.id} erodes from archive books, but the level has no Archive Custodian.` });
