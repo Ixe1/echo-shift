@@ -2671,10 +2671,10 @@ export class GameScene extends Phaser.Scene {
       if (warning.attackType === "archive-book" || warning.kind === "falling") {
         if (this.diagnosticsEnabled) {
           this.bossEffectFrames.push(
-            `archive-book-warning:r${warning.round || 1}:${Math.round(warning.x)},${Math.round(warning.y)}:${Math.round(warning.w)}x${Math.round(warning.h)}:p${Math.round((warning.progress || progress) * 100)}`
+            `archive-book-warning:r${warning.round || 1}:${Math.round(warning.x)},${Math.round(warning.y)}:${Math.round(warning.w)}x${Math.round(warning.h)}:p${Math.round((warning.progress ?? progress) * 100)}`
           );
         }
-        const warnProgress = Math.max(progress, Math.max(0, Math.min(1, warning.progress || 0)));
+        const warnProgress = Math.max(0, Math.min(1, warning.progress ?? progress));
         const centerX = warning.originX;
         const centerY = warning.y + warning.h / 2;
         const radiusPulse = 0.82 + pulse * 0.18 + warnProgress * 0.22;

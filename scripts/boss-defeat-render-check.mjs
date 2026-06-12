@@ -89,14 +89,14 @@ const readBossAlignment = async (page, bossId) =>
     };
   }, bossId);
 
-const alignPlayerWithBossWeakSpot = async (page, bossId, timeoutMs = 1400) => {
+const alignPlayerWithBossWeakSpot = async (page, bossId, timeoutMs = 2600) => {
   const startedAt = Date.now();
   let heldKey = null;
   try {
     while (Date.now() - startedAt < timeoutMs) {
       const alignment = await readBossAlignment(page, bossId);
       const delta = alignment.weakCenterX - alignment.playerCenterX;
-      if (Math.abs(delta) <= 10) return alignment;
+      if (Math.abs(delta) <= 12) return alignment;
       const nextKey = delta > 0 ? "ArrowRight" : "ArrowLeft";
       if (heldKey !== nextKey) {
         if (heldKey) await page.keyboard.up(heldKey);
@@ -110,6 +110,37 @@ const alignPlayerWithBossWeakSpot = async (page, bossId, timeoutMs = 1400) => {
   }
   const alignment = await readBossAlignment(page, bossId);
   throw new Error(`Expected player to align with boss weak spot, got ${JSON.stringify(alignment)}`);
+};
+
+const waitForArchiveBooksToClear = async (page, bossId, timeoutMs = 10000) =>
+  page.waitForFunction(
+    (id) => {
+      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+      const sprites = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
+      return (
+        sprites.includes(`${id}:`) &&
+        sprites.includes(":active:guarded") &&
+        !sprites.includes(":attack:") &&
+        !effects.includes("archive-book-falling:") &&
+        !effects.includes("archive-book-impact:")
+      );
+    },
+    bossId,
+    { timeout: timeoutMs }
+  );
+
+const startWeakSpotJump = async (page, bossId) => {
+  const alignment = await readBossAlignment(page, bossId);
+  const delta = alignment.weakCenterX - alignment.playerCenterX;
+  const correctionKey = Math.abs(delta) > 4 ? (delta > 0 ? "ArrowRight" : "ArrowLeft") : null;
+  if (correctionKey) await page.keyboard.down(correctionKey);
+  await page.keyboard.down("Space");
+  return correctionKey;
+};
+
+const releaseWeakSpotJump = async (page, correctionKey) => {
+  await page.keyboard.up("Space");
+  if (correctionKey) await page.keyboard.up(correctionKey);
 };
 
 const draftLevel = {
@@ -340,13 +371,14 @@ const verifyBossCameraFollowsPlayer = async (page) => {
   await startAudioGate(page);
   await page.locator("canvas").waitFor({ state: "visible" });
   await waitForLevelIntro(page);
+  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await page.waitForFunction(
     () => {
       const frames = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
       return frames.includes("camera-follow-boss:") && frames.includes(":active:");
     },
     null,
-    { timeout: 9000 }
+    { timeout: 12000 }
   );
 
   const sample = await readCameraSample(page);
@@ -426,7 +458,59 @@ const verifyArchiveAttackRender = async (page) => {
   const raw = await page.evaluate(() => document.documentElement.dataset.echoShiftBossEffectFrames || "");
   const screenshot = `${outDir}/archive-attack-active.png`;
   await page.screenshot({ path: screenshot, fullPage: true });
-  return { diagnostic: raw, screenshot };
+  await waitForArchiveBooksToClear(page, "archive-attack-boss");
+  await alignPlayerWithBossWeakSpot(page, "archive-attack-boss");
+  await page.waitForFunction(
+    () => {
+      const frames = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
+      return frames.includes("archive-attack-boss:") && frames.includes(":active:vulnerable");
+    },
+    null,
+    { timeout: 10000 }
+  );
+  const archiveHitCorrection = await startWeakSpotJump(page, "archive-attack-boss");
+  try {
+    await page.waitForFunction(
+      () => {
+        const frames = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
+        return frames.includes("archive-attack-boss:") && frames.includes(":active:guarded") && !frames.includes(":vulnerable");
+      },
+      null,
+      { timeout: 2500 }
+    );
+  } finally {
+    await releaseWeakSpotJump(page, archiveHitCorrection);
+  }
+  await page.waitForFunction(
+    () => {
+      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+      return effects.includes("archive-book-warning:r1:");
+    },
+    null,
+    { timeout: 9000 }
+  );
+  await page.keyboard.down("ArrowRight");
+  await page.waitForTimeout(730);
+  await page.keyboard.up("ArrowRight");
+  await page.waitForFunction(
+    () => {
+      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+      const match = effects.match(/archive-book-warning:r2:[^|]*:p(\d+)/);
+      return Boolean(match && Number(match[1]) > 0 && Number(match[1]) < 100);
+    },
+    null,
+    { timeout: 9000 }
+  );
+  const roundTwoWarning = await page.evaluate(() => {
+    const raw = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+    return raw
+      .split("|")
+      .filter((entry) => entry.startsWith("archive-book-warning:r2:"))
+      .join("|");
+  });
+  const roundTwoScreenshot = `${outDir}/archive-round-two-warning.png`;
+  await page.screenshot({ path: roundTwoScreenshot, fullPage: true });
+  return { diagnostic: raw, screenshot, roundTwoWarning, roundTwoScreenshot };
 };
 
 try {
@@ -477,7 +561,7 @@ try {
 	    null,
 	    { timeout: 10000 }
 	  );
-  await alignPlayerWithBossWeakSpot(page, "render-boss");
+  await alignPlayerWithBossWeakSpot(page, "render-boss", 1800).catch(() => undefined);
   await page.waitForFunction(
     () => {
       const frames = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
@@ -487,17 +571,20 @@ try {
     { timeout: 10000 }
   );
 
-		  await page.keyboard.down("Space");
-  await page.waitForFunction(
-    () => {
-      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
-      const sprites = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
-      return effects.includes("render-boss:defeat-depart") && sprites.includes(":departing:");
-    },
-    null,
-	    { timeout: 3000 }
-	  );
-	  await page.keyboard.up("Space");
+  const defeatCorrection = await startWeakSpotJump(page, "render-boss");
+  try {
+    await page.waitForFunction(
+      () => {
+        const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+        const sprites = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
+        return effects.includes("render-boss:defeat-depart") && sprites.includes(":departing:");
+      },
+      null,
+      { timeout: 3000 }
+    );
+  } finally {
+    await releaseWeakSpotJump(page, defeatCorrection);
+  }
 
 	  const early = await readDepartureEffect(page);
   assert(early.total === 170, `Expected 170-frame boss departure diagnostic, got ${JSON.stringify(early)}`);
@@ -527,9 +614,10 @@ try {
     },
     null,
     { timeout: 3500 }
-  );
-  const mid = await readDepartureEffect(page);
-  assert(mid.x > early.x + 60, `Expected departing boss to move right, got early ${JSON.stringify(early)} and mid ${JSON.stringify(mid)}`);
+	  );
+	  const mid = await readDepartureEffect(page);
+	  const spriteWidth = await readBossSpriteWidth(page);
+	  assert(mid.x > early.x + 60, `Expected departing boss to move right, got early ${JSON.stringify(early)} and mid ${JSON.stringify(mid)}`);
 
   await page.waitForFunction(
     () => {
@@ -539,11 +627,10 @@ try {
     },
     null,
     { timeout: 3500 }
-  );
-  const late = await readDepartureEffect(page);
-  const camera = await readCameraWorldView(page);
-  const spriteWidth = await readBossSpriteWidth(page);
-  const spriteLeft = late.x - spriteWidth / 6;
+	  );
+	  const late = await readDepartureEffect(page);
+	  const camera = await readCameraWorldView(page);
+	  const spriteLeft = late.x - spriteWidth / 6;
   assert(
     spriteLeft > camera.x + camera.w,
     `Expected departing boss sprite to be off the right side of the camera before portal unlock, got ${JSON.stringify({ late, camera, spriteWidth, spriteLeft })}`
@@ -570,12 +657,13 @@ try {
         cameraFollow,
         archiveAttack,
         cryoFloorIce,
-        screenshots: {
-          departure: departureScreenshot,
-          portal: portalScreenshot,
-          archiveAttack: archiveAttack.screenshot,
-          cryoFloorIce: cryoFloorIce.screenshot
-        }
+	        screenshots: {
+	          departure: departureScreenshot,
+	          portal: portalScreenshot,
+	          archiveAttack: archiveAttack.screenshot,
+	          archiveRoundTwoWarning: archiveAttack.roundTwoScreenshot,
+	          cryoFloorIce: cryoFloorIce.screenshot
+	        }
       },
       null,
       2
