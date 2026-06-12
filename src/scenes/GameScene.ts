@@ -983,7 +983,7 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.flash(220, 67, 247, 255, false);
     this.echoTrails.clear();
     if (this.bossMusicActive) this.restartLevelMusic();
-    this.hud.toast(added ? `Echo ${this.simulation.echoRecordings.length} anchored` : "Attempt reset");
+    this.hud.toast(added ? `Echo ${this.simulation.echoRecordings.length} anchored` : "Returned to start");
   }
 
   private retryAttempt(): void {
@@ -1132,7 +1132,7 @@ export class GameScene extends Phaser.Scene {
         else if (playerCenterX < 560) message = "Jump with W, Up, or Space to cross the gap.";
         else if (playerCenterX < 1220 && !snapshot.activePlates.has("tutorial-plate")) message = "Stand on the plate near the gate.";
         else if (playerCenterX < 1220)
-          message = "Press R to rewind. The replay becomes an echo that can hold the plate.";
+          message = "Press R to leave an echo on the plate and return to the start.";
         else if (playerCenterX < 2050) message = "Push crates onto plates. Crates keep doors open while you move ahead.";
         else if (playerCenterX < 2700) message = "Timed switches stay active briefly. Step on one, then move before the door closes.";
         else if (playerCenterX < 3260) message = "Small cores add score. Large cores marked as keys can unlock core doors.";

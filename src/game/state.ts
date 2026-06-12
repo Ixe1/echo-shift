@@ -41,7 +41,6 @@ import {
   inputFrameAt,
   cloneInputFrame,
   recordInputFrame,
-  trimRecording,
   type EchoRecording
 } from "./recording";
 import { finalScoreForLevel, timeBonusForFrames } from "./scoring";
@@ -98,6 +97,7 @@ const cloneBossStates = (states: Map<string, BossRuntimeState>): Map<string, Bos
 const cloneEchoRecordings = (recordings: EchoRecording[]): EchoRecording[] =>
   recordings.map((recording) => ({
     ...recording,
+    anchor: recording.anchor ? cloneActor(recording.anchor) : undefined,
     frames: recording.frames instanceof Uint8Array ? new Uint8Array(recording.frames) : recording.frames.map(cloneInputFrame)
   }));
 
@@ -140,19 +140,20 @@ export class RoomSimulation {
   }
 
   rewindToEcho(): boolean {
-    const frames = trimRecording(this.currentRecording);
-    if (frames.length < MIN_ECHO_FRAMES) {
-      this.resetAttempt(false);
-      return false;
+    const added = this.currentRecording.length >= MIN_ECHO_FRAMES;
+    if (added) {
+      const echo = this.echoAnchorFromPlayer(`echo-${this.echoRecordings.length + 1}`);
+      this.echoRecordings.push({
+        id: echo.id,
+        frames: Uint8Array.of(0),
+        createdAtFrame: this.totalFrames,
+        anchor: cloneActor(echo)
+      });
+      this.echoes.push(echo);
     }
 
-    this.echoRecordings.push({
-      id: `echo-${this.echoRecordings.length + 1}`,
-      frames,
-      createdAtFrame: this.totalFrames
-    });
-    this.resetAttempt(false);
-    return true;
+    this.teleportPlayerToStart();
+    return added;
   }
 
   resetAttempt(keepRecording = false): void {
@@ -162,13 +163,48 @@ export class RoomSimulation {
     this.dead = false;
     this.won = false;
     this.player = makeActor("player", "player", this.level.start);
-    this.echoes = this.echoRecordings.map((recording) =>
-      makeActor(recording.id, "echo", this.level.start)
-    );
+    this.echoes = this.echoRecordings.map((recording) => this.echoActorForRecording(recording));
     this.objectState = createObjectState(this.level);
     this.killedMonsterIds.clear();
     this.resetBossStates();
     if (!keepRecording) this.currentRecording = [];
+  }
+
+  private echoAnchorFromPlayer(id: string): ActorBody {
+    return {
+      ...cloneActor(this.player),
+      id,
+      kind: "echo",
+      vx: 0,
+      vy: 0,
+      coyote: 0,
+      jumpBuffer: 0,
+      launchCooldown: 0,
+      launchControlLock: 0,
+      launchFloatFrames: 0,
+      prevJump: false,
+      alive: true
+    };
+  }
+
+  private echoActorForRecording(recording: EchoRecording): ActorBody {
+    if (recording.anchor) {
+      return {
+        ...cloneActor(recording.anchor),
+        id: recording.id,
+        kind: "echo",
+        alive: true
+      };
+    }
+    return makeActor(recording.id, "echo", this.level.start);
+  }
+
+  private teleportPlayerToStart(): void {
+    this.bossCheckpoint = null;
+    this.dead = false;
+    this.won = false;
+    this.player = makeActor("player", "player", this.level.start);
+    this.currentRecording = [];
   }
 
   resetLifeAttempt(): void {

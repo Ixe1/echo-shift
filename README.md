@@ -1,6 +1,6 @@
 # Echo Shift
 
-A compact rewind puzzle-platformer built for the Community Dev Challenge. Previous attempts become translucent echoes that replay recorded inputs and can hold plates, open doors, block lasers, and help route the player to the exit.
+A compact rewind puzzle-platformer built for the Community Dev Challenge. Rewinds leave translucent echoes anchored where you were, letting them hold plates, open doors, block lasers, and help route the player to the exit while level progress continues.
 
 ## Commands
 

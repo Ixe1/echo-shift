@@ -1338,25 +1338,34 @@ try {
   const coreFarmingSim = new RoomSimulation(coreLevel);
   coreFarmingSim.step(idle);
   assert(coreFarmingSim.score === 100, "Expected overlapping core to add score before rewind");
-  assert(!coreFarmingSim.rewindToEcho(), "Short core pickup attempt should reset without adding an echo");
-  assert(coreFarmingSim.score === 0, `Rewind should remove discarded timeline core score, got ${coreFarmingSim.score}`);
+  const coreFarmingFramesBeforeRewind = coreFarmingSim.totalFrames;
+  assert(!coreFarmingSim.rewindToEcho(), "Short core pickup attempt should return without adding an echo");
+  assert(coreFarmingSim.score === 100, `Short rewind should preserve current score, got ${coreFarmingSim.score}`);
+  assert(coreFarmingSim.totalFrames === coreFarmingFramesBeforeRewind, `Short rewind should preserve visible time, got ${coreFarmingSim.totalFrames}`);
+  assert(coreFarmingSim.objectState.collectedCores.has("core-a"), "Short rewind should preserve collected cores");
+  assert(coreFarmingSim.player.x === coreLevel.start.x && coreFarmingSim.player.y === coreLevel.start.y, "Short rewind should still return the player to start");
 
   const echoCoreLevel = {
     ...baseLevel,
     cores: [{ id: "core-echo", x: 118, y: 88, w: 20, h: 20 }]
   };
   const echoCoreSim = new RoomSimulation(echoCoreLevel);
-  runFrames(echoCoreSim, 34, right);
+  runFrames(echoCoreSim, 20, idle);
+  Object.assign(echoCoreSim.player, { x: 118, y: 86, vx: 0, vy: 0, onGround: true });
+  const echoCoreFramesBeforeRewind = echoCoreSim.totalFrames;
   assert(echoCoreSim.rewindToEcho(), "Expected core setup attempt to become an echo");
+  assert(echoCoreSim.totalFrames === echoCoreFramesBeforeRewind, `Rewind should preserve visible time, got ${echoCoreSim.totalFrames}`);
+  assert(echoCoreSim.player.x === echoCoreLevel.start.x && echoCoreSim.player.y === echoCoreLevel.start.y, "Rewind should return player to start after anchoring echo");
+  assert(echoCoreSim.echoes[0].x === 118 && echoCoreSim.echoes[0].y === 86, "Rewind should leave the echo at the anchor location");
   let echoCoreEvent = null;
-  for (let i = 0; i < 60; i += 1) {
+  for (let i = 0; i < 4; i += 1) {
     const event = echoCoreSim.step(idle);
     if (event.core) {
       echoCoreEvent = event.core;
       break;
     }
   }
-  assert(echoCoreEvent, "Echo did not collect the core during replay");
+  assert(echoCoreEvent, "Echo did not collect the core from its anchor");
   assert(echoCoreEvent.x > 100, `Echo core pickup event used the wrong origin: ${JSON.stringify(echoCoreEvent)}`);
   assert(echoCoreSim.score === 100, `Echo-collected core should add score once in the active timeline, got ${echoCoreSim.score}`);
 
@@ -1896,9 +1905,10 @@ try {
   assert(monsterStomp.monsterKills.length === 1, "Expected top stomp to kill stompable monster");
   assert(monsterStompSim.killedMonsterIds.has("stompable-test"), "Expected killed monster to persist in current attempt");
   assert(monsterStompSim.score === 250, `Expected monster score reward, got ${monsterStompSim.score}`);
-  monsterStompSim.rewindToEcho();
-  assert(!monsterStompSim.killedMonsterIds.has("stompable-test"), "Rewind/reset should restore killed monsters");
-  assert(monsterStompSim.score === 0, `Rewind/reset should remove current-attempt monster score, got ${monsterStompSim.score}`);
+  runFrames(monsterStompSim, 20, idle);
+  assert(monsterStompSim.rewindToEcho(), "Expected monster stomp timeline to anchor an echo");
+  assert(monsterStompSim.killedMonsterIds.has("stompable-test"), "Rewind should preserve killed monsters");
+  assert(monsterStompSim.score === 250, `Rewind should preserve current monster score, got ${monsterStompSim.score}`);
 
   const forgivingMonsterStompSim = new RoomSimulation(monsterLevel);
   Object.assign(forgivingMonsterStompSim.player, { x: 42, y: 69, vx: 0, vy: 0, onGround: false });
@@ -3150,7 +3160,6 @@ try {
   const replay = new RoomSimulation(deterministicLevel);
   for (const input of inputSequence) replay.step(input);
   assert(replay.rewindToEcho(), "Expected deterministic setup attempt to become an echo");
-  runFrames(replay, inputSequence.length, idle);
   const echo = replay.echoes[0];
   const actual = {
     x: Number(echo.x.toFixed(3)),
@@ -3159,8 +3168,9 @@ try {
   };
   assert(
     actual.x === expected.x && actual.y === expected.y && actual.tick === expected.tick,
-    `Echo replay diverged: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`
+    `Echo anchor diverged: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`
   );
+  assert(replay.player.x === deterministicLevel.start.x && replay.player.y === deterministicLevel.start.y, "Rewind should teleport the player to start after anchoring echo");
 
   console.log(
     JSON.stringify(
@@ -3187,7 +3197,7 @@ try {
           "boss-intro-combat",
           "drone-disable-vaporization",
           "fall-death-freeze",
-          "deterministic-replay",
+          "deterministic-anchor",
           "audio-unlock-retry",
           "soundtrack-manifest",
           "draft-motion-migration",

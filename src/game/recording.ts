@@ -1,4 +1,4 @@
-import type { InputFrame } from "./types";
+import type { ActorBody, InputFrame } from "./types";
 
 const INPUT_LEFT = 1;
 const INPUT_RIGHT = 2;
@@ -11,6 +11,7 @@ export type EchoRecording = {
   id: string;
   frames: EchoInputFrames;
   createdAtFrame: number;
+  anchor?: ActorBody;
 };
 
 export const cloneInputFrame = (frame: InputFrame): InputFrame => ({
