@@ -41,8 +41,13 @@ type LoopedEffectPlayback = {
   baseVolume: number;
   volumeScale: number;
   paused: boolean;
+  blocked: boolean;
+  started: boolean;
+  sampleFailed: boolean;
   playAttempt: number;
   lastMarkedVolumeScale: number;
+  fallbackTimer: ReturnType<typeof setTimeout> | null;
+  fallbackToken: number;
 };
 export type AudioMixSettings = {
   masterVolume: number;
@@ -188,6 +193,7 @@ export class SynthAudio {
         .catch(() => this.markAudioState("blocked"));
     }
     if (!this.musicPaused) this.retryMusic();
+    this.retryEffectLoops();
   }
 
   play(name: ToneName): void {
@@ -207,7 +213,11 @@ export class SynthAudio {
       existing.baseVolume = settings.volume;
       existing.volumeScale = safeVolumeScale;
       existing.paused = false;
+      existing.sampleFailed = false;
+      existing.blocked = false;
+      existing.started = false;
       existing.element.loop = true;
+      this.stopLoopedEffectFallback(existing);
       this.applyLoopedEffectVolume(existing);
       this.playLoopedEffect(existing);
       return;
@@ -223,13 +233,18 @@ export class SynthAudio {
       baseVolume: settings.volume,
       volumeScale: safeVolumeScale,
       paused: false,
+      blocked: false,
+      started: false,
+      sampleFailed: false,
       playAttempt: 0,
-      lastMarkedVolumeScale: -1
+      lastMarkedVolumeScale: -1,
+      fallbackTimer: null,
+      fallbackToken: 0
     };
     this.loopedEffects.set(id, playback);
     this.applyLoopedEffectVolume(playback);
     if (typeof element.addEventListener === "function") {
-      element.addEventListener("error", () => this.stopEffectLoop(id), { once: true });
+      element.addEventListener("error", () => this.failLoopedEffectSample(playback), { once: true });
     }
     this.playLoopedEffect(playback);
   }
@@ -252,6 +267,7 @@ export class SynthAudio {
     const playback = this.loopedEffects.get(id);
     if (!playback) return;
     this.loopedEffects.delete(id);
+    this.stopLoopedEffectFallback(playback);
     playback.element.pause();
     playback.element.currentTime = 0;
     playback.element.volume = 0;
@@ -263,6 +279,7 @@ export class SynthAudio {
       if (playback.paused) continue;
       playback.paused = true;
       playback.element.pause();
+      this.stopLoopedEffectFallback(playback);
       this.markEffectEvent(`loop-pause:${playback.id}`);
     }
   }
@@ -271,7 +288,8 @@ export class SynthAudio {
     for (const playback of this.loopedEffects.values()) {
       if (!playback.paused) continue;
       playback.paused = false;
-      this.playLoopedEffect(playback);
+      if (playback.sampleFailed) this.startLoopedEffectFallback(playback);
+      else this.playLoopedEffect(playback);
       this.markEffectEvent(`loop-resume:${playback.id}`);
     }
   }
@@ -469,6 +487,7 @@ export class SynthAudio {
     this.fadeToken += 1;
     this.musicPlayAttempt += 1;
     this.webMusicPlayAttempt += 1;
+    this.effectLoopPlayAttempt += 1;
     this.musicPaused = false;
     this.stopMusicLoopWatch();
     this.music = null;
@@ -482,6 +501,13 @@ export class SynthAudio {
       this.unloadMusicElement(element);
     }
     this.activeEffects.clear();
+    for (const playback of this.loopedEffects.values()) {
+      this.stopLoopedEffectFallback(playback);
+      this.unloadMusicElement(playback.element);
+    }
+    this.loopedEffects.clear();
+    this.recentEffectEvents = [];
+    if (import.meta.env.DEV && typeof document !== "undefined") delete document.documentElement.dataset.echoShiftAudioEffects;
     for (const element of this.musicCache.values()) {
       this.unloadMusicElement(element);
     }
@@ -800,28 +826,86 @@ export class SynthAudio {
   }
 
   private playLoopedEffect(playback: LoopedEffectPlayback): void {
+    if (playback.sampleFailed) {
+      this.startLoopedEffectFallback(playback);
+      return;
+    }
     const attempt = ++this.effectLoopPlayAttempt;
     playback.playAttempt = attempt;
+    playback.blocked = false;
     try {
       void playback.element
         .play()
         .then(() => {
           if (this.loopedEffects.get(playback.id) === playback && playback.playAttempt === attempt && !playback.paused) {
+            playback.blocked = false;
+            playback.started = true;
             this.markEffectEvent(`loop-start:${playback.id}:${playback.name}`);
           }
         })
         .catch(() => {
           if (this.loopedEffects.get(playback.id) === playback && playback.playAttempt === attempt) {
+            playback.blocked = true;
+            playback.started = false;
             this.markEffectEvent(`loop-blocked:${playback.id}:${playback.name}`);
           }
         });
     } catch {
+      playback.blocked = true;
+      playback.started = false;
       this.markEffectEvent(`loop-blocked:${playback.id}:${playback.name}`);
     }
   }
 
   private applyLoopedEffectVolume(playback: LoopedEffectPlayback): void {
     playback.element.volume = playback.baseVolume * playback.volumeScale * this.fxOutputMultiplier();
+  }
+
+  private retryEffectLoops(): void {
+    for (const playback of this.loopedEffects.values()) {
+      if (playback.paused) continue;
+      if (playback.sampleFailed) {
+        this.startLoopedEffectFallback(playback);
+      } else if (playback.blocked || !playback.started) {
+        this.playLoopedEffect(playback);
+      }
+    }
+  }
+
+  private failLoopedEffectSample(playback: LoopedEffectPlayback): void {
+    if (this.loopedEffects.get(playback.id) !== playback || playback.sampleFailed) return;
+    playback.sampleFailed = true;
+    playback.blocked = false;
+    playback.started = false;
+    playback.element.pause();
+    playback.element.currentTime = 0;
+    playback.element.volume = 0;
+    this.markEffectEvent(`loop-fallback:${playback.id}:${playback.name}`);
+    this.startLoopedEffectFallback(playback);
+  }
+
+  private startLoopedEffectFallback(playback: LoopedEffectPlayback): void {
+    if (this.loopedEffects.get(playback.id) !== playback || playback.paused || !playback.sampleFailed || playback.fallbackTimer !== null) return;
+    const token = ++playback.fallbackToken;
+    const pulse = () => {
+      if (this.loopedEffects.get(playback.id) !== playback || playback.paused || !playback.sampleFailed || playback.fallbackToken !== token) {
+        playback.fallbackTimer = null;
+        return;
+      }
+      if (playback.volumeScale > 0.01) this.playToneWhenReady(playback.name);
+      playback.fallbackTimer = setTimeout(pulse, 480);
+    };
+    playback.started = true;
+    this.markEffectEvent(`loop-fallback-start:${playback.id}:${playback.name}`);
+    pulse();
+  }
+
+  private stopLoopedEffectFallback(playback: LoopedEffectPlayback): void {
+    playback.fallbackToken += 1;
+    if (playback.fallbackTimer !== null) {
+      clearTimeout(playback.fallbackTimer);
+      playback.fallbackTimer = null;
+    }
   }
 
   private playToneWhenReady(name: ToneName): void {

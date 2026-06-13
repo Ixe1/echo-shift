@@ -521,6 +521,47 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       document.documentElement.dataset.echoShiftAudioEffects?.includes("loop-stop:test-boss-defeat"),
       `Expected loop-stop diagnostic for boss defeat departure, got ${document.documentElement.dataset.echoShiftAudioEffects}`
     );
+    mediaUnlocked = false;
+    audio.startEffectLoop("bossDefeatDeparture", "blocked-boss-defeat", 1);
+    await settlePromises();
+    const blockedBossDefeatLoop = mediaElements.find((element) => element.src.includes("boss_defeat_departure") && element !== bossDefeatLoop);
+    assert(
+      blockedBossDefeatLoop?.playCalls === 1 && !blockedBossDefeatLoop.playing,
+      `Expected blocked boss defeat loop to attempt once before unlock, got ${JSON.stringify({
+        playCalls: blockedBossDefeatLoop?.playCalls,
+        playing: blockedBossDefeatLoop?.playing
+      })}`
+    );
+    assert(
+      document.documentElement.dataset.echoShiftAudioEffects?.includes("loop-blocked:blocked-boss-defeat:bossDefeatDeparture"),
+      `Expected loop-blocked diagnostic for blocked boss defeat loop, got ${document.documentElement.dataset.echoShiftAudioEffects}`
+    );
+    dispatchUnlock("keydown");
+    await settlePromises();
+    assert(
+      blockedBossDefeatLoop.playCalls >= 2 && blockedBossDefeatLoop.playing,
+      `Expected unlock recovery to retry blocked boss defeat loop, got ${JSON.stringify({
+        playCalls: blockedBossDefeatLoop.playCalls,
+        playing: blockedBossDefeatLoop.playing
+      })}`
+    );
+    audio.stopEffectLoop("blocked-boss-defeat");
+    mediaUnlocked = true;
+    const tonesBeforeLoopFallback = startedTones.length;
+    audio.startEffectLoop("bossDefeatDeparture", "fallback-boss-defeat", 1);
+    await settlePromises();
+    const fallbackBossDefeatLoop = mediaElements.find(
+      (element) => element.src.includes("boss_defeat_departure") && element !== bossDefeatLoop && element !== blockedBossDefeatLoop
+    );
+    fallbackBossDefeatLoop.dispatchEvent("error");
+    await settlePromises();
+    assert(!fallbackBossDefeatLoop.playing, "Expected failed boss defeat loop sample to stop its media element");
+    assert(
+      document.documentElement.dataset.echoShiftAudioEffects?.includes("loop-fallback:fallback-boss-defeat:bossDefeatDeparture"),
+      `Expected loop-fallback diagnostic for failed boss defeat loop sample, got ${document.documentElement.dataset.echoShiftAudioEffects}`
+    );
+    assert(startedTones.length > tonesBeforeLoopFallback, "Expected failed boss defeat loop sample to pulse a synth fallback");
+    audio.stopEffectLoop("fallback-boss-defeat");
 
     const tonesBeforeRejectedSample = startedTones.length;
     forceRejectedMedia.add("player_jump");
@@ -771,12 +812,28 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     await settlePromises();
     assert(menu.playCalls > menuCallsBeforeVisibleRecovery && menu.playing, "Expected visible recovery to retry and start blocked menu music");
 
+    mediaUnlocked = true;
+    audio.startEffectLoop("bossDefeatDeparture", "dispose-boss-defeat", 1);
+    await settlePromises();
+    const disposeBossDefeatLoop = mediaElements.find((element) => element.src.includes("boss_defeat_departure") && element.loop && element.playing);
+    assert(disposeBossDefeatLoop, "Expected boss defeat loop to be active before audio disposal");
     const tonesBeforeDisposedSampleReject = startedTones.length;
     deferBlockedRejects = true;
     mediaUnlocked = false;
     audio.play("jump");
     await settlePromises();
     audio.dispose();
+    assert(
+      !disposeBossDefeatLoop.playing && disposeBossDefeatLoop.src === "",
+      `Expected audio.dispose to stop and unload active boss defeat loop, got ${JSON.stringify({
+        playing: disposeBossDefeatLoop.playing,
+        src: disposeBossDefeatLoop.src
+      })}`
+    );
+    assert(
+      document.documentElement.dataset.echoShiftAudioEffects === undefined,
+      `Expected audio.dispose to clear effect diagnostics, got ${document.documentElement.dataset.echoShiftAudioEffects}`
+    );
     rejectBlockedPlays();
     await settlePromises();
     assert(
@@ -3064,6 +3121,56 @@ try {
     !cryoPostCue.bossSoundCues.some((cue) => cue.cue === "cryo-floor-ice-form"),
     `Expected cryo floor ice SFX not to repeat on the next frame, got ${JSON.stringify(cryoPostCue.bossSoundCues)}`
   );
+  const cryoDefeatPauseLevel = {
+    ...bossLevel,
+    bosses: [{ ...bossLevel.bosses[0], kind: "cryo-conservator", introSeconds: 1, health: 1 }]
+  };
+  const cryoDefeatPauseSim = new RoomSimulation(cryoDefeatPauseLevel);
+  Object.assign(cryoDefeatPauseSim.player, { x: bossLevel.start.x, y: 86, vx: 0, vy: 0, onGround: true });
+  cryoDefeatPauseSim.step(idle);
+  runFrames(cryoDefeatPauseSim, 60, idle);
+  const cryoDefeatVulnerable = runBossUntilVulnerable(cryoDefeatPauseSim, "boss-test");
+  const cryoDefeatHit = upwardHitBoss(cryoDefeatPauseSim, cryoDefeatVulnerable);
+  assert(cryoDefeatHit.bossDefeated?.id === "boss-test", "Expected one-health cryo boss to be defeated by a vulnerable hit");
+  const cryoDeparting = cryoDefeatPauseSim.bossSnapshots()[0];
+  assert(
+    cryoDeparting.departurePauseFrames === BOSS_DEFEAT_PAUSE_FRAMES && cryoDeparting.departureFrames === 0,
+    `Expected cryo boss defeat to start with pause before movement, got ${JSON.stringify({
+      pause: cryoDeparting.departurePauseFrames,
+      frame: cryoDeparting.departureFrames
+    })}`
+  );
+  const cryoDepartureStart = { x: cryoDeparting.body.x, y: cryoDeparting.body.y };
+  let cryoPauseUnlock = null;
+  for (let guard = 0; guard < BOSS_DEFEAT_PAUSE_FRAMES; guard += 1) {
+    const event = cryoDefeatPauseSim.step(idle);
+    if (event.bossPortalUnlocked || event.won) cryoPauseUnlock = event;
+    const snapshot = cryoDefeatPauseSim.bossSnapshots()[0];
+    assert(snapshot.departureFrames === 0, `Expected cryo departure movement to wait for pause, got ${snapshot.departureFrames}`);
+  }
+  const cryoAfterPause = cryoDefeatPauseSim.bossSnapshots()[0];
+  assert(!cryoPauseUnlock, "Expected cryo boss portal unlock to wait until after pause and departure movement");
+  assert(
+    cryoAfterPause.departurePauseFrames === 0 &&
+      Math.abs(cryoAfterPause.body.x - cryoDepartureStart.x) <= 0.01 &&
+      Math.abs(cryoAfterPause.body.y - cryoDepartureStart.y) <= 0.01,
+    `Expected cryo boss to hold position through defeat pause, got start ${JSON.stringify(cryoDepartureStart)} and after ${JSON.stringify(cryoAfterPause.body)}`
+  );
+  let cryoDepartureUnlock = null;
+  let cryoDepartureMoved = null;
+  for (let guard = 0; guard < cryoDeparting.departureTotalFrames + 20; guard += 1) {
+    const event = cryoDefeatPauseSim.step(idle);
+    const snapshot = cryoDefeatPauseSim.bossSnapshots()[0];
+    if (!cryoDepartureMoved && snapshot?.phase === "departing" && snapshot.departureFrames >= Math.floor(cryoDeparting.departureTotalFrames / 2)) {
+      cryoDepartureMoved = snapshot;
+    }
+    if (event.bossPortalUnlocked) {
+      cryoDepartureUnlock = event;
+      break;
+    }
+  }
+  assert(cryoDepartureMoved?.body.x > cryoDepartureStart.x + 20, `Expected cryo boss to move after defeat pause, got ${JSON.stringify(cryoDepartureMoved?.body)}`);
+  assert(cryoDepartureUnlock?.bossPortalUnlocked, "Expected cryo boss departure to unlock the portal after movement finishes");
 
   const cryoBeamDeathSim = new RoomSimulation(cryoLevel);
   Object.assign(cryoBeamDeathSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });

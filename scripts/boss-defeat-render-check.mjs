@@ -52,6 +52,19 @@ const readDepartureEffect = async (page) =>
       : { raw, frame: 0, total: 0, pause: 0, pauseTotal: 0, bursts: 0, x: 0 };
   });
 
+const readBossDefeatLoopVolumes = async (page) =>
+  page.evaluate(() => {
+    const raw = document.documentElement.dataset.echoShiftAudioEffects || "";
+    const volumes = [];
+    const pattern = /loop-volume:boss-defeat:render-boss:([0-9.]+)/g;
+    let match = pattern.exec(raw);
+    while (match) {
+      volumes.push(Number(match[1]));
+      match = pattern.exec(raw);
+    }
+    return { raw, volumes };
+  });
+
 const readCameraWorldView = async (page) =>
   page.evaluate(() => {
     const raw = document.documentElement.dataset.echoShiftCameraWorldView || "";
@@ -682,10 +695,8 @@ try {
   const mid = await readDepartureEffect(page);
   const spriteWidth = await readBossSpriteWidth(page);
   assert(mid.x > early.x + 60, `Expected departing boss to move right, got early ${JSON.stringify(early)} and mid ${JSON.stringify(mid)}`);
-  assert(
-    (await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects || "")).includes("loop-volume:boss-defeat:render-boss"),
-    "Expected boss defeat loop volume diagnostics while the boss flies away"
-  );
+  const midLoopVolumes = await readBossDefeatLoopVolumes(page);
+  assert(midLoopVolumes.volumes.some((volume) => volume < 0.95), `Expected boss defeat loop volume to fade below full volume during fly-away, got ${JSON.stringify(midLoopVolumes)}`);
 
   await page.waitForFunction(
     () => {
