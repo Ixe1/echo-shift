@@ -1056,6 +1056,7 @@ export class GameScene extends Phaser.Scene {
       this.hud.toast("Rewind locked during boss fights");
       return;
     }
+    this.pendingBossDefeatCompletion = false;
     const added = this.simulation.rewindToEcho();
     audio.play("rewind");
     this.playerCastUntil = this.time.now + 360;

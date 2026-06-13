@@ -365,9 +365,12 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       if (deferNextMediaPlayFor && this.src.includes(deferNextMediaPlayFor)) {
         deferNextMediaPlayFor = null;
         return new Promise((resolve) =>
-          pendingMediaPlayResolves.push(() => {
-            this.playing = true;
-            resolve();
+          pendingMediaPlayResolves.push({
+            src: this.src,
+            resolve: () => {
+              this.playing = true;
+              resolve();
+            }
           })
         );
       }
@@ -422,7 +425,15 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     for (const reject of pendingBlockedRejects.splice(0)) reject(new Error("blocked by autoplay policy"));
   };
   const resolvePendingMediaPlays = () => {
-    for (const resolve of pendingMediaPlayResolves.splice(0)) resolve();
+    for (const pending of pendingMediaPlayResolves.splice(0)) pending.resolve();
+  };
+  const resolvePendingMediaPlaysMatching = (fragment) => {
+    for (let index = pendingMediaPlayResolves.length - 1; index >= 0; index -= 1) {
+      const pending = pendingMediaPlayResolves[index];
+      if (!pending.src.includes(fragment)) continue;
+      pendingMediaPlayResolves.splice(index, 1);
+      pending.resolve();
+    }
   };
   const makeFetchResponse = () => ({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) });
   const resolvePendingFetches = () => {
@@ -488,6 +499,21 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     audio.resumeMusic();
     await settlePromises();
     assert(menu.playing && audio.isMusicPlaying("menu"), "Expected resumeMusic to restart menu playback diagnostics");
+    deferNextMediaPlayFor = "Main Menu";
+    const menuRestartPlayCalls = menu.playCalls;
+    audio.playMusic("menu", { restart: true });
+    assert(!menu.playing, "Expected same-key menu restart to pause while replay is pending");
+    assert(!audio.isMusicPlaying("menu"), "Expected same-key restart not to report music playing before replay resolves");
+    assert(
+      !document.documentElement.dataset.echoShiftMusicPlayback,
+      `Expected same-key restart to clear music playback diagnostic until replay resolves, got ${document.documentElement.dataset.echoShiftMusicPlayback}`
+    );
+    resolvePendingMediaPlaysMatching("Main Menu");
+    await settlePromises();
+    assert(
+      menu.playCalls === menuRestartPlayCalls + 1 && menu.playing && audio.isMusicPlaying("menu"),
+      "Expected same-key restart to report playing only after replay resolves"
+    );
 
     deferBlockedRejects = true;
     mediaUnlocked = false;
@@ -924,10 +950,30 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     visibilityState = "visible";
     dispatchEvent("visibilitychange");
     await settlePromises();
-    assert(menu.playCalls > menuCallsBeforeVisibleRecovery && menu.playing, "Expected visible recovery to retry and start blocked menu music");
+	    assert(menu.playCalls > menuCallsBeforeVisibleRecovery && menu.playing, "Expected visible recovery to retry and start blocked menu music");
 
-    mediaUnlocked = true;
-    audio.startEffectLoop("bossDefeatDeparture", "dispose-boss-defeat", 1);
+	    mediaUnlocked = true;
+	    const lateDisposeAudio = new SynthAudio();
+	    const mediaElementsBeforeLateDispose = mediaElements.length;
+	    deferNextMediaPlayFor = "boss_defeat_departure";
+	    lateDisposeAudio.startEffectLoop("bossDefeatDeparture", "late-dispose-boss-defeat", 1);
+	    await settlePromises();
+	    const lateDisposeBossDefeatLoop = mediaElements
+	      .slice(mediaElementsBeforeLateDispose)
+	      .find((element) => element.src.includes("boss_defeat_departure") && element.loop && !element.playing);
+	    assert(lateDisposeBossDefeatLoop?.playCalls === 1, "Expected boss defeat loop play to be pending before dispose");
+	    lateDisposeBossDefeatLoop.currentTime = 0.48;
+	    lateDisposeAudio.dispose();
+	    resolvePendingMediaPlaysMatching("boss_defeat_departure");
+	    await settlePromises();
+	    assert(!lateDisposeBossDefeatLoop.playing, "Expected late-resolving disposed boss defeat loop play to be paused again");
+	    assert(lateDisposeBossDefeatLoop.currentTime === 0, "Expected late-resolving disposed boss defeat loop to rewind");
+	    assert(
+	      !document.documentElement.dataset.echoShiftAudioEffects?.includes("loop-start:late-dispose-boss-defeat:bossDefeatDeparture"),
+	      `Expected late-resolving disposed loop not to mark loop-start, got ${document.documentElement.dataset.echoShiftAudioEffects}`
+	    );
+
+	    audio.startEffectLoop("bossDefeatDeparture", "dispose-boss-defeat", 1);
     await settlePromises();
     const disposeBossDefeatLoop = mediaElements.find((element) => element.src.includes("boss_defeat_departure") && element.loop && element.playing);
     assert(disposeBossDefeatLoop, "Expected boss defeat loop to be active before audio disposal");

@@ -390,7 +390,7 @@ export class SynthAudio {
         .catch(() => this.markAudioState("blocked"));
     }
     this.markMusicKey(key);
-    if (this.musicPlaybackKey !== key) this.clearMusicPlayback();
+    if (this.musicPlaybackKey !== key || options.restart) this.clearMusicPlayback();
     const loop = musicLoopRegionFor(key);
     if (loop && this.canUseWebMusic()) {
       if (!this.webMusicReadyKeys.has(key) && this.mediaMusicReadyKeys.has(key)) {
