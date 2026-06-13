@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { existsSync, readFileSync, statSync } from "fs";
 import { createServer } from "vite";
 
 const assert = (condition, message) => {
@@ -233,6 +233,14 @@ const verifyCampaignVitalsLevelSelectContract = () => {
     levelSelectSource.includes("if (!this.preserveCampaignVitals) resetCampaignVitals()"),
     "Expected Level Select to reset campaign vitals when preservation is not requested"
   );
+};
+
+const verifyExtraLifeSfxContract = () => {
+  const assetPath = "public/assets/audio/effects/core_extra_life.mp3";
+  const gameSceneSource = readFileSync("src/scenes/GameScene.ts", "utf8");
+  const body = gameSceneMethodBody(gameSceneSource, "processCoreLifeAwards");
+  assert(existsSync(assetPath) && statSync(assetPath).size > 0, "Expected core extra-life SFX asset to exist");
+  assert(body.includes('audio.play("extraLife")'), "Expected bonus-life award path to play the extra-life SFX");
 };
 
 const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
@@ -643,6 +651,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       ["rewind", "rewind"],
       ["switch", "switch"],
       ["portal", "portal"],
+      ["extraLife", "core_extra_life"],
       ["stormFloorBeam", "storm_floor_beam"],
       ["cryoBeamFire", "cryo_beam_fire"],
       ["cryoFloorIceForm", "cryo_floor_ice_form"],
@@ -1760,6 +1769,7 @@ try {
   );
   verifyGameSceneAudioCleanupHooks();
   verifyCampaignVitalsLevelSelectContract();
+  verifyExtraLifeSfxContract();
   await verifyAudioUnlockRetry(SynthAudio, soundtracks);
 
   const previousWindow = globalThis.window;

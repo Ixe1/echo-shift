@@ -936,6 +936,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (lives !== null) this.simulation.setLivesRemaining(lives);
     if (awarded > 0 && lives !== null) {
+      audio.play("extraLife");
       this.hud.toast(awarded === 1 ? `Bonus life earned. ${lives} lives left.` : `${awarded} bonus lives earned. ${lives} lives left.`);
     }
   }

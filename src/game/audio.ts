@@ -8,6 +8,7 @@ type ToneName =
   | "switch"
   | "core"
   | "bigCore"
+  | "extraLife"
   | "launch"
   | "death"
   | "playerLaserVaporized"
@@ -74,6 +75,7 @@ const sampledEffects = {
   jump: { src: effectPath("player_jump.mp3"), volume: 0.48 },
   core: { src: effectPath("core_pickup.mp3"), volume: 0.5 },
   bigCore: { src: effectPath("big_core_pickup.mp3"), volume: 0.56 },
+  extraLife: { src: effectPath("core_extra_life.mp3"), volume: 0.5 },
   launch: { src: effectPath("spring_launch_pad.mp3"), volume: 0.58 },
   death: { src: effectPath("player_death.mp3"), volume: 0.58 },
   playerLaserVaporized: { src: effectPath("player_laser_vaporised.mp3"), volume: 0.58 },
@@ -358,7 +360,7 @@ export class SynthAudio {
     osc.start(now);
     osc.stop(now + settings.duration + 0.02);
 
-    if (name === "rewind" || name === "core" || name === "portal") {
+    if (name === "rewind" || name === "core" || name === "extraLife" || name === "portal") {
       const shimmer = context.createOscillator();
       const shimmerGain = context.createGain();
       shimmer.type = "sine";
@@ -1581,6 +1583,8 @@ export class SynthAudio {
         return { start: 520, end: 1100, duration: 0.2, volume: 0.22, filter: 3200, type: "triangle" as OscillatorType };
       case "bigCore":
         return { start: 420, end: 1250, duration: 0.26, volume: 0.25, filter: 3400, type: "triangle" as OscillatorType };
+      case "extraLife":
+        return { start: 660, end: 1320, duration: 0.34, volume: 0.24, filter: 3600, type: "triangle" as OscillatorType };
       case "launch":
         return { start: 190, end: 720, duration: 0.16, volume: 0.26, filter: 2600, type: "square" as OscillatorType };
       case "death":
