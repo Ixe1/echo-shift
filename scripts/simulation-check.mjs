@@ -494,6 +494,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       ["stormFloorBeam", "storm_floor_beam"],
       ["cryoBeamFire", "cryo_beam_fire"],
       ["cryoFloorIceForm", "cryo_floor_ice_form"],
+      ["archiveBookImpact", "archive_book_impact"],
       ["bossCoreHit", "boss_core_hit"]
     ];
     for (const [name, fragment] of sampledCueChecks) {
@@ -2834,6 +2835,21 @@ try {
 	  const archiveBookDeath = archiveBookImpactSim.step(idle);
 	  assert(archiveBookDeath.died && archiveBookImpactSim.dead, "Expected active archive book impact to kill the player");
 
+  const archiveBookImpactSoundSim = new RoomSimulation(archiveLevel);
+  Object.assign(archiveBookImpactSoundSim.player, { x: 36, y: 18, vx: 0, vy: 0, onGround: false });
+  archiveBookImpactSoundSim.step(idle);
+  runFrames(archiveBookImpactSoundSim, 60, idle);
+  const archiveBookImpactCue = runBossUntilSoundCue(archiveBookImpactSoundSim, "boss-test", "archive-book-impact", 420);
+  assert(
+    archiveBookImpactCue.soundCue.y > archiveBookImpactCue.snapshot.body.y + archiveBookImpactCue.snapshot.body.h,
+    `Expected archive book impact SFX to be located below the boss body, got cue ${JSON.stringify(archiveBookImpactCue.soundCue)} and body ${JSON.stringify(archiveBookImpactCue.snapshot.body)}`
+  );
+  const archiveBookImpactCueFollowup = archiveBookImpactSoundSim.step(idle);
+  assert(
+    !archiveBookImpactCueFollowup.bossSoundCues.some((cue) => cue.cue === "archive-book-impact"),
+    `Expected archive book impact SFX not to repeat on the next frame, got ${JSON.stringify(archiveBookImpactCueFollowup.bossSoundCues)}`
+  );
+
   const runArchiveUntilFinalImpact = (simulation, bossId) =>
     runArchiveUntil(
       simulation,
@@ -3503,6 +3519,41 @@ try {
   assert(overlappingBossStart.bossIntroStarted === "music-boss-b", "Expected simultaneous boss intro event to match the final checkpoint owner");
   assert(overlappingBossStart.bossCheckpointActivated === "music-boss-b", "Expected simultaneous boss checkpoint event to match the final checkpoint owner");
   assert(overlappingBossSim.bossCheckpointBossId() === "music-boss-b", "Expected later overlapping boss to own the active checkpoint");
+  runFrames(overlappingBossSim, 60, idle);
+  const overlappingVulnerable = runBossUntilVulnerable(overlappingBossSim, "music-boss-b");
+  const overlappingDefeat = upwardHitBoss(overlappingBossSim, overlappingVulnerable);
+  const overlappingHitIds = overlappingDefeat.bossHits.map((event) => event.id).sort();
+  const overlappingDefeatIds = overlappingDefeat.bossDefeateds.map((event) => event.id).sort();
+  assert(
+    overlappingHitIds.join(",") === "music-boss-a,music-boss-b",
+    `Expected overlapping boss hit event arrays to include both bosses, got ${overlappingHitIds.join(",")}`
+  );
+  assert(
+    overlappingDefeatIds.join(",") === "music-boss-a,music-boss-b",
+    `Expected overlapping boss defeat event arrays to include both bosses, got ${overlappingDefeatIds.join(",")}`
+  );
+  assert(overlappingDefeat.bossDefeated?.id === "music-boss-b", "Expected scalar boss defeat event to preserve latest processed boss for compatibility");
+  assert(overlappingBossSim.score === 2000, `Expected overlapping boss defeat to score both bosses, got ${overlappingBossSim.score}`);
+  assert(
+    overlappingBossSim.bossStates.get("music-boss-a")?.phase === "departing" &&
+      overlappingBossSim.bossStates.get("music-boss-b")?.phase === "departing",
+    "Expected both overlapping bosses to enter departure after simultaneous defeat"
+  );
+  let overlappingDepartureFinish = null;
+  for (let guard = 0; guard < BOSS_DEFEAT_PAUSE_FRAMES + overlappingVulnerable.departureTotalFrames + 30; guard += 1) {
+    const event = overlappingBossSim.step(idle);
+    if (event.bossDepartureFinishedIds.length > 0) {
+      overlappingDepartureFinish = event;
+      break;
+    }
+  }
+  const overlappingDepartureIds = (overlappingDepartureFinish?.bossDepartureFinishedIds || []).slice().sort();
+  assert(
+    overlappingDepartureIds.join(",") === "music-boss-a,music-boss-b",
+    `Expected overlapping boss departure finish arrays to include both bosses, got ${overlappingDepartureIds.join(",")}`
+  );
+  assert(overlappingDepartureFinish?.bossDepartureFinished === "music-boss-b", "Expected scalar departure finish event to preserve latest processed boss");
+  assert(overlappingDepartureFinish.bossPortalUnlocked, "Expected overlapping boss departure finish to unlock the portal after both bosses finish");
 
   const simultaneousBossSim = new RoomSimulation(multiBossLevel);
   Object.assign(simultaneousBossSim.player, { x: 62, y: 86, vx: 0, vy: 0, onGround: true });

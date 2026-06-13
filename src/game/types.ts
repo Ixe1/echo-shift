@@ -367,7 +367,7 @@ export type BossDefeatEvent = Vec2 & {
   score: number;
 };
 
-export type BossSoundCueType = "storm-floor-beam" | "cryo-beam-fire" | "cryo-floor-ice-form";
+export type BossSoundCueType = "storm-floor-beam" | "cryo-beam-fire" | "cryo-floor-ice-form" | "archive-book-impact";
 
 export type BossSoundCueEvent = Vec2 & {
   id: string;
@@ -391,9 +391,12 @@ export type StepEvents = {
   bossIntroStarted: string | null;
   bossCheckpointActivated: string | null;
   bossHit: BossHitEvent | null;
+  bossHits: BossHitEvent[];
   bossDefeated: BossDefeatEvent | null;
+  bossDefeateds: BossDefeatEvent[];
   bossSoundCues: BossSoundCueEvent[];
   bossDepartureFinished: string | null;
+  bossDepartureFinishedIds: string[];
   bossPortalUnlocked: boolean;
   won: boolean;
 };

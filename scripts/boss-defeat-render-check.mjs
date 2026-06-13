@@ -527,8 +527,14 @@ const verifyArchiveAttackRender = async (page) => {
 	    null,
     { timeout: 10000 }
   );
+  await page.waitForFunction(
+    () => (document.documentElement.dataset.echoShiftAudioEffects || "").includes("play:archiveBookImpact"),
+    null,
+    { timeout: 4000 }
+  );
 
   const raw = await page.evaluate(() => document.documentElement.dataset.echoShiftBossEffectFrames || "");
+  const audioDiagnostic = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects || "");
   const screenshot = `${outDir}/archive-attack-active.png`;
   await page.screenshot({ path: screenshot, fullPage: true });
   await waitForArchiveBooksToClear(page, "archive-attack-boss");
@@ -583,7 +589,7 @@ const verifyArchiveAttackRender = async (page) => {
   });
   const roundTwoScreenshot = `${outDir}/archive-round-two-warning.png`;
   await page.screenshot({ path: roundTwoScreenshot, fullPage: true });
-  return { diagnostic: raw, screenshot, roundTwoWarning, roundTwoScreenshot };
+  return { diagnostic: raw, audioDiagnostic, screenshot, roundTwoWarning, roundTwoScreenshot };
 };
 
 try {

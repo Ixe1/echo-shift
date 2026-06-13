@@ -849,28 +849,36 @@ export class GameScene extends Phaser.Scene {
       audio.play("core");
       this.addFxBurst(kill.x, kill.y, 0xffe35a, `+${kill.score}`);
     }
-    if (events.bossHit) {
-      audio.play("bossCoreHit");
-      this.cameras.main.shake(events.bossDefeated ? 260 : 130, events.bossDefeated ? 0.007 : 0.003);
-      this.addFxBurst(
-        events.bossHit.x,
-        events.bossHit.y,
-        0xffffff,
-        events.bossDefeated ? `+${events.bossDefeated.score}` : `${events.bossHit.health}`
-      );
+    const bossHits = events.bossHits.length > 0 ? events.bossHits : events.bossHit ? [events.bossHit] : [];
+    const bossDefeateds = events.bossDefeateds.length > 0 ? events.bossDefeateds : events.bossDefeated ? [events.bossDefeated] : [];
+    if (bossHits.length > 0) {
+      for (let index = 0; index < bossHits.length; index += 1) audio.play("bossCoreHit");
+      const anyDefeated = bossDefeateds.length > 0;
+      this.cameras.main.shake(anyDefeated ? 260 : 130, anyDefeated ? 0.007 : 0.003);
+      for (const hit of bossHits) {
+        const defeated = bossDefeateds.find((event) => event.id === hit.id);
+        this.addFxBurst(hit.x, hit.y, 0xffffff, defeated ? `+${defeated.score}` : `${hit.health}`);
+      }
     }
-    if (events.bossDefeated) {
-      this.startBossDefeatLoop(events.bossDefeated.id);
+    if (bossDefeateds.length > 0) {
+      for (const defeated of bossDefeateds) this.startBossDefeatLoop(defeated.id);
       if (this.activeBossForMusic()) this.startBossMusic();
       else if (!this.bossFightInProgress()) this.restartLevelMusic();
     }
-    if (events.bossDepartureFinished) this.stopBossDefeatLoop(events.bossDepartureFinished);
+    const bossDepartureFinishedIds =
+      events.bossDepartureFinishedIds.length > 0 ? events.bossDepartureFinishedIds : events.bossDepartureFinished ? [events.bossDepartureFinished] : [];
+    for (const bossId of bossDepartureFinishedIds) this.stopBossDefeatLoop(bossId);
     if (events.bossPortalUnlocked) {
       const exitCenter = rectCenter(this.level.exit);
       this.restartLevelMusic();
       audio.play("portal");
-      this.addFxBurst(exitCenter.x, exitCenter.y, 0x43f7ff, "OPEN");
-    } else if (events.bossDepartureFinished && !this.activeBossForMusic() && !this.bossFightInProgress()) {
+      this.addFxBurst(
+        exitCenter.x,
+        exitCenter.y,
+        0x43f7ff,
+        "OPEN"
+      );
+    } else if (bossDepartureFinishedIds.length > 0 && !this.activeBossForMusic() && !this.bossFightInProgress()) {
       this.restartLevelMusic();
     }
     if (events.died) {
@@ -888,6 +896,7 @@ export class GameScene extends Phaser.Scene {
     if (cue === "storm-floor-beam") audio.play("stormFloorBeam");
     else if (cue === "cryo-beam-fire") audio.play("cryoBeamFire");
     else if (cue === "cryo-floor-ice-form") audio.play("cryoFloorIceForm");
+    else if (cue === "archive-book-impact") audio.play("archiveBookImpact");
   }
 
   private bossDefeatLoopId(bossId: string): string {

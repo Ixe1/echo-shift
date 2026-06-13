@@ -73,6 +73,7 @@ type BossCheckpoint = {
   runtimeSolids: Solid[];
   terrainRevision: number;
   handledArchiveImpactKeys: Set<string>;
+  handledArchiveImpactSoundKeys: Set<string>;
   tick: number;
   totalFrames: number;
   score: number;
@@ -152,6 +153,7 @@ export class RoomSimulation {
   private runtimeSolids: Solid[] = [];
   private terrainRevision = 0;
   private readonly handledArchiveImpactKeys = new Set<string>();
+  private readonly handledArchiveImpactSoundKeys = new Set<string>();
   private readonly currentAttemptCollectedCoreIds = new Set<string>();
   private readonly currentAttemptKilledMonsterIds = new Map<string, number>();
   private readonly currentAttemptDefeatedBossIds = new Map<string, number>();
@@ -278,9 +280,12 @@ export class RoomSimulation {
       bossIntroStarted: null,
       bossCheckpointActivated: null,
       bossHit: null,
+      bossHits: [],
       bossDefeated: null,
+      bossDefeateds: [],
       bossSoundCues: [],
       bossDepartureFinished: null,
+      bossDepartureFinishedIds: [],
       bossPortalUnlocked: false,
       won: false
     };
@@ -471,6 +476,7 @@ export class RoomSimulation {
       runtimeSolids: cloneSolids(this.runtimeSolids),
       terrainRevision: this.terrainRevision,
       handledArchiveImpactKeys: new Set(this.handledArchiveImpactKeys),
+      handledArchiveImpactSoundKeys: new Set(this.handledArchiveImpactSoundKeys),
       tick: this.tick,
       totalFrames: this.totalFrames,
       score: this.score,
@@ -536,12 +542,15 @@ export class RoomSimulation {
     this.terrainRevision = checkpoint.terrainRevision;
     this.handledArchiveImpactKeys.clear();
     for (const key of checkpoint.handledArchiveImpactKeys) this.handledArchiveImpactKeys.add(key);
+    this.handledArchiveImpactSoundKeys.clear();
+    for (const key of checkpoint.handledArchiveImpactSoundKeys) this.handledArchiveImpactSoundKeys.add(key);
   }
 
   private resetRuntimeTerrain(): void {
     this.runtimeSolids = cloneSolids(this.level.solids);
     this.terrainRevision += 1;
     this.handledArchiveImpactKeys.clear();
+    this.handledArchiveImpactSoundKeys.clear();
   }
 
   private archiveImpactKey(boss: Boss, state: BossRuntimeState, attack: BossAttackSnapshot): string {
@@ -549,12 +558,22 @@ export class RoomSimulation {
     return `${boss.id}:${state.attackSequence}:${cycleIndex}:${attack.round || 1}:${Math.round(attack.originX)}`;
   }
 
-  private applyArchiveBookErosion(boss: Boss, state: BossRuntimeState, attacks: BossAttackSnapshot[]): void {
+  private applyArchiveBookErosion(boss: Boss, state: BossRuntimeState, attacks: BossAttackSnapshot[], events: StepEvents): void {
     if (boss.kind !== "archive-custodian") return;
     for (const attack of attacks) {
       if (attack.attackType !== "archive-book" || attack.attackPhase !== "impact") continue;
-      if ((attack.progress || 0) < 0.999) continue;
       const key = this.archiveImpactKey(boss, state, attack);
+      if (!this.handledArchiveImpactSoundKeys.has(key)) {
+        this.handledArchiveImpactSoundKeys.add(key);
+        events.bossSoundCues.push({
+          id: boss.id,
+          kind: boss.kind,
+          cue: "archive-book-impact",
+          x: attack.originX,
+          y: attack.y + attack.h
+        });
+      }
+      if ((attack.progress || 0) < 0.999) continue;
       if (this.handledArchiveImpactKeys.has(key)) continue;
       this.handledArchiveImpactKeys.add(key);
       this.erodeSolidAtArchiveImpact(attack, key);
@@ -661,6 +680,7 @@ export class RoomSimulation {
           state.phase = "defeated";
           state.departureFrames = state.departureFrames || 0;
           events.bossDepartureFinished = boss.id;
+          events.bossDepartureFinishedIds.push(boss.id);
           if (this.exitUnlocked()) {
             if (this.finalBossDefeatCompletesLevel()) {
               this.won = true;
@@ -730,7 +750,7 @@ export class RoomSimulation {
       }
 
       const attacks = bossAttackRectsAt(boss, state, this.tick, this.runtimeSolids);
-      this.applyArchiveBookErosion(boss, state, attacks);
+      this.applyArchiveBookErosion(boss, state, attacks, events);
       const floorShocks = bossFloorShockRectsAt(boss, state, this.tick, this.runtimeSolids);
       if (
         (bossBodyDamages(state) && rectsOverlap(this.player, body)) ||
@@ -749,12 +769,14 @@ export class RoomSimulation {
     this.player.vy = BOSS_HIT_BOUNCE_SPEED;
     this.player.onGround = false;
     this.player.coyote = 0;
-    events.bossHit = {
+    const hitEvent = {
       id: boss.id,
       health: state.health,
       x: body.x + body.w / 2,
       y: body.y + body.h / 2
     };
+    events.bossHit = hitEvent;
+    events.bossHits.push(hitEvent);
     if (state.health > 0) {
       recoverBossAfterHit(boss, state);
       return;
@@ -765,12 +787,14 @@ export class RoomSimulation {
     this.currentAttemptDefeatedBossIds.set(boss.id, score);
     this.score += score;
     this.refreshDoorStateForDefeatedBosses(events);
-    events.bossDefeated = {
+    const defeatEvent = {
       id: boss.id,
       score,
       x: body.x + body.w / 2,
       y: body.y + body.h / 2
     };
+    events.bossDefeated = defeatEvent;
+    events.bossDefeateds.push(defeatEvent);
     this.refreshBossCheckpointAfterDefeat(boss.id);
   }
 
@@ -806,6 +830,7 @@ export class RoomSimulation {
         runtimeSolids: cloneSolids(this.runtimeSolids),
         terrainRevision: this.terrainRevision,
         handledArchiveImpactKeys: new Set(this.handledArchiveImpactKeys),
+        handledArchiveImpactSoundKeys: new Set(this.handledArchiveImpactSoundKeys),
         score: this.score
       };
     }

@@ -17,6 +17,7 @@ type ToneName =
   | "stormFloorBeam"
   | "cryoBeamFire"
   | "cryoFloorIceForm"
+  | "archiveBookImpact"
   | "bossCoreHit"
   | "bossDefeatDeparture";
 
@@ -81,6 +82,7 @@ const sampledEffects = {
   stormFloorBeam: { src: effectPath("storm_floor_beam.mp3"), volume: 0.26 },
   cryoBeamFire: { src: effectPath("cryo_beam_fire.mp3"), volume: 0.26 },
   cryoFloorIceForm: { src: effectPath("cryo_floor_ice_form.mp3"), volume: 0.32 },
+  archiveBookImpact: { src: effectPath("archive_book_impact.mp3"), volume: 0.34 },
   bossCoreHit: { src: effectPath("boss_core_hit.mp3"), volume: 0.34 },
   bossDefeatDeparture: { src: effectPath("boss_defeat_departure.mp3"), volume: 0.24 }
 } as const satisfies Partial<Record<ToneName, { src: string; volume: number }>>;
@@ -1307,6 +1309,8 @@ export class SynthAudio {
         return { start: 740, end: 540, duration: 0.32, volume: 0.17, filter: 3000, type: "triangle" as OscillatorType };
       case "cryoFloorIceForm":
         return { start: 840, end: 220, duration: 0.22, volume: 0.16, filter: 2400, type: "sine" as OscillatorType };
+      case "archiveBookImpact":
+        return { start: 120, end: 70, duration: 0.22, volume: 0.2, filter: 1000, type: "triangle" as OscillatorType };
       case "bossCoreHit":
         return { start: 180, end: 820, duration: 0.2, volume: 0.24, filter: 2800, type: "square" as OscillatorType };
       case "bossDefeatDeparture":
