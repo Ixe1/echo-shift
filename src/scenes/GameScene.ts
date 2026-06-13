@@ -1278,7 +1278,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.stopBossDefeatLoops();
     this.rememberDraftLevel();
-    this.scene.start("LevelSelectScene", { preserveCampaignVitals: true });
+    this.scene.start("LevelSelectScene", { preserveCampaignVitals: !this.retryRequired });
   }
 
   private openEditor(): void {

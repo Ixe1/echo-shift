@@ -221,6 +221,20 @@ const verifyGameSceneAudioCleanupHooks = () => {
   }
 };
 
+const verifyCampaignVitalsLevelSelectContract = () => {
+  const gameSceneSource = readFileSync("src/scenes/GameScene.ts", "utf8");
+  const levelSelectSource = readFileSync("src/scenes/LevelSelectScene.ts", "utf8");
+  const openLevelSelectBody = gameSceneMethodBody(gameSceneSource, "openLevelSelect");
+  assert(
+    openLevelSelectBody.includes("preserveCampaignVitals: !this.retryRequired"),
+    "Expected in-run Level Select to preserve campaign vitals only before retry-required game over"
+  );
+  assert(
+    levelSelectSource.includes("if (!this.preserveCampaignVitals) resetCampaignVitals()"),
+    "Expected Level Select to reset campaign vitals when preservation is not requested"
+  );
+};
+
 const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
@@ -1745,6 +1759,7 @@ try {
     "Expected wood-archive decor props to include Timber wall decals"
   );
   verifyGameSceneAudioCleanupHooks();
+  verifyCampaignVitalsLevelSelectContract();
   await verifyAudioUnlockRetry(SynthAudio, soundtracks);
 
   const previousWindow = globalThis.window;
