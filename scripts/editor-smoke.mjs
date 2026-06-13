@@ -403,6 +403,12 @@ try {
   const gameOverRewindHidden = await gameOverPage.locator("[data-rewind]").isHidden();
   const gameOverMenuHidden = await gameOverPage.locator("[data-menu]").isHidden();
   const gameOverTouchControlsHidden = await gameOverPage.locator(".touch-controls").isHidden();
+  await gameOverPage.keyboard.press("r");
+  await gameOverPage.keyboard.press("t");
+  await gameOverPage.waitForTimeout(500);
+  const gameOverTitleAfterKeys = await gameOverPage.locator("[data-modal].show h1").textContent();
+  const gameOverLivesAfterKeys = await gameOverPage.locator("[data-lives]").textContent();
+  const gameOverDeathPhaseAfterKeys = await gameOverPage.evaluate(() => document.documentElement.dataset.echoShiftDeathPresentation || "");
   await gameOverPage.screenshot({ path: `${outDir}/editor-game-over.png`, fullPage: true });
   await gameOverPage.locator("[data-modal] [data-levels]").click();
   await gameOverPage.locator("[data-level='0']").click();
@@ -1580,6 +1586,9 @@ try {
   assert(gameOverRewindHidden, "Expected Game Over HUD rewind button to be hidden");
   assert(gameOverMenuHidden, "Expected Game Over HUD pause button to be hidden");
   assert(gameOverTouchControlsHidden, "Expected Game Over touch controls to be hidden");
+  assert(gameOverTitleAfterKeys === "Game Over", `Expected R/T on Game Over to leave terminal modal open, got ${gameOverTitleAfterKeys}`);
+  assert(gameOverLivesAfterKeys === "0", `Expected R/T on Game Over to leave lives at 0, got ${gameOverLivesAfterKeys}`);
+  assert(gameOverDeathPhaseAfterKeys === "game-over", `Expected R/T on Game Over to preserve game-over diagnostic, got ${gameOverDeathPhaseAfterKeys}`);
   assert(gameOverLevelSelectRestartLives === "3", `Expected Level Select after Game Over to restart with 3 lives, got ${gameOverLevelSelectRestartLives}`);
   assert(mobileGameOverTitle === "Game Over", `Expected mobile Game Over title, got ${mobileGameOverTitle}`);
   assert(mobileGameOverReplayCount === 0, `Expected mobile Game Over modal to omit replay/restart, got ${mobileGameOverReplayCount} replay buttons`);
