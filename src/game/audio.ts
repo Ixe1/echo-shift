@@ -49,6 +49,8 @@ type LoopedEffectPlayback = {
   lastMarkedVolumeScale: number;
   fallbackTimer: ReturnType<typeof setTimeout> | null;
   fallbackToken: number;
+  fallbackSources: Set<AudioScheduledSourceNode>;
+  fallbackNodes: Set<AudioNode>;
 };
 export type AudioMixSettings = {
   masterVolume: number;
@@ -241,7 +243,9 @@ export class SynthAudio {
       playAttempt: 0,
       lastMarkedVolumeScale: -1,
       fallbackTimer: null,
-      fallbackToken: 0
+      fallbackToken: 0,
+      fallbackSources: new Set(),
+      fallbackNodes: new Set()
     };
     this.loopedEffects.set(id, playback);
     this.applyLoopedEffectVolume(playback);
@@ -895,7 +899,7 @@ export class SynthAudio {
         playback.fallbackTimer = null;
         return;
       }
-      if (playback.volumeScale > 0.01) this.playToneWhenReady(playback.name, playback.volumeScale);
+      if (playback.volumeScale > 0.01) this.playLoopedEffectFallbackToneWhenReady(playback);
       playback.fallbackTimer = setTimeout(pulse, 480);
     };
     playback.started = true;
@@ -909,6 +913,94 @@ export class SynthAudio {
       clearTimeout(playback.fallbackTimer);
       playback.fallbackTimer = null;
     }
+    this.stopLoopedEffectFallbackTones(playback);
+  }
+
+  private playLoopedEffectFallbackToneWhenReady(playback: LoopedEffectPlayback): void {
+    const context = this.ensureContext();
+    if (!context || !this.master) return;
+    if (context.state === "running") {
+      this.playLoopedEffectFallbackTone(playback);
+      return;
+    }
+    const token = playback.fallbackToken;
+    void context
+      .resume()
+      .then(() => {
+        this.markContextState(context.state);
+        if (
+          this.context === context &&
+          context.state === "running" &&
+          this.loopedEffects.get(playback.id) === playback &&
+          !playback.paused &&
+          playback.sampleFailed &&
+          playback.fallbackToken === token
+        ) {
+          this.playLoopedEffectFallbackTone(playback);
+        }
+      })
+      .catch(() => this.markAudioState("blocked"));
+  }
+
+  private playLoopedEffectFallbackTone(playback: LoopedEffectPlayback): void {
+    if (!this.context || !this.master || this.context.state !== "running") return;
+    const context = this.context;
+    const now = context.currentTime;
+    const gain = context.createGain();
+    const osc = context.createOscillator();
+    const filter = context.createBiquadFilter();
+    const settings = this.settings(playback.name);
+    const nodes = [osc, filter, gain];
+    const release = () => {
+      playback.fallbackSources.delete(osc);
+      for (const node of nodes) {
+        playback.fallbackNodes.delete(node);
+        try {
+          node.disconnect();
+        } catch {
+          // A node may already be disconnected during loop teardown.
+        }
+      }
+    };
+
+    osc.type = settings.type;
+    osc.frequency.setValueAtTime(settings.start, now);
+    osc.frequency.exponentialRampToValueAtTime(settings.end, now + settings.duration);
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(settings.filter, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    const outputVolume = settings.volume * clampVolume(playback.volumeScale, 1);
+    gain.gain.exponentialRampToValueAtTime(outputVolume, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + settings.duration);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.master);
+    playback.fallbackSources.add(osc);
+    for (const node of nodes) playback.fallbackNodes.add(node);
+    osc.onended = release;
+    osc.start(now);
+    osc.stop(now + settings.duration + 0.02);
+  }
+
+  private stopLoopedEffectFallbackTones(playback: LoopedEffectPlayback): void {
+    for (const source of [...playback.fallbackSources]) {
+      source.onended = null;
+      try {
+        source.stop(0);
+      } catch {
+        // The source can already be stopped if the scheduled pulse naturally ended.
+      }
+    }
+    playback.fallbackSources.clear();
+    for (const node of [...playback.fallbackNodes]) {
+      try {
+        node.disconnect();
+      } catch {
+        // The node may already be disconnected by its ended handler.
+      }
+    }
+    playback.fallbackNodes.clear();
   }
 
   private playToneWhenReady(name: ToneName, volumeScale = 1): void {

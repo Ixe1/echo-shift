@@ -274,6 +274,8 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     createOscillator() {
       const oscillator = {
         type: "sine",
+        stopped: false,
+        onended: null,
         frequency: fakeParam(),
         connect() {},
         disconnect() {
@@ -282,7 +284,10 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
         start() {
           startedTones.push(oscillator);
         },
-        stop() {}
+        stop() {
+          oscillator.stopped = true;
+          oscillator.onended?.();
+        }
       };
       return oscillator;
     }
@@ -564,20 +569,24 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       `Expected loop-fallback diagnostic for failed boss defeat loop sample, got ${document.documentElement.dataset.echoShiftAudioEffects}`
     );
     assert(startedTones.length > tonesBeforeLoopFallback, "Expected failed boss defeat loop sample to pulse a synth fallback");
+    const fullScaleFallbackTone = startedTones.at(-1);
     const fullScaleFallbackGain = Math.max(...gainRampValues.slice(-8));
     audio.setEffectLoopVolume("fallback-boss-defeat", 0.25);
     const tonesBeforeScaledFallback = startedTones.length;
     const gainValuesBeforeScaledFallback = gainRampValues.length;
     audio.pauseEffectLoops();
+    assert(fullScaleFallbackTone?.stopped, "Expected pauseEffectLoops to stop the active fallback boss defeat synth pulse");
     audio.resumeEffectLoops();
     await settlePromises();
     assert(startedTones.length > tonesBeforeScaledFallback, "Expected resumed fallback boss loop to pulse another synth tone");
+    const reducedScaleFallbackTone = startedTones.at(-1);
     const reducedScaleFallbackGain = Math.max(...gainRampValues.slice(gainValuesBeforeScaledFallback));
     assert(
       reducedScaleFallbackGain > 0 && reducedScaleFallbackGain < fullScaleFallbackGain * 0.5,
       `Expected fallback synth pulse to scale down with loop volume, got full ${fullScaleFallbackGain} and reduced ${reducedScaleFallbackGain}`
     );
     audio.stopEffectLoop("fallback-boss-defeat");
+    assert(reducedScaleFallbackTone?.stopped, "Expected stopEffectLoop to stop the active fallback boss defeat synth pulse");
 
     const tonesBeforeRejectedSample = startedTones.length;
     forceRejectedMedia.add("player_jump");
@@ -3122,17 +3131,31 @@ try {
 	      archivePhaseTwoSecondWarning.attackWarnings.every((warning) => warning.round === 2 && warning.attackPhase === "warning"),
 	    `Expected half-health archive to warn a second falling book round before vulnerability, got ${JSON.stringify(archivePhaseTwoSecondWarning.attackWarnings)}`
 	  );
-	  const archivePhaseTwoSecondAttack = runArchiveUntil(
-	    archiveRecoverySim,
-	    "boss-test",
-	    (snapshot) => snapshot.attacks.some((attack) => attack.kind === "falling" && attack.round === 2)
-	  );
+		  const archivePhaseTwoSecondAttack = runArchiveUntil(
+		    archiveRecoverySim,
+		    "boss-test",
+		    (snapshot) => snapshot.attacks.some((attack) => attack.kind === "falling" && attack.round === 2)
+		  );
+		  assert(
+		    archivePhaseTwoSecondAttack.attacks.length >= 2 &&
+		      archivePhaseTwoSecondAttack.attacks.every((attack) => attack.round === 2 && attack.attackType === "archive-book"),
+		    `Expected half-health archive second attack to fire a second falling book round, got ${JSON.stringify(archivePhaseTwoSecondAttack.attacks)}`
+		  );
+	  const archivePhaseTwoSecondImpactCue = runBossUntilSoundCue(archiveRecoverySim, "boss-test", "archive-book-impact", 420);
+	  const archivePhaseTwoSecondImpactCueCount = archivePhaseTwoSecondImpactCue.event.bossSoundCues.filter((cue) => cue.cue === "archive-book-impact").length;
+	  const archivePhaseTwoSecondImpactCount = archivePhaseTwoSecondImpactCue.snapshot.attacks.filter(
+	    (attack) => attack.round === 2 && attack.attackPhase === "impact"
+	  ).length;
 	  assert(
-	    archivePhaseTwoSecondAttack.attacks.length >= 2 &&
-	      archivePhaseTwoSecondAttack.attacks.every((attack) => attack.round === 2 && attack.attackType === "archive-book"),
-	    `Expected half-health archive second attack to fire a second falling book round, got ${JSON.stringify(archivePhaseTwoSecondAttack.attacks)}`
+	    archivePhaseTwoSecondImpactCueCount === 1 && archivePhaseTwoSecondImpactCount >= 2,
+	    `Expected one mixed archive book impact SFX for round two, got ${archivePhaseTwoSecondImpactCueCount} cues for ${archivePhaseTwoSecondImpactCount} impacts`
 	  );
-	  const archiveFinalVulnerable = runBossUntilVulnerable(archiveRecoverySim, "boss-test");
+	  const archivePhaseTwoSecondImpactFollowup = archiveRecoverySim.step(idle);
+	  assert(
+	    !archivePhaseTwoSecondImpactFollowup.bossSoundCues.some((cue) => cue.cue === "archive-book-impact"),
+	    `Expected archive round-two impact SFX not to repeat on the next frame, got ${JSON.stringify(archivePhaseTwoSecondImpactFollowup.bossSoundCues)}`
+	  );
+		  const archiveFinalVulnerable = runBossUntilVulnerable(archiveRecoverySim, "boss-test");
   const archiveFinalHit = upwardHitBoss(archiveRecoverySim, archiveFinalVulnerable);
   assert(archiveFinalHit.bossDefeated?.score === 1600, `Expected second archive core hit to defeat the boss, got ${JSON.stringify(archiveFinalHit.bossDefeated)}`);
 
