@@ -642,6 +642,55 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       document.documentElement.dataset.echoShiftAudioEffects?.includes("play:stormFloorBeam"),
       `Expected retried one-shot sample to mark play diagnostic, got ${document.documentElement.dataset.echoShiftAudioEffects}`
     );
+    mediaUnlocked = false;
+    const elementsBeforeFocusRecoveryOneShot = mediaElements.length;
+    audio.play("cryoBeamFire");
+    await settlePromises();
+    const blockedCryoBeamFire = mediaElements
+      .slice(elementsBeforeFocusRecoveryOneShot)
+      .find((element) => element.src.includes("cryo_beam_fire"));
+    assert(
+      blockedCryoBeamFire?.playCalls === 1 && !blockedCryoBeamFire.playing,
+      `Expected focus-recovery one-shot sample to wait while blocked, got ${JSON.stringify({
+        playCalls: blockedCryoBeamFire?.playCalls,
+        playing: blockedCryoBeamFire?.playing
+      })}`
+    );
+    mediaUnlocked = true;
+    dispatchEvent("focus");
+    await settlePromises();
+    assert(
+      blockedCryoBeamFire.playCalls >= 2 && blockedCryoBeamFire.playing,
+      `Expected blocked one-shot sample to retry on focus recovery, got ${JSON.stringify({
+        playCalls: blockedCryoBeamFire.playCalls,
+        playing: blockedCryoBeamFire.playing
+      })}`
+    );
+    mediaUnlocked = false;
+    const elementsBeforeClearedOneShot = mediaElements.length;
+    audio.play("bossCoreHit");
+    await settlePromises();
+    const clearedBossCoreHit = mediaElements
+      .slice(elementsBeforeClearedOneShot)
+      .find((element) => element.src.includes("boss_core_hit"));
+    assert(
+      clearedBossCoreHit?.playCalls === 1 && !clearedBossCoreHit.playing,
+      `Expected clearable one-shot sample to wait while blocked, got ${JSON.stringify({
+        playCalls: clearedBossCoreHit?.playCalls,
+        playing: clearedBossCoreHit?.playing
+      })}`
+    );
+    audio.clearBlockedSamples();
+    mediaUnlocked = true;
+    dispatchEvent("focus");
+    await settlePromises();
+    assert(
+      clearedBossCoreHit.playCalls === 1 && !clearedBossCoreHit.playing,
+      `Expected cleared blocked one-shot sample not to replay after focus, got ${JSON.stringify({
+        playCalls: clearedBossCoreHit.playCalls,
+        playing: clearedBossCoreHit.playing
+      })}`
+    );
     audio.startEffectLoop("bossDefeatDeparture", "test-boss-defeat", 1);
     await settlePromises();
     const bossDefeatLoop = mediaElements.find((element) => element.src.includes("boss_defeat_departure"));

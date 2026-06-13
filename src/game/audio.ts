@@ -189,6 +189,14 @@ export class SynthAudio {
     if (this.musicKey) this.prepareMusicElement(this.musicElementFor(this.musicKey));
   }
 
+  clearBlockedSamples(): void {
+    const retries = this.blockedSampleRetries.splice(0);
+    for (const retry of retries) {
+      retry.element.pause();
+      this.activeEffects.delete(retry.element);
+    }
+  }
+
   resume(): void {
     this.installUnlockListeners();
     this.installRecoveryListeners();

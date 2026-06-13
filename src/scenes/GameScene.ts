@@ -1353,6 +1353,7 @@ export class GameScene extends Phaser.Scene {
     this.scale.off(Phaser.Scale.Events.RESIZE, this.configureCameraFrame, this);
     window.removeEventListener("keydown", this.handleWindowKeyDown);
     this.stopBossDefeatLoops();
+    audio.clearBlockedSamples();
     this.sceneCleanupRegistered = false;
     this.destroyTexturePrewarmSprites();
     this.perfOverlay?.remove();
