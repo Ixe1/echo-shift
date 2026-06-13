@@ -837,6 +837,7 @@ const verifyBossDefeatCompletionRewindLock = async (page) => {
     { timeout: 10000 }
   );
   await waitForBossVulnerableWithArchiveDodge(page, "completion-boss", bossDefeatCompletionDraftLevel.bounds);
+  await startCompletionOrderProbe(page);
   await startRewindOnLevelMusicHandoffProbe(page);
   const correction = await startWeakSpotJump(page, "completion-boss");
   try {
@@ -867,6 +868,9 @@ const verifyBossDefeatCompletionRewindLock = async (page) => {
     { timeout: 7000 }
   );
   const rewindHandoffFired = await stopRewindOnLevelMusicHandoffProbe(page);
+  const completionOrder = await readCompletionOrderProbe(page);
+  const levelMusicIndex = completionOrder.findIndex((event) => event === "music-playing:level-4:playing");
+  const completeIndex = completionOrder.findIndex((event) => event.startsWith("complete:"));
   const state = await page.evaluate(() => ({
     completeTitle: document.querySelector(".complete-panel h1")?.textContent || "",
     musicKey: document.documentElement.dataset.echoShiftMusicKey || "",
@@ -879,10 +883,14 @@ const verifyBossDefeatCompletionRewindLock = async (page) => {
     `Expected rewind during final handoff to be locked and preserve final victory, got ${JSON.stringify(state)}`
   );
   assert(
+    levelMusicIndex >= 0 && completeIndex >= 0 && levelMusicIndex < completeIndex,
+    `Expected rewind-handoff route to start level music playback before victory, got order ${completionOrder.join(" -> ")}`
+  );
+  assert(
     !state.audioDiagnostic.includes("play:rewind"),
     `Expected final-handoff rewind click to be ignored without playing rewind SFX, got ${JSON.stringify(state)}`
   );
-  return state;
+  return { ...state, completionOrder };
 };
 
 const verifyArchiveAttackRender = async (page) => {
