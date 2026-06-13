@@ -436,6 +436,12 @@ button {
   pointer-events: auto;
 }
 
+.ui-button[hidden],
+.icon-button[hidden],
+.level-button[hidden] {
+  display: none;
+}
+
 .command-chip {
   min-height: 42px;
   padding: 0 12px;

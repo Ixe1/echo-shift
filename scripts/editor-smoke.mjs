@@ -309,12 +309,13 @@ try {
   const draftPlaytestBackgroundDetailLayer = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundDetailLayer);
   const draftPlaytestBackgroundPieces = Number(await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundPieces));
   const draftPlaytestRewindDisabled = await draftPlaytestPage.locator("[data-rewind]").isDisabled();
-  const draftPlaytestRetryHidden = await draftPlaytestPage.locator("[data-retry]").evaluate((element) => element.hidden);
-  await draftPlaytestPage.keyboard.press("R");
+  const draftPlaytestRetryHidden = await draftPlaytestPage.locator("[data-retry]").isHidden();
+  await draftPlaytestPage.locator("canvas").click({ position: { x: 480, y: 270 } });
+  await draftPlaytestPage.keyboard.press("r");
   await draftPlaytestPage.waitForTimeout(250);
   const draftPlaytestEchoTintsAfterR = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftVisibleEchoTints || "");
   const draftPlaytestRewindToast = await draftPlaytestPage.locator("[data-toast]").textContent();
-  await draftPlaytestPage.keyboard.press("T");
+  await draftPlaytestPage.keyboard.press("t");
   await draftPlaytestPage.waitForTimeout(700);
   const draftPlaytestIntroAfterT = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftLevelIntro || "");
   const draftPlaytestRetryToast = await draftPlaytestPage.locator("[data-toast]").textContent();
@@ -363,7 +364,7 @@ try {
   const gameOverTitle = await gameOverPage.locator("[data-modal].show h1").textContent();
   const gameOverReplayCount = await gameOverPage.locator("[data-modal] [data-replay-level]").count();
   const gameOverLevelSelectVisible = await gameOverPage.locator("[data-modal] [data-levels]").isVisible();
-  const gameOverRetryHidden = await gameOverPage.locator("[data-retry]").evaluate((element) => element.hidden);
+  const gameOverRetryHidden = await gameOverPage.locator("[data-retry]").isHidden();
   await gameOverPage.screenshot({ path: `${outDir}/editor-game-over.png`, fullPage: true });
   await gameOverPage.locator("[data-modal] [data-levels]").click();
   await gameOverPage.locator("[data-level='0']").click();
