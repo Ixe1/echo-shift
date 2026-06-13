@@ -2840,6 +2840,12 @@ try {
   archiveBookImpactSoundSim.step(idle);
   runFrames(archiveBookImpactSoundSim, 60, idle);
   const archiveBookImpactCue = runBossUntilSoundCue(archiveBookImpactSoundSim, "boss-test", "archive-book-impact", 420);
+  const archiveBookImpactCueCount = archiveBookImpactCue.event.bossSoundCues.filter((cue) => cue.cue === "archive-book-impact").length;
+  const archiveBookImpactCount = archiveBookImpactCue.snapshot.attacks.filter((attack) => attack.attackPhase === "impact").length;
+  assert(
+    archiveBookImpactCueCount === 1 && archiveBookImpactCount >= 2,
+    `Expected one mixed archive book impact SFX for a multi-book volley, got ${archiveBookImpactCueCount} cues for ${archiveBookImpactCount} impact books`
+  );
   assert(
     archiveBookImpactCue.soundCue.y > archiveBookImpactCue.snapshot.body.y + archiveBookImpactCue.snapshot.body.h,
     `Expected archive book impact SFX to be located below the boss body, got cue ${JSON.stringify(archiveBookImpactCue.soundCue)} and body ${JSON.stringify(archiveBookImpactCue.snapshot.body)}`
@@ -2848,6 +2854,20 @@ try {
   assert(
     !archiveBookImpactCueFollowup.bossSoundCues.some((cue) => cue.cue === "archive-book-impact"),
     `Expected archive book impact SFX not to repeat on the next frame, got ${JSON.stringify(archiveBookImpactCueFollowup.bossSoundCues)}`
+  );
+  archiveBookImpactSoundSim.resetLifeAttempt();
+  const archiveBookImpactCueAfterResetStart = archiveBookImpactSoundSim.step(idle);
+  assert(
+    !archiveBookImpactCueAfterResetStart.bossSoundCues.some((cue) => cue.cue === "archive-book-impact"),
+    `Expected archive book impact SFX not to replay immediately after checkpoint reset, got ${JSON.stringify(archiveBookImpactCueAfterResetStart.bossSoundCues)}`
+  );
+  runFrames(archiveBookImpactSoundSim, 60, idle);
+  Object.assign(archiveBookImpactSoundSim.player, { x: 36, y: 18, vx: 0, vy: 0, onGround: false });
+  const archiveBookImpactReplayCue = runBossUntilSoundCue(archiveBookImpactSoundSim, "boss-test", "archive-book-impact", 420);
+  const archiveBookImpactReplayCueCount = archiveBookImpactReplayCue.event.bossSoundCues.filter((cue) => cue.cue === "archive-book-impact").length;
+  assert(
+    archiveBookImpactReplayCueCount === 1,
+    `Expected archive book impact SFX to replay after checkpoint reset, got ${archiveBookImpactReplayCueCount} cues after reset vs ${archiveBookImpactCueCount} before reset`
   );
 
   const runArchiveUntilFinalImpact = (simulation, bossId) =>

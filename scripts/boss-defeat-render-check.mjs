@@ -65,6 +65,8 @@ const readBossDefeatLoopVolumes = async (page) =>
     return { raw, volumes };
   });
 
+const audioEffectCount = (raw, eventName) => raw.split("|").filter((entry) => entry === eventName).length;
+
 const readCameraWorldView = async (page) =>
   page.evaluate(() => {
     const raw = document.documentElement.dataset.echoShiftCameraWorldView || "";
@@ -268,6 +270,21 @@ const draftLevel = {
   hint: "QA"
 };
 
+const bossDefeatCompletionDraftLevel = {
+  ...draftLevel,
+  id: "boss-defeat-completion-music-qa",
+  name: "Boss Defeat Completion Music QA",
+  completion: "boss-defeat",
+  soundtrackKey: "level-4",
+  bosses: [
+    {
+      ...draftLevel.bosses[0],
+      id: "completion-boss",
+      soundtrackKey: "final-boss"
+    }
+  ]
+};
+
 const archiveAttackDraftLevel = {
   id: "archive-attack-render-qa",
   index: 0,
@@ -425,6 +442,33 @@ const cryoFloorIceDraftLevel = {
   hint: "QA"
 };
 
+const stormFloorBeamDraftLevel = {
+  ...cryoFloorIceDraftLevel,
+  id: "storm-floor-beam-render-qa",
+  name: "Storm Floor Beam Render QA",
+  soundtrackKey: "level-2",
+  solids: [
+    { id: "floor", x: 0, y: 260, w: 860, h: 60, sprite: "floor", material: "warning-industrial", tone: "steel" },
+    { id: "left-wall", x: -20, y: 0, w: 20, h: 320, sprite: "wall", tone: "glass" },
+    { id: "right-wall", x: 860, y: 0, w: 20, h: 320, sprite: "wall", tone: "glass" }
+  ],
+  bosses: [
+    {
+      id: "storm-floor-beam-boss",
+      kind: "storm-relay-warden",
+      x: 80,
+      y: 70,
+      w: 360,
+      h: 190,
+      entrySide: "top",
+      weakSpot: "bottom",
+      introSeconds: 1,
+      health: 2,
+      score: 1000
+    }
+  ]
+};
+
 const launchOptions = {
   headless: true,
   args: ["--no-sandbox", "--disable-dev-shm-usage"]
@@ -479,17 +523,110 @@ const verifyCryoFloorIceRender = async (page) => {
   await page.waitForFunction(
     () => {
       const frames = document.documentElement.dataset.echoShiftBossEffectFrames || "";
-      return frames.includes("cryo-floor-ice:");
+      const audio = document.documentElement.dataset.echoShiftAudioEffects || "";
+      return frames.includes("cryo-floor-ice:") && audio.includes("play:cryoBeamFire") && audio.includes("play:cryoFloorIceForm");
     },
     null,
     { timeout: 9000 }
   );
 
   const raw = await page.evaluate(() => document.documentElement.dataset.echoShiftBossEffectFrames || "");
+  const audioDiagnostic = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects || "");
   const match = raw.match(/cryo-floor-ice:([^|]+)/);
   const screenshot = `${outDir}/cryo-floor-ice-visible.png`;
   await page.screenshot({ path: screenshot, fullPage: true });
-  return { diagnostic: match?.[0] || raw, screenshot };
+  return { diagnostic: match?.[0] || raw, audioDiagnostic, screenshot };
+};
+
+const verifyStormFloorBeamAudio = async (page) => {
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.evaluate((snapshot) => {
+    window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
+  }, { motionModel: "anchored", currentIndex: 0, levels: [stormFloorBeamDraftLevel] });
+
+  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+  await startAudioGate(page);
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await waitForLevelIntro(page);
+  await page.waitForFunction(
+    () => {
+      const audio = document.documentElement.dataset.echoShiftAudioEffects || "";
+      return audio.includes("play:stormFloorBeam");
+    },
+    null,
+    { timeout: 9000 }
+  );
+
+  return {
+    effects: await page.evaluate(() => document.documentElement.dataset.echoShiftBossEffectFrames || ""),
+    audioDiagnostic: await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects || "")
+  };
+};
+
+const verifyBossDefeatCompletionMusic = async (page) => {
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.evaluate((snapshot) => {
+    window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
+  }, { motionModel: "anchored", currentIndex: 0, levels: [bossDefeatCompletionDraftLevel] });
+
+  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+  await startAudioGate(page);
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await waitForLevelIntro(page);
+  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  await page.waitForFunction(() => document.documentElement.dataset.echoShiftMusicKey === "final-boss", null, { timeout: 9000 });
+  await dodgeArchiveWarnings(page, bossDefeatCompletionDraftLevel.bounds);
+  await page.waitForFunction(
+    () => {
+      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+      const sprites = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
+      return (
+        sprites.includes("completion-boss:") &&
+        sprites.includes(":active:guarded") &&
+        !sprites.includes(":attack:") &&
+        !effects.includes("archive-book-falling:") &&
+        !effects.includes("archive-book-impact:")
+      );
+    },
+    null,
+    { timeout: 10000 }
+  );
+  await alignPlayerWithBossWeakSpot(page, "completion-boss", 1800, { stopOnVulnerable: true }).catch(() => undefined);
+  await page.waitForFunction(
+    () => {
+      const frames = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
+      return frames.includes("completion-boss:") && frames.includes(":active:vulnerable");
+    },
+    null,
+    { timeout: 10000 }
+  );
+  const correction = await startWeakSpotJump(page, "completion-boss");
+  try {
+    await page.waitForFunction(
+      () => {
+        const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+        const sprites = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
+        return effects.includes("completion-boss:defeat-depart") && sprites.includes(":departing:");
+      },
+      null,
+      { timeout: 3000 }
+    );
+  } finally {
+    await releaseWeakSpotJump(page, correction);
+  }
+  await page.waitForFunction(
+    () => {
+      const title = document.querySelector(".complete-panel h1")?.textContent || "";
+      return document.documentElement.dataset.echoShiftMusicKey === "level-4" && title.includes("Timeline Complete");
+    },
+    null,
+    { timeout: 7000 }
+  );
+
+  return {
+    musicKey: await page.evaluate(() => document.documentElement.dataset.echoShiftMusicKey || ""),
+    completeTitle: await page.locator(".complete-panel h1").textContent()
+  };
 };
 
 const verifyArchiveAttackRender = async (page) => {
@@ -535,6 +672,11 @@ const verifyArchiveAttackRender = async (page) => {
 
   const raw = await page.evaluate(() => document.documentElement.dataset.echoShiftBossEffectFrames || "");
   const audioDiagnostic = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects || "");
+  const archiveImpactPlayCount = audioEffectCount(audioDiagnostic, "play:archiveBookImpact");
+  assert(
+    archiveImpactPlayCount === 1,
+    `Expected one mixed Archive impact SFX for the opening multi-book volley, got ${archiveImpactPlayCount} from ${audioDiagnostic}`
+  );
   const screenshot = `${outDir}/archive-attack-active.png`;
   await page.screenshot({ path: screenshot, fullPage: true });
   await waitForArchiveBooksToClear(page, "archive-attack-boss");
@@ -589,7 +731,7 @@ const verifyArchiveAttackRender = async (page) => {
   });
   const roundTwoScreenshot = `${outDir}/archive-round-two-warning.png`;
   await page.screenshot({ path: roundTwoScreenshot, fullPage: true });
-  return { diagnostic: raw, audioDiagnostic, screenshot, roundTwoWarning, roundTwoScreenshot };
+  return { diagnostic: raw, audioDiagnostic, archiveImpactPlayCount, screenshot, roundTwoWarning, roundTwoScreenshot };
 };
 
 try {
@@ -668,6 +810,8 @@ try {
     null,
     { timeout: 2000 }
   );
+  const defeatAudioDiagnostic = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects || "");
+  assert(defeatAudioDiagnostic.includes("play:bossCoreHit"), `Expected boss core hit sample before defeat loop, got ${defeatAudioDiagnostic}`);
   const early = await readDepartureEffect(page);
   assert(early.total === 170, `Expected 170-frame boss departure diagnostic, got ${JSON.stringify(early)}`);
   assert(early.pauseTotal === 90 && early.pause > 0, `Expected 90-frame boss defeat pause diagnostic, got ${JSON.stringify(early)}`);
@@ -733,7 +877,9 @@ try {
 
   const cameraFollow = await verifyBossCameraFollowsPlayer(page);
   const archiveAttack = await verifyArchiveAttackRender(page);
+  const stormFloorBeam = await verifyStormFloorBeamAudio(page);
   const cryoFloorIce = await verifyCryoFloorIceRender(page);
+  const bossDefeatCompletionMusic = await verifyBossDefeatCompletionMusic(page);
 
   const unexpectedMessages = messages.filter((msg) => !isAllowedBrowserMessage(msg));
   assert(unexpectedMessages.length === 0, `Unexpected console/page messages: ${JSON.stringify(unexpectedMessages)}`);
@@ -745,7 +891,9 @@ try {
         departure: { early, mid, late, camera, spriteWidth },
         cameraFollow,
         archiveAttack,
+        stormFloorBeam,
         cryoFloorIce,
+        bossDefeatCompletionMusic,
 	        screenshots: {
 	          departure: departureScreenshot,
 	          portal: portalScreenshot,

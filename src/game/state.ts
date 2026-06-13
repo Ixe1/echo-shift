@@ -558,13 +558,19 @@ export class RoomSimulation {
     return `${boss.id}:${state.attackSequence}:${cycleIndex}:${attack.round || 1}:${Math.round(attack.originX)}`;
   }
 
+  private archiveImpactSoundKey(boss: Boss, state: BossRuntimeState, attack: BossAttackSnapshot): string {
+    const cycleIndex = Math.floor(state.activeFrames / Math.max(1, bossAttackCycleFramesFor(boss.kind)));
+    return `${boss.id}:${state.attackSequence}:${cycleIndex}:${attack.round || 1}`;
+  }
+
   private applyArchiveBookErosion(boss: Boss, state: BossRuntimeState, attacks: BossAttackSnapshot[], events: StepEvents): void {
     if (boss.kind !== "archive-custodian") return;
     for (const attack of attacks) {
       if (attack.attackType !== "archive-book" || attack.attackPhase !== "impact") continue;
       const key = this.archiveImpactKey(boss, state, attack);
-      if (!this.handledArchiveImpactSoundKeys.has(key)) {
-        this.handledArchiveImpactSoundKeys.add(key);
+      const soundKey = this.archiveImpactSoundKey(boss, state, attack);
+      if (!this.handledArchiveImpactSoundKeys.has(soundKey)) {
+        this.handledArchiveImpactSoundKeys.add(soundKey);
         events.bossSoundCues.push({
           id: boss.id,
           kind: boss.kind,
