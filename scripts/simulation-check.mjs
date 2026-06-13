@@ -478,6 +478,16 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       document.documentElement.dataset.echoShiftAudioState === "playing",
       "Expected later AudioContext resume resolution not to downgrade playing music state"
     );
+    assert(audio.isMusicPlaying("menu"), "Expected started menu music to report as playing");
+    audio.pauseMusic();
+    assert(!audio.isMusicPlaying("menu"), "Expected paused menu music not to report as playing");
+    assert(
+      !document.documentElement.dataset.echoShiftMusicPlayback,
+      `Expected pauseMusic to clear music playback diagnostic, got ${document.documentElement.dataset.echoShiftMusicPlayback}`
+    );
+    audio.resumeMusic();
+    await settlePromises();
+    assert(menu.playing && audio.isMusicPlaying("menu"), "Expected resumeMusic to restart menu playback diagnostics");
 
     deferBlockedRejects = true;
     mediaUnlocked = false;
@@ -560,56 +570,86 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     );
     dispatchUnlock("keydown");
     await settlePromises();
-	    assert(
-	      blockedBossDefeatLoop.playCalls >= 2 && blockedBossDefeatLoop.playing,
-	      `Expected unlock recovery to retry blocked boss defeat loop, got ${JSON.stringify({
-	        playCalls: blockedBossDefeatLoop.playCalls,
-	        playing: blockedBossDefeatLoop.playing
-	      })}`
-	    );
-	    audio.stopEffectLoop("blocked-boss-defeat");
-	    mediaUnlocked = true;
-	    deferNextMediaPlayFor = "boss_defeat_departure";
-	    audio.startEffectLoop("bossDefeatDeparture", "late-pause-boss-defeat", 1);
-	    await settlePromises();
-	    const latePauseBossDefeatLoop = mediaElements.find(
-	      (element) =>
-	        element.src.includes("boss_defeat_departure") &&
-	        element !== bossDefeatLoop &&
-	        element !== blockedBossDefeatLoop
-	    );
-	    assert(
-	      latePauseBossDefeatLoop?.playCalls === 1 && !latePauseBossDefeatLoop.playing,
-	      `Expected deferred boss defeat loop play to remain pending before pause, got ${JSON.stringify({
-	        playCalls: latePauseBossDefeatLoop?.playCalls,
-	        playing: latePauseBossDefeatLoop?.playing
-	      })}`
-	    );
-	    audio.pauseEffectLoops();
-	    resolvePendingMediaPlays();
-	    await settlePromises();
-	    assert(!latePauseBossDefeatLoop.playing, "Expected late-resolving paused boss defeat loop play to be paused again");
-	    assert(
-	      !document.documentElement.dataset.echoShiftAudioEffects?.includes("loop-start:late-pause-boss-defeat:bossDefeatDeparture"),
-	      `Expected late-resolving paused loop not to mark loop-start, got ${document.documentElement.dataset.echoShiftAudioEffects}`
-	    );
-	    audio.resumeEffectLoops();
-	    await settlePromises();
-	    assert(
-	      latePauseBossDefeatLoop.playCalls >= 2 && latePauseBossDefeatLoop.playing,
-	      "Expected resumeEffectLoops to restart the paused loop after a late play resolution"
-	    );
-	    audio.stopEffectLoop("late-pause-boss-defeat");
-	    const tonesBeforeLoopFallback = startedTones.length;
-	    audio.startEffectLoop("bossDefeatDeparture", "fallback-boss-defeat", 1);
-	    await settlePromises();
-	    const fallbackBossDefeatLoop = mediaElements.find(
-	      (element) =>
-	        element.src.includes("boss_defeat_departure") &&
-	        element !== bossDefeatLoop &&
-	        element !== blockedBossDefeatLoop &&
-	        element !== latePauseBossDefeatLoop
-	    );
+    assert(
+      blockedBossDefeatLoop.playCalls >= 2 && blockedBossDefeatLoop.playing,
+      `Expected unlock recovery to retry blocked boss defeat loop, got ${JSON.stringify({
+        playCalls: blockedBossDefeatLoop.playCalls,
+        playing: blockedBossDefeatLoop.playing
+      })}`
+    );
+    audio.stopEffectLoop("blocked-boss-defeat");
+    mediaUnlocked = true;
+    deferNextMediaPlayFor = "boss_defeat_departure";
+    audio.startEffectLoop("bossDefeatDeparture", "late-pause-boss-defeat", 1);
+    await settlePromises();
+    const latePauseBossDefeatLoop = mediaElements.find(
+      (element) =>
+        element.src.includes("boss_defeat_departure") &&
+        element !== bossDefeatLoop &&
+        element !== blockedBossDefeatLoop
+    );
+    assert(
+      latePauseBossDefeatLoop?.playCalls === 1 && !latePauseBossDefeatLoop.playing,
+      `Expected deferred boss defeat loop play to remain pending before pause, got ${JSON.stringify({
+        playCalls: latePauseBossDefeatLoop?.playCalls,
+        playing: latePauseBossDefeatLoop?.playing
+      })}`
+    );
+    audio.pauseEffectLoops();
+    latePauseBossDefeatLoop.currentTime = 0.67;
+    resolvePendingMediaPlays();
+    await settlePromises();
+    assert(!latePauseBossDefeatLoop.playing, "Expected late-resolving paused boss defeat loop play to be paused again");
+    assert(latePauseBossDefeatLoop.currentTime === 0, "Expected late-resolving paused boss defeat loop to rewind before resume");
+    assert(
+      !document.documentElement.dataset.echoShiftAudioEffects?.includes("loop-start:late-pause-boss-defeat:bossDefeatDeparture"),
+      `Expected late-resolving paused loop not to mark loop-start, got ${document.documentElement.dataset.echoShiftAudioEffects}`
+    );
+    audio.resumeEffectLoops();
+    await settlePromises();
+    assert(
+      latePauseBossDefeatLoop.playCalls >= 2 && latePauseBossDefeatLoop.playing,
+      "Expected resumeEffectLoops to restart the paused loop after a late play resolution"
+    );
+    audio.stopEffectLoop("late-pause-boss-defeat");
+    deferNextMediaPlayFor = "boss_defeat_departure";
+    audio.startEffectLoop("bossDefeatDeparture", "late-stop-boss-defeat", 1);
+    await settlePromises();
+    const lateStopBossDefeatLoop = mediaElements.find(
+      (element) =>
+        element.src.includes("boss_defeat_departure") &&
+        element !== bossDefeatLoop &&
+        element !== blockedBossDefeatLoop &&
+        element !== latePauseBossDefeatLoop
+    );
+    assert(
+      lateStopBossDefeatLoop?.playCalls === 1 && !lateStopBossDefeatLoop.playing,
+      `Expected deferred boss defeat loop play to remain pending before stop, got ${JSON.stringify({
+        playCalls: lateStopBossDefeatLoop?.playCalls,
+        playing: lateStopBossDefeatLoop?.playing
+      })}`
+    );
+    lateStopBossDefeatLoop.currentTime = 0.52;
+    audio.stopEffectLoop("late-stop-boss-defeat");
+    resolvePendingMediaPlays();
+    await settlePromises();
+    assert(!lateStopBossDefeatLoop.playing, "Expected late-resolving stopped boss defeat loop play to be paused again");
+    assert(lateStopBossDefeatLoop.currentTime === 0, "Expected late-resolving stopped boss defeat loop to rewind");
+    assert(
+      !document.documentElement.dataset.echoShiftAudioEffects?.includes("loop-start:late-stop-boss-defeat:bossDefeatDeparture"),
+      `Expected late-resolving stopped loop not to mark loop-start, got ${document.documentElement.dataset.echoShiftAudioEffects}`
+    );
+    const tonesBeforeLoopFallback = startedTones.length;
+    audio.startEffectLoop("bossDefeatDeparture", "fallback-boss-defeat", 1);
+    await settlePromises();
+    const fallbackBossDefeatLoop = mediaElements.find(
+      (element) =>
+        element.src.includes("boss_defeat_departure") &&
+        element !== bossDefeatLoop &&
+        element !== blockedBossDefeatLoop &&
+        element !== latePauseBossDefeatLoop &&
+        element !== lateStopBossDefeatLoop
+    );
     fallbackBossDefeatLoop.dispatchEvent("error");
     await settlePromises();
     assert(!fallbackBossDefeatLoop.playing, "Expected failed boss defeat loop sample to stop its media element");

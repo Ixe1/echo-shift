@@ -102,7 +102,6 @@ const LEVEL_INTRO_MS = 3000;
 const LEVEL_INTRO_OUTRO_MS = 820;
 const MUSIC_LOADING_OVERLAY_DELAY_MS = 220;
 const BOSS_MUSIC_FADE_MS = 620;
-const BOSS_DEFEAT_COMPLETION_AUDIO_FALLBACK_MS = 700;
 const PLAYER_CAMERA_REFERENCE_HEIGHT = 540;
 const PLAYER_CAMERA_ZOOM = 1.152;
 const TERRAIN_SURFACE_CAP_OVERLAP = 16;
@@ -247,7 +246,6 @@ export class GameScene extends Phaser.Scene {
   private pausedByHud = false;
   private completeHandled = false;
   private pendingBossDefeatCompletion = false;
-  private pendingBossDefeatCompletionMs = 0;
   private retryRequired = false;
   private virtualInput: InputFrame = { left: false, right: false, jump: false };
   private echoTrails = new Map<string, Array<{ x: number; y: number }>>();
@@ -434,7 +432,6 @@ export class GameScene extends Phaser.Scene {
     this.pausedByHud = false;
     this.completeHandled = false;
     this.pendingBossDefeatCompletion = false;
-    this.pendingBossDefeatCompletionMs = 0;
     this.retryRequired = false;
     this.virtualInput = { left: false, right: false, jump: false };
     this.playerCastUntil = 0;
@@ -596,19 +593,19 @@ export class GameScene extends Phaser.Scene {
       this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
       return;
     }
-    if (this.pendingBossDefeatCompletion) {
-      this.updatePendingBossDefeatCompletion(delta);
-      const updateMs = performance.now() - updateStart;
-      const renderStart = performance.now();
-      this.renderWorld();
-      this.updateHud();
-      this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
-      return;
-    }
     if (this.pausedByHud || this.completeHandled) {
       const updateMs = performance.now() - updateStart;
       const renderStart = performance.now();
       this.renderWorld();
+      this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
+      return;
+    }
+    if (this.pendingBossDefeatCompletion) {
+      this.updatePendingBossDefeatCompletion();
+      const updateMs = performance.now() - updateStart;
+      const renderStart = performance.now();
+      this.renderWorld();
+      this.updateHud();
       this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
       return;
     }
@@ -1100,7 +1097,6 @@ export class GameScene extends Phaser.Scene {
     this.accumulator = 0;
     this.completeHandled = false;
     this.pendingBossDefeatCompletion = false;
-    this.pendingBossDefeatCompletionMs = 0;
     this.pausedByHud = false;
     this.retryRequired = false;
     this.playerCastUntil = 0;
@@ -1116,7 +1112,6 @@ export class GameScene extends Phaser.Scene {
     this.stopBossDefeatLoops();
     this.completeHandled = false;
     this.pendingBossDefeatCompletion = false;
-    this.pendingBossDefeatCompletionMs = 0;
     this.pausedByHud = false;
     this.retryRequired = false;
     this.deathPresentation = null;
@@ -1154,21 +1149,18 @@ export class GameScene extends Phaser.Scene {
   private queueBossDefeatCompletion(): void {
     if (this.completeHandled) return;
     this.pendingBossDefeatCompletion = true;
-    this.pendingBossDefeatCompletionMs = 0;
     this.tryCompletePendingBossDefeat();
   }
 
-  private updatePendingBossDefeatCompletion(delta: number): void {
-    this.pendingBossDefeatCompletionMs += Math.max(0, delta);
+  private updatePendingBossDefeatCompletion(): void {
     this.tryCompletePendingBossDefeat();
   }
 
   private tryCompletePendingBossDefeat(): void {
     if (!this.pendingBossDefeatCompletion || this.completeHandled) return;
     const levelMusicKey = this.currentLevelSoundtrackKey();
-    if (!audio.isMusicPlaying(levelMusicKey) && this.pendingBossDefeatCompletionMs < BOSS_DEFEAT_COMPLETION_AUDIO_FALLBACK_MS) return;
+    if (!audio.isMusicPlaying(levelMusicKey)) return;
     this.pendingBossDefeatCompletion = false;
-    this.pendingBossDefeatCompletionMs = 0;
     this.completeLevel();
   }
 
@@ -1176,7 +1168,6 @@ export class GameScene extends Phaser.Scene {
     if (this.completeHandled) return;
     this.completeHandled = true;
     this.pendingBossDefeatCompletion = false;
-    this.pendingBossDefeatCompletionMs = 0;
     this.stopBossDefeatLoops();
     audio.play("portal");
     const score: LevelScore = {

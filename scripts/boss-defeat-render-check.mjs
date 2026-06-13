@@ -101,6 +101,33 @@ const readCompletionOrderProbe = async (page) =>
     return window.__echoShiftCompletionOrder || [];
   });
 
+const startPauseOnLevelMusicHandoffProbe = async (page) =>
+  page.evaluate(() => {
+    window.__echoShiftPauseOnLevelMusicHandoff = { fired: false };
+    window.__echoShiftPauseOnLevelMusicHandoffObserver?.disconnect?.();
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type !== "attributes" || mutation.attributeName !== "data-echo-shift-music-key") continue;
+        const state = window.__echoShiftPauseOnLevelMusicHandoff;
+        if (state.fired || document.documentElement.dataset.echoShiftMusicKey !== "level-4") continue;
+        state.fired = true;
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      }
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-echo-shift-music-key"]
+    });
+    window.__echoShiftPauseOnLevelMusicHandoffObserver = observer;
+  });
+
+const stopPauseOnLevelMusicHandoffProbe = async (page) =>
+  page.evaluate(() => {
+    const fired = Boolean(window.__echoShiftPauseOnLevelMusicHandoff?.fired);
+    window.__echoShiftPauseOnLevelMusicHandoffObserver?.disconnect?.();
+    return fired;
+  });
+
 const readCameraWorldView = async (page) =>
   page.evaluate(() => {
     const raw = document.documentElement.dataset.echoShiftCameraWorldView || "";
@@ -690,6 +717,7 @@ const verifyBossDefeatCompletionMusic = async (page) => {
   );
   await waitForBossVulnerableWithArchiveDodge(page, "completion-boss", bossDefeatCompletionDraftLevel.bounds);
   await startCompletionOrderProbe(page);
+  await startPauseOnLevelMusicHandoffProbe(page);
   const correction = await startWeakSpotJump(page, "completion-boss");
   try {
     await page.waitForFunction(
@@ -704,6 +732,29 @@ const verifyBossDefeatCompletionMusic = async (page) => {
   } finally {
     await releaseWeakSpotJump(page, correction);
   }
+  await page.waitForFunction(() => window.__echoShiftPauseOnLevelMusicHandoff?.fired === true, null, { timeout: 9000 });
+  await page.waitForFunction(
+    () => document.querySelector("[data-modal].show h1")?.textContent?.includes("Paused"),
+    null,
+    { timeout: 3000 }
+  );
+  await page.waitForTimeout(1000);
+  const pausedState = await page.evaluate(() => ({
+    modalTitle: document.querySelector("[data-modal].show h1")?.textContent || "",
+    musicPlayback: document.documentElement.dataset.echoShiftMusicPlayback || ""
+  }));
+  assert(pausedState.modalTitle.includes("Paused"), `Expected pause modal during final music handoff, got ${JSON.stringify(pausedState)}`);
+  assert(!pausedState.modalTitle.includes("Timeline Complete"), `Expected no victory while paused, got ${JSON.stringify(pausedState)}`);
+  assert(
+    pausedState.musicPlayback !== "level-4:playing",
+    `Expected paused level music handoff not to report active playback, got ${JSON.stringify(pausedState)}`
+  );
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(
+    () => !document.querySelector("[data-modal].show h1")?.textContent?.includes("Paused"),
+    null,
+    { timeout: 3000 }
+  );
   await page.waitForFunction(
     () => {
       const title = document.querySelector(".complete-panel h1")?.textContent || "";
@@ -713,8 +764,10 @@ const verifyBossDefeatCompletionMusic = async (page) => {
     { timeout: 7000 }
   );
   const completionOrder = await readCompletionOrderProbe(page);
+  const pausedHandoffFired = await stopPauseOnLevelMusicHandoffProbe(page);
   const levelMusicIndex = completionOrder.findIndex((event) => event === "music-playing:level-4:playing");
   const completeIndex = completionOrder.findIndex((event) => event.startsWith("complete:"));
+  assert(pausedHandoffFired, `Expected pause-on-handoff probe to fire, got order ${completionOrder.join(" -> ")}`);
   assert(
     levelMusicIndex >= 0 && completeIndex >= 0 && levelMusicIndex < completeIndex,
     `Expected level music playback to start before victory, got order ${completionOrder.join(" -> ")}`
@@ -723,7 +776,8 @@ const verifyBossDefeatCompletionMusic = async (page) => {
   return {
     musicKey: await page.evaluate(() => document.documentElement.dataset.echoShiftMusicKey || ""),
     completeTitle: await page.locator(".complete-panel h1").textContent(),
-    completionOrder
+    completionOrder,
+    pausedState
   };
 };
 

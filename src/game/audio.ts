@@ -376,7 +376,7 @@ export class SynthAudio {
   }
 
   isMusicPlaying(key: SoundtrackKey): boolean {
-    return this.musicPlaybackKey === key;
+    return !this.musicPaused && this.musicPlaybackKey === key;
   }
 
   playMusic(key: SoundtrackKey, options: { restart?: boolean; fadeMs?: number } = {}): void {
@@ -390,6 +390,7 @@ export class SynthAudio {
         .catch(() => this.markAudioState("blocked"));
     }
     this.markMusicKey(key);
+    if (this.musicPlaybackKey !== key) this.clearMusicPlayback();
     const loop = musicLoopRegionFor(key);
     if (loop && this.canUseWebMusic()) {
       if (!this.webMusicReadyKeys.has(key) && this.mediaMusicReadyKeys.has(key)) {
@@ -463,6 +464,7 @@ export class SynthAudio {
     if (this.webMusic) this.pauseWebMusic(this.webMusic);
     this.stopAllFadingMusic();
     this.stopAllFadingWebMusic();
+    this.clearMusicPlayback();
     this.markAudioState("paused");
   }
 
@@ -489,14 +491,13 @@ export class SynthAudio {
     this.mediaMusicKey = null;
     if (this.webMusic) this.stopWebMusic(this.webMusic);
     this.webMusic = null;
-	    this.stopAllFadingMusic();
-	    this.stopAllFadingWebMusic();
-	    this.musicKey = null;
-    this.musicPlaybackKey = null;
-	    this.releaseUnusedMusic();
+    this.stopAllFadingMusic();
+    this.stopAllFadingWebMusic();
+    this.musicKey = null;
+    this.clearMusicPlayback();
+    this.releaseUnusedMusic();
     if (import.meta.env.DEV && typeof document !== "undefined") {
       delete document.documentElement.dataset.echoShiftMusicKey;
-      delete document.documentElement.dataset.echoShiftMusicPlayback;
     }
     this.markAudioState("stopped");
   }
@@ -508,11 +509,11 @@ export class SynthAudio {
     this.effectLoopPlayAttempt += 1;
     this.musicPaused = false;
     this.stopMusicLoopWatch();
-	    this.music = null;
-	    this.musicKey = null;
-	    this.mediaMusicKey = null;
-    this.musicPlaybackKey = null;
-	    if (this.webMusic) this.stopWebMusic(this.webMusic);
+    this.music = null;
+    this.musicKey = null;
+    this.mediaMusicKey = null;
+    this.clearMusicPlayback();
+    if (this.webMusic) this.stopWebMusic(this.webMusic);
     this.webMusic = null;
     for (const playback of this.fadingWebMusic) this.stopWebMusic(playback);
     this.fadingWebMusic.clear();
@@ -528,7 +529,6 @@ export class SynthAudio {
     this.recentEffectEvents = [];
     if (import.meta.env.DEV && typeof document !== "undefined") {
       delete document.documentElement.dataset.echoShiftAudioEffects;
-      delete document.documentElement.dataset.echoShiftMusicPlayback;
     }
     for (const element of this.musicCache.values()) {
       this.unloadMusicElement(element);
@@ -867,8 +867,10 @@ export class SynthAudio {
             this.markEffectEvent(`loop-start:${playback.id}:${playback.name}`);
           } else {
             playback.started = false;
-            playback.element.pause();
-            if (currentPlayback !== playback) playback.element.currentTime = 0;
+            if (currentPlayback !== playback || playback.paused) {
+              playback.element.pause();
+              playback.element.currentTime = 0;
+            }
           }
         })
         .catch(() => {
@@ -1190,6 +1192,13 @@ export class SynthAudio {
     this.musicPlaybackKey = key;
     if (import.meta.env.DEV && typeof document !== "undefined") {
       document.documentElement.dataset.echoShiftMusicPlayback = `${key}:${state}`;
+    }
+  }
+
+  private clearMusicPlayback(): void {
+    this.musicPlaybackKey = null;
+    if (import.meta.env.DEV && typeof document !== "undefined") {
+      delete document.documentElement.dataset.echoShiftMusicPlayback;
     }
   }
 
