@@ -1,3 +1,4 @@
+import { readFileSync } from "fs";
 import { createServer } from "vite";
 
 const assert = (condition, message) => {
@@ -186,6 +187,18 @@ const settlePromises = async () => {
 const restoreGlobal = (key, value) => {
   if (value === undefined) delete globalThis[key];
   else Object.defineProperty(globalThis, key, { configurable: true, value });
+};
+
+const verifyGameSceneAudioCleanupHook = () => {
+  const source = readFileSync("src/scenes/GameScene.ts", "utf8");
+  const shutdownStart = source.indexOf("private shutdownScene");
+  assert(shutdownStart >= 0, "Expected GameScene shutdownScene cleanup method to exist");
+  const shutdownEnd = source.indexOf("private ", shutdownStart + "private shutdownScene".length);
+  const shutdownBody = source.slice(shutdownStart, shutdownEnd >= 0 ? shutdownEnd : undefined);
+  assert(
+    shutdownBody.includes("audio.clearBlockedSamples()"),
+    "Expected GameScene shutdownScene to clear blocked one-shot sample retries"
+  );
 };
 
 const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
@@ -689,6 +702,42 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       `Expected cleared blocked one-shot sample not to replay after focus, got ${JSON.stringify({
         playCalls: clearedBossCoreHit.playCalls,
         playing: clearedBossCoreHit.playing
+      })}`
+    );
+    mediaUnlocked = false;
+    const elementsBeforeLateClearedOneShot = mediaElements.length;
+    audio.play("archiveBookImpact");
+    await settlePromises();
+    const lateClearedArchiveImpact = mediaElements
+      .slice(elementsBeforeLateClearedOneShot)
+      .find((element) => element.src.includes("archive_book_impact"));
+    assert(
+      lateClearedArchiveImpact?.playCalls === 1 && !lateClearedArchiveImpact.playing,
+      `Expected late-clear one-shot sample to wait while blocked, got ${JSON.stringify({
+        playCalls: lateClearedArchiveImpact?.playCalls,
+        playing: lateClearedArchiveImpact?.playing
+      })}`
+    );
+    mediaUnlocked = true;
+    deferNextMediaPlayFor = "archive_book_impact";
+    dispatchEvent("focus");
+    await settlePromises();
+    assert(
+      lateClearedArchiveImpact.playCalls === 2 && !lateClearedArchiveImpact.playing,
+      `Expected focus recovery to start one deferred retry before cleanup, got ${JSON.stringify({
+        playCalls: lateClearedArchiveImpact.playCalls,
+        playing: lateClearedArchiveImpact.playing
+      })}`
+    );
+    audio.clearBlockedSamples();
+    resolvePendingMediaPlaysMatching("archive_book_impact");
+    await settlePromises();
+    assert(
+      lateClearedArchiveImpact.playCalls === 2 && !lateClearedArchiveImpact.playing && lateClearedArchiveImpact.currentTime === 0,
+      `Expected late-resolving cleared one-shot sample not to play after cleanup, got ${JSON.stringify({
+        playCalls: lateClearedArchiveImpact.playCalls,
+        playing: lateClearedArchiveImpact.playing,
+        currentTime: lateClearedArchiveImpact.currentTime
       })}`
     );
     audio.startEffectLoop("bossDefeatDeparture", "test-boss-defeat", 1);
@@ -1610,6 +1659,7 @@ try {
     terrainDecorPropsForMaterial("wood-archive").some((prop) => prop.category === "wall-decal" && prop.id === "timber-carved-panel"),
     "Expected wood-archive decor props to include Timber wall decals"
   );
+  verifyGameSceneAudioCleanupHook();
   await verifyAudioUnlockRetry(SynthAudio, soundtracks);
 
   const previousWindow = globalThis.window;
@@ -4284,6 +4334,7 @@ try {
           "fall-death-freeze",
           "deterministic-anchor",
           "audio-unlock-retry",
+          "game-scene-audio-cleanup-hook",
           "soundtrack-manifest",
           "draft-motion-migration",
           "side-scrolling-bounds"

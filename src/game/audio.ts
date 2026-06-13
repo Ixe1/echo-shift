@@ -147,6 +147,7 @@ export class SynthAudio {
   private activeEffects = new Map<HTMLAudioElement, number>();
   private loopedEffects = new Map<string, LoopedEffectPlayback>();
   private blockedSampleRetries: Array<{ name: ToneName; element: HTMLAudioElement; settings: SampledEffect }> = [];
+  private retryingBlockedSamples = new Set<HTMLAudioElement>();
   private fadingMusic = new Set<HTMLAudioElement>();
   private fadingWebMusic = new Set<WebMusicPlayback>();
   private recentEffectEvents: string[] = [];
@@ -193,8 +194,15 @@ export class SynthAudio {
     const retries = this.blockedSampleRetries.splice(0);
     for (const retry of retries) {
       retry.element.pause();
+      retry.element.currentTime = 0;
       this.activeEffects.delete(retry.element);
     }
+    for (const element of this.retryingBlockedSamples) {
+      element.pause();
+      element.currentTime = 0;
+      this.activeEffects.delete(element);
+    }
+    this.retryingBlockedSamples.clear();
   }
 
   resume(): void {
@@ -840,6 +848,7 @@ export class SynthAudio {
       released = true;
       element.pause();
       this.activeEffects.delete(element);
+      this.retryingBlockedSamples.delete(element);
       this.blockedSampleRetries = this.blockedSampleRetries.filter((retry) => retry.element !== element);
     };
     const fallback = () => {
@@ -892,11 +901,17 @@ export class SynthAudio {
     for (const retry of retries) {
       if (!this.activeEffects.has(retry.element)) continue;
       retry.element.volume = retry.settings.volume * this.fxOutputMultiplier();
+      this.retryingBlockedSamples.add(retry.element);
       try {
         void retry.element
           .play()
           .then(() => {
-            if (!this.activeEffects.has(retry.element)) return;
+            this.retryingBlockedSamples.delete(retry.element);
+            if (!this.activeEffects.has(retry.element)) {
+              retry.element.pause();
+              retry.element.currentTime = 0;
+              return;
+            }
             this.markEffectEvent(`play:${retry.name}`);
             if (typeof retry.element.addEventListener !== "function") {
               retry.element.pause();
@@ -904,6 +919,7 @@ export class SynthAudio {
             }
           })
           .catch((error) => {
+            this.retryingBlockedSamples.delete(retry.element);
             if (this.mediaPlayRejectionIsRecoverableBlock(error)) {
               this.queueBlockedSampleRetry(retry.name, retry.element, retry.settings);
             } else if (this.activeEffects.has(retry.element)) {
@@ -914,6 +930,7 @@ export class SynthAudio {
             }
           });
       } catch (error) {
+        this.retryingBlockedSamples.delete(retry.element);
         if (this.mediaPlayRejectionIsRecoverableBlock(error)) {
           this.queueBlockedSampleRetry(retry.name, retry.element, retry.settings);
         } else if (this.activeEffects.has(retry.element)) {
