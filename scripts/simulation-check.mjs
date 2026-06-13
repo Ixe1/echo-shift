@@ -232,11 +232,13 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       this.currentTime = 0;
       this.destination = {};
       this.state = "suspended";
+      this.onstatechange = null;
       audioContexts.push(this);
     }
 
     resume() {
       this.state = "running";
+      this.onstatechange?.({ type: "statechange" });
       return new Promise((resolve) => pendingResumes.push(resolve));
     }
 
@@ -300,6 +302,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
 
     close() {
       this.state = "closed";
+      this.onstatechange?.({ type: "statechange" });
       return Promise.resolve();
     }
   }
@@ -385,6 +388,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
 
     pause() {
       this.playing = false;
+      this.dispatchEvent("pause");
     }
   }
   const addListener = (type, handler) => {
@@ -521,12 +525,20 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     );
     const menuCallsBeforeTransportLoss = menu.playCalls;
     menu.pause();
+    assert(
+      !document.documentElement.dataset.echoShiftMusicPlayback,
+      `Expected browser-paused menu transport to clear music playback diagnostic, got ${document.documentElement.dataset.echoShiftMusicPlayback}`
+    );
     assert(!audio.isMusicPlaying("menu"), "Expected browser-paused menu transport not to report as playing");
     dispatchEvent("focus");
     await settlePromises();
     assert(
       menu.playCalls > menuCallsBeforeTransportLoss && menu.playing && audio.isMusicPlaying("menu"),
       "Expected focus recovery to restart browser-paused menu transport"
+    );
+    assert(
+      document.documentElement.dataset.echoShiftMusicPlayback === "menu:playing",
+      `Expected recovered menu transport to restore music playback diagnostic, got ${document.documentElement.dataset.echoShiftMusicPlayback}`
     );
 
     deferBlockedRejects = true;
@@ -778,10 +790,19 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
 	    const levelOneContext = audioContexts.at(-1);
 	    assert(audio.isMusicPlaying("level-1"), "Expected started Web Audio level music to report as playing");
 	    levelOneContext.state = "suspended";
+	    levelOneContext.onstatechange?.({ type: "statechange" });
+	    assert(
+	      !document.documentElement.dataset.echoShiftMusicPlayback,
+	      `Expected suspended Web Audio context to clear music playback diagnostic, got ${document.documentElement.dataset.echoShiftMusicPlayback}`
+	    );
 	    assert(!audio.isMusicPlaying("level-1"), "Expected suspended Web Audio context not to report level music as playing");
 	    dispatchEvent("focus");
 	    await settlePromises();
 	    assert(audio.isMusicPlaying("level-1"), "Expected focus recovery to restore Web Audio music playback state");
+	    assert(
+	      document.documentElement.dataset.echoShiftMusicPlayback === "level-1:playing",
+	      `Expected recovered Web Audio context to restore music playback diagnostic, got ${document.documentElement.dataset.echoShiftMusicPlayback}`
+	    );
 	    assert(!menu.playing, "Expected outgoing menu music to stop once the requested Web Audio track is ready");
     audio.pauseMusic();
     assert(!menu.playing, "Expected pause to stop outgoing media music while media-to-Web fade is pending");

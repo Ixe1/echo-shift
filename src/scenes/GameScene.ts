@@ -1072,6 +1072,10 @@ export class GameScene extends Phaser.Scene {
 
   private retryAttempt(): void {
     if (this.levelIntroBlocksGameplay() || this.retryPresentation || this.deathPresentation || this.completeHandled || this.pausedByHud || this.retryRequired) return;
+    if (this.pendingBossDefeatCompletion) {
+      this.hud.toast("Retry locked during final sync");
+      return;
+    }
     this.startRetryPresentation();
     audio.play("select");
   }

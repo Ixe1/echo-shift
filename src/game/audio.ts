@@ -376,10 +376,10 @@ export class SynthAudio {
   }
 
   isMusicPlaying(key: SoundtrackKey): boolean {
-    if (this.musicPaused || this.musicPlaybackKey !== key) return false;
-    if (this.webMusic?.key === key) return Boolean(this.webMusic.source && this.context?.state === "running");
-    if (this.mediaMusicKey === key && this.music) return this.mediaElementIsPlaying(this.music);
-    return false;
+    if (this.musicPlaybackKey !== key) return false;
+    const playing = this.musicTransportIsPlaying(key);
+    if (!playing) this.clearMusicPlayback();
+    return playing;
   }
 
   playMusic(key: SoundtrackKey, options: { restart?: boolean; fadeMs?: number } = {}): void {
@@ -613,6 +613,10 @@ export class SynthAudio {
 
     const context = new AudioContextClass();
     this.context = context;
+    context.onstatechange = () => {
+      if (this.context !== context) return;
+      this.markContextState(context.state);
+    };
     this.master = context.createGain();
     this.applySynthVolume();
     this.master.connect(context.destination);
@@ -1167,6 +1171,8 @@ export class SynthAudio {
     element.loop = !musicLoopRegionFor(key);
     element.preload = "metadata";
     this.installCustomMusicLoopFallback(element, key);
+    element.addEventListener("pause", () => this.handleCurrentMediaMusicStopped(element));
+    element.addEventListener("ended", () => this.handleCurrentMediaMusicStopped(element));
     this.musicCache.set(key, element);
     return element;
   }
@@ -1200,6 +1206,13 @@ export class SynthAudio {
     }
   }
 
+  private musicTransportIsPlaying(key: SoundtrackKey): boolean {
+    if (this.musicPaused) return false;
+    if (this.webMusic?.key === key) return Boolean(this.webMusic.source && this.context?.state === "running");
+    if (this.mediaMusicKey === key && this.music) return this.mediaElementIsPlaying(this.music);
+    return false;
+  }
+
   private mediaElementIsPlaying(element: HTMLMediaElement): boolean {
     return !element.paused && !element.ended;
   }
@@ -1211,6 +1224,15 @@ export class SynthAudio {
     }
   }
 
+  private syncMusicPlayback(): void {
+    const key = this.musicPlaybackKey;
+    if (key && !this.musicTransportIsPlaying(key)) this.clearMusicPlayback();
+  }
+
+  private handleCurrentMediaMusicStopped(element: HTMLAudioElement): void {
+    if (this.music === element) this.syncMusicPlayback();
+  }
+
   private markEffectEvent(event: string): void {
     if (!import.meta.env.DEV || typeof document === "undefined") return;
     this.recentEffectEvents.push(event);
@@ -1220,6 +1242,7 @@ export class SynthAudio {
 
   private markContextState(state: string): void {
     this.markAudioState(this.musicPaused && state === "running" ? "paused" : state);
+    this.syncMusicPlayback();
   }
 
   private markAudioState(state: string): void {

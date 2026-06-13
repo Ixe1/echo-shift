@@ -155,6 +155,34 @@ const stopRewindOnLevelMusicHandoffProbe = async (page) =>
     return fired;
   });
 
+const startRetryOnLevelMusicHandoffProbe = async (page) =>
+  page.evaluate(() => {
+    window.__echoShiftRetryOnLevelMusicHandoff = { fired: false };
+    window.__echoShiftRetryOnLevelMusicHandoffObserver?.disconnect?.();
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type !== "attributes" || mutation.attributeName !== "data-echo-shift-music-key") continue;
+        const state = window.__echoShiftRetryOnLevelMusicHandoff;
+        if (state.fired || document.documentElement.dataset.echoShiftMusicKey !== "level-4") continue;
+        state.fired = true;
+        document.querySelector("[data-retry]")?.click();
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "t", bubbles: true, cancelable: true }));
+      }
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-echo-shift-music-key"]
+    });
+    window.__echoShiftRetryOnLevelMusicHandoffObserver = observer;
+  });
+
+const stopRetryOnLevelMusicHandoffProbe = async (page) =>
+  page.evaluate(() => {
+    const fired = Boolean(window.__echoShiftRetryOnLevelMusicHandoff?.fired);
+    window.__echoShiftRetryOnLevelMusicHandoffObserver?.disconnect?.();
+    return fired;
+  });
+
 const readCameraWorldView = async (page) =>
   page.evaluate(() => {
     const raw = document.documentElement.dataset.echoShiftCameraWorldView || "";
@@ -893,6 +921,86 @@ const verifyBossDefeatCompletionRewindLock = async (page) => {
   return { ...state, completionOrder };
 };
 
+const verifyBossDefeatCompletionRetryLock = async (page) => {
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await page.evaluate((snapshot) => {
+    window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
+  }, { motionModel: "anchored", currentIndex: 0, levels: [bossDefeatCompletionDraftLevel] });
+
+  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+  await startAudioGate(page);
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await waitForLevelIntro(page);
+  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  await page.waitForFunction(() => document.documentElement.dataset.echoShiftMusicKey === "final-boss", null, { timeout: 9000 });
+  await dodgeArchiveWarnings(page, bossDefeatCompletionDraftLevel.bounds);
+  await page.waitForFunction(
+    () => {
+      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+      const sprites = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
+      return (
+        sprites.includes("completion-boss:") &&
+        sprites.includes(":active:guarded") &&
+        !sprites.includes(":attack:") &&
+        !effects.includes("archive-book-falling:") &&
+        !effects.includes("archive-book-impact:")
+      );
+    },
+    null,
+    { timeout: 10000 }
+  );
+  await waitForBossVulnerableWithArchiveDodge(page, "completion-boss", bossDefeatCompletionDraftLevel.bounds);
+  await startCompletionOrderProbe(page);
+  await startRetryOnLevelMusicHandoffProbe(page);
+  const correction = await startWeakSpotJump(page, "completion-boss");
+  try {
+    await page.waitForFunction(
+      () => {
+        const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
+        const sprites = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
+        return effects.includes("completion-boss:defeat-depart") && sprites.includes(":departing:");
+      },
+      null,
+      { timeout: 3000 }
+    );
+  } finally {
+    await releaseWeakSpotJump(page, correction);
+  }
+  await page.waitForFunction(() => window.__echoShiftRetryOnLevelMusicHandoff?.fired === true, null, { timeout: 9000 });
+  await page.waitForFunction(
+    () => document.documentElement.dataset.echoShiftMusicPlayback === "level-4:playing",
+    null,
+    { timeout: 9000 }
+  );
+  await page.waitForFunction(
+    () => {
+      const title = document.querySelector(".complete-panel h1")?.textContent || "";
+      return title.includes("Timeline Complete");
+    },
+    null,
+    { timeout: 7000 }
+  );
+  const retryHandoffFired = await stopRetryOnLevelMusicHandoffProbe(page);
+  const completionOrder = await readCompletionOrderProbe(page);
+  const levelMusicIndex = completionOrder.findIndex((event) => event === "music-playing:level-4:playing");
+  const completeIndex = completionOrder.findIndex((event) => event.startsWith("complete:"));
+  const state = await page.evaluate(() => ({
+    completeTitle: document.querySelector(".complete-panel h1")?.textContent || "",
+    musicKey: document.documentElement.dataset.echoShiftMusicKey || "",
+    musicPlayback: document.documentElement.dataset.echoShiftMusicPlayback || ""
+  }));
+  assert(retryHandoffFired, `Expected retry-on-handoff probe to fire, got ${JSON.stringify(state)}`);
+  assert(
+    state.completeTitle.includes("Timeline Complete"),
+    `Expected retry during final handoff to be locked and preserve final victory, got ${JSON.stringify(state)}`
+  );
+  assert(
+    levelMusicIndex >= 0 && completeIndex >= 0 && levelMusicIndex < completeIndex,
+    `Expected retry-handoff route to start level music playback before victory, got order ${completionOrder.join(" -> ")}`
+  );
+  return { ...state, completionOrder };
+};
+
 const verifyArchiveAttackRender = async (page) => {
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.evaluate((snapshot) => {
@@ -1299,6 +1407,7 @@ try {
   const cryoFloorIce = await verifyCryoFloorIceRender(page);
   const bossDefeatCompletionMusic = await verifyBossDefeatCompletionMusic(page);
   const bossDefeatCompletionRewindLock = await verifyBossDefeatCompletionRewindLock(page);
+  const bossDefeatCompletionRetryLock = await verifyBossDefeatCompletionRetryLock(page);
 
   const unexpectedMessages = messages.filter((msg) => !isAllowedBrowserMessage(msg));
   assert(unexpectedMessages.length === 0, `Unexpected console/page messages: ${JSON.stringify(unexpectedMessages)}`);
@@ -1315,6 +1424,7 @@ try {
         cryoFloorIce,
         bossDefeatCompletionMusic,
         bossDefeatCompletionRewindLock,
+        bossDefeatCompletionRetryLock,
         screenshots: {
           departure: departureScreenshot,
           portal: portalScreenshot,
