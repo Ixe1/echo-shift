@@ -310,8 +310,18 @@ try {
   const draftPlaytestBackgroundPieces = Number(await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundPieces));
   const draftPlaytestRewindDisabled = await draftPlaytestPage.locator("[data-rewind]").isDisabled();
   const draftPlaytestRetryHidden = await draftPlaytestPage.locator("[data-retry]").evaluate((element) => element.hidden);
+  await draftPlaytestPage.keyboard.press("R");
+  await draftPlaytestPage.waitForTimeout(250);
+  const draftPlaytestEchoTintsAfterR = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftVisibleEchoTints || "");
+  const draftPlaytestRewindToast = await draftPlaytestPage.locator("[data-toast]").textContent();
+  await draftPlaytestPage.keyboard.press("T");
+  await draftPlaytestPage.waitForTimeout(700);
+  const draftPlaytestIntroAfterT = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftLevelIntro || "");
+  const draftPlaytestRetryToast = await draftPlaytestPage.locator("[data-toast]").textContent();
+  const draftPlaytestModalAfterT = await draftPlaytestPage.locator("[data-modal].show").count();
   await draftPlaytestPage.screenshot({ path: `${outDir}/editor-playtest-draft.png`, fullPage: true });
   await draftPlaytestPage.locator("[data-menu]").click();
+  const draftPauseReplayCount = await draftPlaytestPage.locator("[data-modal] [data-replay-level]").count();
   const draftEditorButton = draftPlaytestPage.locator("[data-modal] [data-editor]");
   await draftEditorButton.waitFor({ state: "visible" });
   await draftEditorButton.click();
@@ -355,7 +365,57 @@ try {
   const gameOverLevelSelectVisible = await gameOverPage.locator("[data-modal] [data-levels]").isVisible();
   const gameOverRetryHidden = await gameOverPage.locator("[data-retry]").evaluate((element) => element.hidden);
   await gameOverPage.screenshot({ path: `${outDir}/editor-game-over.png`, fullPage: true });
+  await gameOverPage.locator("[data-modal] [data-levels]").click();
+  await gameOverPage.locator("[data-level='0']").click();
+  await gameOverPage.locator("[data-lives]").waitFor({ state: "visible" });
+  const gameOverLevelSelectRestartLives = await gameOverPage.locator("[data-lives]").textContent();
   await gameOverContext.close();
+
+  const directClearContext = await browser.newContext({ viewport: { width: 960, height: 540 } });
+  const directClearPage = await directClearContext.newPage();
+  collectConsole(directClearPage);
+  await directClearPage.goto(url, { waitUntil: "domcontentloaded" });
+  await directClearPage.evaluate(() => {
+    window.localStorage.setItem(
+      "echo-shift-level-editor-draft-v1",
+      JSON.stringify({
+        currentIndex: 0,
+        levels: [
+          {
+            id: "direct-clear-smoke",
+            index: 0,
+            name: "Direct Clear Smoke",
+            subtitle: "",
+            start: { x: 60, y: 450 },
+            exit: { x: 40, y: 420, w: 120, h: 90 },
+            bounds: { x: 0, y: 0, w: 960, h: 540 },
+            solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
+            score: { lives: 3, coreScore: 100, timeBonusTargetSeconds: 30, timeBonusPerSecond: 100 },
+            hint: ""
+          },
+          {
+            id: "direct-clear-next",
+            index: 1,
+            name: "Direct Clear Next",
+            subtitle: "",
+            start: { x: 60, y: 450 },
+            exit: { x: 850, y: 438, w: 48, h: 62 },
+            bounds: { x: 0, y: 0, w: 960, h: 540 },
+            solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
+            score: { lives: 3, coreScore: 100, timeBonusTargetSeconds: 30, timeBonusPerSecond: 100 },
+            hint: ""
+          }
+        ]
+      })
+    );
+  });
+  await directClearPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(directClearPage);
+  await directClearPage.locator("[data-modal].show h1").waitFor({ state: "visible", timeout: 12000 });
+  const directClearTitle = await directClearPage.locator("[data-modal].show h1").textContent();
+  const directClearReplayCount = await directClearPage.locator("[data-modal] [data-replay-level]").count();
+  const directClearNextVisible = await directClearPage.locator("[data-modal] [data-next]").isVisible();
+  await directClearContext.close();
 
   const corruptDraftPlaytest = await browser.newContext({ viewport: { width: 960, height: 540 } });
   const corruptDraftPlaytestPage = await corruptDraftPlaytest.newPage();
@@ -1444,6 +1504,12 @@ try {
   assert(draftPlaytestBackgroundPieces >= 1, `Expected draft playtest to create background image pieces, got ${draftPlaytestBackgroundPieces}`);
   assert(draftPlaytestRewindDisabled, "Expected draft playtest HUD rewind button to be disabled by level metadata");
   assert(draftPlaytestRetryHidden, "Expected finite-life draft playtest retry button to be hidden");
+  assert(draftPlaytestEchoTintsAfterR === "", `Expected disabled R key not to spawn echoes, got ${draftPlaytestEchoTintsAfterR}`);
+  assert(draftPlaytestRewindToast?.includes("Rewind disabled"), `Expected disabled R key toast, got ${draftPlaytestRewindToast}`);
+  assert(draftPlaytestIntroAfterT !== "active", `Expected disabled T key not to restart level intro, got ${draftPlaytestIntroAfterT}`);
+  assert(draftPlaytestRetryToast?.includes("Retry unavailable"), `Expected disabled T key toast, got ${draftPlaytestRetryToast}`);
+  assert(draftPlaytestModalAfterT === 0, `Expected disabled T key not to open a modal, got ${draftPlaytestModalAfterT}`);
+  assert(draftPauseReplayCount === 0, `Expected pause modal to omit restart/replay, got ${draftPauseReplayCount} replay buttons`);
   assert(draftReturnUrl.includes("editor=1"), `Expected draft Editor button to return to editor=1, got ${draftReturnUrl}`);
   assert(!draftReturnUrl.includes("playtestDraft=1"), `Expected draft Editor button to clean playtest flag, got ${draftReturnUrl}`);
   assert(!draftReturnUrl.includes("level=1"), `Expected draft Editor button to clean level flag, got ${draftReturnUrl}`);
@@ -1451,6 +1517,10 @@ try {
   assert(gameOverReplayCount === 0, `Expected Game Over modal to omit replay/restart, got ${gameOverReplayCount} replay buttons`);
   assert(gameOverLevelSelectVisible, "Expected Game Over modal to offer Level Select");
   assert(gameOverRetryHidden, "Expected Game Over HUD retry button to stay hidden");
+  assert(gameOverLevelSelectRestartLives === "3", `Expected Level Select after Game Over to restart with 3 lives, got ${gameOverLevelSelectRestartLives}`);
+  assert(directClearTitle === "Room Clear", `Expected direct clear draft to show Room Clear, got ${directClearTitle}`);
+  assert(directClearReplayCount === 0, `Expected Room Clear modal to omit replay/restart, got ${directClearReplayCount} replay buttons`);
+  assert(directClearNextVisible, "Expected Room Clear modal to keep Next Room as the primary progression action");
   assert(corruptDraftBootedMenu, "Expected corrupt draft playtest data to fall back to normal menu instead of crashing");
   assert(corruptDraftHudCount === 0, `Expected corrupt draft playtest fallback not to boot game HUD, got ${corruptDraftHudCount}`);
   assert(mixedCorruptDraftBootedMenu, "Expected mixed corrupt draft playtest data to fall back to normal menu instead of truncating draft levels");
