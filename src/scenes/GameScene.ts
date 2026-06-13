@@ -677,6 +677,10 @@ export class GameScene extends Phaser.Scene {
     return this.simulation.bossFightInProgress();
   }
 
+  private clearAttemptScopedAudio(): void {
+    audio.clearBlockedSamples();
+  }
+
   private startLevelWhenMusicReady(
     key: ReturnType<typeof soundtrackForLevel>["key"],
     ready: boolean,
@@ -969,6 +973,7 @@ export class GameScene extends Phaser.Scene {
   private startDeathPresentation(livesExhausted: boolean, playerLaserVaporized: boolean): void {
     if (this.deathPresentation) return;
     this.stopBossDefeatLoops();
+    this.clearAttemptScopedAudio();
     audio.play(playerLaserVaporized ? "playerLaserVaporized" : "death");
     this.cameras.main.shake(180, 0.006);
     const player = this.simulation.player;
@@ -1017,6 +1022,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private finishDeathPresentation(presentation: DeathPresentation): void {
+    this.clearAttemptScopedAudio();
     if (presentation.livesExhausted) {
       this.pausedByHud = true;
       this.retryRequired = true;
@@ -1060,6 +1066,7 @@ export class GameScene extends Phaser.Scene {
       this.hud.toast("Rewind locked during boss fights");
       return;
     }
+    this.clearAttemptScopedAudio();
     const added = this.simulation.rewindToEcho();
     audio.play("rewind");
     this.playerCastUntil = this.time.now + 360;
@@ -1083,6 +1090,7 @@ export class GameScene extends Phaser.Scene {
   private startRetryPresentation(): void {
     this.finishLevelIntro();
     this.stopBossDefeatLoops();
+    this.clearAttemptScopedAudio();
     this.retryPresentation = { elapsedMs: 0 };
     this.virtualInput = { left: false, right: false, jump: false };
     this.hud.hideToast();
@@ -1101,6 +1109,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.retryPresentation) return;
     this.retryPresentation = null;
     this.stopBossDefeatLoops();
+    this.clearAttemptScopedAudio();
     this.simulation.resetLevel();
     this.accumulator = 0;
     this.completeHandled = false;
@@ -1122,6 +1131,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.stopBossDefeatLoops();
+    this.clearAttemptScopedAudio();
     this.completeHandled = false;
     this.pendingBossDefeatCompletion = false;
     this.pausedByHud = false;
@@ -1181,6 +1191,7 @@ export class GameScene extends Phaser.Scene {
     this.completeHandled = true;
     this.pendingBossDefeatCompletion = false;
     this.stopBossDefeatLoops();
+    this.clearAttemptScopedAudio();
     audio.play("portal");
     const score: LevelScore = {
       levelId: this.level.id,
@@ -1353,7 +1364,7 @@ export class GameScene extends Phaser.Scene {
     this.scale.off(Phaser.Scale.Events.RESIZE, this.configureCameraFrame, this);
     window.removeEventListener("keydown", this.handleWindowKeyDown);
     this.stopBossDefeatLoops();
-    audio.clearBlockedSamples();
+    this.clearAttemptScopedAudio();
     this.sceneCleanupRegistered = false;
     this.destroyTexturePrewarmSprites();
     this.perfOverlay?.remove();

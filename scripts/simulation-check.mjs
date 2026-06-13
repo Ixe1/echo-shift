@@ -189,16 +189,37 @@ const restoreGlobal = (key, value) => {
   else Object.defineProperty(globalThis, key, { configurable: true, value });
 };
 
-const verifyGameSceneAudioCleanupHook = () => {
+const gameSceneMethodBody = (source, name) => {
+  const match = new RegExp(`\\n  private ${name}(?:\\(|\\s*=)`).exec(source);
+  const start = match ? match.index + 1 : -1;
+  assert(start >= 0, `Expected GameScene ${name} method to exist`);
+  const end = source.indexOf("\n  private ", start + `private ${name}`.length);
+  return source.slice(start, end >= 0 ? end : undefined);
+};
+
+const verifyGameSceneAudioCleanupHooks = () => {
   const source = readFileSync("src/scenes/GameScene.ts", "utf8");
-  const shutdownStart = source.indexOf("private shutdownScene");
-  assert(shutdownStart >= 0, "Expected GameScene shutdownScene cleanup method to exist");
-  const shutdownEnd = source.indexOf("private ", shutdownStart + "private shutdownScene".length);
-  const shutdownBody = source.slice(shutdownStart, shutdownEnd >= 0 ? shutdownEnd : undefined);
+  const helperBody = gameSceneMethodBody(source, "clearAttemptScopedAudio");
   assert(
-    shutdownBody.includes("audio.clearBlockedSamples()"),
-    "Expected GameScene shutdownScene to clear blocked one-shot sample retries"
+    helperBody.includes("audio.clearBlockedSamples()"),
+    "Expected GameScene clearAttemptScopedAudio to clear blocked one-shot sample retries"
   );
+  for (const method of [
+    "startDeathPresentation",
+    "finishDeathPresentation",
+    "rewind",
+    "startRetryPresentation",
+    "finishRetryPresentation",
+    "restartLevel",
+    "completeLevel",
+    "shutdownScene"
+  ]) {
+    const body = gameSceneMethodBody(source, method);
+    assert(
+      body.includes("this.clearAttemptScopedAudio()"),
+      `Expected GameScene ${method} to clear attempt-scoped blocked one-shot samples`
+    );
+  }
 };
 
 const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
@@ -1659,7 +1680,7 @@ try {
     terrainDecorPropsForMaterial("wood-archive").some((prop) => prop.category === "wall-decal" && prop.id === "timber-carved-panel"),
     "Expected wood-archive decor props to include Timber wall decals"
   );
-  verifyGameSceneAudioCleanupHook();
+  verifyGameSceneAudioCleanupHooks();
   await verifyAudioUnlockRetry(SynthAudio, soundtracks);
 
   const previousWindow = globalThis.window;
@@ -4334,7 +4355,7 @@ try {
           "fall-death-freeze",
           "deterministic-anchor",
           "audio-unlock-retry",
-          "game-scene-audio-cleanup-hook",
+          "game-scene-audio-cleanup-hooks",
           "soundtrack-manifest",
           "draft-motion-migration",
           "side-scrolling-bounds"
