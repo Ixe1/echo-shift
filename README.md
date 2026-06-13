@@ -9,9 +9,7 @@ A compact rewind puzzle-platformer built for the Community Dev Challenge. Rewind
 - `npm run build`
 - `npm run test:sim`
 - `npm run qa:editor`
-- `npm run qa:smoke`
-
-`npm run qa:smoke` expects the dev server at `http://localhost:5173/` by default. Override with `PLAYTEST_URL`. Screenshots are written to `/tmp/echo-shift-playtest` unless `PLAYTEST_OUT` is set.
+- `npm run qa:door-solid`
 
 ## Level Editor
 

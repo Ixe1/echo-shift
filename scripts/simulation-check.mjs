@@ -761,6 +761,40 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
         currentTime: lateClearedArchiveImpact.currentTime
       })}`
     );
+    mediaUnlocked = false;
+    const elementsBeforeResolvedRetryCleanup = mediaElements.length;
+    audio.play("cryoFloorIceForm");
+    await settlePromises();
+    const resolvedRetryCleanupIce = mediaElements
+      .slice(elementsBeforeResolvedRetryCleanup)
+      .find((element) => element.src.includes("cryo_floor_ice_form"));
+    assert(
+      resolvedRetryCleanupIce?.playCalls === 1 && !resolvedRetryCleanupIce.playing,
+      `Expected resolved-retry cleanup sample to wait while blocked, got ${JSON.stringify({
+        playCalls: resolvedRetryCleanupIce?.playCalls,
+        playing: resolvedRetryCleanupIce?.playing
+      })}`
+    );
+    mediaUnlocked = true;
+    dispatchEvent("focus");
+    await settlePromises();
+    assert(
+      resolvedRetryCleanupIce.playCalls === 2 && resolvedRetryCleanupIce.playing,
+      `Expected blocked sample retry to resolve and start before cleanup, got ${JSON.stringify({
+        playCalls: resolvedRetryCleanupIce.playCalls,
+        playing: resolvedRetryCleanupIce.playing
+      })}`
+    );
+    audio.clearBlockedSamples();
+    await settlePromises();
+    assert(
+      resolvedRetryCleanupIce.playCalls === 2 && !resolvedRetryCleanupIce.playing && resolvedRetryCleanupIce.currentTime === 0,
+      `Expected resolved retried one-shot sample to stop on cleanup, got ${JSON.stringify({
+        playCalls: resolvedRetryCleanupIce.playCalls,
+        playing: resolvedRetryCleanupIce.playing,
+        currentTime: resolvedRetryCleanupIce.currentTime
+      })}`
+    );
     audio.startEffectLoop("bossDefeatDeparture", "test-boss-defeat", 1);
     await settlePromises();
     const bossDefeatLoop = mediaElements.find((element) => element.src.includes("boss_defeat_departure"));
