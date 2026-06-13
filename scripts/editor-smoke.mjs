@@ -331,33 +331,35 @@ try {
   const draftReturnUrl = draftPlaytestPage.url();
   await draftPlaytest.close();
 
+  const gameOverDraft = {
+    currentIndex: 0,
+    levels: [
+      {
+        id: "game-over-smoke",
+        index: 0,
+        name: "Game Over Smoke",
+        subtitle: "",
+        start: { x: 60, y: 450 },
+        exit: { x: 850, y: 438, w: 48, h: 62 },
+        bounds: { x: 0, y: 0, w: 960, h: 540 },
+        solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
+        hazards: [{ id: "spawn-spark", x: 50, y: 440, w: 80, h: 80 }],
+        score: { lives: 3, coreScore: 100, timeBonusTargetSeconds: 30, timeBonusPerSecond: 100 },
+        hint: ""
+      }
+    ]
+  };
+
   const gameOverContext = await browser.newContext({ viewport: { width: 960, height: 540 } });
   const gameOverPage = await gameOverContext.newPage();
   collectConsole(gameOverPage);
   await gameOverPage.goto(url, { waitUntil: "domcontentloaded" });
-  await gameOverPage.evaluate(() => {
+  await gameOverPage.evaluate((snapshot) => {
     window.localStorage.setItem(
       "echo-shift-level-editor-draft-v1",
-      JSON.stringify({
-        currentIndex: 0,
-        levels: [
-          {
-            id: "game-over-smoke",
-            index: 0,
-            name: "Game Over Smoke",
-            subtitle: "",
-            start: { x: 60, y: 450 },
-            exit: { x: 850, y: 438, w: 48, h: 62 },
-            bounds: { x: 0, y: 0, w: 960, h: 540 },
-            solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
-            hazards: [{ id: "spawn-spark", x: 50, y: 440, w: 80, h: 80 }],
-            score: { lives: 3, coreScore: 100, timeBonusTargetSeconds: 30, timeBonusPerSecond: 100 },
-            hint: ""
-          }
-        ]
-      })
+      JSON.stringify(snapshot)
     );
-  });
+  }, gameOverDraft);
   await gameOverPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
   await startAudioGate(gameOverPage);
   await gameOverPage.locator("[data-modal].show h1").waitFor({ state: "visible", timeout: 32000 });
@@ -371,6 +373,22 @@ try {
   await gameOverPage.locator("[data-lives]").waitFor({ state: "visible" });
   const gameOverLevelSelectRestartLives = await gameOverPage.locator("[data-lives]").textContent();
   await gameOverContext.close();
+
+  const mobileGameOverContext = await browser.newContext({ viewport: { width: 390, height: 720 } });
+  const mobileGameOverPage = await mobileGameOverContext.newPage();
+  collectConsole(mobileGameOverPage);
+  await mobileGameOverPage.goto(url, { waitUntil: "domcontentloaded" });
+  await mobileGameOverPage.evaluate((snapshot) => {
+    window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
+  }, gameOverDraft);
+  await mobileGameOverPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(mobileGameOverPage);
+  await mobileGameOverPage.locator("[data-modal].show h1").waitFor({ state: "visible", timeout: 32000 });
+  const mobileGameOverTitle = await mobileGameOverPage.locator("[data-modal].show h1").textContent();
+  const mobileGameOverReplayCount = await mobileGameOverPage.locator("[data-modal] [data-replay-level]").count();
+  const mobileGameOverRetryHidden = await mobileGameOverPage.locator("[data-retry]").isHidden();
+  await mobileGameOverPage.screenshot({ path: `${outDir}/editor-game-over-mobile.png`, fullPage: true });
+  await mobileGameOverContext.close();
 
   const directClearContext = await browser.newContext({ viewport: { width: 960, height: 540 } });
   const directClearPage = await directClearContext.newPage();
@@ -1519,6 +1537,9 @@ try {
   assert(gameOverLevelSelectVisible, "Expected Game Over modal to offer Level Select");
   assert(gameOverRetryHidden, "Expected Game Over HUD retry button to stay hidden");
   assert(gameOverLevelSelectRestartLives === "3", `Expected Level Select after Game Over to restart with 3 lives, got ${gameOverLevelSelectRestartLives}`);
+  assert(mobileGameOverTitle === "Game Over", `Expected mobile Game Over title, got ${mobileGameOverTitle}`);
+  assert(mobileGameOverReplayCount === 0, `Expected mobile Game Over modal to omit replay/restart, got ${mobileGameOverReplayCount} replay buttons`);
+  assert(mobileGameOverRetryHidden, "Expected mobile Game Over HUD retry button to stay hidden");
   assert(directClearTitle === "Room Clear", `Expected direct clear draft to show Room Clear, got ${directClearTitle}`);
   assert(directClearReplayCount === 0, `Expected Room Clear modal to omit replay/restart, got ${directClearReplayCount} replay buttons`);
   assert(directClearNextVisible, "Expected Room Clear modal to keep Next Room as the primary progression action");
@@ -2053,7 +2074,8 @@ try {
           desktop: `${outDir}/editor-desktop.png`,
           mobile: `${outDir}/editor-mobile.png`,
           playtestDraft: `${outDir}/editor-playtest-draft.png`,
-          gameOver: `${outDir}/editor-game-over.png`
+          gameOver: `${outDir}/editor-game-over.png`,
+          gameOverMobile: `${outDir}/editor-game-over-mobile.png`
         }
       },
       null,
