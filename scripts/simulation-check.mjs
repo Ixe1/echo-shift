@@ -376,12 +376,14 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
           pendingMediaPlayResolves.push({
             src: this.src,
             resolve: () => {
+              this.ended = false;
               this.playing = true;
               resolve();
             }
           })
         );
       }
+      this.ended = false;
       this.playing = true;
       return Promise.resolve();
     }
@@ -529,6 +531,10 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       !document.documentElement.dataset.echoShiftMusicPlayback,
       `Expected browser-paused menu transport to clear music playback diagnostic, got ${document.documentElement.dataset.echoShiftMusicPlayback}`
     );
+    assert(
+      document.documentElement.dataset.echoShiftAudioState === "stopped",
+      `Expected browser-paused menu transport to stop audio-state diagnostic, got ${document.documentElement.dataset.echoShiftAudioState}`
+    );
     assert(!audio.isMusicPlaying("menu"), "Expected browser-paused menu transport not to report as playing");
     dispatchEvent("focus");
     await settlePromises();
@@ -539,6 +545,24 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     assert(
       document.documentElement.dataset.echoShiftMusicPlayback === "menu:playing",
       `Expected recovered menu transport to restore music playback diagnostic, got ${document.documentElement.dataset.echoShiftMusicPlayback}`
+    );
+    menu.ended = true;
+    menu.dispatchEvent("ended");
+    assert(
+      !document.documentElement.dataset.echoShiftMusicPlayback,
+      `Expected ended menu transport to clear music playback diagnostic, got ${document.documentElement.dataset.echoShiftMusicPlayback}`
+    );
+    assert(
+      document.documentElement.dataset.echoShiftAudioState === "stopped",
+      `Expected ended menu transport to stop audio-state diagnostic, got ${document.documentElement.dataset.echoShiftAudioState}`
+    );
+    assert(!audio.isMusicPlaying("menu"), "Expected ended menu transport not to report as playing");
+    dispatchEvent("focus");
+    await settlePromises();
+    assert(menu.playing && audio.isMusicPlaying("menu"), "Expected focus recovery to restart ended menu transport");
+    assert(
+      document.documentElement.dataset.echoShiftAudioState === "playing",
+      `Expected recovered ended menu transport to restore playing audio-state diagnostic, got ${document.documentElement.dataset.echoShiftAudioState}`
     );
 
     deferBlockedRejects = true;
@@ -794,6 +818,10 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
 	    assert(
 	      !document.documentElement.dataset.echoShiftMusicPlayback,
 	      `Expected suspended Web Audio context to clear music playback diagnostic, got ${document.documentElement.dataset.echoShiftMusicPlayback}`
+	    );
+	    assert(
+	      document.documentElement.dataset.echoShiftAudioState === "suspended",
+	      `Expected suspended Web Audio context to update audio-state diagnostic, got ${document.documentElement.dataset.echoShiftAudioState}`
 	    );
 	    assert(!audio.isMusicPlaying("level-1"), "Expected suspended Web Audio context not to report level music as playing");
 	    dispatchEvent("focus");

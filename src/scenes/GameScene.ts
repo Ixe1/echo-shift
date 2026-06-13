@@ -1117,6 +1117,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private restartLevel(): void {
+    if (this.pendingBossDefeatCompletion) {
+      this.hud.toast("Restart locked during final sync");
+      return;
+    }
     this.stopBossDefeatLoops();
     this.completeHandled = false;
     this.pendingBossDefeatCompletion = false;

@@ -378,7 +378,7 @@ export class SynthAudio {
   isMusicPlaying(key: SoundtrackKey): boolean {
     if (this.musicPlaybackKey !== key) return false;
     const playing = this.musicTransportIsPlaying(key);
-    if (!playing) this.clearMusicPlayback();
+    if (!playing) this.syncMusicPlayback(this.mediaMusicKey === key ? "stopped" : undefined);
     return playing;
   }
 
@@ -1224,13 +1224,15 @@ export class SynthAudio {
     }
   }
 
-  private syncMusicPlayback(): void {
+  private syncMusicPlayback(stoppedAudioState?: string): void {
     const key = this.musicPlaybackKey;
-    if (key && !this.musicTransportIsPlaying(key)) this.clearMusicPlayback();
+    if (!key || this.musicTransportIsPlaying(key)) return;
+    this.clearMusicPlayback();
+    if (stoppedAudioState && !this.musicPaused) this.markAudioState(stoppedAudioState);
   }
 
   private handleCurrentMediaMusicStopped(element: HTMLAudioElement): void {
-    if (this.music === element) this.syncMusicPlayback();
+    if (this.music === element) this.syncMusicPlayback("stopped");
   }
 
   private markEffectEvent(event: string): void {

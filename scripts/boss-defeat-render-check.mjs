@@ -804,6 +804,21 @@ const verifyBossDefeatCompletionMusic = async (page) => {
     pausedState.musicPlayback !== "level-4:playing",
     `Expected paused level music handoff not to report active playback, got ${JSON.stringify(pausedState)}`
   );
+  await page.locator("[data-replay-level]").click();
+  await page.waitForTimeout(400);
+  const restartClickState = await page.evaluate(() => ({
+    modalTitle: document.querySelector("[data-modal].show h1")?.textContent || "",
+    musicKey: document.documentElement.dataset.echoShiftMusicKey || "",
+    musicPlayback: document.documentElement.dataset.echoShiftMusicPlayback || ""
+  }));
+  assert(
+    restartClickState.modalTitle.includes("Paused"),
+    `Expected pause-menu restart to be locked during final handoff, got ${JSON.stringify(restartClickState)}`
+  );
+  assert(
+    restartClickState.musicKey === "level-4",
+    `Expected pause-menu restart not to reset the final handoff music key, got ${JSON.stringify(restartClickState)}`
+  );
   await page.keyboard.press("Escape");
   await page.waitForFunction(
     () => !document.querySelector("[data-modal].show h1")?.textContent?.includes("Paused"),
@@ -832,7 +847,8 @@ const verifyBossDefeatCompletionMusic = async (page) => {
     musicKey: await page.evaluate(() => document.documentElement.dataset.echoShiftMusicKey || ""),
     completeTitle: await page.locator(".complete-panel h1").textContent(),
     completionOrder,
-    pausedState
+    pausedState,
+    restartClickState
   };
 };
 
@@ -987,7 +1003,8 @@ const verifyBossDefeatCompletionRetryLock = async (page) => {
   const state = await page.evaluate(() => ({
     completeTitle: document.querySelector(".complete-panel h1")?.textContent || "",
     musicKey: document.documentElement.dataset.echoShiftMusicKey || "",
-    musicPlayback: document.documentElement.dataset.echoShiftMusicPlayback || ""
+    musicPlayback: document.documentElement.dataset.echoShiftMusicPlayback || "",
+    audioDiagnostic: document.documentElement.dataset.echoShiftAudioEffects || ""
   }));
   assert(retryHandoffFired, `Expected retry-on-handoff probe to fire, got ${JSON.stringify(state)}`);
   assert(
@@ -997,6 +1014,10 @@ const verifyBossDefeatCompletionRetryLock = async (page) => {
   assert(
     levelMusicIndex >= 0 && completeIndex >= 0 && levelMusicIndex < completeIndex,
     `Expected retry-handoff route to start level music playback before victory, got order ${completionOrder.join(" -> ")}`
+  );
+  assert(
+    audioEffectCount(state.audioDiagnostic, "play:select") === 0,
+    `Expected final-handoff retry click to be ignored without playing retry/select SFX, got ${JSON.stringify(state)}`
   );
   return { ...state, completionOrder };
 };
