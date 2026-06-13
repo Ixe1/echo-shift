@@ -102,6 +102,7 @@ const LEVEL_INTRO_MS = 3000;
 const LEVEL_INTRO_OUTRO_MS = 820;
 const MUSIC_LOADING_OVERLAY_DELAY_MS = 220;
 const BOSS_MUSIC_FADE_MS = 620;
+const BOSS_DEFEAT_COMPLETION_AUDIO_FALLBACK_MS = 700;
 const PLAYER_CAMERA_REFERENCE_HEIGHT = 540;
 const PLAYER_CAMERA_ZOOM = 1.152;
 const TERRAIN_SURFACE_CAP_OVERLAP = 16;
@@ -245,6 +246,8 @@ export class GameScene extends Phaser.Scene {
   private accumulator = 0;
   private pausedByHud = false;
   private completeHandled = false;
+  private pendingBossDefeatCompletion = false;
+  private pendingBossDefeatCompletionMs = 0;
   private retryRequired = false;
   private virtualInput: InputFrame = { left: false, right: false, jump: false };
   private echoTrails = new Map<string, Array<{ x: number; y: number }>>();
@@ -430,6 +433,8 @@ export class GameScene extends Phaser.Scene {
     this.accumulator = 0;
     this.pausedByHud = false;
     this.completeHandled = false;
+    this.pendingBossDefeatCompletion = false;
+    this.pendingBossDefeatCompletionMs = 0;
     this.retryRequired = false;
     this.virtualInput = { left: false, right: false, jump: false };
     this.playerCastUntil = 0;
@@ -591,6 +596,15 @@ export class GameScene extends Phaser.Scene {
       this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
       return;
     }
+    if (this.pendingBossDefeatCompletion) {
+      this.updatePendingBossDefeatCompletion(delta);
+      const updateMs = performance.now() - updateStart;
+      const renderStart = performance.now();
+      this.renderWorld();
+      this.updateHud();
+      this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
+      return;
+    }
     if (this.pausedByHud || this.completeHandled) {
       const updateMs = performance.now() - updateStart;
       const renderStart = performance.now();
@@ -601,11 +615,11 @@ export class GameScene extends Phaser.Scene {
 
     this.accumulator += Math.min(delta, 80);
     while (this.accumulator >= STEP_MS) {
-      const events = this.simulation.step(this.readInput());
-      this.handleEvents(events);
-      this.accumulator -= STEP_MS;
-      if (this.completeHandled) break;
-    }
+	      const events = this.simulation.step(this.readInput());
+	      this.handleEvents(events);
+	      this.accumulator -= STEP_MS;
+      if (this.completeHandled || this.pendingBossDefeatCompletion) break;
+	    }
 
     const updateMs = performance.now() - updateStart;
     const renderStart = performance.now();
@@ -884,8 +898,11 @@ export class GameScene extends Phaser.Scene {
     if (events.died) {
       this.startDeathPresentation(events.livesExhausted, events.playerLaserVaporized);
     }
-    if (events.won) this.completeLevel();
-  }
+    if (events.won) {
+      if (this.simulation.finalBossDefeatCompletesLevel()) this.queueBossDefeatCompletion();
+      else this.completeLevel();
+    }
+	  }
 
   private corePickupIsLarge(coreId: string): boolean {
     const core = (this.level.cores || []).find((item) => item.id === coreId);
@@ -1082,6 +1099,8 @@ export class GameScene extends Phaser.Scene {
     this.simulation.resetLevel();
     this.accumulator = 0;
     this.completeHandled = false;
+    this.pendingBossDefeatCompletion = false;
+    this.pendingBossDefeatCompletionMs = 0;
     this.pausedByHud = false;
     this.retryRequired = false;
     this.playerCastUntil = 0;
@@ -1096,6 +1115,8 @@ export class GameScene extends Phaser.Scene {
   private restartLevel(): void {
     this.stopBossDefeatLoops();
     this.completeHandled = false;
+    this.pendingBossDefeatCompletion = false;
+    this.pendingBossDefeatCompletionMs = 0;
     this.pausedByHud = false;
     this.retryRequired = false;
     this.deathPresentation = null;
@@ -1110,8 +1131,8 @@ export class GameScene extends Phaser.Scene {
     this.hud.hideModal();
   }
 
-  private togglePause(force?: boolean): void {
-    if (this.retryPresentation || this.deathPresentation || this.completeHandled || this.retryRequired) return;
+	  private togglePause(force?: boolean): void {
+	    if (this.retryPresentation || this.deathPresentation || this.completeHandled || this.retryRequired) return;
     if (this.musicLoadingActive) return;
     if (this.introActive) this.finishLevelIntro();
     this.pausedByHud = force ?? !this.pausedByHud;
@@ -1130,9 +1151,32 @@ export class GameScene extends Phaser.Scene {
     audio.play("select");
   }
 
+  private queueBossDefeatCompletion(): void {
+    if (this.completeHandled) return;
+    this.pendingBossDefeatCompletion = true;
+    this.pendingBossDefeatCompletionMs = 0;
+    this.tryCompletePendingBossDefeat();
+  }
+
+  private updatePendingBossDefeatCompletion(delta: number): void {
+    this.pendingBossDefeatCompletionMs += Math.max(0, delta);
+    this.tryCompletePendingBossDefeat();
+  }
+
+  private tryCompletePendingBossDefeat(): void {
+    if (!this.pendingBossDefeatCompletion || this.completeHandled) return;
+    const levelMusicKey = this.currentLevelSoundtrackKey();
+    if (!audio.isMusicPlaying(levelMusicKey) && this.pendingBossDefeatCompletionMs < BOSS_DEFEAT_COMPLETION_AUDIO_FALLBACK_MS) return;
+    this.pendingBossDefeatCompletion = false;
+    this.pendingBossDefeatCompletionMs = 0;
+    this.completeLevel();
+  }
+
   private completeLevel(): void {
     if (this.completeHandled) return;
     this.completeHandled = true;
+    this.pendingBossDefeatCompletion = false;
+    this.pendingBossDefeatCompletionMs = 0;
     this.stopBossDefeatLoops();
     audio.play("portal");
     const score: LevelScore = {

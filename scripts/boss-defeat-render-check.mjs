@@ -66,6 +66,7 @@ const readBossDefeatLoopVolumes = async (page) =>
   });
 
 const audioEffectCount = (raw, eventName) => raw.split("|").filter((entry) => entry === eventName).length;
+const audioEffectPrefixCount = (raw, prefix) => raw.split("|").filter((entry) => entry.startsWith(prefix)).length;
 
 const startCompletionOrderProbe = async (page) =>
   page.evaluate(() => {
@@ -77,13 +78,19 @@ const startCompletionOrderProbe = async (page) =>
         if (mutation.type === "attributes" && mutation.attributeName === "data-echo-shift-music-key") {
           record(`music:${document.documentElement.dataset.echoShiftMusicKey || ""}`);
         }
+        if (mutation.type === "attributes" && mutation.attributeName === "data-echo-shift-music-playback") {
+          record(`music-playing:${document.documentElement.dataset.echoShiftMusicPlayback || ""}`);
+        }
         if (mutation.type === "childList") {
           const title = document.querySelector(".complete-panel h1")?.textContent || "";
           if (title.includes("Timeline Complete")) record(`complete:${title}`);
         }
       }
     });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-echo-shift-music-key"] });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-echo-shift-music-key", "data-echo-shift-music-playback"]
+    });
     observer.observe(document.body, { childList: true, subtree: true });
     window.__echoShiftCompletionOrderObserver = observer;
   });
@@ -626,6 +633,14 @@ const verifyStormFloorBeamAudio = async (page) => {
   await waitForLevelIntro(page);
   await page.waitForFunction(
     () => {
+      const frames = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
+      return frames.includes("storm-floor-beam-boss:") && frames.includes(":active:");
+    },
+    null,
+    { timeout: 12000 }
+  );
+  await page.waitForFunction(
+    () => {
       const audio = document.documentElement.dataset.echoShiftAudioEffects || "";
       return audio.includes("play:stormFloorBeam");
     },
@@ -698,11 +713,11 @@ const verifyBossDefeatCompletionMusic = async (page) => {
     { timeout: 7000 }
   );
   const completionOrder = await readCompletionOrderProbe(page);
-  const levelMusicIndex = completionOrder.findIndex((event) => event === "music:level-4");
+  const levelMusicIndex = completionOrder.findIndex((event) => event === "music-playing:level-4:playing");
   const completeIndex = completionOrder.findIndex((event) => event.startsWith("complete:"));
   assert(
     levelMusicIndex >= 0 && completeIndex >= 0 && levelMusicIndex < completeIndex,
-    `Expected level music to resume before victory, got order ${completionOrder.join(" -> ")}`
+    `Expected level music playback to start before victory, got order ${completionOrder.join(" -> ")}`
   );
 
   return {
@@ -731,9 +746,7 @@ const verifyArchiveAttackRender = async (page) => {
 	    null,
 	    { timeout: 9000 }
 	  );
-	  await page.keyboard.down("ArrowRight");
-	  await page.waitForTimeout(730);
-	  await page.keyboard.up("ArrowRight");
+  await dodgeArchiveWarnings(page, archiveAttackDraftLevel.bounds);
 	  await page.waitForFunction(
 	    () => {
 	      const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
@@ -748,17 +761,17 @@ const verifyArchiveAttackRender = async (page) => {
     { timeout: 10000 }
   );
   await page.waitForFunction(
-    () => (document.documentElement.dataset.echoShiftAudioEffects || "").includes("play:archiveBookImpact"),
+    () => (document.documentElement.dataset.echoShiftAudioEffects || "").includes("request:archiveBookImpact"),
     null,
     { timeout: 4000 }
   );
 
   const raw = await page.evaluate(() => document.documentElement.dataset.echoShiftBossEffectFrames || "");
   const audioDiagnostic = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects || "");
-  const archiveImpactPlayCount = audioEffectCount(audioDiagnostic, "play:archiveBookImpact");
+  const archiveImpactPlayCount = audioEffectCount(audioDiagnostic, "request:archiveBookImpact");
   assert(
     archiveImpactPlayCount === 1,
-    `Expected one mixed Archive impact SFX for the opening multi-book volley, got ${archiveImpactPlayCount} from ${audioDiagnostic}`
+    `Expected one mixed Archive impact SFX request for the opening multi-book volley, got ${archiveImpactPlayCount} from ${audioDiagnostic}`
   );
   const screenshot = `${outDir}/archive-attack-active.png`;
   await page.screenshot({ path: screenshot, fullPage: true });
@@ -793,9 +806,7 @@ const verifyArchiveAttackRender = async (page) => {
     null,
     { timeout: 9000 }
   );
-  await page.keyboard.down("ArrowRight");
-  await page.waitForTimeout(730);
-  await page.keyboard.up("ArrowRight");
+  await dodgeArchiveWarnings(page, archiveAttackDraftLevel.bounds);
   await page.waitForFunction(
     () => {
       const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
@@ -812,27 +823,27 @@ const verifyArchiveAttackRender = async (page) => {
       .filter((entry) => entry.startsWith("archive-book-warning:r2:"))
       .join("|");
   });
+  const roundTwoStartAudioDiagnostic = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects || "");
+  const roundTwoStartArchiveImpactPlayCount = audioEffectCount(roundTwoStartAudioDiagnostic, "request:archiveBookImpact");
   const roundTwoScreenshot = `${outDir}/archive-round-two-warning.png`;
   await page.screenshot({ path: roundTwoScreenshot, fullPage: true });
-  await page.keyboard.down("ArrowRight");
-  await page.waitForTimeout(730);
-  await page.keyboard.up("ArrowRight");
+  await dodgeArchiveWarnings(page, archiveAttackDraftLevel.bounds);
   await page.waitForFunction(
     (previousCount) => {
       const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
       const audio = document.documentElement.dataset.echoShiftAudioEffects || "";
       const roundTwoImpact = effects.includes("archive-book-impact:r2:");
-      const impactPlays = audio.split("|").filter((entry) => entry === "play:archiveBookImpact").length;
+      const impactPlays = audio.split("|").filter((entry) => entry === "request:archiveBookImpact").length;
       return roundTwoImpact && impactPlays >= previousCount + 1;
     },
-    archiveImpactPlayCount,
+    roundTwoStartArchiveImpactPlayCount,
     { timeout: 10000 }
   );
   const roundTwoAudioDiagnostic = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects || "");
-  const roundTwoArchiveImpactPlayCount = audioEffectCount(roundTwoAudioDiagnostic, "play:archiveBookImpact");
+  const roundTwoArchiveImpactPlayCount = audioEffectCount(roundTwoAudioDiagnostic, "request:archiveBookImpact");
   assert(
-    roundTwoArchiveImpactPlayCount === archiveImpactPlayCount + 1,
-    `Expected one Archive impact SFX for round two, got first=${archiveImpactPlayCount}, roundTwo=${roundTwoArchiveImpactPlayCount}, audio=${roundTwoAudioDiagnostic}`
+    roundTwoArchiveImpactPlayCount === roundTwoStartArchiveImpactPlayCount + 1,
+    `Expected one Archive impact SFX request for round two, got before=${roundTwoStartArchiveImpactPlayCount}, after=${roundTwoArchiveImpactPlayCount}, audio=${roundTwoAudioDiagnostic}`
   );
   return {
     diagnostic: raw,
@@ -840,6 +851,8 @@ const verifyArchiveAttackRender = async (page) => {
     archiveImpactPlayCount,
     screenshot,
     roundTwoWarning,
+    roundTwoStartAudioDiagnostic,
+    roundTwoStartArchiveImpactPlayCount,
     roundTwoScreenshot,
     roundTwoAudioDiagnostic,
     roundTwoArchiveImpactPlayCount
@@ -869,7 +882,7 @@ const verifyOverlappingBossSceneAudio = async (page) => {
   );
   await dodgeArchiveWarnings(page, overlappingBossAudioDraftLevel.bounds);
   await waitForArchiveBooksToClear(page, "scene-boss-a");
-  await alignPlayerWithBossWeakSpot(page, "scene-boss-a", 1800, { stopOnVulnerable: true }).catch(() => undefined);
+  await waitForBossVulnerableWithArchiveDodge(page, "scene-boss-a", overlappingBossAudioDraftLevel.bounds);
   await page.waitForFunction(
     () => {
       const weakSpots = document.documentElement.dataset.echoShiftBossWeakSpotRects || "";
@@ -912,8 +925,36 @@ const verifyOverlappingBossSceneAudio = async (page) => {
   );
   const stopAudioDiagnostic = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects || "");
   const coreHitPlays = audioEffectCount(defeatAudioDiagnostic, "play:bossCoreHit");
-  assert(coreHitPlays >= 2, `Expected overlapping boss defeat to play at least two core-hit samples, got ${defeatAudioDiagnostic}`);
-  return { defeatAudioDiagnostic, stopAudioDiagnostic, coreHitPlays };
+  const bossALoopStarts = audioEffectCount(defeatAudioDiagnostic, "loop-start:boss-defeat:scene-boss-a:bossDefeatDeparture");
+  const bossBLoopStarts = audioEffectCount(defeatAudioDiagnostic, "loop-start:boss-defeat:scene-boss-b:bossDefeatDeparture");
+  const bossALoopStops = audioEffectCount(stopAudioDiagnostic, "loop-stop:boss-defeat:scene-boss-a");
+  const bossBLoopStops = audioEffectCount(stopAudioDiagnostic, "loop-stop:boss-defeat:scene-boss-b");
+  assert(coreHitPlays === 2, `Expected overlapping boss defeat to play exactly two core-hit samples, got ${defeatAudioDiagnostic}`);
+  assert(
+    bossALoopStarts === 1 && bossBLoopStarts === 1,
+    `Expected exactly one loop start per overlapping boss, got ${defeatAudioDiagnostic}`
+  );
+  assert(
+    bossALoopStops === 1 && bossBLoopStops === 1,
+    `Expected exactly one loop stop per overlapping boss, got ${stopAudioDiagnostic}`
+  );
+  assert(
+    audioEffectPrefixCount(defeatAudioDiagnostic, "loop-start:boss-defeat:scene-boss-") === 2,
+    `Expected no extra overlapping boss loop starts, got ${defeatAudioDiagnostic}`
+  );
+  assert(
+    audioEffectPrefixCount(stopAudioDiagnostic, "loop-stop:boss-defeat:scene-boss-") === 2,
+    `Expected no extra overlapping boss loop stops, got ${stopAudioDiagnostic}`
+  );
+  return {
+    defeatAudioDiagnostic,
+    stopAudioDiagnostic,
+    coreHitPlays,
+    bossALoopStarts,
+    bossBLoopStarts,
+    bossALoopStops,
+    bossBLoopStops
+  };
 };
 
 try {
@@ -962,15 +1003,7 @@ try {
 	    null,
 	    { timeout: 10000 }
 	  );
-  await alignPlayerWithBossWeakSpot(page, "render-boss", 1800, { stopOnVulnerable: true }).catch(() => undefined);
-  await page.waitForFunction(
-    () => {
-      const frames = document.documentElement.dataset.echoShiftBossSpriteFrames || "";
-      return frames.includes("render-boss:") && frames.includes(":active:vulnerable");
-    },
-    null,
-    { timeout: 10000 }
-  );
+  await waitForBossVulnerableWithArchiveDodge(page, "render-boss", draftLevel.bounds);
 
   const defeatCorrection = await startWeakSpotJump(page, "render-boss");
   try {
@@ -1023,12 +1056,20 @@ try {
     },
     null,
     { timeout: 4500 }
-  );
-  const mid = await readDepartureEffect(page);
-  const spriteWidth = await readBossSpriteWidth(page);
+	  );
+	  const mid = await readDepartureEffect(page);
+	  const spriteWidth = await readBossSpriteWidth(page);
   assert(mid.x > early.x + 60, `Expected departing boss to move right, got early ${JSON.stringify(early)} and mid ${JSON.stringify(mid)}`);
   const midLoopVolumes = await readBossDefeatLoopVolumes(page);
-  assert(midLoopVolumes.volumes.some((volume) => volume < 0.95), `Expected boss defeat loop volume to fade below full volume during fly-away, got ${JSON.stringify(midLoopVolumes)}`);
+  const intermediateLoopVolumes = midLoopVolumes.volumes.filter((volume) => volume > 0.05 && volume < 0.95);
+  const hasDescendingStep = midLoopVolumes.volumes.some((volume, index, volumes) => index > 0 && volume < volumes[index - 1] - 0.04);
+  assert(
+    intermediateLoopVolumes.length >= 3 &&
+      intermediateLoopVolumes.some((volume) => volume > 0.75) &&
+      intermediateLoopVolumes.some((volume) => volume < 0.6) &&
+      hasDescendingStep,
+    `Expected boss defeat loop volume to fade through multiple intermediate levels, got ${JSON.stringify(midLoopVolumes)}`
+  );
 
   await page.waitForFunction(
     () => {

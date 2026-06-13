@@ -137,6 +137,7 @@ export class SynthAudio {
   private webMusic: WebMusicPlayback | null = null;
   private musicKey: SoundtrackKey | null = null;
   private mediaMusicKey: SoundtrackKey | null = null;
+  private musicPlaybackKey: SoundtrackKey | null = null;
   private musicCache = new Map<SoundtrackKey, HTMLAudioElement>();
   private mediaMusicReadyKeys = new Set<SoundtrackKey>();
   private mediaMusicReadyPromises = new Map<SoundtrackKey, Promise<boolean>>();
@@ -272,6 +273,7 @@ export class SynthAudio {
   stopEffectLoop(id: string): void {
     const playback = this.loopedEffects.get(id);
     if (!playback) return;
+    playback.playAttempt = ++this.effectLoopPlayAttempt;
     this.loopedEffects.delete(id);
     this.stopLoopedEffectFallback(playback);
     playback.element.pause();
@@ -284,6 +286,7 @@ export class SynthAudio {
     for (const playback of this.loopedEffects.values()) {
       if (playback.paused) continue;
       playback.paused = true;
+      playback.playAttempt = ++this.effectLoopPlayAttempt;
       playback.element.pause();
       this.stopLoopedEffectFallback(playback);
       this.markEffectEvent(`loop-pause:${playback.id}`);
@@ -370,6 +373,10 @@ export class SynthAudio {
     const loop = musicLoopRegionFor(key);
     if (!loop || !this.canUseWebMusic()) return this.mediaMusicReadyKeys.has(key);
     return this.webMusicReadyKeys.has(key) || this.mediaMusicReadyKeys.has(key);
+  }
+
+  isMusicPlaying(key: SoundtrackKey): boolean {
+    return this.musicPlaybackKey === key;
   }
 
   playMusic(key: SoundtrackKey, options: { restart?: boolean; fadeMs?: number } = {}): void {
@@ -482,11 +489,15 @@ export class SynthAudio {
     this.mediaMusicKey = null;
     if (this.webMusic) this.stopWebMusic(this.webMusic);
     this.webMusic = null;
-    this.stopAllFadingMusic();
-    this.stopAllFadingWebMusic();
-    this.musicKey = null;
-    this.releaseUnusedMusic();
-    if (import.meta.env.DEV && typeof document !== "undefined") delete document.documentElement.dataset.echoShiftMusicKey;
+	    this.stopAllFadingMusic();
+	    this.stopAllFadingWebMusic();
+	    this.musicKey = null;
+    this.musicPlaybackKey = null;
+	    this.releaseUnusedMusic();
+    if (import.meta.env.DEV && typeof document !== "undefined") {
+      delete document.documentElement.dataset.echoShiftMusicKey;
+      delete document.documentElement.dataset.echoShiftMusicPlayback;
+    }
     this.markAudioState("stopped");
   }
 
@@ -497,10 +508,11 @@ export class SynthAudio {
     this.effectLoopPlayAttempt += 1;
     this.musicPaused = false;
     this.stopMusicLoopWatch();
-    this.music = null;
-    this.musicKey = null;
-    this.mediaMusicKey = null;
-    if (this.webMusic) this.stopWebMusic(this.webMusic);
+	    this.music = null;
+	    this.musicKey = null;
+	    this.mediaMusicKey = null;
+    this.musicPlaybackKey = null;
+	    if (this.webMusic) this.stopWebMusic(this.webMusic);
     this.webMusic = null;
     for (const playback of this.fadingWebMusic) this.stopWebMusic(playback);
     this.fadingWebMusic.clear();
@@ -514,7 +526,10 @@ export class SynthAudio {
     }
     this.loopedEffects.clear();
     this.recentEffectEvents = [];
-    if (import.meta.env.DEV && typeof document !== "undefined") delete document.documentElement.dataset.echoShiftAudioEffects;
+    if (import.meta.env.DEV && typeof document !== "undefined") {
+      delete document.documentElement.dataset.echoShiftAudioEffects;
+      delete document.documentElement.dataset.echoShiftMusicPlayback;
+    }
     for (const element of this.musicCache.values()) {
       this.unloadMusicElement(element);
     }
@@ -813,12 +828,13 @@ export class SynthAudio {
       this.markEffectEvent(`fallback:${name}`);
       this.playToneWhenReady(name);
     };
-    if (typeof element.addEventListener === "function") {
-      element.addEventListener("ended", release, { once: true });
-      element.addEventListener("error", fallback, { once: true });
-    }
+	    if (typeof element.addEventListener === "function") {
+	      element.addEventListener("ended", release, { once: true });
+	      element.addEventListener("error", fallback, { once: true });
+	    }
+    if (name === "archiveBookImpact") this.markEffectEvent("request:archiveBookImpact");
 
-    try {
+	    try {
       void element
         .play()
         .then(() => {
@@ -844,10 +860,15 @@ export class SynthAudio {
       void playback.element
         .play()
         .then(() => {
-          if (this.loopedEffects.get(playback.id) === playback && playback.playAttempt === attempt && !playback.paused) {
+          const currentPlayback = this.loopedEffects.get(playback.id);
+          if (currentPlayback === playback && playback.playAttempt === attempt && !playback.paused) {
             playback.blocked = false;
             playback.started = true;
             this.markEffectEvent(`loop-start:${playback.id}:${playback.name}`);
+          } else {
+            playback.started = false;
+            playback.element.pause();
+            if (currentPlayback !== playback) playback.element.currentTime = 0;
           }
         })
         .catch(() => {
@@ -1025,7 +1046,10 @@ export class SynthAudio {
       .play()
       .then(() => {
         if (this.music === element && attempt === this.musicPlayAttempt) {
-          if (this.mediaMusicKey) this.mediaMusicReadyKeys.add(this.mediaMusicKey);
+          if (this.mediaMusicKey) {
+            this.mediaMusicReadyKeys.add(this.mediaMusicKey);
+            this.markMusicPlayback(this.mediaMusicKey, "playing");
+          }
           this.markAudioState("playing");
         }
       })
@@ -1100,12 +1124,17 @@ export class SynthAudio {
       .resume()
       .then(() => {
         this.markContextState(context.state);
-        if (this.webMusic === playback && attempt === this.webMusicPlayAttempt && !this.musicPaused && context.state === "running") {
-          this.markAudioState("playing");
-        }
+        if (this.markWebMusicPlaying(playback, attempt, context)) return;
       })
       .catch(() => this.markAudioState("blocked"));
-    if (context.state === "running") this.markAudioState("playing");
+    if (context.state === "running") this.markWebMusicPlaying(playback, attempt, context);
+  }
+
+  private markWebMusicPlaying(playback: WebMusicPlayback, attempt: number, context: AudioContext): boolean {
+    if (this.webMusic !== playback || attempt !== this.webMusicPlayAttempt || this.musicPaused || context.state !== "running") return false;
+    this.markMusicPlayback(playback.key, "playing");
+    this.markAudioState("playing");
+    return true;
   }
 
   private webMusicCurrentOffset(playback: WebMusicPlayback): number {
@@ -1155,6 +1184,13 @@ export class SynthAudio {
 
   private markMusicKey(key: SoundtrackKey): void {
     if (import.meta.env.DEV && typeof document !== "undefined") document.documentElement.dataset.echoShiftMusicKey = key;
+  }
+
+  private markMusicPlayback(key: SoundtrackKey, state: "playing"): void {
+    this.musicPlaybackKey = key;
+    if (import.meta.env.DEV && typeof document !== "undefined") {
+      document.documentElement.dataset.echoShiftMusicPlayback = `${key}:${state}`;
+    }
   }
 
   private markEffectEvent(event: string): void {
