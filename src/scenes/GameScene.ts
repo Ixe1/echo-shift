@@ -858,6 +858,9 @@ export class GameScene extends Phaser.Scene {
     }
     if (events.landed) audio.play("land");
     if (events.switched) audio.play("switch");
+    const syncDeathBeforeCoreAwards = events.died && events.cores.length > 0;
+    if (syncDeathBeforeCoreAwards) this.syncFiniteCampaignLives();
+
     if (events.cores.length > 0) {
       for (const core of events.cores) {
         audio.play(this.corePickupIsLarge(core.id) ? "bigCore" : "core");
@@ -907,8 +910,9 @@ export class GameScene extends Phaser.Scene {
       this.restartLevelMusic();
     }
     if (events.died) {
-      this.syncFiniteCampaignLives();
-      this.startDeathPresentation(events.livesExhausted, events.playerLaserVaporized);
+      if (!syncDeathBeforeCoreAwards) this.syncFiniteCampaignLives();
+      const lives = this.simulation.livesRemaining();
+      this.startDeathPresentation(lives !== null && lives <= 0, events.playerLaserVaporized);
     }
     if (events.won) {
       if (this.simulation.finalBossDefeatCompletesLevel()) this.queueBossDefeatCompletion();
@@ -1274,7 +1278,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.stopBossDefeatLoops();
     this.rememberDraftLevel();
-    this.scene.start("LevelSelectScene");
+    this.scene.start("LevelSelectScene", { preserveCampaignVitals: true });
   }
 
   private openEditor(): void {

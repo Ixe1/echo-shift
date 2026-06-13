@@ -1330,7 +1330,8 @@ try {
     campaignCoreCount,
     campaignLivesForLevel,
     registerCampaignCorePickup,
-    resetCampaignVitals
+    resetCampaignVitals,
+    syncCampaignLives
   } = await server.ssrLoadModule("/src/game/session.ts");
   const { soundtrackForBoss, soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
   const { backgroundForLevel, levelBackgrounds } = await server.ssrLoadModule("/src/game/backgrounds.ts");
@@ -1608,6 +1609,14 @@ try {
   const duplicateAward = registerCampaignCorePickup("bonus-test", `core-${CORES_PER_BONUS_LIFE}`);
   assert(!duplicateAward.counted && duplicateAward.livesAwarded === 0, `Expected duplicate core pickup to be ignored, got ${JSON.stringify(duplicateAward)}`);
   assert(campaignCoreCount() === CORES_PER_BONUS_LIFE, `Expected campaign core count to stop at ${CORES_PER_BONUS_LIFE}, got ${campaignCoreCount()}`);
+  resetCampaignVitals(1);
+  for (let index = 1; index < CORES_PER_BONUS_LIFE; index += 1) registerCampaignCorePickup("same-frame-death", `core-${index}`);
+  syncCampaignLives(0);
+  const sameFrameDeathAward = registerCampaignCorePickup("same-frame-death", `core-${CORES_PER_BONUS_LIFE}`);
+  assert(
+    sameFrameDeathAward.livesAwarded === 1 && sameFrameDeathAward.lives === 1,
+    `Expected threshold core after same-frame death sync to leave one life, got ${JSON.stringify(sameFrameDeathAward)}`
+  );
   resetCampaignVitals();
   assert(levels[3].id === "relay-key", `Expected Timber Archive to be the final campaign level, got ${levels[3].id}`);
   assert(levels[3].completion === "boss-defeat", "Expected Timber Archive to complete on boss defeat");
