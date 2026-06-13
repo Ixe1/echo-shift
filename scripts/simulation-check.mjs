@@ -304,18 +304,23 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     }
   }
   class FakeAudioElement {
-    constructor(src) {
-      this.src = src;
-      this.currentTime = 0;
-      this.loop = false;
-      this.preload = "";
-      this.volume = 1;
-      this.readyState = 0;
-      this.playCalls = 0;
-      this.playing = false;
-      this.listeners = new Map();
-      mediaElements.push(this);
-    }
+	    constructor(src) {
+	      this.src = src;
+	      this.currentTime = 0;
+	      this.loop = false;
+	      this.preload = "";
+	      this.volume = 1;
+	      this.readyState = 0;
+	      this.playCalls = 0;
+	      this.playing = false;
+	      this.ended = false;
+	      this.listeners = new Map();
+	      mediaElements.push(this);
+	    }
+
+	    get paused() {
+	      return !this.playing;
+	    }
 
     addEventListener(type, handler) {
       const handlers = this.listeners.get(type) || [];
@@ -514,6 +519,15 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       menu.playCalls === menuRestartPlayCalls + 1 && menu.playing && audio.isMusicPlaying("menu"),
       "Expected same-key restart to report playing only after replay resolves"
     );
+    const menuCallsBeforeTransportLoss = menu.playCalls;
+    menu.pause();
+    assert(!audio.isMusicPlaying("menu"), "Expected browser-paused menu transport not to report as playing");
+    dispatchEvent("focus");
+    await settlePromises();
+    assert(
+      menu.playCalls > menuCallsBeforeTransportLoss && menu.playing && audio.isMusicPlaying("menu"),
+      "Expected focus recovery to restart browser-paused menu transport"
+    );
 
     deferBlockedRejects = true;
     mediaUnlocked = false;
@@ -568,6 +582,14 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     );
     audio.setEffectLoopVolume("test-boss-defeat", 0.5);
     assert(bossDefeatLoop.volume > 0 && bossDefeatLoop.volume < 0.13, `Expected loop volume to scale with FX volume, got ${bossDefeatLoop.volume}`);
+    const bossDefeatLoopCallsBeforeTransportLoss = bossDefeatLoop.playCalls;
+    bossDefeatLoop.pause();
+    dispatchEvent("focus");
+    await settlePromises();
+    assert(
+      bossDefeatLoop.playCalls > bossDefeatLoopCallsBeforeTransportLoss && bossDefeatLoop.playing,
+      "Expected focus recovery to restart a browser-paused boss defeat loop"
+    );
     audio.pauseEffectLoops();
     assert(!bossDefeatLoop.playing, "Expected pauseEffectLoops to pause the active boss defeat loop");
     audio.resumeEffectLoops();
@@ -749,11 +771,18 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     await tutorialPreload;
     assert(audio.isMusicReady("tutorial"), "Expected tutorial media soundtrack to be ready after media load resolves");
 
-    runAnimationFrames = false;
-    audio.playMusic("level-1");
-    await settlePromises();
-    const levelOneFadePauseSource = startedMusicSources.at(-1);
-    assert(!menu.playing, "Expected outgoing menu music to stop once the requested Web Audio track is ready");
+	    runAnimationFrames = false;
+	    audio.playMusic("level-1");
+	    await settlePromises();
+	    const levelOneFadePauseSource = startedMusicSources.at(-1);
+	    const levelOneContext = audioContexts.at(-1);
+	    assert(audio.isMusicPlaying("level-1"), "Expected started Web Audio level music to report as playing");
+	    levelOneContext.state = "suspended";
+	    assert(!audio.isMusicPlaying("level-1"), "Expected suspended Web Audio context not to report level music as playing");
+	    dispatchEvent("focus");
+	    await settlePromises();
+	    assert(audio.isMusicPlaying("level-1"), "Expected focus recovery to restore Web Audio music playback state");
+	    assert(!menu.playing, "Expected outgoing menu music to stop once the requested Web Audio track is ready");
     audio.pauseMusic();
     assert(!menu.playing, "Expected pause to stop outgoing media music while media-to-Web fade is pending");
     assert(levelOneFadePauseSource.stopped, "Expected pause to stop current Web Audio music during media-to-Web fade");
@@ -2466,13 +2495,42 @@ try {
   assert(
     stormSoundCycle === bossAttackWindupFramesFor("storm-relay-warden"),
     `Expected storm beam SFX cue at active-window start, got cycle ${stormSoundCycle}`
-  );
-  assert(stormSoundCue.snapshot.floorShocks.length === 1, "Expected storm beam SFX cue to coincide with active floor shock");
-  const stormBeamWindowCueCounts = countBossSoundCuesUntilActiveWindowEnds(stormSoundCueSim, "boss-test", ["storm-floor-beam"]);
-  const stormBeamWindowCueCount =
-    stormSoundCue.event.bossSoundCues.filter((cue) => cue.id === "boss-test" && cue.cue === "storm-floor-beam").length +
-    (stormBeamWindowCueCounts.get("storm-floor-beam") || 0);
-  assert(stormBeamWindowCueCount === 1, `Expected exactly one storm beam SFX cue in the active window, got ${stormBeamWindowCueCount}`);
+	  );
+	  assert(stormSoundCue.snapshot.floorShocks.length === 1, "Expected storm beam SFX cue to coincide with active floor shock");
+	  Object.assign(stormSoundCueSim.player, { x: 32, y: 86, vx: 0, vy: 0, onGround: true });
+	  const stormBeamWindowCueCounts = countBossSoundCuesUntilActiveWindowEnds(stormSoundCueSim, "boss-test", ["storm-floor-beam"]);
+	  const stormBeamWindowCueCount =
+	    stormSoundCue.event.bossSoundCues.filter((cue) => cue.id === "boss-test" && cue.cue === "storm-floor-beam").length +
+	    (stormBeamWindowCueCounts.get("storm-floor-beam") || 0);
+	  assert(stormBeamWindowCueCount === 1, `Expected exactly one storm beam SFX cue in the active window, got ${stormBeamWindowCueCount}`);
+	  const stormLaterWindowSim = new RoomSimulation(stormLaneLevel);
+	  Object.assign(stormLaterWindowSim.player, { x: 32, y: 86, vx: 0, vy: 0, onGround: true });
+	  stormLaterWindowSim.step(idle);
+	  runFrames(stormLaterWindowSim, 60, idle);
+	  const stormLaterWindowState = stormLaterWindowSim.bossStates.get("boss-test");
+	  stormLaterWindowState.activeFrames =
+	    bossAttackCycleFramesFor("storm-relay-warden") + bossAttackWindupFramesFor("storm-relay-warden") - 1;
+	  stormLaterWindowState.recoveryFrames = 0;
+	  stormLaterWindowState.invulnerableFrames = 0;
+	  const stormSecondSoundEvent = stormLaterWindowSim.step(idle);
+	  const stormSecondSoundCue = {
+	    event: stormSecondSoundEvent,
+	    snapshot: stormLaterWindowSim.bossSnapshots().find((boss) => boss.id === "boss-test")
+	  };
+	  const stormSecondSoundCycle = stormSecondSoundCue.snapshot.activeFrames % bossAttackCycleFramesFor(stormSecondSoundCue.snapshot);
+	  assert(
+	    stormSecondSoundCycle === bossAttackWindupFramesFor("storm-relay-warden"),
+	    `Expected later storm beam SFX cue at active-window start, got cycle ${stormSecondSoundCycle}`
+	  );
+	  assert(
+	    stormSecondSoundEvent.bossSoundCues.some((cue) => cue.id === "boss-test" && cue.cue === "storm-floor-beam"),
+	    `Expected later storm beam SFX cue on the beam-start frame, got ${JSON.stringify(stormSecondSoundEvent.bossSoundCues)}`
+	  );
+	  const stormSecondBeamWindowCueCounts = countBossSoundCuesUntilActiveWindowEnds(stormLaterWindowSim, "boss-test", ["storm-floor-beam"]);
+	  const stormSecondBeamWindowCueCount =
+	    stormSecondSoundEvent.bossSoundCues.filter((cue) => cue.id === "boss-test" && cue.cue === "storm-floor-beam").length +
+	    (stormSecondBeamWindowCueCounts.get("storm-floor-beam") || 0);
+	  assert(stormSecondBeamWindowCueCount === 1, `Expected exactly one later storm beam SFX cue in the active window, got ${stormSecondBeamWindowCueCount}`);
 
   const stormTallLiftLevel = {
     ...baseLevel,
@@ -3376,22 +3434,59 @@ try {
   assert(
     cryoBeamCue.event.bossSoundCues.some((cue) => cue.id === "boss-test" && cue.cue === "cryo-floor-ice-form"),
     `Expected cryo floor ice SFX cue on the beam-start volley, got ${JSON.stringify(cryoBeamCue.event.bossSoundCues)}`
-  );
-  assert(cryoBeamCue.snapshot.floorIce.length === 1, "Expected cryo SFX cue to coincide with created floor ice");
-  const cryoWindowCueCounts = countBossSoundCuesUntilActiveWindowEnds(cryoSoundCueSim, "boss-test", ["cryo-beam-fire", "cryo-floor-ice-form"]);
+	  );
+	  assert(cryoBeamCue.snapshot.floorIce.length === 1, "Expected cryo SFX cue to coincide with created floor ice");
+	  Object.assign(cryoSoundCueSim.player, { x: 32, y: 86, vx: 0, vy: 0, onGround: true });
+	  const cryoWindowCueCounts = countBossSoundCuesUntilActiveWindowEnds(cryoSoundCueSim, "boss-test", ["cryo-beam-fire", "cryo-floor-ice-form"]);
   const cryoBeamWindowCueCount =
     cryoBeamCue.event.bossSoundCues.filter((cue) => cue.id === "boss-test" && cue.cue === "cryo-beam-fire").length +
     (cryoWindowCueCounts.get("cryo-beam-fire") || 0);
   const cryoIceWindowCueCount =
     cryoBeamCue.event.bossSoundCues.filter((cue) => cue.id === "boss-test" && cue.cue === "cryo-floor-ice-form").length +
     (cryoWindowCueCounts.get("cryo-floor-ice-form") || 0);
-  assert(cryoBeamWindowCueCount === 1, `Expected exactly one cryo beam SFX cue in the active window, got ${cryoBeamWindowCueCount}`);
-  assert(cryoIceWindowCueCount === 1, `Expected exactly one cryo floor ice SFX cue in the active window, got ${cryoIceWindowCueCount}`);
-  const cryoPostCue = cryoSoundCueSim.step(idle);
-  assert(
-    !cryoPostCue.bossSoundCues.some((cue) => cue.cue === "cryo-floor-ice-form"),
-    `Expected cryo floor ice SFX not to repeat on the next frame, got ${JSON.stringify(cryoPostCue.bossSoundCues)}`
-  );
+	  assert(cryoBeamWindowCueCount === 1, `Expected exactly one cryo beam SFX cue in the active window, got ${cryoBeamWindowCueCount}`);
+	  assert(cryoIceWindowCueCount === 1, `Expected exactly one cryo floor ice SFX cue in the active window, got ${cryoIceWindowCueCount}`);
+	  const cryoPostCue = cryoSoundCueSim.step(idle);
+	  assert(
+	    !cryoPostCue.bossSoundCues.some((cue) => cue.cue === "cryo-floor-ice-form"),
+	    `Expected cryo floor ice SFX not to repeat on the next frame, got ${JSON.stringify(cryoPostCue.bossSoundCues)}`
+	  );
+	  const cryoLaterWindowSim = new RoomSimulation(cryoLevel);
+	  Object.assign(cryoLaterWindowSim.player, { x: 32, y: 86, vx: 0, vy: 0, onGround: true });
+	  cryoLaterWindowSim.step(idle);
+	  runFrames(cryoLaterWindowSim, 60, idle);
+	  const cryoLaterWindowState = cryoLaterWindowSim.bossStates.get("boss-test");
+	  cryoLaterWindowState.activeFrames =
+	    bossAttackCycleFramesFor("cryo-conservator") + bossAttackWindupFramesFor("cryo-conservator") - 1;
+	  cryoLaterWindowState.recoveryFrames = 0;
+	  cryoLaterWindowState.invulnerableFrames = 0;
+	  const cryoSecondBeamEvent = cryoLaterWindowSim.step(idle);
+	  const cryoSecondBeamCue = {
+	    event: cryoSecondBeamEvent,
+	    snapshot: cryoLaterWindowSim.bossSnapshots().find((boss) => boss.id === "boss-test")
+	  };
+	  const cryoSecondSoundCycle = cryoSecondBeamCue.snapshot.activeFrames % bossAttackCycleFramesFor(cryoSecondBeamCue.snapshot);
+	  assert(
+	    cryoSecondSoundCycle === bossAttackWindupFramesFor("cryo-conservator"),
+	    `Expected later cryo beam SFX cue at active-window start, got cycle ${cryoSecondSoundCycle}`
+	  );
+	  assert(
+	    cryoSecondBeamEvent.bossSoundCues.some((cue) => cue.id === "boss-test" && cue.cue === "cryo-beam-fire"),
+	    `Expected later cryo beam SFX cue on the beam-start volley, got ${JSON.stringify(cryoSecondBeamEvent.bossSoundCues)}`
+	  );
+	  assert(
+	    cryoSecondBeamEvent.bossSoundCues.some((cue) => cue.id === "boss-test" && cue.cue === "cryo-floor-ice-form"),
+	    `Expected later cryo floor ice SFX cue on the beam-start volley, got ${JSON.stringify(cryoSecondBeamCue.event.bossSoundCues)}`
+	  );
+	  const cryoSecondWindowCueCounts = countBossSoundCuesUntilActiveWindowEnds(cryoLaterWindowSim, "boss-test", ["cryo-beam-fire", "cryo-floor-ice-form"]);
+	  const cryoSecondBeamWindowCueCount =
+	    cryoSecondBeamEvent.bossSoundCues.filter((cue) => cue.id === "boss-test" && cue.cue === "cryo-beam-fire").length +
+	    (cryoSecondWindowCueCounts.get("cryo-beam-fire") || 0);
+	  const cryoSecondIceWindowCueCount =
+	    cryoSecondBeamEvent.bossSoundCues.filter((cue) => cue.id === "boss-test" && cue.cue === "cryo-floor-ice-form").length +
+	    (cryoSecondWindowCueCounts.get("cryo-floor-ice-form") || 0);
+	  assert(cryoSecondBeamWindowCueCount === 1, `Expected exactly one later cryo beam SFX cue in the active window, got ${cryoSecondBeamWindowCueCount}`);
+	  assert(cryoSecondIceWindowCueCount === 1, `Expected exactly one later cryo floor ice SFX cue in the active window, got ${cryoSecondIceWindowCueCount}`);
   const cryoDefeatPauseLevel = {
     ...bossLevel,
     bosses: [{ ...bossLevel.bosses[0], kind: "cryo-conservator", introSeconds: 1, health: 1 }]

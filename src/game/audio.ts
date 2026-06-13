@@ -376,7 +376,10 @@ export class SynthAudio {
   }
 
   isMusicPlaying(key: SoundtrackKey): boolean {
-    return !this.musicPaused && this.musicPlaybackKey === key;
+    if (this.musicPaused || this.musicPlaybackKey !== key) return false;
+    if (this.webMusic?.key === key) return Boolean(this.webMusic.source && this.context?.state === "running");
+    if (this.mediaMusicKey === key && this.music) return this.mediaElementIsPlaying(this.music);
+    return false;
   }
 
   playMusic(key: SoundtrackKey, options: { restart?: boolean; fadeMs?: number } = {}): void {
@@ -862,7 +865,7 @@ export class SynthAudio {
         .play()
         .then(() => {
           const currentPlayback = this.loopedEffects.get(playback.id);
-          if (currentPlayback === playback && playback.playAttempt === attempt && !playback.paused) {
+          if (currentPlayback === playback && playback.playAttempt === attempt && !playback.paused && this.mediaElementIsPlaying(playback.element)) {
             playback.blocked = false;
             playback.started = true;
             this.markEffectEvent(`loop-start:${playback.id}:${playback.name}`);
@@ -897,7 +900,8 @@ export class SynthAudio {
       if (playback.paused) continue;
       if (playback.sampleFailed) {
         this.startLoopedEffectFallback(playback);
-      } else if (playback.blocked || !playback.started) {
+      } else if (playback.blocked || !playback.started || !this.mediaElementIsPlaying(playback.element)) {
+        playback.started = false;
         this.playLoopedEffect(playback);
       }
     }
@@ -1194,6 +1198,10 @@ export class SynthAudio {
     if (import.meta.env.DEV && typeof document !== "undefined") {
       document.documentElement.dataset.echoShiftMusicPlayback = `${key}:${state}`;
     }
+  }
+
+  private mediaElementIsPlaying(element: HTMLMediaElement): boolean {
+    return !element.paused && !element.ended;
   }
 
   private clearMusicPlayback(): void {
