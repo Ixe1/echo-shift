@@ -1212,12 +1212,20 @@ export class GameScene extends Phaser.Scene {
   }
 
   private openTitle(): void {
+    if (this.pendingBossDefeatCompletion) {
+      this.hud.toast("Title locked during final sync");
+      return;
+    }
     this.stopBossDefeatLoops();
     this.rememberDraftLevel();
     this.scene.start("MenuScene");
   }
 
   private openLevelSelect(): void {
+    if (this.pendingBossDefeatCompletion) {
+      this.hud.toast("Level select locked during final sync");
+      return;
+    }
     this.stopBossDefeatLoops();
     this.rememberDraftLevel();
     this.scene.start("LevelSelectScene");

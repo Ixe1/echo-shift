@@ -819,6 +819,34 @@ const verifyBossDefeatCompletionMusic = async (page) => {
     restartClickState.musicKey === "level-4",
     `Expected pause-menu restart not to reset the final handoff music key, got ${JSON.stringify(restartClickState)}`
   );
+  await page.locator("[data-levels]").click();
+  await page.waitForTimeout(400);
+  const levelSelectClickState = await page.evaluate(() => ({
+    modalTitle: document.querySelector("[data-modal].show h1")?.textContent || "",
+    musicKey: document.documentElement.dataset.echoShiftMusicKey || ""
+  }));
+  assert(
+    levelSelectClickState.modalTitle.includes("Paused"),
+    `Expected pause-menu level select to be locked during final handoff, got ${JSON.stringify(levelSelectClickState)}`
+  );
+  assert(
+    levelSelectClickState.musicKey === "level-4",
+    `Expected pause-menu level select not to leave the final handoff, got ${JSON.stringify(levelSelectClickState)}`
+  );
+  await page.locator("[data-exit-menu]").click();
+  await page.waitForTimeout(400);
+  const titleClickState = await page.evaluate(() => ({
+    modalTitle: document.querySelector("[data-modal].show h1")?.textContent || "",
+    musicKey: document.documentElement.dataset.echoShiftMusicKey || ""
+  }));
+  assert(
+    titleClickState.modalTitle.includes("Paused"),
+    `Expected pause-menu title exit to be locked during final handoff, got ${JSON.stringify(titleClickState)}`
+  );
+  assert(
+    titleClickState.musicKey === "level-4",
+    `Expected pause-menu title exit not to leave the final handoff, got ${JSON.stringify(titleClickState)}`
+  );
   await page.keyboard.press("Escape");
   await page.waitForFunction(
     () => !document.querySelector("[data-modal].show h1")?.textContent?.includes("Paused"),
@@ -848,7 +876,9 @@ const verifyBossDefeatCompletionMusic = async (page) => {
     completeTitle: await page.locator(".complete-panel h1").textContent(),
     completionOrder,
     pausedState,
-    restartClickState
+    restartClickState,
+    levelSelectClickState,
+    titleClickState
   };
 };
 
@@ -1075,8 +1105,8 @@ const verifyArchiveAttackRender = async (page) => {
     `Expected one mixed Archive impact SFX request for the opening multi-book volley, got ${archiveImpactRequestCount} from ${audioDiagnostic}`
   );
   assert(
-    archiveImpactSamplePlayCount >= 1,
-    `Expected sampled Archive impact SFX to play for the opening volley, got ${audioDiagnostic}`
+    archiveImpactSamplePlayCount === 1,
+    `Expected one sampled Archive impact SFX play for the opening volley, got ${archiveImpactSamplePlayCount} from ${audioDiagnostic}`
   );
   const screenshot = `${outDir}/archive-attack-active.png`;
   await page.screenshot({ path: screenshot, fullPage: true });
@@ -1140,7 +1170,7 @@ const verifyArchiveAttackRender = async (page) => {
       const audio = document.documentElement.dataset.echoShiftAudioEffects || "";
       const roundTwoImpact = effects.includes("archive-book-impact:r2:");
       const impactRequests = audio.split("|").filter((entry) => entry === "request:archiveBookImpact").length;
-      return roundTwoImpact && impactRequests >= previousCount + 1;
+      return roundTwoImpact && impactRequests === previousCount + 1;
     },
     roundTwoStartArchiveImpactRequestCount,
     { timeout: 10000 }
@@ -1162,7 +1192,7 @@ const verifyArchiveAttackRender = async (page) => {
     `Expected one Archive impact SFX request for round two, got before=${roundTwoStartArchiveImpactRequestCount}, after=${roundTwoArchiveImpactRequestCount}, audio=${roundTwoAudioDiagnostic}`
   );
   assert(
-    roundTwoArchiveImpactSamplePlayCount >= roundTwoStartArchiveImpactSamplePlayCount + 1,
+    roundTwoArchiveImpactSamplePlayCount === roundTwoStartArchiveImpactSamplePlayCount + 1,
     `Expected sampled Archive impact SFX to play for round two, got before=${roundTwoStartArchiveImpactSamplePlayCount}, after=${roundTwoArchiveImpactSamplePlayCount}, audio=${roundTwoAudioDiagnostic}`
   );
   return {

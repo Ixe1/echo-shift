@@ -881,17 +881,25 @@ export class SynthAudio {
             }
           }
         })
-        .catch(() => {
+        .catch((error) => {
           if (this.loopedEffects.get(playback.id) === playback && playback.playAttempt === attempt) {
+            if (!this.mediaPlayRejectionIsRecoverableBlock(error)) {
+              this.failLoopedEffectSample(playback);
+              return;
+            }
             playback.blocked = true;
             playback.started = false;
             this.markEffectEvent(`loop-blocked:${playback.id}:${playback.name}`);
           }
         });
-    } catch {
-      playback.blocked = true;
-      playback.started = false;
-      this.markEffectEvent(`loop-blocked:${playback.id}:${playback.name}`);
+    } catch (error) {
+      if (!this.mediaPlayRejectionIsRecoverableBlock(error)) {
+        this.failLoopedEffectSample(playback);
+      } else {
+        playback.blocked = true;
+        playback.started = false;
+        this.markEffectEvent(`loop-blocked:${playback.id}:${playback.name}`);
+      }
     }
   }
 
@@ -921,6 +929,13 @@ export class SynthAudio {
     playback.element.volume = 0;
     this.markEffectEvent(`loop-fallback:${playback.id}:${playback.name}`);
     this.startLoopedEffectFallback(playback);
+  }
+
+  private mediaPlayRejectionIsRecoverableBlock(error: unknown): boolean {
+    const name = typeof error === "object" && error && "name" in error ? String((error as { name?: unknown }).name || "") : "";
+    if (name === "NotAllowedError" || name === "SecurityError") return true;
+    const message = error instanceof Error ? error.message.toLowerCase() : String(error || "").toLowerCase();
+    return message.includes("autoplay") || message.includes("permission") || message.includes("user gesture") || message.includes("blocked");
   }
 
   private startLoopedEffectFallback(playback: LoopedEffectPlayback): void {

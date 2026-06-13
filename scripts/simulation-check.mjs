@@ -761,6 +761,34 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     audio.stopEffectLoop("fallback-boss-defeat");
     assert(reducedScaleFallbackTone?.stopped, "Expected stopEffectLoop to stop the active fallback boss defeat synth pulse");
 
+    const tonesBeforeRejectedLoopFallback = startedTones.length;
+    forceRejectedMedia.add("boss_defeat_departure");
+    audio.startEffectLoop("bossDefeatDeparture", "rejected-loop-boss-defeat", 1);
+    await settlePromises();
+    forceRejectedMedia.clear();
+    const rejectedLoopBossDefeat = mediaElements.find(
+      (element) =>
+        element.src.includes("boss_defeat_departure") &&
+        element !== bossDefeatLoop &&
+        element !== blockedBossDefeatLoop &&
+        element !== latePauseBossDefeatLoop &&
+        element !== lateStopBossDefeatLoop &&
+        element !== fallbackBossDefeatLoop
+    );
+    assert(
+      rejectedLoopBossDefeat?.playCalls === 1 && !rejectedLoopBossDefeat.playing,
+      `Expected rejected boss defeat loop sample to stop after one play attempt, got ${JSON.stringify({
+        playCalls: rejectedLoopBossDefeat?.playCalls,
+        playing: rejectedLoopBossDefeat?.playing
+      })}`
+    );
+    assert(
+      document.documentElement.dataset.echoShiftAudioEffects?.includes("loop-fallback:rejected-loop-boss-defeat:bossDefeatDeparture"),
+      `Expected rejected loop play to use synth fallback, got ${document.documentElement.dataset.echoShiftAudioEffects}`
+    );
+    assert(startedTones.length > tonesBeforeRejectedLoopFallback, "Expected rejected loop play to pulse a synth fallback");
+    audio.stopEffectLoop("rejected-loop-boss-defeat");
+
     const tonesBeforeRejectedSample = startedTones.length;
     forceRejectedMedia.add("player_jump");
     audio.play("jump");
