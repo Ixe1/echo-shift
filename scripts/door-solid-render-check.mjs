@@ -125,7 +125,6 @@ const level = {
   score: {
     lives: 3,
     coreScore: 100,
-    deathPenalty: 500,
     timeBonusTargetSeconds: 10,
     timeBonusPerSecond: 100
   },

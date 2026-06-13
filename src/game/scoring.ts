@@ -5,7 +5,6 @@ const FPS = 60;
 export const DEFAULT_SCORE_SETTINGS: LevelScoreSettings = {
   lives: 3,
   coreScore: 100,
-  deathPenalty: 500,
   timeBonusTargetSeconds: 30,
   timeBonusPerSecond: 100
 };
@@ -24,8 +23,7 @@ const positiveInteger = (value: unknown, fallback: number): number =>
 const nonNegativeInteger = (value: unknown, fallback: number): number =>
   Math.max(0, Math.round(finiteNumber(value, fallback)));
 
-const livesValue = (value: unknown, fallback: number | null): number | null =>
-  value === null ? null : positiveInteger(value, typeof fallback === "number" ? fallback : 3);
+const livesValue = (value: unknown): number | null => (value === null ? null : DEFAULT_SCORE_SETTINGS.lives);
 
 const legacyGoldSeconds = (legacyGoldFrames: unknown): number | null => {
   const frames = finiteNumber(legacyGoldFrames, Number.NaN);
@@ -45,9 +43,8 @@ export const normalizeScoreSettings = (
   const record = isRecord(value) ? value : {};
   const fallbackTarget = legacyGoldSeconds(legacyGoldFrames) || DEFAULT_SCORE_SETTINGS.timeBonusTargetSeconds;
   return {
-    lives: livesValue(record.lives, DEFAULT_SCORE_SETTINGS.lives),
+    lives: livesValue(record.lives),
     coreScore: nonNegativeInteger(record.coreScore, DEFAULT_SCORE_SETTINGS.coreScore),
-    deathPenalty: nonNegativeInteger(record.deathPenalty, DEFAULT_SCORE_SETTINGS.deathPenalty),
     timeBonusTargetSeconds: positiveInteger(record.timeBonusTargetSeconds, fallbackTarget),
     timeBonusPerSecond: nonNegativeInteger(record.timeBonusPerSecond, DEFAULT_SCORE_SETTINGS.timeBonusPerSecond)
   };

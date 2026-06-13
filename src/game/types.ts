@@ -296,7 +296,6 @@ export type LevelBackgroundAmbience = {
 export type LevelScoreSettings = {
   lives: number | null;
   coreScore: number;
-  deathPenalty: number;
   timeBonusTargetSeconds: number;
   timeBonusPerSecond: number;
 };

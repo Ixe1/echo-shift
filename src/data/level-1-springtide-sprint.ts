@@ -861,7 +861,6 @@ export const level1SpringtideSprint = {
     "score": {
       "lives": 3,
       "coreScore": 100,
-      "deathPenalty": 500,
       "timeBonusTargetSeconds": 45,
       "timeBonusPerSecond": 100
     },

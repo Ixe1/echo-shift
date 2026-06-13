@@ -4,6 +4,7 @@ import { audio } from "../game/audio";
 import { formatFrames } from "../game/geometry";
 import { getBestScores } from "../game/progress";
 import { formatScore } from "../game/scoring";
+import { resetCampaignVitals } from "../game/session";
 import { soundtrackForLevel } from "../game/soundtracks";
 import { clearUi, icon, uiRoot } from "../ui/dom";
 
@@ -75,6 +76,7 @@ export class LevelSelectScene extends Phaser.Scene {
       button.addEventListener("click", () => {
         const levelIndex = Number(button.dataset.level || 0);
         audio.play("select");
+        resetCampaignVitals();
         this.scene.start("GameScene", { levelIndex });
       });
     });

@@ -1481,7 +1481,7 @@ try {
   );
   assert(scoreSettingsText?.includes("Lives"), `Expected score settings to label Lives, got ${scoreSettingsText}`);
   assert(scoreSettingsText?.includes("Core Score"), `Expected score settings to label Core Score, got ${scoreSettingsText}`);
-  assert(scoreSettingsText?.includes("Death Penalty"), `Expected score settings to label Death Penalty, got ${scoreSettingsText}`);
+  assert(!scoreSettingsText?.includes("Death Penalty"), `Expected score settings to omit Death Penalty, got ${scoreSettingsText}`);
   assert(scoreSettingsText?.includes("Bonus Target"), `Expected score settings to label Bonus Target, got ${scoreSettingsText}`);
   assert(scoreSummaryText?.includes("lives") && scoreSummaryText.includes("under 45s"), `Expected score summary to explain lives and Level 1 time target, got ${scoreSummaryText}`);
   assert(zoomBeforeWheel !== zoomAfterWheel, `Expected wheel input to zoom canvas, got ${zoomBeforeWheel} -> ${zoomAfterWheel}`);
@@ -1869,7 +1869,10 @@ try {
   assert(staticMonsterPathValidation === "clean", `Expected clean validation after static monster endpoint edit, got ${staticMonsterPathValidation}`);
   assert(fallbackImportExport.score?.lives === 3, `Expected imported legacy score lives to default to 3, got ${JSON.stringify(fallbackImportExport.score)}`);
   assert(fallbackImportExport.score?.coreScore === 100, `Expected imported legacy core score to default to 100, got ${JSON.stringify(fallbackImportExport.score)}`);
-  assert(fallbackImportExport.score?.deathPenalty === 500, `Expected imported legacy death penalty to default to 500, got ${JSON.stringify(fallbackImportExport.score)}`);
+  assert(
+    fallbackImportExport.score?.deathPenalty === undefined,
+    `Expected imported legacy score to omit death penalty, got ${JSON.stringify(fallbackImportExport.score)}`
+  );
   assert(
     fallbackImportExport.score?.timeBonusTargetSeconds === 30,
     `Expected imported legacy gold frames to convert to 30s bonus target, got ${JSON.stringify(fallbackImportExport.score)}`

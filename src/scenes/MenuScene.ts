@@ -3,6 +3,7 @@ import { readEditorDraftCurrentIndex } from "../data/editorDraft";
 import { getLevel, isDraftPlaytestActive, levels } from "../data/levels";
 import { tutorialLevel } from "../data/tutorialLevel";
 import { audio } from "../game/audio";
+import { resetCampaignVitals } from "../game/session";
 import { soundtrackForLevel } from "../game/soundtracks";
 import { clearUi, icon, uiRoot } from "../ui/dom";
 import { bindOptionsPanel, optionsPanelHtml } from "../ui/options";
@@ -53,6 +54,7 @@ export class MenuScene extends Phaser.Scene {
 
     root.querySelector("[data-play]")?.addEventListener("click", () => {
       audio.play("select");
+      resetCampaignVitals();
       this.scene.start("GameScene", { levelIndex: draftPlaytest ? this.currentDraftLevelIndex() : 0 });
     });
     root.querySelector("[data-levels]")?.addEventListener("click", () => {
@@ -61,6 +63,7 @@ export class MenuScene extends Phaser.Scene {
     });
     root.querySelector("[data-tutorial]")?.addEventListener("click", () => {
       audio.play("select");
+      resetCampaignVitals();
       this.scene.start("GameScene", { tutorial: true });
     });
     root.querySelector("[data-editor]")?.addEventListener("click", () => {

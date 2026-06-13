@@ -23,7 +23,6 @@ const baseLevel = {
   score: {
     lives: 3,
     coreScore: 100,
-    deathPenalty: 500,
     timeBonusTargetSeconds: 10,
     timeBonusPerSecond: 100
   },
@@ -1326,6 +1325,13 @@ try {
   const { doorRequiredCoreIds, isMajorCore, movingLaserRectAt } = await server.ssrLoadModule("/src/game/objects.ts");
   const { EDITOR_DRAFT_STORAGE_KEY, readEditorDraftSnapshot } = await server.ssrLoadModule("/src/data/editorDraft.ts");
   const { getBestScores, isBetterLevelScore, recordLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
+  const {
+    CORES_PER_BONUS_LIFE,
+    campaignCoreCount,
+    campaignLivesForLevel,
+    registerCampaignCorePickup,
+    resetCampaignVitals
+  } = await server.ssrLoadModule("/src/game/session.ts");
   const { soundtrackForBoss, soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
   const { backgroundForLevel, levelBackgrounds } = await server.ssrLoadModule("/src/game/backgrounds.ts");
   const { backgroundAmbienceForLevel, backgroundAmbienceIsActive } = await server.ssrLoadModule("/src/game/backgroundAmbience.ts");
@@ -1587,6 +1593,22 @@ try {
   };
 
   assert(levels.length === 4, `Expected 4 handcrafted levels, found ${levels.length}`);
+  resetCampaignVitals();
+  assert(campaignLivesForLevel(levels[0]) === 3, `Expected finite campaign lives to default to 3, got ${campaignLivesForLevel(levels[0])}`);
+  assert(campaignLivesForLevel(tutorialLevel) === null, `Expected unlimited tutorial lives to bypass campaign lives, got ${campaignLivesForLevel(tutorialLevel)}`);
+  for (let index = 1; index < CORES_PER_BONUS_LIFE; index += 1) {
+    const award = registerCampaignCorePickup("bonus-test", `core-${index}`);
+    assert(award.counted && award.livesAwarded === 0, `Expected core ${index} to count without a life award, got ${JSON.stringify(award)}`);
+  }
+  const bonusAward = registerCampaignCorePickup("bonus-test", `core-${CORES_PER_BONUS_LIFE}`);
+  assert(
+    bonusAward.counted && bonusAward.livesAwarded === 1 && bonusAward.lives === 4,
+    `Expected ${CORES_PER_BONUS_LIFE}th core to award one life, got ${JSON.stringify(bonusAward)}`
+  );
+  const duplicateAward = registerCampaignCorePickup("bonus-test", `core-${CORES_PER_BONUS_LIFE}`);
+  assert(!duplicateAward.counted && duplicateAward.livesAwarded === 0, `Expected duplicate core pickup to be ignored, got ${JSON.stringify(duplicateAward)}`);
+  assert(campaignCoreCount() === CORES_PER_BONUS_LIFE, `Expected campaign core count to stop at ${CORES_PER_BONUS_LIFE}, got ${campaignCoreCount()}`);
+  resetCampaignVitals();
   assert(levels[3].id === "relay-key", `Expected Timber Archive to be the final campaign level, got ${levels[3].id}`);
   assert(levels[3].completion === "boss-defeat", "Expected Timber Archive to complete on boss defeat");
   assert(
@@ -1609,7 +1631,6 @@ try {
       (level) =>
         level.score?.lives === 3 &&
         level.score.coreScore === 100 &&
-        level.score.deathPenalty === 500 &&
         level.score.timeBonusPerSecond === 100 &&
         Number.isInteger(level.score.timeBonusTargetSeconds) &&
         level.score.timeBonusTargetSeconds > 0
@@ -2452,7 +2473,7 @@ try {
   assert(deathEvent.died && !deathEvent.livesExhausted, "First death should not exhaust the default signal budget");
   assert(deathSim.deaths === 1, `Expected first death to increment death count, got ${deathSim.deaths}`);
   assert(deathSim.livesRemaining() === 2, `Expected two lives remaining after first death, got ${deathSim.livesRemaining()}`);
-  assert(deathSim.score === 0, `Death penalty should floor score at 0, got ${deathSim.score}`);
+  assert(deathSim.score === 0, `Death without prior score should keep score at 0, got ${deathSim.score}`);
   const deadTick = deathSim.tick;
   const deadFrames = deathSim.totalFrames;
   runFrames(deathSim, 30, right);
@@ -2472,6 +2493,7 @@ try {
   lifeResetSim.player.y = 86;
   const lifeResetDeath = lifeResetSim.step(idle);
   assert(lifeResetDeath.died && lifeResetSim.deaths === 1, "Expected life-reset fixture to lose one life");
+  assert(lifeResetSim.score === 100, `Death should not subtract collected-core score before respawn, got ${lifeResetSim.score}`);
   lifeResetSim.resetLifeAttempt();
   assert(lifeResetSim.deaths === 1, `Life reset should preserve death count, got ${lifeResetSim.deaths}`);
   assert(lifeResetSim.livesRemaining() === 2, `Life reset should preserve lost life, got ${lifeResetSim.livesRemaining()} lives`);
@@ -2479,13 +2501,19 @@ try {
   assert(lifeResetSim.score === 0, `Life reset should restart visible score, got ${lifeResetSim.score}`);
   assert(!lifeResetSim.dead && lifeResetSim.player.alive, "Life reset should respawn a live player");
 
-  const exhaustedLivesSim = new RoomSimulation({ ...deathLevel, score: { ...baseLevel.score, lives: 2 } });
+  const exhaustedLivesSim = new RoomSimulation(deathLevel, { lives: 2 });
   const firstDeath = exhaustedLivesSim.step(idle);
   exhaustedLivesSim.resetAttempt(false);
   const secondDeath = exhaustedLivesSim.step(idle);
   assert(firstDeath.died && !firstDeath.livesExhausted, "First two-life death should not require retry");
   assert(secondDeath.died && secondDeath.livesExhausted, "Second two-life death should require retry");
   assert(exhaustedLivesSim.livesRemaining() === 0, `Expected no lives remaining, got ${exhaustedLivesSim.livesRemaining()}`);
+
+  const carriedLivesSim = new RoomSimulation(deathLevel, { lives: exhaustedLivesSim.livesRemaining() });
+  assert(carriedLivesSim.livesRemaining() === 0, `Expected carried lives to initialize a new room at 0, got ${carriedLivesSim.livesRemaining()}`);
+  carriedLivesSim.setLivesRemaining(3);
+  carriedLivesSim.resetLevel(3);
+  assert(carriedLivesSim.livesRemaining() === 3, `Expected reset with explicit global lives to restore 3, got ${carriedLivesSim.livesRemaining()}`);
 
   const unlimitedLivesSim = new RoomSimulation({ ...deathLevel, score: { ...baseLevel.score, lives: null } });
   const unlimitedDeath = unlimitedLivesSim.step(idle);
@@ -4193,7 +4221,7 @@ try {
 
   const bossCheckpointLevel = {
     ...baseLevel,
-    score: { ...baseLevel.score, coreScore: 1000, deathPenalty: 100 },
+    score: { ...baseLevel.score, coreScore: 1000 },
     cores: [{ id: "pre-boss-core", x: 20, y: 86, w: 18, h: 18 }],
     bosses: [{ id: "checkpoint-boss", kind: "clockwork-regent", x: 78, y: 20, w: 190, h: 130, entrySide: "right", weakSpot: "core", introSeconds: 1, health: 2, score: 2000 }]
   };
@@ -4221,7 +4249,7 @@ try {
   assert(!bossCheckpointSim.dead, "Expected checkpoint life reset to respawn alive");
   assert(bossCheckpointSim.bossStates.get("checkpoint-boss")?.phase === "idle", "Expected checkpoint restore to reset boss fight to idle");
   assert(bossCheckpointSim.objectState.collectedCores.has("pre-boss-core"), "Expected checkpoint restore to preserve collected core");
-  assert(bossCheckpointSim.score === 900, `Expected checkpoint restore to preserve score with one death penalty, got ${bossCheckpointSim.score}`);
+  assert(bossCheckpointSim.score === 1000, `Expected checkpoint restore to preserve score without a death penalty, got ${bossCheckpointSim.score}`);
   assert(bossCheckpointSim.totalFrames === 1, `Expected checkpoint restore to preserve pre-boss frame count, got ${bossCheckpointSim.totalFrames}`);
   assert(bossCheckpointSim.currentRecording.length === 0, "Expected checkpoint restore to start a fresh continuous recording");
   const checkpointRewindTarget = { x: bossCheckpointSim.player.x, y: bossCheckpointSim.player.y };

@@ -135,6 +135,10 @@ const cloneEchoRecordings = (recordings: EchoRecording[]): EchoRecording[] =>
     frames: recording.frames instanceof Uint8Array ? new Uint8Array(recording.frames) : recording.frames.map(cloneInputFrame)
   }));
 
+type RoomSimulationOptions = {
+  lives?: number | null;
+};
+
 export class RoomSimulation {
   readonly level: Level;
   readonly echoRecordings: EchoRecording[] = [];
@@ -158,19 +162,24 @@ export class RoomSimulation {
   private readonly currentAttemptKilledMonsterIds = new Map<string, number>();
   private readonly currentAttemptDefeatedBossIds = new Map<string, number>();
   private bossCheckpoint: BossCheckpoint | null = null;
+  private readonly initialLives: number | null;
+  private remainingLives: number | null;
 
-  constructor(level: Level) {
+  constructor(level: Level, options: RoomSimulationOptions = {}) {
     this.level = level;
+    this.initialLives = this.normalizedLives(options.lives === undefined ? level.score.lives : options.lives);
+    this.remainingLives = this.initialLives;
     this.player = makeActor("player", "player", level.start);
     this.resetAttempt(false);
   }
 
-  resetLevel(): void {
+  resetLevel(lives: number | null = this.initialLives): void {
     this.bossCheckpoint = null;
     this.echoRecordings.length = 0;
     this.totalFrames = 0;
     this.score = 0;
     this.deaths = 0;
+    this.remainingLives = this.normalizedLives(lives);
     this.currentAttemptCollectedCoreIds.clear();
     this.currentAttemptKilledMonsterIds.clear();
     this.currentAttemptDefeatedBossIds.clear();
@@ -402,8 +411,11 @@ export class RoomSimulation {
   }
 
   livesRemaining(): number | null {
-    if (this.level.score.lives === null) return null;
-    return Math.max(0, this.level.score.lives - this.deaths);
+    return this.remainingLives;
+  }
+
+  setLivesRemaining(lives: number | null): void {
+    this.remainingLives = this.normalizedLives(lives);
   }
 
   timeBonus(): number {
@@ -515,10 +527,9 @@ export class RoomSimulation {
     const checkpoint = this.bossCheckpoint;
     if (!checkpoint) return;
     const currentDeaths = this.deaths;
-    const deathsSinceCheckpoint = Math.max(0, currentDeaths - checkpoint.deaths);
     this.tick = checkpoint.tick;
     this.totalFrames = checkpoint.totalFrames;
-    this.score = Math.max(0, checkpoint.score - deathsSinceCheckpoint * this.level.score.deathPenalty);
+    this.score = checkpoint.score;
     this.deaths = currentDeaths;
     this.dead = false;
     this.won = false;
@@ -899,10 +910,15 @@ export class RoomSimulation {
     this.dead = true;
     this.player.alive = false;
     this.deaths += 1;
-    this.score = Math.max(0, this.score - this.level.score.deathPenalty);
+    if (this.remainingLives !== null) this.remainingLives = Math.max(0, this.remainingLives - 1);
     events.died = true;
     const remaining = this.livesRemaining();
     events.livesExhausted = remaining !== null && remaining <= 0;
+  }
+
+  private normalizedLives(value: number | null): number | null {
+    if (value === null) return null;
+    return Math.max(0, Math.round(value));
   }
 
   private applyLaunchPads(actor: ActorBody, previousY: number): string | null {

@@ -60,7 +60,6 @@ const scoreSettingsLike = (value: unknown): boolean =>
   isRecord(value) &&
   (positiveIntegerValue(value.lives) || value.lives === null) &&
   nonNegativeIntegerValue(value.coreScore) &&
-  nonNegativeIntegerValue(value.deathPenalty) &&
   positiveIntegerValue(value.timeBonusTargetSeconds) &&
   nonNegativeIntegerValue(value.timeBonusPerSecond);
 

@@ -353,7 +353,7 @@ const positiveInteger = (value: unknown, fallback: number): number => Math.max(1
 const levelIndex = (value: unknown, maxIndex: number, fallback = 0): number => clamp(nonNegativeInteger(value, fallback), 0, Math.max(0, maxIndex));
 
 const scoreSummary = (level: Level): string =>
-  `${level.score.lives === null ? "Unlimited lives" : `${level.score.lives} lives`}; +${level.score.timeBonusPerSecond} per full second under ${level.score.timeBonusTargetSeconds}s`;
+  `${level.score.lives === null ? "Unlimited lives" : `${level.score.lives} global lives`}; +${level.score.timeBonusPerSecond} per full second under ${level.score.timeBonusTargetSeconds}s`;
 
 const csvToList = (value: string): string[] =>
   value
@@ -1240,7 +1240,7 @@ class LevelEditor {
       const key = field.split(".")[1] as keyof Level["score"];
       if (key === "lives" || key === "timeBonusTargetSeconds") {
         level.score[key] = Math.max(1, Math.round(Number(value)));
-      } else {
+      } else if (key === "coreScore" || key === "timeBonusPerSecond") {
         level.score[key] = Math.max(0, Math.round(Number(value)));
       }
     }
@@ -2257,12 +2257,10 @@ class LevelEditor {
       </div>
       <div class="inspector-section" data-score-settings>
         <h3>Scoring</h3>
-        <p class="editor-field-note">Score uses cores, deaths, and a clear-time bonus. Rewinds do not count as deaths.</p>
+        <p class="editor-field-note">Score uses cores and a clear-time bonus. Rewinds do not count as deaths.</p>
         ${this.levelCheckboxField("Unlimited Lives", "score.unlimitedLives", level.score.lives === null)}
         <div class="inspector-grid three">
-          ${this.numberField("Lives", "score.lives", level.score.lives ?? 3, "level", 1)}
           ${this.numberField("Core Score", "score.coreScore", level.score.coreScore, "level", 1)}
-          ${this.numberField("Death Penalty", "score.deathPenalty", level.score.deathPenalty, "level", 1)}
           ${this.numberField("Bonus Target (s)", "score.timeBonusTargetSeconds", level.score.timeBonusTargetSeconds, "level", 1)}
           ${this.numberField("Score / Saved Sec", "score.timeBonusPerSecond", level.score.timeBonusPerSecond, "level", 1)}
         </div>
@@ -2681,9 +2679,6 @@ class LevelEditor {
     }
     if (!Number.isInteger(level.score.coreScore) || level.score.coreScore < 0) {
       messages.push({ severity: "error", text: `${level.name} core score must be a non-negative integer.` });
-    }
-    if (!Number.isInteger(level.score.deathPenalty) || level.score.deathPenalty < 0) {
-      messages.push({ severity: "error", text: `${level.name} death penalty must be a non-negative integer.` });
     }
     if (!Number.isInteger(level.score.timeBonusTargetSeconds) || level.score.timeBonusTargetSeconds <= 0) {
       messages.push({ severity: "error", text: `${level.name} time bonus target must be a positive whole second count.` });

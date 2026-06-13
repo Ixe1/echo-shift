@@ -35,6 +35,13 @@ import { rectCenter, rectsOverlap } from "../game/geometry";
 import { doorRequiredCoreIds, droneIsActive, droneRectAt, isMajorCore, laserIsActive, movingLaserRectAt } from "../game/objects";
 import { platformRectAt } from "../game/player";
 import { recordLevelScore } from "../game/progress";
+import {
+  campaignLivesForLevel,
+  levelUsesFiniteLives,
+  registerCampaignCorePickup,
+  resetCampaignVitals,
+  syncCampaignLives
+} from "../game/session";
 import { solidCollisionFor } from "../game/solidCollision";
 import { solidRenderDepth, solidVisualRoleFor } from "../game/solidRenderOrder";
 import { soundtrackForBoss, soundtrackForLevel } from "../game/soundtracks";
@@ -427,7 +434,7 @@ export class GameScene extends Phaser.Scene {
     this.tutorialMode = data.tutorial === true;
     this.levelIndex = this.tutorialMode ? 0 : data.levelIndex || 0;
     this.level = this.tutorialMode ? tutorialLevel : getLevel(this.levelIndex);
-    this.simulation = new RoomSimulation(this.level);
+    this.simulation = new RoomSimulation(this.level, { lives: campaignLivesForLevel(this.level) });
     this.accumulator = 0;
     this.pausedByHud = false;
     this.completeHandled = false;
@@ -631,7 +638,9 @@ export class GameScene extends Phaser.Scene {
       levelName: this.level.name,
       frames: this.simulation.totalFrames,
       score: this.simulation.score,
-      lives: this.simulation.livesRemaining()
+      lives: this.simulation.livesRemaining(),
+      coresCollected: this.simulation.objectState.collectedCores.size,
+      coresTotal: (this.level.cores || []).length
     });
     this.updateTutorialHint();
   }
@@ -853,6 +862,7 @@ export class GameScene extends Phaser.Scene {
       for (const core of events.cores) {
         audio.play(this.corePickupIsLarge(core.id) ? "bigCore" : "core");
       }
+      this.processCoreLifeAwards(events.cores);
     }
     for (let index = 0; index < events.echoLaserVaporized; index += 1) audio.play("echoLaserVaporized");
     for (const cue of events.bossSoundCues) this.playBossSoundCue(cue.cue);
@@ -897,6 +907,7 @@ export class GameScene extends Phaser.Scene {
       this.restartLevelMusic();
     }
     if (events.died) {
+      this.syncFiniteCampaignLives();
       this.startDeathPresentation(events.livesExhausted, events.playerLaserVaporized);
     }
     if (events.won) {
@@ -908,6 +919,26 @@ export class GameScene extends Phaser.Scene {
   private corePickupIsLarge(coreId: string): boolean {
     const core = (this.level.cores || []).find((item) => item.id === coreId);
     return core ? this.coreIsLarge(core) : false;
+  }
+
+  private processCoreLifeAwards(cores: ReturnType<RoomSimulation["step"]>["cores"]): void {
+    if (!levelUsesFiniteLives(this.level)) return;
+    let awarded = 0;
+    let lives = this.simulation.livesRemaining();
+    for (const core of cores) {
+      const award = registerCampaignCorePickup(this.level.id, core.id);
+      awarded += award.livesAwarded;
+      lives = award.lives;
+    }
+    if (lives !== null) this.simulation.setLivesRemaining(lives);
+    if (awarded > 0 && lives !== null) {
+      this.hud.toast(awarded === 1 ? `Bonus life earned. ${lives} lives left.` : `${awarded} bonus lives earned. ${lives} lives left.`);
+    }
+  }
+
+  private syncFiniteCampaignLives(): void {
+    if (!levelUsesFiniteLives(this.level)) return;
+    syncCampaignLives(this.simulation.livesRemaining());
   }
 
   private playBossSoundCue(cue: ReturnType<RoomSimulation["step"]>["bossSoundCues"][number]["cue"]): void {
@@ -1110,7 +1141,7 @@ export class GameScene extends Phaser.Scene {
     this.retryPresentation = null;
     this.stopBossDefeatLoops();
     this.clearAttemptScopedAudio();
-    this.simulation.resetLevel();
+    this.simulation.resetLevel(campaignLivesForLevel(this.level));
     this.accumulator = 0;
     this.completeHandled = false;
     this.pendingBossDefeatCompletion = false;
@@ -1130,6 +1161,8 @@ export class GameScene extends Phaser.Scene {
       this.hud.toast("Restart locked during final sync");
       return;
     }
+    const resetRun = this.retryRequired && levelUsesFiniteLives(this.level);
+    if (resetRun) resetCampaignVitals();
     this.stopBossDefeatLoops();
     this.clearAttemptScopedAudio();
     this.completeHandled = false;
@@ -1140,7 +1173,7 @@ export class GameScene extends Phaser.Scene {
     this.virtualInput = { left: false, right: false, jump: false };
     this.restartLevelMusic();
     this.cameras.main.fadeIn(DEATH_FADE_IN_MS, 5, 7, 13);
-    this.simulation.resetLevel();
+    this.simulation.resetLevel(campaignLivesForLevel(this.level));
     this.playerCastUntil = 0;
     this.echoTrails.clear();
     this.launchPadActiveUntil.clear();
@@ -1202,10 +1235,12 @@ export class GameScene extends Phaser.Scene {
       cores: this.simulation.objectState.collectedCores.size,
       timeBonus: this.simulation.timeBonus()
     };
+    this.syncFiniteCampaignLives();
     if (!this.tutorialMode && !isDraftPlaytestActive()) recordLevelScore(score, this.level.index);
     this.cameras.main.flash(280, 255, 227, 90, false);
-    if (this.tutorialMode) this.hud.showTutorialComplete(score);
-    else this.hud.showComplete(score, this.levelIndex === levels.length - 1);
+    const totalCores = (this.level.cores || []).length;
+    if (this.tutorialMode) this.hud.showTutorialComplete(score, totalCores);
+    else this.hud.showComplete(score, this.levelIndex === levels.length - 1, totalCores);
   }
 
   private nextLevel(): void {

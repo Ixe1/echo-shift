@@ -25,6 +25,8 @@ type HudState = {
   frames: number;
   score: number;
   lives: number | null;
+  coresCollected: number;
+  coresTotal: number;
 };
 
 export class Hud {
@@ -48,6 +50,10 @@ export class Hud {
               <div class="hud-stat">
                 <span class="hud-label">Score</span>
                 <span class="hud-value accent" data-score></span>
+              </div>
+              <div class="hud-stat">
+                <span class="hud-label">Cores</span>
+                <span class="hud-value" data-cores></span>
               </div>
             </div>
           </div>
@@ -83,6 +89,7 @@ export class Hud {
     this.set("[data-level]", state.levelNumber === null ? state.levelName : `${state.levelNumber}. ${state.levelName}`);
     this.set("[data-time]", formatFrames(state.frames));
     this.set("[data-score]", formatScore(state.score));
+    this.set("[data-cores]", `${state.coresCollected}/${state.coresTotal}`);
     this.set("[data-lives]", state.lives === null ? "∞" : `${state.lives}`);
   }
 
@@ -155,7 +162,7 @@ export class Hud {
     modal.replaceChildren();
   }
 
-  showComplete(score: LevelScore, isFinal: boolean): void {
+  showComplete(score: LevelScore, isFinal: boolean, totalCores: number): void {
     const modal = this.modal();
     modal.innerHTML = `
       <section class="panel complete-panel">
@@ -165,7 +172,7 @@ export class Hud {
           <div class="score-cell"><strong>Score</strong><span>${formatScore(score.score)}</span></div>
           <div class="score-cell"><strong>Time</strong><span>${formatFrames(score.frames)}</span></div>
           <div class="score-cell"><strong>Time Bonus</strong><span>${formatScore(score.timeBonus)}</span></div>
-          <div class="score-cell"><strong>Cores</strong><span>${score.cores}</span></div>
+          <div class="score-cell"><strong>Cores</strong><span>${score.cores}/${totalCores}</span></div>
           <div class="score-cell"><strong>Deaths</strong><span>${score.deaths}</span></div>
           <div class="score-cell"><strong>Echoes</strong><span>${score.echoes}</span></div>
         </div>
@@ -189,7 +196,7 @@ export class Hud {
     this.modalButton("[data-exit-menu]", this.callbacks.onTitle);
   }
 
-  showTutorialComplete(score: LevelScore): void {
+  showTutorialComplete(score: LevelScore, totalCores: number): void {
     const modal = this.modal();
     modal.innerHTML = `
       <section class="panel complete-panel">
@@ -197,6 +204,7 @@ export class Hud {
         <p>Echo timing confirmed.</p>
         <div class="score-row">
           <div class="score-cell"><strong>Time</strong><span>${formatFrames(score.frames)}</span></div>
+          <div class="score-cell"><strong>Cores</strong><span>${score.cores}/${totalCores}</span></div>
           <div class="score-cell"><strong>Echoes</strong><span>${score.echoes}</span></div>
           <div class="score-cell"><strong>Deaths</strong><span>${score.deaths}</span></div>
         </div>
