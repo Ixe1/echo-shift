@@ -485,6 +485,42 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     const overlappingCoreEffects = mediaElements.filter((element) => element.src.includes("core_pickup"));
     assert(overlappingCoreEffects.length >= 2, "Expected repeated core SFX calls to create overlapping media elements");
     assert(mediaElements.length >= elementsBeforeSfx + 3, "Expected sampled SFX playback to allocate independent media elements");
+    const sampledCueChecks = [
+      ["rewind", "rewind"],
+      ["switch", "switch"],
+      ["portal", "portal"],
+      ["stormFloorBeam", "storm_floor_beam"],
+      ["cryoBeamFire", "cryo_beam_fire"],
+      ["cryoFloorIceForm", "cryo_floor_ice_form"],
+      ["bossCoreHit", "boss_core_hit"]
+    ];
+    for (const [name, fragment] of sampledCueChecks) {
+      audio.play(name);
+      await settlePromises();
+      const effect = mediaElements.find((element) => element.src.includes(fragment) && element.playing);
+      assert(effect, `Expected sampled ${name} SFX to play from ${fragment}`);
+    }
+    audio.startEffectLoop("bossDefeatDeparture", "test-boss-defeat", 1);
+    await settlePromises();
+    const bossDefeatLoop = mediaElements.find((element) => element.src.includes("boss_defeat_departure"));
+    assert(bossDefeatLoop?.loop && bossDefeatLoop.playing, "Expected boss defeat departure SFX to start as a loop");
+    assert(
+      document.documentElement.dataset.echoShiftAudioEffects?.includes("loop-start:test-boss-defeat:bossDefeatDeparture"),
+      `Expected loop-start diagnostic for boss defeat departure, got ${document.documentElement.dataset.echoShiftAudioEffects}`
+    );
+    audio.setEffectLoopVolume("test-boss-defeat", 0.5);
+    assert(bossDefeatLoop.volume > 0 && bossDefeatLoop.volume < 0.13, `Expected loop volume to scale with FX volume, got ${bossDefeatLoop.volume}`);
+    audio.pauseEffectLoops();
+    assert(!bossDefeatLoop.playing, "Expected pauseEffectLoops to pause the active boss defeat loop");
+    audio.resumeEffectLoops();
+    await settlePromises();
+    assert(bossDefeatLoop.playing, "Expected resumeEffectLoops to restart the active boss defeat loop");
+    audio.stopEffectLoop("test-boss-defeat");
+    assert(!bossDefeatLoop.playing && bossDefeatLoop.currentTime === 0, "Expected stopEffectLoop to reset the boss defeat loop element");
+    assert(
+      document.documentElement.dataset.echoShiftAudioEffects?.includes("loop-stop:test-boss-defeat"),
+      `Expected loop-stop diagnostic for boss defeat departure, got ${document.documentElement.dataset.echoShiftAudioEffects}`
+    );
 
     const tonesBeforeRejectedSample = startedTones.length;
     forceRejectedMedia.add("player_jump");
@@ -786,6 +822,7 @@ try {
     bossAttackActiveFramesFor,
     bossAttackCycleFramesFor,
     bossAttackWindupFramesFor,
+    BOSS_DEFEAT_PAUSE_FRAMES,
     bossIsVulnerable,
     DEFAULT_MONSTER_SCORE,
     defaultMonsterMotionForKind,
@@ -836,6 +873,18 @@ try {
       simulation.step(idle);
     }
     throw new Error(`Expected boss ${bossId} to start an attack window`);
+  };
+
+  const runBossUntilSoundCue = (simulation, bossId, cue, maxFrames = 260) => {
+    for (let frameIndex = 0; frameIndex < maxFrames; frameIndex += 1) {
+      const event = simulation.step(idle);
+      const soundCue = event.bossSoundCues.find((item) => item.id === bossId && item.cue === cue);
+      if (soundCue) {
+        const snapshot = simulation.bossSnapshots().find((boss) => boss.id === bossId);
+        return { event, soundCue, snapshot };
+      }
+    }
+    throw new Error(`Expected boss ${bossId} to emit ${cue} within ${maxFrames} frames`);
   };
 
   const runBossUntilWarning = (simulation, bossId, minProgress = 0.85) => {
@@ -2168,6 +2217,18 @@ try {
   const stormFloor = stormLaneLevel.solids.find((solid) => solid.id === "floor");
   assert(stormFloor && stormShock.y + stormShock.h === stormFloor.y, `Expected storm floor shock to sit on top of the floor, got ${JSON.stringify(stormShock)}`);
   assert(stormShock.w === 136, `Expected storm floor shock to include one extra 32px tile on each side, got ${JSON.stringify(stormShock)}`);
+  const stormSoundCueSim = new RoomSimulation(stormLaneLevel);
+  Object.assign(stormSoundCueSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
+  stormSoundCueSim.step(idle);
+  runFrames(stormSoundCueSim, 60, idle);
+  Object.assign(stormSoundCueSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  const stormSoundCue = runBossUntilSoundCue(stormSoundCueSim, "boss-test", "storm-floor-beam", 380);
+  const stormSoundCycle = stormSoundCue.snapshot.activeFrames % bossAttackCycleFramesFor(stormSoundCue.snapshot);
+  assert(
+    stormSoundCycle === bossAttackWindupFramesFor("storm-relay-warden"),
+    `Expected storm beam SFX cue at active-window start, got cycle ${stormSoundCycle}`
+  );
+  assert(stormSoundCue.snapshot.floorShocks.length === 1, "Expected storm beam SFX cue to coincide with active floor shock");
 
   const stormTallLiftLevel = {
     ...baseLevel,
@@ -2253,10 +2314,32 @@ try {
   assert(!bossIntroSim.objectState.openDoors.has("boss-inverted-hatch"), "Expected inverted horizontal boss hatch to close on the boss defeat step");
   const departingBoss = bossIntroSim.bossSnapshots().find((boss) => boss.id === "boss-test");
   assert(departingBoss?.phase === "departing", `Expected boss defeat to start departure phase, got ${departingBoss?.phase}`);
+  assert(
+    departingBoss.departurePauseFrames === BOSS_DEFEAT_PAUSE_FRAMES,
+    `Expected boss defeat pause to start at ${BOSS_DEFEAT_PAUSE_FRAMES}, got ${departingBoss.departurePauseFrames}`
+  );
   assert(departingBoss.departureFrames === 0, `Expected boss departure to start at frame 0, got ${departingBoss.departureFrames}`);
   assert(!bossIntroSim.exitUnlocked(), "Expected boss level exit to stay locked while defeated boss departs");
   assert(bossIntroSim.score === 1200, `Expected boss defeat score to apply, got ${bossIntroSim.score}`);
   const departureStartX = departingBoss.body.x;
+  const departureStartY = departingBoss.body.y;
+  let pauseUnlockEvent = null;
+  let pauseEndSnapshot = departingBoss;
+  for (let guard = 0; guard < BOSS_DEFEAT_PAUSE_FRAMES; guard += 1) {
+    const event = bossIntroSim.step(idle);
+    const snapshot = bossIntroSim.bossSnapshots().find((boss) => boss.id === "boss-test");
+    if (event.bossPortalUnlocked || event.won) pauseUnlockEvent = event;
+    if (snapshot) {
+      pauseEndSnapshot = snapshot;
+      assert(snapshot.departureFrames === 0, `Expected departure movement to stay at frame 0 during defeat pause, got ${snapshot.departureFrames}`);
+    }
+  }
+  assert(!pauseUnlockEvent, "Expected boss portal unlock to wait until after the defeat pause and departure movement");
+  assert(pauseEndSnapshot.departurePauseFrames === 0, `Expected defeat pause to finish before movement, got ${pauseEndSnapshot.departurePauseFrames}`);
+  assert(
+    Math.abs(pauseEndSnapshot.body.x - departureStartX) <= 0.01 && Math.abs(pauseEndSnapshot.body.y - departureStartY) <= 0.01,
+    `Expected boss body to hold position during defeat pause, got start ${JSON.stringify(departingBoss.body)} and pause end ${JSON.stringify(pauseEndSnapshot.body)}`
+  );
   let portalUnlockEvent = null;
   let departingMidpoint = null;
   for (let guard = 0; guard < departingBoss.departureTotalFrames + 20; guard += 1) {
@@ -2291,7 +2374,7 @@ try {
   const bossDefeatCompletionHit = upwardHitBoss(bossDefeatCompletionSim, bossDefeatCompletionVulnerable);
   assert(bossDefeatCompletionHit.bossDefeated?.id === "boss-test", "Expected boss-defeat completion fixture to defeat the boss");
   let bossDefeatCompletionEvent = null;
-  for (let guard = 0; guard < bossDefeatCompletionVulnerable.departureTotalFrames + 30; guard += 1) {
+  for (let guard = 0; guard < BOSS_DEFEAT_PAUSE_FRAMES + bossDefeatCompletionVulnerable.departureTotalFrames + 30; guard += 1) {
     const event = bossDefeatCompletionSim.step(idle);
     if (event.won) {
       bossDefeatCompletionEvent = event;
@@ -2960,6 +3043,27 @@ try {
   const cryoIce = cryoAttackSnapshot.floorIce[0];
   assert(cryoIce.w === 128, `Expected cryo floor ice to cover a 128px lane, got ${JSON.stringify(cryoIce)}`);
   assert(cryoIce.lifeFrames === 1260, `Expected cryo floor ice to last 21 seconds, got ${JSON.stringify(cryoIce)}`);
+  const cryoSoundCueSim = new RoomSimulation(cryoLevel);
+  Object.assign(cryoSoundCueSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
+  cryoSoundCueSim.step(idle);
+  runFrames(cryoSoundCueSim, 60, idle);
+  Object.assign(cryoSoundCueSim.player, { x: targetPlayerCenterX - 12, y: 86, vx: 0, vy: 0, onGround: true });
+  const cryoBeamCue = runBossUntilSoundCue(cryoSoundCueSim, "boss-test", "cryo-beam-fire", 340);
+  const cryoSoundCycle = cryoBeamCue.snapshot.activeFrames % bossAttackCycleFramesFor(cryoBeamCue.snapshot);
+  assert(
+    cryoSoundCycle === bossAttackWindupFramesFor("cryo-conservator"),
+    `Expected cryo beam SFX cue at active-window start, got cycle ${cryoSoundCycle}`
+  );
+  assert(
+    cryoBeamCue.event.bossSoundCues.some((cue) => cue.id === "boss-test" && cue.cue === "cryo-floor-ice-form"),
+    `Expected cryo floor ice SFX cue on the beam-start volley, got ${JSON.stringify(cryoBeamCue.event.bossSoundCues)}`
+  );
+  assert(cryoBeamCue.snapshot.floorIce.length === 1, "Expected cryo SFX cue to coincide with created floor ice");
+  const cryoPostCue = cryoSoundCueSim.step(idle);
+  assert(
+    !cryoPostCue.bossSoundCues.some((cue) => cue.cue === "cryo-floor-ice-form"),
+    `Expected cryo floor ice SFX not to repeat on the next frame, got ${JSON.stringify(cryoPostCue.bossSoundCues)}`
+  );
 
   const cryoBeamDeathSim = new RoomSimulation(cryoLevel);
   Object.assign(cryoBeamDeathSim.player, { x: 190, y: 86, vx: 0, vy: 0, onGround: true });
@@ -3221,7 +3325,8 @@ try {
   assert(!multiBossSim.exitUnlocked(), "Expected multi-boss exit to remain locked after first boss");
   assert(!multiBossSim.bossCheckpointActive(), "Expected first boss checkpoint to clear after first boss defeat");
   let multiBossDepartureA = null;
-  for (let guard = 0; guard < 220; guard += 1) {
+  const multiBossDepartingA = multiBossSim.bossSnapshots().find((boss) => boss.id === "boss-a");
+  for (let guard = 0; guard < BOSS_DEFEAT_PAUSE_FRAMES + (multiBossDepartingA?.departureTotalFrames || 170) + 20; guard += 1) {
     const event = multiBossSim.step(idle);
     if (event.bossDepartureFinished) {
       multiBossDepartureA = event;

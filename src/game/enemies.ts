@@ -26,6 +26,7 @@ export const BOSS_ATTACK_WINDUP_FRAMES = 56;
 export const BOSS_ATTACK_ACTIVE_FRAMES = 48;
 export const BOSS_VULNERABLE_READY_FRAMES = 18;
 export const BOSS_VULNERABLE_FRAMES = BOSS_ATTACK_CYCLE_FRAMES - BOSS_ATTACK_WINDUP_FRAMES - BOSS_ATTACK_ACTIVE_FRAMES - BOSS_VULNERABLE_READY_FRAMES;
+export const BOSS_DEFEAT_PAUSE_FRAMES = 90;
 export const BOSS_DEFEAT_DEPARTURE_FRAMES = 170;
 export const DEFAULT_MONSTER_SCORE = 200;
 
@@ -200,12 +201,17 @@ export type BossRuntimeState = {
   attackY: number;
   attackSequence: number;
   recoveryFrames: number;
+  departurePauseFrames: number;
   departureFrames: number;
   departureStartX: number;
   departureStartY: number;
   motionMinY?: number;
   motionMaxY?: number;
   floorIcePatches: BossFloorIceSnapshot[];
+};
+
+export type BossActiveMotionEvents = {
+  cryoFloorIceFormed: boolean;
 };
 
 type MonsterDefinition = {
@@ -668,6 +674,7 @@ export const createBossRuntimeState = (boss: Boss): BossRuntimeState => {
     attackY: center.y,
     attackSequence: 0,
     recoveryFrames: 0,
+    departurePauseFrames: 0,
     departureFrames: 0,
     departureStartX: body.x,
     departureStartY: body.y,
@@ -706,8 +713,9 @@ export const settleBossAtIntroEnd = (boss: Boss, state: BossRuntimeState): void 
   state.floorIcePatches = [];
 };
 
-export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, player: ActorBody, solids: Solid[]): void => {
-  if (state.phase !== "active") return;
+export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, player: ActorBody, solids: Solid[]): BossActiveMotionEvents => {
+  const events: BossActiveMotionEvents = { cryoFloorIceFormed: false };
+  if (state.phase !== "active") return events;
   const size = bossBodySize(boss);
   const cycle = state.activeFrames % bossAttackCycleFramesFor(boss.kind);
   const playerCenterX = player.x + player.w / 2;
@@ -743,16 +751,16 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
 
   if (boss.kind === "storm-relay-warden") {
     advanceStormRelayMotion(boss, state, size, cycle, arena);
-    return;
+    return events;
   }
   if (boss.kind === "cryo-conservator") {
     advanceCryoConservatorMotion(boss, state, size, cycle, arena);
-    advanceCryoConservatorFloorIce(boss, state, cycle, solids);
-    return;
+    events.cryoFloorIceFormed = advanceCryoConservatorFloorIce(boss, state, cycle, solids);
+    return events;
   }
   if (boss.kind === "archive-custodian") {
     advanceArchiveCustodianMotion(boss, state, size, player, cycle, arena);
-    return;
+    return events;
   }
 
   const windupFrames = bossAttackWindupFramesFor(boss.kind);
@@ -772,6 +780,7 @@ export const advanceBossActiveMotion = (boss: Boss, state: BossRuntimeState, pla
   const desiredY = state.targetY - size.h / 2;
   const ease = cycle < windupFrames ? 0.1 : cycle < activeEndFrame ? 0.18 : 0.12;
   easeBossBodyToward(state, arena, desiredX, desiredY, ease, ease, 7.5, 6.2);
+  return events;
 };
 
 export const recoverBossAfterHit = (boss: Boss, state: BossRuntimeState): void => {
@@ -830,6 +839,7 @@ export const bossBodyRectAt = (boss: Boss, state: BossRuntimeState, _tick: numbe
 
 export const startBossDefeatDeparture = (boss: Boss, state: BossRuntimeState, body: Rect): void => {
   state.phase = "departing";
+  state.departurePauseFrames = BOSS_DEFEAT_PAUSE_FRAMES;
   state.departureFrames = 0;
   state.invulnerableFrames = 0;
   state.recoveryFrames = 0;
@@ -847,6 +857,12 @@ export const startBossDefeatDeparture = (boss: Boss, state: BossRuntimeState, bo
 
 export const advanceBossDefeatDeparture = (boss: Boss, state: BossRuntimeState): boolean => {
   if (state.phase !== "departing") return false;
+  if (state.departurePauseFrames > 0) {
+    state.departurePauseFrames = Math.max(0, state.departurePauseFrames - 1);
+    state.bodyX = finiteNumber(state.departureStartX, state.bodyX);
+    state.bodyY = finiteNumber(state.departureStartY, state.bodyY);
+    return false;
+  }
   state.departureFrames = Math.min(BOSS_DEFEAT_DEPARTURE_FRAMES, state.departureFrames + 1);
   const progress = state.departureFrames / BOSS_DEFEAT_DEPARTURE_FRAMES;
   const eased = 0.5 - Math.cos(progress * Math.PI) / 2;
@@ -1132,16 +1148,18 @@ const cryoFloorIceRectForLane = (boss: Boss, state: BossRuntimeState, tick: numb
   };
 };
 
-const advanceCryoConservatorFloorIce = (boss: Boss, state: BossRuntimeState, cycle: number, solids: Solid[]): void => {
+const advanceCryoConservatorFloorIce = (boss: Boss, state: BossRuntimeState, cycle: number, solids: Solid[]): boolean => {
   state.floorIcePatches = state.floorIcePatches
     .map((patch) => ({ ...patch, remainingFrames: patch.remainingFrames - 1 }))
     .filter((patch) => patch.remainingFrames > 0);
 
-  if (state.recoveryFrames > 0 || cycle !== bossAttackWindupFramesFor("cryo-conservator")) return;
+  if (state.recoveryFrames > 0 || cycle !== bossAttackWindupFramesFor("cryo-conservator")) return false;
   const body = bossBodyRectAt(boss, state, 0);
+  let formed = false;
   for (const laneX of cryoAttackLaneXs(boss, state, body)) {
     const patchRect = cryoFloorIceRectForLane(boss, state, 0, solids, laneX);
     if (!patchRect) continue;
+    formed = true;
     const patch: BossFloorIceSnapshot = {
       ...patchRect,
       remainingFrames: CRYO_FLOOR_ICE_LIFE_FRAMES,
@@ -1156,6 +1174,7 @@ const advanceCryoConservatorFloorIce = (boss: Boss, state: BossRuntimeState, cyc
   }
   state.floorIcePatches.sort((a, b) => b.remainingFrames - a.remainingFrames);
   state.floorIcePatches = state.floorIcePatches.slice(0, CRYO_FLOOR_ICE_MAX_PATCHES);
+  return formed;
 };
 
 const advanceArchiveCustodianMotion = (

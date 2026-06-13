@@ -3,9 +3,11 @@ import {
   BOSS_HIT_BOUNCE_SPEED,
   BOSS_INVULNERABLE_FRAMES,
   BOSS_DEFEAT_DEPARTURE_FRAMES,
+  BOSS_DEFEAT_PAUSE_FRAMES,
   MONSTER_BOUNCE_SPEED,
   actorKillsMonster,
   bossAttackCycleFramesFor,
+  bossAttackWindupFramesFor,
   advanceBossDefeatDeparture,
   advanceBossActiveMotion,
   bossAttackWarningRectsAt,
@@ -277,6 +279,7 @@ export class RoomSimulation {
       bossCheckpointActivated: null,
       bossHit: null,
       bossDefeated: null,
+      bossSoundCues: [],
       bossDepartureFinished: null,
       bossPortalUnlocked: false,
       won: false
@@ -682,7 +685,35 @@ export class RoomSimulation {
       } else if (state.phase === "active") {
         state.activeFrames += 1;
         state.invulnerableFrames = Math.max(0, state.invulnerableFrames - 1);
-        advanceBossActiveMotion(boss, state, this.player, this.runtimeSolids);
+        const motionEvents = advanceBossActiveMotion(boss, state, this.player, this.runtimeSolids);
+        const cycle = state.activeFrames % bossAttackCycleFramesFor(boss.kind);
+        const attackStarts = cycle === bossAttackWindupFramesFor(boss.kind) && state.recoveryFrames <= 0;
+        if (attackStarts && boss.kind === "storm-relay-warden") {
+          events.bossSoundCues.push({
+            id: boss.id,
+            kind: boss.kind,
+            cue: "storm-floor-beam",
+            x: state.attackX,
+            y: state.attackY
+          });
+        } else if (attackStarts && boss.kind === "cryo-conservator") {
+          events.bossSoundCues.push({
+            id: boss.id,
+            kind: boss.kind,
+            cue: "cryo-beam-fire",
+            x: state.attackX,
+            y: state.attackY
+          });
+        }
+        if (motionEvents.cryoFloorIceFormed && boss.kind === "cryo-conservator") {
+          events.bossSoundCues.push({
+            id: boss.id,
+            kind: boss.kind,
+            cue: "cryo-floor-ice-form",
+            x: state.attackX,
+            y: state.attackY
+          });
+        }
       }
 
       if (state.phase !== "active") continue;
@@ -804,6 +835,8 @@ export class RoomSimulation {
           activeFrames: state.activeFrames,
           invulnerableFrames: state.invulnerableFrames,
           recoveryFrames: state.recoveryFrames,
+          departurePauseFrames: state.departurePauseFrames,
+          departurePauseTotalFrames: BOSS_DEFEAT_PAUSE_FRAMES,
           departureFrames: state.departureFrames,
           departureTotalFrames: BOSS_DEFEAT_DEPARTURE_FRAMES,
           body,

@@ -228,6 +228,8 @@ export type BossSnapshot = {
   activeFrames: number;
   invulnerableFrames: number;
   recoveryFrames: number;
+  departurePauseFrames: number;
+  departurePauseTotalFrames: number;
   departureFrames: number;
   departureTotalFrames: number;
   body: Rect;
@@ -365,6 +367,14 @@ export type BossDefeatEvent = Vec2 & {
   score: number;
 };
 
+export type BossSoundCueType = "storm-floor-beam" | "cryo-beam-fire" | "cryo-floor-ice-form";
+
+export type BossSoundCueEvent = Vec2 & {
+  id: string;
+  kind: BossKind;
+  cue: BossSoundCueType;
+};
+
 export type StepEvents = {
   jumped: boolean;
   launched: boolean;
@@ -382,6 +392,7 @@ export type StepEvents = {
   bossCheckpointActivated: string | null;
   bossHit: BossHitEvent | null;
   bossDefeated: BossDefeatEvent | null;
+  bossSoundCues: BossSoundCueEvent[];
   bossDepartureFinished: string | null;
   bossPortalUnlocked: boolean;
   won: boolean;

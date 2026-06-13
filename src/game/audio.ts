@@ -13,7 +13,12 @@ type ToneName =
   | "playerLaserVaporized"
   | "echoLaserVaporized"
   | "portal"
-  | "select";
+  | "select"
+  | "stormFloorBeam"
+  | "cryoBeamFire"
+  | "cryoFloorIceForm"
+  | "bossCoreHit"
+  | "bossDefeatDeparture";
 
 type AudioContextConstructor = new () => AudioContext;
 type MusicLoopRegion = {
@@ -28,6 +33,16 @@ type WebMusicPlayback = {
   loop: MusicLoopRegion;
   offset: number;
   startedAt: number;
+};
+type LoopedEffectPlayback = {
+  id: string;
+  name: ToneName;
+  element: HTMLAudioElement;
+  baseVolume: number;
+  volumeScale: number;
+  paused: boolean;
+  playAttempt: number;
+  lastMarkedVolumeScale: number;
 };
 export type AudioMixSettings = {
   masterVolume: number;
@@ -54,7 +69,15 @@ const sampledEffects = {
   launch: { src: effectPath("spring_launch_pad.mp3"), volume: 0.58 },
   death: { src: effectPath("player_death.mp3"), volume: 0.58 },
   playerLaserVaporized: { src: effectPath("player_laser_vaporised.mp3"), volume: 0.58 },
-  echoLaserVaporized: { src: effectPath("echo_laser_vaporised.mp3"), volume: 0.42 }
+  echoLaserVaporized: { src: effectPath("echo_laser_vaporised.mp3"), volume: 0.42 },
+  rewind: { src: effectPath("rewind.mp3"), volume: 0.36 },
+  switch: { src: effectPath("switch.mp3"), volume: 0.82 },
+  portal: { src: effectPath("portal.mp3"), volume: 0.68 },
+  stormFloorBeam: { src: effectPath("storm_floor_beam.mp3"), volume: 0.26 },
+  cryoBeamFire: { src: effectPath("cryo_beam_fire.mp3"), volume: 0.26 },
+  cryoFloorIceForm: { src: effectPath("cryo_floor_ice_form.mp3"), volume: 0.32 },
+  bossCoreHit: { src: effectPath("boss_core_hit.mp3"), volume: 0.34 },
+  bossDefeatDeparture: { src: effectPath("boss_defeat_departure.mp3"), volume: 0.24 }
 } as const satisfies Partial<Record<ToneName, { src: string; volume: number }>>;
 
 const clampVolume = (value: unknown, fallback: number): number => {
@@ -111,8 +134,11 @@ export class SynthAudio {
   private webMusicBufferCache = new Map<SoundtrackKey, Promise<AudioBuffer>>();
   private webMusicReadyKeys = new Set<SoundtrackKey>();
   private activeEffects = new Map<HTMLAudioElement, number>();
+  private loopedEffects = new Map<string, LoopedEffectPlayback>();
   private fadingMusic = new Set<HTMLAudioElement>();
   private fadingWebMusic = new Set<WebMusicPlayback>();
+  private recentEffectEvents: string[] = [];
+  private effectLoopPlayAttempt = 0;
   private musicPlayAttempt = 0;
   private webMusicPlayAttempt = 0;
   private fadeToken = 0;
@@ -143,6 +169,7 @@ export class SynthAudio {
     if (this.webMusic) this.applyWebMusicVolume(this.webMusic);
     for (const playback of this.fadingWebMusic) this.applyWebMusicVolume(playback);
     for (const [element, baseVolume] of this.activeEffects) element.volume = baseVolume * this.fxOutputMultiplier();
+    for (const playback of this.loopedEffects.values()) this.applyLoopedEffectVolume(playback);
   }
 
   unlock(): void {
@@ -167,6 +194,86 @@ export class SynthAudio {
     this.resume();
     if (this.playSample(name)) return;
     this.playToneWhenReady(name);
+  }
+
+  startEffectLoop(name: ToneName, id: string = name, volumeScale = 1): void {
+    this.resume();
+    const settings = sampledEffects[name as keyof typeof sampledEffects];
+    if (!settings || typeof Audio === "undefined") return;
+    const safeVolumeScale = clampVolume(volumeScale, 1);
+    const existing = this.loopedEffects.get(id);
+    if (existing) {
+      existing.name = name;
+      existing.baseVolume = settings.volume;
+      existing.volumeScale = safeVolumeScale;
+      existing.paused = false;
+      existing.element.loop = true;
+      this.applyLoopedEffectVolume(existing);
+      this.playLoopedEffect(existing);
+      return;
+    }
+
+    const element = new Audio(settings.src);
+    element.preload = "auto";
+    element.loop = true;
+    const playback: LoopedEffectPlayback = {
+      id,
+      name,
+      element,
+      baseVolume: settings.volume,
+      volumeScale: safeVolumeScale,
+      paused: false,
+      playAttempt: 0,
+      lastMarkedVolumeScale: -1
+    };
+    this.loopedEffects.set(id, playback);
+    this.applyLoopedEffectVolume(playback);
+    if (typeof element.addEventListener === "function") {
+      element.addEventListener("error", () => this.stopEffectLoop(id), { once: true });
+    }
+    this.playLoopedEffect(playback);
+  }
+
+  setEffectLoopVolume(id: string, volumeScale: number): void {
+    const playback = this.loopedEffects.get(id);
+    if (!playback) return;
+    playback.volumeScale = clampVolume(volumeScale, playback.volumeScale);
+    this.applyLoopedEffectVolume(playback);
+    if (
+      playback.volumeScale !== playback.lastMarkedVolumeScale &&
+      (Math.abs(playback.volumeScale - playback.lastMarkedVolumeScale) >= 0.08 || playback.volumeScale === 0 || playback.volumeScale === 1)
+    ) {
+      playback.lastMarkedVolumeScale = playback.volumeScale;
+      this.markEffectEvent(`loop-volume:${id}:${playback.volumeScale.toFixed(2)}`);
+    }
+  }
+
+  stopEffectLoop(id: string): void {
+    const playback = this.loopedEffects.get(id);
+    if (!playback) return;
+    this.loopedEffects.delete(id);
+    playback.element.pause();
+    playback.element.currentTime = 0;
+    playback.element.volume = 0;
+    this.markEffectEvent(`loop-stop:${id}`);
+  }
+
+  pauseEffectLoops(): void {
+    for (const playback of this.loopedEffects.values()) {
+      if (playback.paused) continue;
+      playback.paused = true;
+      playback.element.pause();
+      this.markEffectEvent(`loop-pause:${playback.id}`);
+    }
+  }
+
+  resumeEffectLoops(): void {
+    for (const playback of this.loopedEffects.values()) {
+      if (!playback.paused) continue;
+      playback.paused = false;
+      this.playLoopedEffect(playback);
+      this.markEffectEvent(`loop-resume:${playback.id}`);
+    }
   }
 
   private playTone(name: ToneName): void {
@@ -670,6 +777,7 @@ export class SynthAudio {
       if (fallbackPlayed || !this.activeEffects.has(element)) return;
       fallbackPlayed = true;
       release();
+      this.markEffectEvent(`fallback:${name}`);
       this.playToneWhenReady(name);
     };
     if (typeof element.addEventListener === "function") {
@@ -681,6 +789,7 @@ export class SynthAudio {
       void element
         .play()
         .then(() => {
+          this.markEffectEvent(`play:${name}`);
           if (typeof element.addEventListener !== "function") this.activeEffects.delete(element);
         })
         .catch(fallback);
@@ -688,6 +797,31 @@ export class SynthAudio {
       fallback();
     }
     return true;
+  }
+
+  private playLoopedEffect(playback: LoopedEffectPlayback): void {
+    const attempt = ++this.effectLoopPlayAttempt;
+    playback.playAttempt = attempt;
+    try {
+      void playback.element
+        .play()
+        .then(() => {
+          if (this.loopedEffects.get(playback.id) === playback && playback.playAttempt === attempt && !playback.paused) {
+            this.markEffectEvent(`loop-start:${playback.id}:${playback.name}`);
+          }
+        })
+        .catch(() => {
+          if (this.loopedEffects.get(playback.id) === playback && playback.playAttempt === attempt) {
+            this.markEffectEvent(`loop-blocked:${playback.id}:${playback.name}`);
+          }
+        });
+    } catch {
+      this.markEffectEvent(`loop-blocked:${playback.id}:${playback.name}`);
+    }
+  }
+
+  private applyLoopedEffectVolume(playback: LoopedEffectPlayback): void {
+    playback.element.volume = playback.baseVolume * playback.volumeScale * this.fxOutputMultiplier();
   }
 
   private playToneWhenReady(name: ToneName): void {
@@ -842,6 +976,13 @@ export class SynthAudio {
 
   private markMusicKey(key: SoundtrackKey): void {
     if (import.meta.env.DEV && typeof document !== "undefined") document.documentElement.dataset.echoShiftMusicKey = key;
+  }
+
+  private markEffectEvent(event: string): void {
+    if (!import.meta.env.DEV || typeof document === "undefined") return;
+    this.recentEffectEvents.push(event);
+    this.recentEffectEvents = this.recentEffectEvents.slice(-32);
+    document.documentElement.dataset.echoShiftAudioEffects = this.recentEffectEvents.join("|");
   }
 
   private markContextState(state: string): void {
@@ -1075,6 +1216,16 @@ export class SynthAudio {
         return { start: 300, end: 900, duration: 0.28, volume: 0.28, filter: 3600, type: "sine" as OscillatorType };
       case "select":
         return { start: 420, end: 640, duration: 0.07, volume: 0.16, filter: 2400, type: "triangle" as OscillatorType };
+      case "stormFloorBeam":
+        return { start: 620, end: 520, duration: 0.34, volume: 0.18, filter: 2600, type: "sawtooth" as OscillatorType };
+      case "cryoBeamFire":
+        return { start: 740, end: 540, duration: 0.32, volume: 0.17, filter: 3000, type: "triangle" as OscillatorType };
+      case "cryoFloorIceForm":
+        return { start: 840, end: 220, duration: 0.22, volume: 0.16, filter: 2400, type: "sine" as OscillatorType };
+      case "bossCoreHit":
+        return { start: 180, end: 820, duration: 0.2, volume: 0.24, filter: 2800, type: "square" as OscillatorType };
+      case "bossDefeatDeparture":
+        return { start: 110, end: 48, duration: 0.5, volume: 0.22, filter: 900, type: "sawtooth" as OscillatorType };
     }
   }
 }

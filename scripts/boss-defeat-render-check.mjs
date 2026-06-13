@@ -38,16 +38,18 @@ const waitForLevelIntro = async (page) => {
 const readDepartureEffect = async (page) =>
   page.evaluate(() => {
     const raw = document.documentElement.dataset.echoShiftBossEffectFrames || "";
-    const match = raw.match(/render-boss:defeat-depart:(\d+)\/(\d+):bursts=(\d+):x=(-?\d+)/);
+    const match = raw.match(/render-boss:defeat-depart:(\d+)\/(\d+):pause=(\d+)\/(\d+):bursts=(\d+):x=(-?\d+)/);
     return match
       ? {
           raw,
           frame: Number(match[1]),
           total: Number(match[2]),
-          bursts: Number(match[3]),
-          x: Number(match[4])
+          pause: Number(match[3]),
+          pauseTotal: Number(match[4]),
+          bursts: Number(match[5]),
+          x: Number(match[6])
         }
-      : { raw, frame: 0, total: 0, bursts: 0, x: 0 };
+      : { raw, frame: 0, total: 0, pause: 0, pauseTotal: 0, bursts: 0, x: 0 };
   });
 
 const readCameraWorldView = async (page) =>
@@ -642,8 +644,14 @@ try {
     await releaseWeakSpotJump(page, defeatCorrection);
   }
 
-	  const early = await readDepartureEffect(page);
+  await page.waitForFunction(
+    () => (document.documentElement.dataset.echoShiftAudioEffects || "").includes("loop-start:boss-defeat:render-boss:bossDefeatDeparture"),
+    null,
+    { timeout: 2000 }
+  );
+  const early = await readDepartureEffect(page);
   assert(early.total === 170, `Expected 170-frame boss departure diagnostic, got ${JSON.stringify(early)}`);
+  assert(early.pauseTotal === 90 && early.pause > 0, `Expected 90-frame boss defeat pause diagnostic, got ${JSON.stringify(early)}`);
   assert(early.bursts > 0, `Expected active defeat overlay bursts early in departure, got ${JSON.stringify(early)}`);
   assert(
     (await page.evaluate(() => document.documentElement.dataset.echoShiftExitUnlocked || "")) === "false",
@@ -653,8 +661,8 @@ try {
   await page.waitForFunction(
     () => {
       const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
-      const match = effects.match(/render-boss:defeat-depart:(\d+)\/(\d+):bursts=(\d+):x=(-?\d+)/);
-      return match && Number(match[1]) >= 24 && Number(match[3]) > 0;
+      const match = effects.match(/render-boss:defeat-depart:(\d+)\/(\d+):pause=(\d+)\/(\d+):bursts=(\d+):x=(-?\d+)/);
+      return match && Number(match[3]) <= 66 && Number(match[5]) > 0;
     },
     null,
     { timeout: 2000 }
@@ -665,34 +673,42 @@ try {
   await page.waitForFunction(
     () => {
       const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
-      const match = effects.match(/render-boss:defeat-depart:(\d+)\/(\d+):bursts=(\d+):x=(-?\d+)/);
-      return match && Number(match[1]) >= 80 && Number(match[3]) > 0;
+      const match = effects.match(/render-boss:defeat-depart:(\d+)\/(\d+):pause=(\d+)\/(\d+):bursts=(\d+):x=(-?\d+)/);
+      return match && Number(match[1]) >= 80 && Number(match[5]) > 0;
     },
     null,
-    { timeout: 3500 }
-	  );
-	  const mid = await readDepartureEffect(page);
-	  const spriteWidth = await readBossSpriteWidth(page);
-	  assert(mid.x > early.x + 60, `Expected departing boss to move right, got early ${JSON.stringify(early)} and mid ${JSON.stringify(mid)}`);
+    { timeout: 4500 }
+  );
+  const mid = await readDepartureEffect(page);
+  const spriteWidth = await readBossSpriteWidth(page);
+  assert(mid.x > early.x + 60, `Expected departing boss to move right, got early ${JSON.stringify(early)} and mid ${JSON.stringify(mid)}`);
+  assert(
+    (await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects || "")).includes("loop-volume:boss-defeat:render-boss"),
+    "Expected boss defeat loop volume diagnostics while the boss flies away"
+  );
 
   await page.waitForFunction(
     () => {
       const effects = document.documentElement.dataset.echoShiftBossEffectFrames || "";
-      const match = effects.match(/render-boss:defeat-depart:(\d+)\/(\d+):bursts=(\d+):x=(-?\d+)/);
+      const match = effects.match(/render-boss:defeat-depart:(\d+)\/(\d+):pause=(\d+)\/(\d+):bursts=(\d+):x=(-?\d+)/);
       return match && Number(match[1]) >= 160;
     },
     null,
-    { timeout: 3500 }
-	  );
-	  const late = await readDepartureEffect(page);
-	  const camera = await readCameraWorldView(page);
-	  const spriteLeft = late.x - spriteWidth / 6;
+    { timeout: 4000 }
+  );
+  const late = await readDepartureEffect(page);
+  const camera = await readCameraWorldView(page);
+  const spriteLeft = late.x - spriteWidth / 6;
   assert(
     spriteLeft > camera.x + camera.w,
     `Expected departing boss sprite to be off the right side of the camera before portal unlock, got ${JSON.stringify({ late, camera, spriteWidth, spriteLeft })}`
   );
 
   await page.waitForFunction(() => document.documentElement.dataset.echoShiftExitUnlocked === "true", null, { timeout: 5000 });
+  assert(
+    (await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects || "")).includes("loop-stop:boss-defeat:render-boss"),
+    "Expected boss defeat loop to stop after departure finishes"
+  );
   const finalSprites = await page.evaluate(() => document.documentElement.dataset.echoShiftBossSpriteFrames || "");
   assert(!finalSprites.includes(":departing:"), `Expected boss sprite to stop rendering after departure, got ${finalSprites}`);
   const portalScreenshot = `${outDir}/boss-defeat-portal-unlocked.png`;

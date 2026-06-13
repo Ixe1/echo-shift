@@ -335,6 +335,7 @@ export class GameScene extends Phaser.Scene {
   private lastTutorialHint = "";
   private readonly launchPadActiveUntil = new Map<string, number>();
   private readonly fxBursts: FxBurst[] = [];
+  private readonly bossDefeatLoopIds = new Set<string>();
   private fxBurstSerial = 0;
   private bossMusicActive = false;
   private bossMusicKey: ReturnType<typeof soundtrackForBoss>["key"] | null = null;
@@ -839,6 +840,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
     for (let index = 0; index < events.echoLaserVaporized; index += 1) audio.play("echoLaserVaporized");
+    for (const cue of events.bossSoundCues) this.playBossSoundCue(cue.cue);
     if (events.bossIntroStarted) {
       this.startBossMusic(events.bossIntroStarted);
       this.hud.toast(events.bossCheckpointActivated ? "Boss checkpoint anchored" : "Boss approaching");
@@ -848,7 +850,7 @@ export class GameScene extends Phaser.Scene {
       this.addFxBurst(kill.x, kill.y, 0xffe35a, `+${kill.score}`);
     }
     if (events.bossHit) {
-      if (!events.bossDefeated) audio.play("switch");
+      audio.play("bossCoreHit");
       this.cameras.main.shake(events.bossDefeated ? 260 : 130, events.bossDefeated ? 0.007 : 0.003);
       this.addFxBurst(
         events.bossHit.x,
@@ -858,9 +860,11 @@ export class GameScene extends Phaser.Scene {
       );
     }
     if (events.bossDefeated) {
+      this.startBossDefeatLoop(events.bossDefeated.id);
       if (this.activeBossForMusic()) this.startBossMusic();
       else if (!this.bossFightInProgress()) this.restartLevelMusic();
     }
+    if (events.bossDepartureFinished) this.stopBossDefeatLoop(events.bossDepartureFinished);
     if (events.bossPortalUnlocked) {
       const exitCenter = rectCenter(this.level.exit);
       this.restartLevelMusic();
@@ -880,6 +884,52 @@ export class GameScene extends Phaser.Scene {
     return core ? this.coreIsLarge(core) : false;
   }
 
+  private playBossSoundCue(cue: ReturnType<RoomSimulation["step"]>["bossSoundCues"][number]["cue"]): void {
+    if (cue === "storm-floor-beam") audio.play("stormFloorBeam");
+    else if (cue === "cryo-beam-fire") audio.play("cryoBeamFire");
+    else if (cue === "cryo-floor-ice-form") audio.play("cryoFloorIceForm");
+  }
+
+  private bossDefeatLoopId(bossId: string): string {
+    return `boss-defeat:${bossId}`;
+  }
+
+  private startBossDefeatLoop(bossId: string): void {
+    const id = this.bossDefeatLoopId(bossId);
+    this.bossDefeatLoopIds.add(id);
+    audio.startEffectLoop("bossDefeatDeparture", id, 1);
+  }
+
+  private stopBossDefeatLoop(bossId: string): void {
+    const id = this.bossDefeatLoopId(bossId);
+    if (!this.bossDefeatLoopIds.has(id)) return;
+    audio.setEffectLoopVolume(id, 0);
+    audio.stopEffectLoop(id);
+    this.bossDefeatLoopIds.delete(id);
+  }
+
+  private stopBossDefeatLoops(): void {
+    for (const id of this.bossDefeatLoopIds) audio.stopEffectLoop(id);
+    this.bossDefeatLoopIds.clear();
+  }
+
+  private syncBossDefeatLoopVolume(snapshot: BossSnapshot): void {
+    const id = this.bossDefeatLoopId(snapshot.id);
+    if (!this.bossDefeatLoopIds.has(id)) return;
+    if (snapshot.departurePauseFrames > 0) {
+      audio.setEffectLoopVolume(id, 1);
+      return;
+    }
+    const progress = Math.max(0, Math.min(1, snapshot.departureFrames / Math.max(1, snapshot.departureTotalFrames)));
+    const bodyCenter = rectCenter(snapshot.body);
+    const view = this.cameras.main.worldView;
+    const outsideX = bodyCenter.x < view.x ? view.x - bodyCenter.x : Math.max(0, bodyCenter.x - (view.x + view.width));
+    const outsideY = bodyCenter.y < view.y ? view.y - bodyCenter.y : Math.max(0, bodyCenter.y - (view.y + view.height));
+    const outsideDistance = Math.hypot(outsideX, outsideY);
+    const distanceScale = Math.max(0, Math.min(1, 1 - outsideDistance / 420));
+    audio.setEffectLoopVolume(id, Math.max(0, Math.min(1, distanceScale * (1 - progress))));
+  }
+
   private addFxBurst(x: number, y: number, color: number, label?: string): void {
     this.fxBursts.push({
       id: this.fxBurstSerial,
@@ -895,6 +945,7 @@ export class GameScene extends Phaser.Scene {
 
   private startDeathPresentation(livesExhausted: boolean, playerLaserVaporized: boolean): void {
     if (this.deathPresentation) return;
+    this.stopBossDefeatLoops();
     audio.play(playerLaserVaporized ? "playerLaserVaporized" : "death");
     this.cameras.main.shake(180, 0.006);
     const player = this.simulation.player;
@@ -1000,6 +1051,7 @@ export class GameScene extends Phaser.Scene {
 
   private startRetryPresentation(): void {
     this.finishLevelIntro();
+    this.stopBossDefeatLoops();
     this.retryPresentation = { elapsedMs: 0 };
     this.virtualInput = { left: false, right: false, jump: false };
     this.hud.hideToast();
@@ -1017,6 +1069,7 @@ export class GameScene extends Phaser.Scene {
   private finishRetryPresentation(): void {
     if (!this.retryPresentation) return;
     this.retryPresentation = null;
+    this.stopBossDefeatLoops();
     this.simulation.resetLevel();
     this.accumulator = 0;
     this.completeHandled = false;
@@ -1032,6 +1085,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private restartLevel(): void {
+    this.stopBossDefeatLoops();
     this.completeHandled = false;
     this.pausedByHud = false;
     this.retryRequired = false;
@@ -1057,9 +1111,11 @@ export class GameScene extends Phaser.Scene {
       this.hud.setTutorialHint(null);
       this.hud.showPause(this.level.name);
       audio.pauseMusic();
+      audio.pauseEffectLoops();
     } else {
       this.hud.hideModal();
       audio.resumeMusic();
+      audio.resumeEffectLoops();
       this.updateTutorialHint();
     }
     audio.play("select");
@@ -1068,6 +1124,7 @@ export class GameScene extends Phaser.Scene {
   private completeLevel(): void {
     if (this.completeHandled) return;
     this.completeHandled = true;
+    this.stopBossDefeatLoops();
     audio.play("portal");
     const score: LevelScore = {
       levelId: this.level.id,
@@ -1085,6 +1142,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private nextLevel(): void {
+    this.stopBossDefeatLoops();
     if (this.tutorialMode) {
       this.openTitle();
       return;
@@ -1098,16 +1156,19 @@ export class GameScene extends Phaser.Scene {
   }
 
   private openTitle(): void {
+    this.stopBossDefeatLoops();
     this.rememberDraftLevel();
     this.scene.start("MenuScene");
   }
 
   private openLevelSelect(): void {
+    this.stopBossDefeatLoops();
     this.rememberDraftLevel();
     this.scene.start("LevelSelectScene");
   }
 
   private openEditor(): void {
+    this.stopBossDefeatLoops();
     this.rememberDraftLevel();
     const url = new URL(window.location.href);
     url.searchParams.set("editor", "1");
@@ -1223,6 +1284,7 @@ export class GameScene extends Phaser.Scene {
     this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.recordCameraDiagnostics, this);
     this.scale.off(Phaser.Scale.Events.RESIZE, this.configureCameraFrame, this);
     window.removeEventListener("keydown", this.handleWindowKeyDown);
+    this.stopBossDefeatLoops();
     this.sceneCleanupRegistered = false;
     this.destroyTexturePrewarmSprites();
     this.perfOverlay?.remove();
@@ -2482,7 +2544,10 @@ export class GameScene extends Phaser.Scene {
         (snapshot.phase === "departing" && Math.floor(this.simulation.tick / 5) % 2 === 0);
       if (snapshot.phase === "intro") this.drawBossIntroEffect(body, color, introProgress);
       this.syncBossSprite(boss.id, boss.kind, snapshot, flickerWhite, introProgress);
-      if (snapshot.phase === "departing") this.drawBossDefeatEffects(snapshot, color);
+      if (snapshot.phase === "departing") {
+        this.syncBossDefeatLoopVolume(snapshot);
+        this.drawBossDefeatEffects(snapshot, color);
+      }
       if (snapshot.phase === "active" && bossIsVulnerable(snapshot)) this.drawBossWeakSpot(snapshot, color, flickerWhite);
     }
     for (const [id, sprite] of this.archiveAttackSprites) {
@@ -2849,12 +2914,15 @@ export class GameScene extends Phaser.Scene {
   private drawBossDefeatEffects(snapshot: BossSnapshot, color: number): void {
     const body = snapshot.body;
     const total = Math.max(1, snapshot.departureTotalFrames);
+    const pauseTotal = Math.max(0, snapshot.departurePauseTotalFrames);
+    const pauseElapsed = Math.max(0, pauseTotal - Math.max(0, snapshot.departurePauseFrames));
+    const effectFrame = pauseElapsed + snapshot.departureFrames;
     const progress = Math.max(0, Math.min(1, snapshot.departureFrames / total));
     let activeBursts = 0;
     for (let index = 0; index < BOSS_DEFEAT_BURST_OFFSETS.length; index += 1) {
       const burst = BOSS_DEFEAT_BURST_OFFSETS[index];
       const duration = 72 + (index % 3) * 8;
-      const local = (snapshot.departureFrames - burst.start) / duration;
+      const local = (effectFrame - burst.start) / duration;
       if (local < 0 || local >= 1) continue;
       activeBursts += 1;
       const alpha = Math.max(0, 1 - local);
@@ -2892,7 +2960,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (this.diagnosticsEnabled) {
       this.bossEffectFrames.push(
-        `${snapshot.id}:defeat-depart:${Math.round(snapshot.departureFrames)}/${Math.round(total)}:bursts=${activeBursts}:x=${Math.round(body.x)}`
+        `${snapshot.id}:defeat-depart:${Math.round(snapshot.departureFrames)}/${Math.round(total)}:pause=${Math.round(snapshot.departurePauseFrames)}/${Math.round(pauseTotal)}:bursts=${activeBursts}:x=${Math.round(body.x)}`
       );
     }
     this.fx.lineStyle(2, color, 0.16 + (1 - progress) * 0.16);
