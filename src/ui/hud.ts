@@ -102,6 +102,8 @@ export class Hud {
     );
     this.setCommandButton("[data-retry]", state.retryDisabled || state.gameOver, "Retry unavailable in finite-life levels", state.retryDisabled || state.gameOver);
     this.setCommandButton("[data-menu]", state.gameOver, "Pause", state.gameOver);
+    const touchControls = this.root.querySelector<HTMLElement>(".touch-controls");
+    if (touchControls) touchControls.hidden = state.gameOver;
   }
 
   toast(message: string): void {

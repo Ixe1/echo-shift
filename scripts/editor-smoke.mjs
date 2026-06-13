@@ -402,6 +402,7 @@ try {
   const gameOverRetryHidden = await gameOverPage.locator("[data-retry]").isHidden();
   const gameOverRewindHidden = await gameOverPage.locator("[data-rewind]").isHidden();
   const gameOverMenuHidden = await gameOverPage.locator("[data-menu]").isHidden();
+  const gameOverTouchControlsHidden = await gameOverPage.locator(".touch-controls").isHidden();
   await gameOverPage.screenshot({ path: `${outDir}/editor-game-over.png`, fullPage: true });
   await gameOverPage.locator("[data-modal] [data-levels]").click();
   await gameOverPage.locator("[data-level='0']").click();
@@ -424,6 +425,7 @@ try {
   const mobileGameOverRetryHidden = await mobileGameOverPage.locator("[data-retry]").isHidden();
   const mobileGameOverRewindHidden = await mobileGameOverPage.locator("[data-rewind]").isHidden();
   const mobileGameOverMenuHidden = await mobileGameOverPage.locator("[data-menu]").isHidden();
+  const mobileGameOverTouchControlsHidden = await mobileGameOverPage.locator(".touch-controls").isHidden();
   await mobileGameOverPage.screenshot({ path: `${outDir}/editor-game-over-mobile.png`, fullPage: true });
   await mobileGameOverContext.close();
 
@@ -1577,12 +1579,14 @@ try {
   assert(gameOverRetryHidden, "Expected Game Over HUD retry button to stay hidden");
   assert(gameOverRewindHidden, "Expected Game Over HUD rewind button to be hidden");
   assert(gameOverMenuHidden, "Expected Game Over HUD pause button to be hidden");
+  assert(gameOverTouchControlsHidden, "Expected Game Over touch controls to be hidden");
   assert(gameOverLevelSelectRestartLives === "3", `Expected Level Select after Game Over to restart with 3 lives, got ${gameOverLevelSelectRestartLives}`);
   assert(mobileGameOverTitle === "Game Over", `Expected mobile Game Over title, got ${mobileGameOverTitle}`);
   assert(mobileGameOverReplayCount === 0, `Expected mobile Game Over modal to omit replay/restart, got ${mobileGameOverReplayCount} replay buttons`);
   assert(mobileGameOverRetryHidden, "Expected mobile Game Over HUD retry button to stay hidden");
   assert(mobileGameOverRewindHidden, "Expected mobile Game Over HUD rewind button to be hidden");
   assert(mobileGameOverMenuHidden, "Expected mobile Game Over HUD pause button to be hidden");
+  assert(mobileGameOverTouchControlsHidden, "Expected mobile Game Over touch controls to be hidden");
   assert(directClearTitle === "Room Clear", `Expected direct clear draft to show Room Clear, got ${directClearTitle}`);
   assert(directClearReplayCount === 0, `Expected Room Clear modal to omit replay/restart, got ${directClearReplayCount} replay buttons`);
   assert(directClearNextVisible, "Expected Room Clear modal to keep Next Room as the primary progression action");

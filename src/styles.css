@@ -547,6 +547,10 @@ button {
   pointer-events: none;
 }
 
+.touch-controls[hidden] {
+  display: none !important;
+}
+
 .touch-cluster {
   display: flex;
   gap: 10px;
