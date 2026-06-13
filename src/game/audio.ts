@@ -294,7 +294,7 @@ export class SynthAudio {
     }
   }
 
-  private playTone(name: ToneName): void {
+  private playTone(name: ToneName, volumeScale = 1): void {
     if (!this.context || !this.master || this.context.state !== "running") return;
     const context = this.context;
     const now = context.currentTime;
@@ -309,7 +309,8 @@ export class SynthAudio {
     filter.type = "lowpass";
     filter.frequency.setValueAtTime(settings.filter, now);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(settings.volume, now + 0.015);
+    const outputVolume = settings.volume * clampVolume(volumeScale, 1);
+    gain.gain.exponentialRampToValueAtTime(outputVolume, now + 0.015);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + settings.duration);
 
     osc.connect(filter);
@@ -326,7 +327,7 @@ export class SynthAudio {
       shimmer.frequency.setValueAtTime(settings.end * 1.5, now);
       shimmer.frequency.exponentialRampToValueAtTime(settings.start * 1.2, now + settings.duration * 0.85);
       shimmerGain.gain.setValueAtTime(0.0001, now);
-      shimmerGain.gain.exponentialRampToValueAtTime(settings.volume * 0.42, now + 0.02);
+      shimmerGain.gain.exponentialRampToValueAtTime(outputVolume * 0.42, now + 0.02);
       shimmerGain.gain.exponentialRampToValueAtTime(0.0001, now + settings.duration * 1.35);
       shimmer.connect(shimmerGain);
       shimmerGain.connect(this.master);
@@ -892,7 +893,7 @@ export class SynthAudio {
         playback.fallbackTimer = null;
         return;
       }
-      if (playback.volumeScale > 0.01) this.playToneWhenReady(playback.name);
+      if (playback.volumeScale > 0.01) this.playToneWhenReady(playback.name, playback.volumeScale);
       playback.fallbackTimer = setTimeout(pulse, 480);
     };
     playback.started = true;
@@ -908,18 +909,18 @@ export class SynthAudio {
     }
   }
 
-  private playToneWhenReady(name: ToneName): void {
+  private playToneWhenReady(name: ToneName, volumeScale = 1): void {
     const context = this.ensureContext();
     if (!context || !this.master) return;
     if (context.state === "running") {
-      this.playTone(name);
+      this.playTone(name, volumeScale);
       return;
     }
     void context
       .resume()
       .then(() => {
         this.markContextState(context.state);
-        if (this.context === context && context.state === "running") this.playTone(name);
+        if (this.context === context && context.state === "running") this.playTone(name, volumeScale);
       })
       .catch(() => this.markAudioState("blocked"));
   }

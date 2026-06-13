@@ -354,7 +354,13 @@ export class RoomSimulation {
       this.markPlayerDead(events);
     }
 
-    if (!this.dead && !this.finalBossDefeatCompletesLevel() && this.exitUnlocked() && rectsOverlap(this.player, this.level.exit)) {
+    if (
+      !this.dead &&
+      !events.bossPortalUnlocked &&
+      !this.finalBossDefeatCompletesLevel() &&
+      this.exitUnlocked() &&
+      rectsOverlap(this.player, this.level.exit)
+    ) {
       this.won = true;
       events.won = true;
     }

@@ -205,6 +205,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   const pendingFetchResponses = [];
   const pendingMediaLoads = [];
   const forceRejectedMedia = new Set();
+  const gainRampValues = [];
   let disconnectedNodes = 0;
   let deferBlockedRejects = false;
   let deferNextFetch = false;
@@ -214,13 +215,14 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   let visibilityState = "visible";
   let runAnimationFrames = true;
 
-  const fakeParam = () => ({
+  const fakeParam = (trackGain = false) => ({
     value: 0,
     setValueAtTime(value) {
       this.value = value;
     },
     exponentialRampToValueAtTime(value) {
       this.value = value;
+      if (trackGain) gainRampValues.push(value);
     }
   });
   class FakeAudioContext {
@@ -237,7 +239,7 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     }
 
     createGain() {
-      return { gain: fakeParam(), connect() {}, disconnect() { disconnectedNodes += 1; } };
+      return { gain: fakeParam(true), connect() {}, disconnect() { disconnectedNodes += 1; } };
     }
 
     createBufferSource() {
@@ -561,6 +563,19 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       `Expected loop-fallback diagnostic for failed boss defeat loop sample, got ${document.documentElement.dataset.echoShiftAudioEffects}`
     );
     assert(startedTones.length > tonesBeforeLoopFallback, "Expected failed boss defeat loop sample to pulse a synth fallback");
+    const fullScaleFallbackGain = Math.max(...gainRampValues.slice(-8));
+    audio.setEffectLoopVolume("fallback-boss-defeat", 0.25);
+    const tonesBeforeScaledFallback = startedTones.length;
+    const gainValuesBeforeScaledFallback = gainRampValues.length;
+    audio.pauseEffectLoops();
+    audio.resumeEffectLoops();
+    await settlePromises();
+    assert(startedTones.length > tonesBeforeScaledFallback, "Expected resumed fallback boss loop to pulse another synth tone");
+    const reducedScaleFallbackGain = Math.max(...gainRampValues.slice(gainValuesBeforeScaledFallback));
+    assert(
+      reducedScaleFallbackGain > 0 && reducedScaleFallbackGain < fullScaleFallbackGain * 0.5,
+      `Expected fallback synth pulse to scale down with loop volume, got full ${fullScaleFallbackGain} and reduced ${reducedScaleFallbackGain}`
+    );
     audio.stopEffectLoop("fallback-boss-defeat");
 
     const tonesBeforeRejectedSample = startedTones.length;
@@ -2414,6 +2429,32 @@ try {
   assert(portalUnlockEvent?.bossPortalUnlocked, "Expected exit portal to unlock after boss departure finishes");
   assert(bossIntroSim.exitUnlocked(), "Expected boss level exit to unlock after boss departure");
   assert(bossIntroSim.bossStates.get("boss-test")?.phase === "defeated", "Expected boss to be marked defeated after departure finishes");
+  const bossExitCampSim = new RoomSimulation(bossLevel);
+  bossExitCampSim.player.x = bossLevel.start.x;
+  bossExitCampSim.step(idle);
+  runFrames(bossExitCampSim, 17 * 60 - 1, idle);
+  const bossExitCampVulnerable = runBossUntilVulnerable(bossExitCampSim, "boss-test");
+  const bossExitCampHit = upwardHitBoss(bossExitCampSim, bossExitCampVulnerable);
+  assert(bossExitCampHit.bossDefeated?.id === "boss-test", "Expected exit-camping fixture to defeat the boss");
+  Object.assign(bossExitCampSim.player, {
+    x: bossLevel.exit.x + bossLevel.exit.w / 2 - bossExitCampSim.player.w / 2,
+    y: bossLevel.exit.y + bossLevel.exit.h - bossExitCampSim.player.h,
+    vx: 0,
+    vy: 0,
+    onGround: true
+  });
+  let bossExitCampUnlock = null;
+  for (let guard = 0; guard < BOSS_DEFEAT_PAUSE_FRAMES + bossExitCampVulnerable.departureTotalFrames + 30; guard += 1) {
+    const event = bossExitCampSim.step(idle);
+    if (event.bossPortalUnlocked) {
+      bossExitCampUnlock = event;
+      break;
+    }
+  }
+  assert(bossExitCampUnlock?.bossPortalUnlocked, "Expected exit-camping fixture to emit a portal unlock event");
+  assert(!bossExitCampUnlock.won && !bossExitCampSim.won, "Expected portal unlock and exit completion to be separated when player waits in the exit");
+  const bossExitCampWin = bossExitCampSim.step(idle);
+  assert(bossExitCampWin.won && bossExitCampSim.won, "Expected exit-camping fixture to complete on the step after portal unlock");
 
   const bossDefeatCompletionLevel = {
     ...bossLevel,
