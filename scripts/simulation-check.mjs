@@ -226,12 +226,40 @@ const verifyCampaignVitalsLevelSelectContract = () => {
   const levelSelectSource = readFileSync("src/scenes/LevelSelectScene.ts", "utf8");
   const openLevelSelectBody = gameSceneMethodBody(gameSceneSource, "openLevelSelect");
   assert(
-    openLevelSelectBody.includes("preserveCampaignVitals: !this.retryRequired"),
-    "Expected in-run Level Select to preserve campaign vitals only before retry-required game over"
+    openLevelSelectBody.includes('this.scene.start("LevelSelectScene")') && !openLevelSelectBody.includes("preserveCampaignVitals"),
+    "Expected Level Select navigation to avoid preserving in-run campaign vitals"
   );
   assert(
-    levelSelectSource.includes("if (!this.preserveCampaignVitals) resetCampaignVitals()"),
-    "Expected Level Select to reset campaign vitals when preservation is not requested"
+    levelSelectSource.includes("resetCampaignVitals();") && !levelSelectSource.includes("preserveCampaignVitals"),
+    "Expected every Level Select choice to reset campaign vitals to the default fresh run"
+  );
+};
+
+const verifyFiniteLifeRestartContract = () => {
+  const gameSceneSource = readFileSync("src/scenes/GameScene.ts", "utf8");
+  const hudSource = readFileSync("src/ui/hud.ts", "utf8");
+  const handleHotkeysBody = gameSceneMethodBody(gameSceneSource, "handleHotkeys");
+  const retryAttemptBody = gameSceneMethodBody(gameSceneSource, "retryAttempt");
+  const restartLevelBody = gameSceneMethodBody(gameSceneSource, "restartLevel");
+  assert(
+    handleHotkeysBody.includes("if (this.retryRequired) return;") && !handleHotkeysBody.includes("this.restartLevel()"),
+    "Expected exhausted-life hotkeys to avoid restarting the level"
+  );
+  assert(
+    retryAttemptBody.includes("this.levelRetryDisabled()") && retryAttemptBody.includes("Retry unavailable in finite-life rooms"),
+    "Expected T/retry attempts to be blocked for finite-life levels"
+  );
+  assert(
+    restartLevelBody.includes("levelUsesFiniteLives(this.level)") && restartLevelBody.includes("Restart from Level Select"),
+    "Expected direct level restart to be blocked for finite-life levels"
+  );
+  assert(
+    hudSource.includes("showGameOver") &&
+      hudSource.includes("<h1>Game Over</h1>") &&
+      !hudSource.includes("<h1>Retry Required</h1>") &&
+      !hudSource.includes("Restart Level</button>") &&
+      !hudSource.includes("Replay Room</button>"),
+    "Expected HUD to expose Game Over without finite-life restart/replay buttons"
   );
 };
 
@@ -1782,6 +1810,7 @@ try {
   );
   verifyGameSceneAudioCleanupHooks();
   verifyCampaignVitalsLevelSelectContract();
+  verifyFiniteLifeRestartContract();
   verifyExtraLifeSfxContract();
   await verifyAudioUnlockRetry(SynthAudio, soundtracks);
 
@@ -1799,6 +1828,7 @@ try {
                     ...baseLevel,
                     id: "legacy-draft-motion",
                     name: "Legacy Draft Motion",
+                    rewindDisabled: true,
                     cores: [{ id: "draft-core", x: 110, y: 96, w: 24, h: 24, label: "D", size: "large" }],
                     drones: [{ id: "legacy-draft-drone", x: 160, y: 86, w: 28, h: 34, axis: "x", distance: 30, period: 120, phase: 0.25 }]
                   }
@@ -1815,6 +1845,7 @@ try {
   const migratedDraftCore = migratedDraft?.levels[0]?.cores?.find((core) => core.id === "draft-core");
   assert(migratedDraft?.motionModel === "anchored", "Expected legacy runtime draft snapshot to be marked anchored after migration");
   assert(migratedDraft?.levels[0]?.motionModel === "anchored", "Expected legacy runtime draft level to be marked anchored after migration");
+  assert(migratedDraft?.levels[0]?.rewindDisabled === true, "Expected runtime draft reader to preserve disabled rewind levels");
   assert(migratedDraftCore?.size === "large", `Expected runtime draft reader to preserve large core size, got ${JSON.stringify(migratedDraftCore)}`);
   assert(
     migratedDraftDrone?.x === 130 &&

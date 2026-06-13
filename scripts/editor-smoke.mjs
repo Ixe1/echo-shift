@@ -293,6 +293,7 @@ try {
   await draftPlaytestName.fill("Draft Playtest Smoke");
   await dispatchChange(draftPlaytestName);
   await draftPlaytestPage.locator("[data-level-field='soundtrackKey']").selectOption("tutorial");
+  await draftPlaytestPage.locator("[data-level-field='rewindDisabled']").check();
   await draftPlaytestPage.locator("[data-playtest-draft]").click();
   await draftPlaytestPage.waitForURL(/playtestDraft=1/);
   await startAudioGate(draftPlaytestPage);
@@ -307,6 +308,8 @@ try {
   const draftPlaytestBackgroundRenderMode = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundRenderMode);
   const draftPlaytestBackgroundDetailLayer = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundDetailLayer);
   const draftPlaytestBackgroundPieces = Number(await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundPieces));
+  const draftPlaytestRewindDisabled = await draftPlaytestPage.locator("[data-rewind]").isDisabled();
+  const draftPlaytestRetryHidden = await draftPlaytestPage.locator("[data-retry]").evaluate((element) => element.hidden);
   await draftPlaytestPage.screenshot({ path: `${outDir}/editor-playtest-draft.png`, fullPage: true });
   await draftPlaytestPage.locator("[data-menu]").click();
   const draftEditorButton = draftPlaytestPage.locator("[data-modal] [data-editor]");
@@ -316,6 +319,43 @@ try {
   await draftPlaytestPage.locator("[data-level-editor]").waitFor({ state: "visible" });
   const draftReturnUrl = draftPlaytestPage.url();
   await draftPlaytest.close();
+
+  const gameOverContext = await browser.newContext({ viewport: { width: 960, height: 540 } });
+  const gameOverPage = await gameOverContext.newPage();
+  collectConsole(gameOverPage);
+  await gameOverPage.goto(url, { waitUntil: "domcontentloaded" });
+  await gameOverPage.evaluate(() => {
+    window.localStorage.setItem(
+      "echo-shift-level-editor-draft-v1",
+      JSON.stringify({
+        currentIndex: 0,
+        levels: [
+          {
+            id: "game-over-smoke",
+            index: 0,
+            name: "Game Over Smoke",
+            subtitle: "",
+            start: { x: 60, y: 450 },
+            exit: { x: 850, y: 438, w: 48, h: 62 },
+            bounds: { x: 0, y: 0, w: 960, h: 540 },
+            solids: [{ id: "floor", x: 0, y: 500, w: 960, h: 40 }],
+            hazards: [{ id: "spawn-spark", x: 50, y: 440, w: 80, h: 80 }],
+            score: { lives: 3, coreScore: 100, timeBonusTargetSeconds: 30, timeBonusPerSecond: 100 },
+            hint: ""
+          }
+        ]
+      })
+    );
+  });
+  await gameOverPage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(gameOverPage);
+  await gameOverPage.locator("[data-modal].show h1").waitFor({ state: "visible", timeout: 32000 });
+  const gameOverTitle = await gameOverPage.locator("[data-modal].show h1").textContent();
+  const gameOverReplayCount = await gameOverPage.locator("[data-modal] [data-replay-level]").count();
+  const gameOverLevelSelectVisible = await gameOverPage.locator("[data-modal] [data-levels]").isVisible();
+  const gameOverRetryHidden = await gameOverPage.locator("[data-retry]").evaluate((element) => element.hidden);
+  await gameOverPage.screenshot({ path: `${outDir}/editor-game-over.png`, fullPage: true });
+  await gameOverContext.close();
 
   const corruptDraftPlaytest = await browser.newContext({ viewport: { width: 960, height: 540 } });
   const corruptDraftPlaytestPage = await corruptDraftPlaytest.newPage();
@@ -590,10 +630,14 @@ try {
     element.value = "0.65";
     element.dispatchEvent(new Event("change", { bubbles: true }));
   });
+  const rewindDisabledCheckbox = page.locator("[data-level-field='rewindDisabled']");
+  const rewindDisabledInitially = await rewindDisabledCheckbox.isChecked();
+  await rewindDisabledCheckbox.check();
   const metadataExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[0];
   const soundtrackExportKey = metadataExport.soundtrackKey;
   const backgroundExportKey = metadataExport.backgroundKey;
   const ambienceExport = metadataExport.backgroundAmbience;
+  const rewindDisabledExport = metadataExport.rewindDisabled;
 
   const levelIdField = page.locator("[data-level-field='id']");
   await levelIdField.fill("first-afterimage");
@@ -1288,6 +1332,7 @@ try {
     name: "Fallback ID Smoke",
     subtitle: "",
     soundtrackKey: "level-4",
+    rewindDisabled: true,
     backgroundKey: "time-lab-prototype",
     start: { x: 60, y: 450 },
     exit: { x: 850, y: 438, w: 48, h: 62 },
@@ -1397,9 +1442,15 @@ try {
   assert(draftPlaytestBackgroundRenderMode === "fit-level", `Expected draft playtest background to use fit-level render mode, got ${draftPlaytestBackgroundRenderMode}`);
   assert(draftPlaytestBackgroundDetailLayer === "off", `Expected draft playtest fit-level background to disable procedural detail layer, got ${draftPlaytestBackgroundDetailLayer}`);
   assert(draftPlaytestBackgroundPieces >= 1, `Expected draft playtest to create background image pieces, got ${draftPlaytestBackgroundPieces}`);
+  assert(draftPlaytestRewindDisabled, "Expected draft playtest HUD rewind button to be disabled by level metadata");
+  assert(draftPlaytestRetryHidden, "Expected finite-life draft playtest retry button to be hidden");
   assert(draftReturnUrl.includes("editor=1"), `Expected draft Editor button to return to editor=1, got ${draftReturnUrl}`);
   assert(!draftReturnUrl.includes("playtestDraft=1"), `Expected draft Editor button to clean playtest flag, got ${draftReturnUrl}`);
   assert(!draftReturnUrl.includes("level=1"), `Expected draft Editor button to clean level flag, got ${draftReturnUrl}`);
+  assert(gameOverTitle === "Game Over", `Expected finite-life exhaustion to show Game Over, got ${gameOverTitle}`);
+  assert(gameOverReplayCount === 0, `Expected Game Over modal to omit replay/restart, got ${gameOverReplayCount} replay buttons`);
+  assert(gameOverLevelSelectVisible, "Expected Game Over modal to offer Level Select");
+  assert(gameOverRetryHidden, "Expected Game Over HUD retry button to stay hidden");
   assert(corruptDraftBootedMenu, "Expected corrupt draft playtest data to fall back to normal menu instead of crashing");
   assert(corruptDraftHudCount === 0, `Expected corrupt draft playtest fallback not to boot game HUD, got ${corruptDraftHudCount}`);
   assert(mixedCorruptDraftBootedMenu, "Expected mixed corrupt draft playtest data to fall back to normal menu instead of truncating draft levels");
@@ -1462,6 +1513,8 @@ try {
   assert(soundtrackOptions.some((option) => option.includes("Auto: Echo Shift - Level 1")), `Expected auto soundtrack option, got ${soundtrackOptions.join(", ")}`);
   assert(soundtrackOptions.some((option) => option.includes("Echo Shift - Tutorial")), `Expected selectable tutorial MP3 option, got ${soundtrackOptions.join(", ")}`);
   assert(soundtrackExportKey === "tutorial", `Expected selected soundtrack key to export as tutorial, got ${soundtrackExportKey}`);
+  assert(!rewindDisabledInitially, "Expected rewind disable toggle to default off for source levels");
+  assert(rewindDisabledExport === true, `Expected disabled rewind metadata to export, got ${rewindDisabledExport}`);
   assert(
     backgroundOptions.some((option) => option.includes("Auto: Springtide Garden Full-Plate")),
     `Expected auto background option, got ${backgroundOptions.join(", ")}`
@@ -1901,6 +1954,7 @@ try {
     `Expected imported legacy scoring fields to export as score settings only, got ${JSON.stringify(fallbackImportExport)}`
   );
   assert(fallbackImportExport.soundtrackKey === "level-4", `Expected imported soundtrack key level-4, got ${fallbackImportExport.soundtrackKey}`);
+  assert(fallbackImportExport.rewindDisabled === true, `Expected imported rewindDisabled flag to export, got ${fallbackImportExport.rewindDisabled}`);
   assert(fallbackImportExport.backgroundKey === "time-lab-prototype", `Expected imported background key time-lab-prototype, got ${fallbackImportExport.backgroundKey}`);
   assert(
     sourceDerivedImportExport.motionModel === "anchored" && sourceDerivedImportPlatform?.x === 420 && sourceDerivedImportPlatform?.distance === 80,
@@ -1927,7 +1981,8 @@ try {
         artifacts: {
           desktop: `${outDir}/editor-desktop.png`,
           mobile: `${outDir}/editor-mobile.png`,
-          playtestDraft: `${outDir}/editor-playtest-draft.png`
+          playtestDraft: `${outDir}/editor-playtest-draft.png`,
+          gameOver: `${outDir}/editor-game-over.png`
         }
       },
       null,

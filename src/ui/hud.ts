@@ -27,6 +27,8 @@ type HudState = {
   lives: number | null;
   coresCollected: number;
   coresTotal: number;
+  rewindDisabled: boolean;
+  retryDisabled: boolean;
 };
 
 export class Hud {
@@ -61,8 +63,8 @@ export class Hud {
         <div class="toast" data-toast></div>
         <div class="hud-actions">
           <div class="command-row">
-            <button class="icon-button" data-rewind title="Rewind and create an echo">${icon("rewind")}</button>
-            <button class="icon-button" data-retry title="Retry">${icon("restart")}</button>
+            <button class="icon-button" data-rewind title="Rewind and create an echo" aria-label="Rewind and create an echo">${icon("rewind")}</button>
+            <button class="icon-button" data-retry title="Retry" aria-label="Retry">${icon("restart")}</button>
             <button class="icon-button" data-menu title="Pause">${icon("pause")}</button>
           </div>
         </div>
@@ -91,6 +93,8 @@ export class Hud {
     this.set("[data-score]", formatScore(state.score));
     this.set("[data-cores]", `${state.coresCollected}/${state.coresTotal}`);
     this.set("[data-lives]", state.lives === null ? "∞" : `${state.lives}`);
+    this.setCommandButton("[data-rewind]", state.rewindDisabled, state.rewindDisabled ? "Rewind disabled for this level" : "Rewind and create an echo");
+    this.setCommandButton("[data-retry]", state.retryDisabled, state.retryDisabled ? "Retry unavailable in finite-life levels" : "Retry", state.retryDisabled);
   }
 
   toast(message: string): void {
@@ -139,7 +143,6 @@ export class Hud {
         <p>${levelName}</p>
         <div class="button-grid">
           <button class="ui-button primary" data-resume>Resume</button>
-          <button class="ui-button" data-replay-level>${icon("restart")} Restart Level</button>
           <button class="ui-button" data-options>Options</button>
           <button class="ui-button" data-levels>${icon("levels")} Level Select</button>
           ${this.callbacks.draftPlaytest ? `<button class="ui-button" data-editor>${icon("levels")} Editor</button>` : ""}
@@ -149,7 +152,6 @@ export class Hud {
     `;
     modal.classList.add("show");
     this.modalButton("[data-resume]", this.callbacks.onResume);
-    this.modalButton("[data-replay-level]", this.callbacks.onReplay);
     this.modalButton("[data-options]", () => this.showOptions(levelName));
     this.modalButton("[data-levels]", this.callbacks.onLevelSelect);
     this.modalButton("[data-editor]", () => this.callbacks.onEditor?.());
@@ -182,7 +184,6 @@ export class Hud {
               ? `<button class="ui-button primary" data-levels>${icon("levels")} Level Select</button>`
               : `<button class="ui-button primary" data-next>${icon("next")} Next Room</button>`
           }
-          <button class="ui-button" data-replay-level>${icon("restart")} Replay Room</button>
           ${this.callbacks.draftPlaytest ? `<button class="ui-button" data-editor>${icon("levels")} Editor</button>` : ""}
           <button class="ui-button" data-exit-menu>${icon("back")} Title</button>
         </div>
@@ -191,7 +192,6 @@ export class Hud {
     modal.classList.add("show");
     this.modalButton("[data-next]", this.callbacks.onNext);
     this.modalButton("[data-levels]", this.callbacks.onLevelSelect);
-    this.modalButton("[data-replay-level]", this.callbacks.onReplay);
     this.modalButton("[data-editor]", () => this.callbacks.onEditor?.());
     this.modalButton("[data-exit-menu]", this.callbacks.onTitle);
   }
@@ -219,22 +219,20 @@ export class Hud {
     this.modalButton("[data-exit-menu]", this.callbacks.onTitle);
   }
 
-  showRetryRequired(levelName: string): void {
+  showGameOver(levelName: string): void {
     const modal = this.modal();
     modal.innerHTML = `
       <section class="panel complete-panel">
-        <h1>Retry Required</h1>
+        <h1>Game Over</h1>
         <p>${levelName} signal budget exhausted.</p>
         <div class="button-grid">
-          <button class="ui-button primary" data-replay-level>${icon("restart")} Retry Room</button>
-          <button class="ui-button" data-levels>${icon("levels")} Level Select</button>
+          <button class="ui-button primary" data-levels>${icon("levels")} Level Select</button>
           ${this.callbacks.draftPlaytest ? `<button class="ui-button" data-editor>${icon("levels")} Editor</button>` : ""}
           <button class="ui-button" data-exit-menu>${icon("back")} Title</button>
         </div>
       </section>
     `;
     modal.classList.add("show");
-    this.modalButton("[data-replay-level]", this.callbacks.onReplay);
     this.modalButton("[data-levels]", this.callbacks.onLevelSelect);
     this.modalButton("[data-editor]", () => this.callbacks.onEditor?.());
     this.modalButton("[data-exit-menu]", this.callbacks.onTitle);
@@ -283,6 +281,15 @@ export class Hud {
   private set(selector: string, value: string): void {
     const element = this.root.querySelector<HTMLElement>(selector);
     if (element) element.textContent = value;
+  }
+
+  private setCommandButton(selector: string, disabled: boolean, title: string, hidden = false): void {
+    const button = this.root.querySelector<HTMLButtonElement>(selector);
+    if (!button) return;
+    button.disabled = disabled;
+    button.hidden = hidden;
+    button.title = title;
+    button.setAttribute("aria-label", title);
   }
 
   private modal(): HTMLElement {

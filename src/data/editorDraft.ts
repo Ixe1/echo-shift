@@ -178,6 +178,7 @@ const levelLike = (value: unknown): value is Level => {
     stringValue(value.subtitle) &&
     optionalLevelSoundtrackKey(value.soundtrackKey) &&
     optionalLevelCompletion(value.completion) &&
+    optionalBoolean(value.rewindDisabled) &&
     optionalLevelBackgroundKey(value.backgroundKey) &&
     optionalBackgroundAmbience(value.backgroundAmbience) &&
     isRecord(value.start) &&
@@ -214,10 +215,12 @@ const normalizedDraftLevel = (level: Level, draftAnchored: boolean): Level => {
     medalFrames?: Record<string, unknown>;
     perfectEchoes?: unknown;
   };
-  const { medalFrames, perfectEchoes, ...levelWithoutLegacy } = normalized;
+  const { medalFrames, perfectEchoes, rewindDisabled, ...levelWithoutLegacy } = normalized;
+  void rewindDisabled;
   void perfectEchoes;
   return {
     ...levelWithoutLegacy,
+    ...(level.rewindDisabled === true ? { rewindDisabled: true } : {}),
     score: normalizeScoreSettings(legacyLevel.score, legacyLevel.medalFrames?.gold),
     ...(level.backgroundAmbience ? { backgroundAmbience: normalizeBackgroundAmbience(level.backgroundAmbience) } : {}),
     solids: normalized.solids.map(normalizeSolid)

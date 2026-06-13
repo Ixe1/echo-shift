@@ -310,6 +310,7 @@ export type Level = {
   motionModel?: "anchored";
   soundtrackKey?: LevelSoundtrackKey;
   completion?: LevelCompletion;
+  rewindDisabled?: boolean;
   backgroundKey?: LevelBackgroundKey;
   backgroundAmbience?: LevelBackgroundAmbience;
   start: Vec2;

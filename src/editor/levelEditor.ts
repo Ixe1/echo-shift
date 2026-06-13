@@ -675,6 +675,7 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number, draftAnch
     : undefined;
   const anchoredMotion = draftAnchored || usesAnchoredMotionModel(value);
   const importedCompletion = normalizeLevelCompletion(value.completion);
+  const importedRewindDisabled = value.rewindDisabled === true;
 
   const level: Level = {
     id: String(value.id || `level-${fallbackIndex + 1}`),
@@ -684,6 +685,7 @@ const normalizeImportedLevel = (value: unknown, fallbackIndex: number, draftAnch
     motionModel: ANCHORED_MOTION_MODEL,
     ...(importedSoundtrackKey ? { soundtrackKey: importedSoundtrackKey } : {}),
     ...(importedCompletion ? { completion: importedCompletion } : {}),
+    ...(importedRewindDisabled ? { rewindDisabled: true } : {}),
     ...(importedBackgroundKey ? { backgroundKey: importedBackgroundKey } : {}),
     ...(importedBackgroundAmbience ? { backgroundAmbience: importedBackgroundAmbience } : {}),
     start: {
@@ -1220,6 +1222,9 @@ class LevelEditor {
       const completion = normalizeLevelCompletion(value);
       if (completion && completion !== "exit") level.completion = completion;
       else delete level.completion;
+    } else if (field === "rewindDisabled") {
+      if (value === true) level.rewindDisabled = true;
+      else delete level.rewindDisabled;
     } else if (field === "backgroundKey") {
       if (isLevelBackgroundKey(value)) level.backgroundKey = value;
       else delete level.backgroundKey;
@@ -2250,6 +2255,7 @@ class LevelEditor {
           ${this.numberField("H", "bounds.h", level.bounds.h, "level")}
         </div>
         ${this.selectField("Completion", "completion", level.completion || "exit", levelCompletionOptions, "level")}
+        ${this.levelCheckboxField("Disable Rewind (R)", "rewindDisabled", level.rewindDisabled === true)}
         ${this.soundtrackField(level)}
         ${this.backgroundField(level)}
         ${this.backgroundAmbienceField(level)}

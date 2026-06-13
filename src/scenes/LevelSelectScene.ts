@@ -10,14 +10,9 @@ import { clearUi, icon, uiRoot } from "../ui/dom";
 
 export class LevelSelectScene extends Phaser.Scene {
   private uiCleanupRegistered = false;
-  private preserveCampaignVitals = false;
 
   constructor() {
     super("LevelSelectScene");
-  }
-
-  init(data: { preserveCampaignVitals?: boolean } = {}): void {
-    this.preserveCampaignVitals = data.preserveCampaignVitals === true;
   }
 
   create(): void {
@@ -81,7 +76,7 @@ export class LevelSelectScene extends Phaser.Scene {
       button.addEventListener("click", () => {
         const levelIndex = Number(button.dataset.level || 0);
         audio.play("select");
-        if (!this.preserveCampaignVitals) resetCampaignVitals();
+        resetCampaignVitals();
         this.scene.start("GameScene", { levelIndex });
       });
     });

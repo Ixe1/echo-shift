@@ -39,7 +39,6 @@ import {
   campaignLivesForLevel,
   levelUsesFiniteLives,
   registerCampaignCorePickup,
-  resetCampaignVitals,
   syncCampaignLives
 } from "../game/session";
 import { solidCollisionFor } from "../game/solidCollision";
@@ -640,13 +639,23 @@ export class GameScene extends Phaser.Scene {
       score: this.simulation.score,
       lives: this.simulation.livesRemaining(),
       coresCollected: this.simulation.objectState.collectedCores.size,
-      coresTotal: (this.level.cores || []).length
+      coresTotal: (this.level.cores || []).length,
+      rewindDisabled: this.levelRewindDisabled(),
+      retryDisabled: this.levelRetryDisabled()
     });
     this.updateTutorialHint();
   }
 
   private currentLevelSoundtrackKey(): ReturnType<typeof soundtrackForLevel>["key"] {
     return soundtrackForLevel(this.level, this.levelIndex).key;
+  }
+
+  private levelRewindDisabled(): boolean {
+    return this.level.rewindDisabled === true;
+  }
+
+  private levelRetryDisabled(): boolean {
+    return levelUsesFiniteLives(this.level);
   }
 
   private preloadUpcomingSoundtracks(): void {
@@ -842,10 +851,7 @@ export class GameScene extends Phaser.Scene {
 
   private handleHotkeys(): void {
     if (this.deathPresentation) return;
-    if (this.retryRequired) {
-      if (Phaser.Input.Keyboard.JustDown(this.keys.t)) this.restartLevel();
-      return;
-    }
+    if (this.retryRequired) return;
     if (Phaser.Input.Keyboard.JustDown(this.keys.r)) this.rewind();
     if (Phaser.Input.Keyboard.JustDown(this.keys.t)) this.retryAttempt();
   }
@@ -1063,8 +1069,8 @@ export class GameScene extends Phaser.Scene {
       this.pausedByHud = true;
       this.retryRequired = true;
       this.deathPresentation = null;
-      this.hud.showRetryRequired(this.level.name);
-      this.writeDeathPresentationDiagnostics("retry-required");
+      this.hud.showGameOver(this.level.name);
+      this.writeDeathPresentationDiagnostics("game-over");
       return;
     }
 
@@ -1094,6 +1100,10 @@ export class GameScene extends Phaser.Scene {
 
   private rewind(): void {
     if (this.levelIntroBlocksGameplay() || this.retryPresentation || this.deathPresentation || this.completeHandled || this.pausedByHud || this.retryRequired) return;
+    if (this.levelRewindDisabled()) {
+      this.hud.toast("Rewind disabled in this room");
+      return;
+    }
     if (this.pendingBossDefeatCompletion) {
       this.hud.toast("Rewind locked during final sync");
       return;
@@ -1115,6 +1125,10 @@ export class GameScene extends Phaser.Scene {
 
   private retryAttempt(): void {
     if (this.levelIntroBlocksGameplay() || this.retryPresentation || this.deathPresentation || this.completeHandled || this.pausedByHud || this.retryRequired) return;
+    if (this.levelRetryDisabled()) {
+      this.hud.toast("Retry unavailable in finite-life rooms");
+      return;
+    }
     if (this.pendingBossDefeatCompletion) {
       this.hud.toast("Retry locked during final sync");
       return;
@@ -1166,8 +1180,10 @@ export class GameScene extends Phaser.Scene {
       this.hud.toast("Restart locked during final sync");
       return;
     }
-    const resetRun = this.retryRequired && levelUsesFiniteLives(this.level);
-    if (resetRun) resetCampaignVitals();
+    if (levelUsesFiniteLives(this.level)) {
+      this.hud.toast("Restart from Level Select");
+      return;
+    }
     this.stopBossDefeatLoops();
     this.clearAttemptScopedAudio();
     this.completeHandled = false;
@@ -1279,7 +1295,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.stopBossDefeatLoops();
     this.rememberDraftLevel();
-    this.scene.start("LevelSelectScene", { preserveCampaignVitals: !this.retryRequired });
+    this.scene.start("LevelSelectScene");
   }
 
   private openEditor(): void {
@@ -3434,7 +3450,7 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftBossEffectFrames = this.bossEffectFrames.join("|");
     document.documentElement.dataset.echoShiftSolidOutlineRects = this.staticSolidOutlineRects.join("|");
     document.documentElement.dataset.echoShiftDeathPresentation = this.retryRequired
-      ? "retry-required"
+      ? "game-over"
       : this.deathPresentation
         ? this.deathPresentation.fadeStarted
           ? "fade-out"
