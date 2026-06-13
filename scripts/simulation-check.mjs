@@ -608,6 +608,40 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       const effect = mediaElements.find((element) => element.src.includes(fragment) && element.playing);
       assert(effect, `Expected sampled ${name} SFX to play from ${fragment}`);
     }
+    mediaUnlocked = false;
+    const tonesBeforeBlockedOneShot = startedTones.length;
+    const elementsBeforeBlockedOneShot = mediaElements.length;
+    audio.play("stormFloorBeam");
+    await settlePromises();
+    const blockedStormFloorBeam = mediaElements
+      .slice(elementsBeforeBlockedOneShot)
+      .find((element) => element.src.includes("storm_floor_beam"));
+    assert(
+      blockedStormFloorBeam?.playCalls === 1 && !blockedStormFloorBeam.playing,
+      `Expected blocked one-shot sample to wait for unlock, got ${JSON.stringify({
+        playCalls: blockedStormFloorBeam?.playCalls,
+        playing: blockedStormFloorBeam?.playing
+      })}`
+    );
+    assert(
+      startedTones.length === tonesBeforeBlockedOneShot &&
+        document.documentElement.dataset.echoShiftAudioEffects?.includes("blocked:stormFloorBeam") &&
+        !document.documentElement.dataset.echoShiftAudioEffects?.includes("fallback:stormFloorBeam"),
+      `Expected recoverably blocked one-shot sample not to synth-fallback, got ${document.documentElement.dataset.echoShiftAudioEffects}`
+    );
+    dispatchUnlock("keydown");
+    await settlePromises();
+    assert(
+      blockedStormFloorBeam.playCalls >= 2 && blockedStormFloorBeam.playing,
+      `Expected blocked one-shot sample to retry after unlock, got ${JSON.stringify({
+        playCalls: blockedStormFloorBeam.playCalls,
+        playing: blockedStormFloorBeam.playing
+      })}`
+    );
+    assert(
+      document.documentElement.dataset.echoShiftAudioEffects?.includes("play:stormFloorBeam"),
+      `Expected retried one-shot sample to mark play diagnostic, got ${document.documentElement.dataset.echoShiftAudioEffects}`
+    );
     audio.startEffectLoop("bossDefeatDeparture", "test-boss-defeat", 1);
     await settlePromises();
     const bossDefeatLoop = mediaElements.find((element) => element.src.includes("boss_defeat_departure"));

@@ -847,6 +847,21 @@ const verifyBossDefeatCompletionMusic = async (page) => {
     titleClickState.musicKey === "level-4",
     `Expected pause-menu title exit not to leave the final handoff, got ${JSON.stringify(titleClickState)}`
   );
+  await page.locator("[data-editor]").click();
+  await page.waitForTimeout(400);
+  const editorClickState = await page.evaluate(() => ({
+    modalTitle: document.querySelector("[data-modal].show h1")?.textContent || "",
+    musicKey: document.documentElement.dataset.echoShiftMusicKey || "",
+    search: window.location.search
+  }));
+  assert(
+    editorClickState.modalTitle.includes("Paused"),
+    `Expected pause-menu editor exit to be locked during final handoff, got ${JSON.stringify(editorClickState)}`
+  );
+  assert(
+    editorClickState.musicKey === "level-4" && editorClickState.search.includes("playtestDraft=1"),
+    `Expected pause-menu editor exit not to leave the final handoff, got ${JSON.stringify(editorClickState)}`
+  );
   await page.keyboard.press("Escape");
   await page.waitForFunction(
     () => !document.querySelector("[data-modal].show h1")?.textContent?.includes("Paused"),
@@ -878,7 +893,8 @@ const verifyBossDefeatCompletionMusic = async (page) => {
     pausedState,
     restartClickState,
     levelSelectClickState,
-    titleClickState
+    titleClickState,
+    editorClickState
   };
 };
 

@@ -88,6 +88,7 @@ const sampledEffects = {
   bossCoreHit: { src: effectPath("boss_core_hit.mp3"), volume: 0.34 },
   bossDefeatDeparture: { src: effectPath("boss_defeat_departure.mp3"), volume: 0.24 }
 } as const satisfies Partial<Record<ToneName, { src: string; volume: number }>>;
+type SampledEffect = (typeof sampledEffects)[keyof typeof sampledEffects];
 
 const clampVolume = (value: unknown, fallback: number): number => {
   const numeric = Number(value);
@@ -145,6 +146,7 @@ export class SynthAudio {
   private webMusicReadyKeys = new Set<SoundtrackKey>();
   private activeEffects = new Map<HTMLAudioElement, number>();
   private loopedEffects = new Map<string, LoopedEffectPlayback>();
+  private blockedSampleRetries: Array<{ name: ToneName; element: HTMLAudioElement; settings: SampledEffect }> = [];
   private fadingMusic = new Set<HTMLAudioElement>();
   private fadingWebMusic = new Set<WebMusicPlayback>();
   private recentEffectEvents: string[] = [];
@@ -198,6 +200,7 @@ export class SynthAudio {
         .catch(() => this.markAudioState("blocked"));
     }
     if (!this.musicPaused) this.retryMusic();
+    this.retryBlockedSamples();
     this.retryEffectLoops();
   }
 
@@ -524,6 +527,7 @@ export class SynthAudio {
       this.unloadMusicElement(element);
     }
     this.activeEffects.clear();
+    this.blockedSampleRetries = [];
     for (const playback of this.loopedEffects.values()) {
       this.stopLoopedEffectFallback(playback);
       this.unloadMusicElement(playback.element);
@@ -828,6 +832,7 @@ export class SynthAudio {
       released = true;
       element.pause();
       this.activeEffects.delete(element);
+      this.blockedSampleRetries = this.blockedSampleRetries.filter((retry) => retry.element !== element);
     };
     const fallback = () => {
       if (fallbackPlayed || !this.activeEffects.has(element)) return;
@@ -842,18 +847,75 @@ export class SynthAudio {
 	    }
     if (name === "archiveBookImpact") this.markEffectEvent("request:archiveBookImpact");
 
+    const markPlayed = () => {
+      this.markEffectEvent(`play:${name}`);
+      if (typeof element.addEventListener !== "function") release();
+    };
+
 	    try {
       void element
         .play()
-        .then(() => {
-          this.markEffectEvent(`play:${name}`);
-          if (typeof element.addEventListener !== "function") this.activeEffects.delete(element);
-        })
-        .catch(fallback);
-    } catch {
-      fallback();
+        .then(markPlayed)
+        .catch((error) => {
+          if (this.mediaPlayRejectionIsRecoverableBlock(error)) {
+            this.queueBlockedSampleRetry(name, element, settings);
+            return;
+          }
+          fallback();
+        });
+    } catch (error) {
+      if (this.mediaPlayRejectionIsRecoverableBlock(error)) {
+        this.queueBlockedSampleRetry(name, element, settings);
+      } else {
+        fallback();
+      }
     }
     return true;
+  }
+
+  private queueBlockedSampleRetry(name: ToneName, element: HTMLAudioElement, settings: SampledEffect): void {
+    if (!this.activeEffects.has(element) || this.blockedSampleRetries.some((retry) => retry.element === element)) return;
+    this.markEffectEvent(`blocked:${name}`);
+    this.blockedSampleRetries.push({ name, element, settings });
+  }
+
+  private retryBlockedSamples(): void {
+    const retries = this.blockedSampleRetries.splice(0);
+    for (const retry of retries) {
+      if (!this.activeEffects.has(retry.element)) continue;
+      retry.element.volume = retry.settings.volume * this.fxOutputMultiplier();
+      try {
+        void retry.element
+          .play()
+          .then(() => {
+            if (!this.activeEffects.has(retry.element)) return;
+            this.markEffectEvent(`play:${retry.name}`);
+            if (typeof retry.element.addEventListener !== "function") {
+              retry.element.pause();
+              this.activeEffects.delete(retry.element);
+            }
+          })
+          .catch((error) => {
+            if (this.mediaPlayRejectionIsRecoverableBlock(error)) {
+              this.queueBlockedSampleRetry(retry.name, retry.element, retry.settings);
+            } else if (this.activeEffects.has(retry.element)) {
+              retry.element.pause();
+              this.activeEffects.delete(retry.element);
+              this.markEffectEvent(`fallback:${retry.name}`);
+              this.playToneWhenReady(retry.name);
+            }
+          });
+      } catch (error) {
+        if (this.mediaPlayRejectionIsRecoverableBlock(error)) {
+          this.queueBlockedSampleRetry(retry.name, retry.element, retry.settings);
+        } else if (this.activeEffects.has(retry.element)) {
+          retry.element.pause();
+          this.activeEffects.delete(retry.element);
+          this.markEffectEvent(`fallback:${retry.name}`);
+          this.playToneWhenReady(retry.name);
+        }
+      }
+    }
   }
 
   private playLoopedEffect(playback: LoopedEffectPlayback): void {

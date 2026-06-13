@@ -1232,6 +1232,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private openEditor(): void {
+    if (this.pendingBossDefeatCompletion) {
+      this.hud.toast("Editor locked during final sync");
+      return;
+    }
     this.stopBossDefeatLoops();
     this.rememberDraftLevel();
     const url = new URL(window.location.href);
