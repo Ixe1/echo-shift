@@ -529,9 +529,18 @@ const verifyCryoFloorIceRender = async (page) => {
     null,
     { timeout: 9000 }
   );
+  await page.waitForTimeout(1000);
 
   const raw = await page.evaluate(() => document.documentElement.dataset.echoShiftBossEffectFrames || "");
   const audioDiagnostic = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects || "");
+  assert(
+    audioEffectCount(audioDiagnostic, "play:cryoBeamFire") === 1,
+    `Expected one cryo beam sample play in the opening active window, got ${audioDiagnostic}`
+  );
+  assert(
+    audioEffectCount(audioDiagnostic, "play:cryoFloorIceForm") === 1,
+    `Expected one cryo floor ice sample play in the opening active window, got ${audioDiagnostic}`
+  );
   const match = raw.match(/cryo-floor-ice:([^|]+)/);
   const screenshot = `${outDir}/cryo-floor-ice-visible.png`;
   await page.screenshot({ path: screenshot, fullPage: true });
@@ -556,10 +565,16 @@ const verifyStormFloorBeamAudio = async (page) => {
     null,
     { timeout: 9000 }
   );
+  await page.waitForTimeout(1000);
+  const audioDiagnostic = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects || "");
+  assert(
+    audioEffectCount(audioDiagnostic, "play:stormFloorBeam") === 1,
+    `Expected one storm beam sample play in the opening active window, got ${audioDiagnostic}`
+  );
 
   return {
     effects: await page.evaluate(() => document.documentElement.dataset.echoShiftBossEffectFrames || ""),
-    audioDiagnostic: await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects || "")
+    audioDiagnostic
   };
 };
 

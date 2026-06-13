@@ -960,6 +960,21 @@ try {
     throw new Error(`Expected boss ${bossId} to emit ${cue} within ${maxFrames} frames`);
   };
 
+  const countBossSoundCuesUntilActiveWindowEnds = (simulation, bossId, cues) => {
+    const counts = new Map(cues.map((cue) => [cue, 0]));
+    for (let guard = 0; guard < 180; guard += 1) {
+      const snapshot = simulation.bossSnapshots().find((boss) => boss.id === bossId);
+      if (!snapshot) break;
+      const cycleFrame = snapshot.activeFrames % bossAttackCycleFramesFor(snapshot);
+      if (cycleFrame >= bossAttackWindupFramesFor(snapshot) + bossAttackActiveFramesFor(snapshot)) break;
+      const event = simulation.step(idle);
+      for (const cue of cues) {
+        counts.set(cue, (counts.get(cue) || 0) + event.bossSoundCues.filter((item) => item.id === bossId && item.cue === cue).length);
+      }
+    }
+    return counts;
+  };
+
   const runBossUntilWarning = (simulation, bossId, minProgress = 0.85) => {
     for (let frameIndex = 0; frameIndex < 160; frameIndex += 1) {
       const snapshots = simulation.bossSnapshots();
@@ -2302,6 +2317,11 @@ try {
     `Expected storm beam SFX cue at active-window start, got cycle ${stormSoundCycle}`
   );
   assert(stormSoundCue.snapshot.floorShocks.length === 1, "Expected storm beam SFX cue to coincide with active floor shock");
+  const stormBeamWindowCueCounts = countBossSoundCuesUntilActiveWindowEnds(stormSoundCueSim, "boss-test", ["storm-floor-beam"]);
+  const stormBeamWindowCueCount =
+    stormSoundCue.event.bossSoundCues.filter((cue) => cue.id === "boss-test" && cue.cue === "storm-floor-beam").length +
+    (stormBeamWindowCueCounts.get("storm-floor-beam") || 0);
+  assert(stormBeamWindowCueCount === 1, `Expected exactly one storm beam SFX cue in the active window, got ${stormBeamWindowCueCount}`);
 
   const stormTallLiftLevel = {
     ...baseLevel,
@@ -3193,6 +3213,15 @@ try {
     `Expected cryo floor ice SFX cue on the beam-start volley, got ${JSON.stringify(cryoBeamCue.event.bossSoundCues)}`
   );
   assert(cryoBeamCue.snapshot.floorIce.length === 1, "Expected cryo SFX cue to coincide with created floor ice");
+  const cryoWindowCueCounts = countBossSoundCuesUntilActiveWindowEnds(cryoSoundCueSim, "boss-test", ["cryo-beam-fire", "cryo-floor-ice-form"]);
+  const cryoBeamWindowCueCount =
+    cryoBeamCue.event.bossSoundCues.filter((cue) => cue.id === "boss-test" && cue.cue === "cryo-beam-fire").length +
+    (cryoWindowCueCounts.get("cryo-beam-fire") || 0);
+  const cryoIceWindowCueCount =
+    cryoBeamCue.event.bossSoundCues.filter((cue) => cue.id === "boss-test" && cue.cue === "cryo-floor-ice-form").length +
+    (cryoWindowCueCounts.get("cryo-floor-ice-form") || 0);
+  assert(cryoBeamWindowCueCount === 1, `Expected exactly one cryo beam SFX cue in the active window, got ${cryoBeamWindowCueCount}`);
+  assert(cryoIceWindowCueCount === 1, `Expected exactly one cryo floor ice SFX cue in the active window, got ${cryoIceWindowCueCount}`);
   const cryoPostCue = cryoSoundCueSim.step(idle);
   assert(
     !cryoPostCue.bossSoundCues.some((cue) => cue.cue === "cryo-floor-ice-form"),
