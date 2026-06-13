@@ -29,6 +29,7 @@ type HudState = {
   coresTotal: number;
   rewindDisabled: boolean;
   retryDisabled: boolean;
+  gameOver: boolean;
 };
 
 export class Hud {
@@ -93,8 +94,14 @@ export class Hud {
     this.set("[data-score]", formatScore(state.score));
     this.set("[data-cores]", `${state.coresCollected}/${state.coresTotal}`);
     this.set("[data-lives]", state.lives === null ? "∞" : `${state.lives}`);
-    this.setCommandButton("[data-rewind]", state.rewindDisabled, state.rewindDisabled ? "Rewind disabled for this level" : "Rewind and create an echo");
-    this.setCommandButton("[data-retry]", state.retryDisabled, state.retryDisabled ? "Retry unavailable in finite-life levels" : "Retry", state.retryDisabled);
+    this.setCommandButton(
+      "[data-rewind]",
+      state.rewindDisabled || state.gameOver,
+      state.rewindDisabled ? "Rewind disabled for this level" : "Rewind and create an echo",
+      state.gameOver
+    );
+    this.setCommandButton("[data-retry]", state.retryDisabled || state.gameOver, "Retry unavailable in finite-life levels", state.retryDisabled || state.gameOver);
+    this.setCommandButton("[data-menu]", state.gameOver, "Pause", state.gameOver);
   }
 
   toast(message: string): void {

@@ -641,7 +641,8 @@ export class GameScene extends Phaser.Scene {
       coresCollected: this.simulation.objectState.collectedCores.size,
       coresTotal: (this.level.cores || []).length,
       rewindDisabled: this.levelRewindDisabled(),
-      retryDisabled: this.levelRetryDisabled()
+      retryDisabled: this.levelRetryDisabled(),
+      gameOver: this.retryRequired
     });
     this.updateTutorialHint();
   }
