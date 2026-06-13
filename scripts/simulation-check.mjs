@@ -239,8 +239,21 @@ const verifyExtraLifeSfxContract = () => {
   const assetPath = "public/assets/audio/effects/core_extra_life.mp3";
   const gameSceneSource = readFileSync("src/scenes/GameScene.ts", "utf8");
   const body = gameSceneMethodBody(gameSceneSource, "processCoreLifeAwards");
+  const awardRegistrationIndex = body.indexOf("const award = registerCampaignCorePickup(this.level.id, core.id)");
+  const awardedAccumulatorIndex = body.indexOf("awarded += award.livesAwarded");
+  const bonusBranchIndex = body.indexOf("if (awarded > 0 && lives !== null)");
+  const extraLifePlayIndex = body.indexOf('audio.play("extraLife")');
+  const toastIndex = body.indexOf("this.hud.toast", bonusBranchIndex);
+  const extraLifePlayCalls = body.match(/audio\.play\("extraLife"\)/g) || [];
   assert(existsSync(assetPath) && statSync(assetPath).size > 0, "Expected core extra-life SFX asset to exist");
-  assert(body.includes('audio.play("extraLife")'), "Expected bonus-life award path to play the extra-life SFX");
+  assert(awardRegistrationIndex >= 0, "Expected bonus-life SFX path to be fed by registered campaign core pickups");
+  assert(awardedAccumulatorIndex > awardRegistrationIndex, "Expected bonus-life SFX path to use the awarded life count");
+  assert(bonusBranchIndex > awardedAccumulatorIndex, "Expected bonus-life SFX branch to run after bonus lives are counted");
+  assert(extraLifePlayCalls.length === 1, `Expected exactly one extra-life SFX trigger in bonus-life processing, got ${extraLifePlayCalls.length}`);
+  assert(
+    extraLifePlayIndex > bonusBranchIndex && extraLifePlayIndex < toastIndex,
+    "Expected extra-life SFX to play only inside the awarded-life branch"
+  );
 };
 
 const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
