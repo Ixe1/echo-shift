@@ -529,6 +529,7 @@ export class SynthAudio {
     this.recentEffectEvents = [];
     if (import.meta.env.DEV && typeof document !== "undefined") {
       delete document.documentElement.dataset.echoShiftAudioEffects;
+      delete document.documentElement.dataset.echoShiftMusicKey;
     }
     for (const element of this.musicCache.values()) {
       this.unloadMusicElement(element);

@@ -808,7 +808,7 @@ const verifyBossDefeatCompletionMusic = async (page) => {
   };
 };
 
-const verifyBossDefeatCompletionRewindCancel = async (page) => {
+const verifyBossDefeatCompletionRewindLock = async (page) => {
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.evaluate((snapshot) => {
     window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
@@ -858,7 +858,14 @@ const verifyBossDefeatCompletionRewindCancel = async (page) => {
     null,
     { timeout: 9000 }
   );
-  await page.waitForTimeout(1200);
+  await page.waitForFunction(
+    () => {
+      const title = document.querySelector(".complete-panel h1")?.textContent || "";
+      return title.includes("Timeline Complete");
+    },
+    null,
+    { timeout: 7000 }
+  );
   const rewindHandoffFired = await stopRewindOnLevelMusicHandoffProbe(page);
   const state = await page.evaluate(() => ({
     completeTitle: document.querySelector(".complete-panel h1")?.textContent || "",
@@ -868,8 +875,12 @@ const verifyBossDefeatCompletionRewindCancel = async (page) => {
   }));
   assert(rewindHandoffFired, `Expected rewind-on-handoff probe to fire, got ${JSON.stringify(state)}`);
   assert(
-    !state.completeTitle.includes("Timeline Complete"),
-    `Expected rewind during final handoff to cancel pending victory, got ${JSON.stringify(state)}`
+    state.completeTitle.includes("Timeline Complete"),
+    `Expected rewind during final handoff to be locked and preserve final victory, got ${JSON.stringify(state)}`
+  );
+  assert(
+    !state.audioDiagnostic.includes("play:rewind"),
+    `Expected final-handoff rewind click to be ignored without playing rewind SFX, got ${JSON.stringify(state)}`
   );
   return state;
 };
@@ -1279,7 +1290,7 @@ try {
   const stormFloorBeam = await verifyStormFloorBeamAudio(page);
   const cryoFloorIce = await verifyCryoFloorIceRender(page);
   const bossDefeatCompletionMusic = await verifyBossDefeatCompletionMusic(page);
-  const bossDefeatCompletionRewindCancel = await verifyBossDefeatCompletionRewindCancel(page);
+  const bossDefeatCompletionRewindLock = await verifyBossDefeatCompletionRewindLock(page);
 
   const unexpectedMessages = messages.filter((msg) => !isAllowedBrowserMessage(msg));
   assert(unexpectedMessages.length === 0, `Unexpected console/page messages: ${JSON.stringify(unexpectedMessages)}`);
@@ -1295,7 +1306,7 @@ try {
         stormFloorBeam,
         cryoFloorIce,
         bossDefeatCompletionMusic,
-        bossDefeatCompletionRewindCancel,
+        bossDefeatCompletionRewindLock,
         screenshots: {
           departure: departureScreenshot,
           portal: portalScreenshot,

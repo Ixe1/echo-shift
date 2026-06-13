@@ -973,8 +973,11 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
 	      `Expected late-resolving disposed loop not to mark loop-start, got ${document.documentElement.dataset.echoShiftAudioEffects}`
 	    );
 
+	    audio.playMusic("menu", { restart: true });
+	    await settlePromises();
+	    assert(document.documentElement.dataset.echoShiftMusicKey === "menu", "Expected menu music key diagnostic before dispose");
 	    audio.startEffectLoop("bossDefeatDeparture", "dispose-boss-defeat", 1);
-    await settlePromises();
+	    await settlePromises();
     const disposeBossDefeatLoop = mediaElements.find((element) => element.src.includes("boss_defeat_departure") && element.loop && element.playing);
     assert(disposeBossDefeatLoop, "Expected boss defeat loop to be active before audio disposal");
     const tonesBeforeDisposedSampleReject = startedTones.length;
@@ -990,10 +993,14 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
         src: disposeBossDefeatLoop.src
       })}`
     );
-    assert(
-      document.documentElement.dataset.echoShiftAudioEffects === undefined,
-      `Expected audio.dispose to clear effect diagnostics, got ${document.documentElement.dataset.echoShiftAudioEffects}`
-    );
+	    assert(
+	      document.documentElement.dataset.echoShiftAudioEffects === undefined,
+	      `Expected audio.dispose to clear effect diagnostics, got ${document.documentElement.dataset.echoShiftAudioEffects}`
+	    );
+	    assert(
+	      document.documentElement.dataset.echoShiftMusicKey === undefined,
+	      `Expected audio.dispose to clear music key diagnostic, got ${document.documentElement.dataset.echoShiftMusicKey}`
+	    );
     rejectBlockedPlays();
     await settlePromises();
     assert(

@@ -1052,11 +1052,14 @@ export class GameScene extends Phaser.Scene {
 
   private rewind(): void {
     if (this.levelIntroBlocksGameplay() || this.retryPresentation || this.deathPresentation || this.completeHandled || this.pausedByHud || this.retryRequired) return;
+    if (this.pendingBossDefeatCompletion) {
+      this.hud.toast("Rewind locked during final sync");
+      return;
+    }
     if (this.bossFightInProgress()) {
       this.hud.toast("Rewind locked during boss fights");
       return;
     }
-    this.pendingBossDefeatCompletion = false;
     const added = this.simulation.rewindToEcho();
     audio.play("rewind");
     this.playerCastUntil = this.time.now + 360;
