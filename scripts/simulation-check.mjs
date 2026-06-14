@@ -1987,6 +1987,33 @@ try {
   );
 
   resetCampaignVitals();
+  let corruptProgressStorage = "{broken";
+  let corruptProgressWrites = 0;
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      localStorage: {
+        getItem: (key) => (key === "echo-shift-progress-v1" ? corruptProgressStorage : null),
+        setItem: (key, value) => {
+          if (key === "echo-shift-progress-v1") {
+            corruptProgressWrites += 1;
+            corruptProgressStorage = value;
+          }
+        }
+      }
+    }
+  });
+  const corruptPersistence = recordEligibleScore(persistenceScore, 0, true);
+  if (previousProgressWindow === undefined) delete globalThis.window;
+  else Object.defineProperty(globalThis, "window", { configurable: true, value: previousProgressWindow });
+  assert(!corruptPersistence.recorded && corruptPersistence.campaignSummary === null, "Expected damaged progress storage not to report recorded score");
+  assert(corruptProgressWrites === 0 && corruptProgressStorage === "{broken", "Expected damaged progress storage not to be overwritten");
+  assert(
+    currentCampaignRunSummary().score === 0 && currentCampaignRunSummary().levels === 0,
+    `Expected damaged progress storage not to advance campaign summary, got ${JSON.stringify(currentCampaignRunSummary())}`
+  );
+
+  resetCampaignVitals();
   Object.defineProperty(globalThis, "window", {
     configurable: true,
     value: {

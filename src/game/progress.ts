@@ -7,6 +7,10 @@ type ProgressData = {
   scores: Record<string, LevelScore>;
 };
 
+type ProgressReadResult =
+  | { ok: true; data: ProgressData }
+  | { ok: false; data: ProgressData; message: string };
+
 const fallback: ProgressData = {
   unlocked: 1,
   scores: {}
@@ -66,27 +70,42 @@ const normalizeLevelScore = (key: string, value: unknown): LevelScore | null => 
   };
 };
 
-const normalizedScores = (value: unknown): Record<string, LevelScore> => {
-  if (!isRecord(value)) return {};
-  return Object.fromEntries(
-    Object.entries(value).flatMap(([key, score]) => {
-      const normalized = normalizeLevelScore(key, score);
-      return normalized ? [[key, normalized]] : [];
-    })
-  );
+const normalizedScores = (value: unknown): Record<string, LevelScore> | null => {
+  if (!isRecord(value)) return null;
+  const scores: Record<string, LevelScore> = {};
+  for (const [key, score] of Object.entries(value)) {
+    const normalized = normalizeLevelScore(key, score);
+    if (!normalized) return null;
+    scores[key] = normalized;
+  }
+  return scores;
 };
 
-const readProgress = (): ProgressData => {
+const emptyProgress = (): ProgressData => ({ ...fallback, scores: {} });
+
+const damagedProgress = (): ProgressReadResult => ({
+  ok: false,
+  data: emptyProgress(),
+  message: "Local progress data is damaged."
+});
+
+const readProgress = (): ProgressReadResult => {
   try {
     const raw = window.localStorage.getItem(KEY);
-    if (!raw) return { ...fallback, scores: {} };
-    const parsed = JSON.parse(raw) as ProgressData;
+    if (!raw) return { ok: true, data: emptyProgress() };
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isRecord(parsed)) return damagedProgress();
+    const scores = normalizedScores(parsed.scores);
+    if (!scores) return damagedProgress();
     return {
-      unlocked: Math.max(1, parsed.unlocked || 1),
-      scores: normalizedScores(parsed.scores)
+      ok: true,
+      data: {
+        unlocked: Math.max(1, nonNegativeInteger(parsed.unlocked, 1)),
+        scores
+      }
     };
   } catch {
-    return { ...fallback, scores: {} };
+    return damagedProgress();
   }
 };
 
@@ -99,9 +118,9 @@ const writeProgress = (data: ProgressData): boolean => {
   }
 };
 
-export const getUnlockedLevelCount = (): number => readProgress().unlocked;
+export const getUnlockedLevelCount = (): number => readProgress().data.unlocked;
 
-export const getBestScores = (): Record<string, LevelScore> => readProgress().scores;
+export const getBestScores = (): Record<string, LevelScore> => readProgress().data.scores;
 
 export const isBetterLevelScore = (score: LevelScore, previous: LevelScore | undefined): boolean => {
   if (!previous) return true;
@@ -114,7 +133,9 @@ export const isBetterLevelScore = (score: LevelScore, previous: LevelScore | und
 };
 
 export const recordLevelScore = (score: LevelScore, completedIndex: number): boolean => {
-  const data = readProgress();
+  const progress = readProgress();
+  if (!progress.ok) return false;
+  const data = progress.data;
   const previous = data.scores[score.levelId];
 
   if (isBetterLevelScore(score, previous)) {
@@ -126,7 +147,9 @@ export const recordLevelScore = (score: LevelScore, completedIndex: number): boo
 };
 
 export const unlockAllLevelsForSession = (count: number): void => {
-  const data = readProgress();
+  const progress = readProgress();
+  if (!progress.ok) return;
+  const data = progress.data;
   data.unlocked = Math.max(data.unlocked, count);
   writeProgress(data);
 };

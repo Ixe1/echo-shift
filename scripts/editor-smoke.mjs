@@ -358,6 +358,60 @@ try {
       afterNeutralInput
     };
   });
+  const campaignFinalIntegrationResult = await scoreEntryPage.evaluate(async () => {
+    const { GameScene } = await import("/src/scenes/GameScene.ts");
+    const { levels } = await import("/src/data/levels.ts");
+    const { resetCampaignVitals } = await import("/src/game/session.ts");
+    const scene = Object.create(GameScene.prototype);
+    const modalCalls = [];
+    const finalIndex = levels.length - 1;
+    window.localStorage.removeItem("echo-shift-progress-v1");
+    window.localStorage.removeItem("echo-shift-leaderboard-v1");
+    resetCampaignVitals();
+    Object.assign(scene, {
+      completeHandled: false,
+      pendingBossDefeatCompletion: false,
+      scoreEligible: true,
+      tutorialMode: false,
+      level: { ...levels[finalIndex], index: finalIndex },
+      levelIndex: finalIndex,
+      simulation: {
+        finalScore: () => 3456,
+        totalFrames: 789,
+        echoRecordings: [{ frames: [] }],
+        deaths: 2,
+        objectState: { collectedCores: new Set(["core-a", "core-b"]) },
+        timeBonus: () => 321
+      },
+      stopBossDefeatLoops: () => {},
+      clearAttemptScopedAudio: () => {},
+      syncFiniteCampaignLives: () => {},
+      cameras: { main: { flash: () => {} } },
+      hud: {
+        showTutorialComplete: () => {},
+        showComplete: (...args) => {
+          modalCalls.push(args);
+        }
+      }
+    });
+    scene.completeLevel();
+    const options = modalCalls[0]?.[3];
+    const progress = JSON.parse(window.localStorage.getItem("echo-shift-progress-v1") || "null");
+    return {
+      modalCalls: modalCalls.length,
+      isFinalArg: modalCalls[0]?.[1],
+      scoreEligible: options?.scoreEligible,
+      scoreRecorded: options?.scoreRecorded,
+      campaignSummary: options?.campaignSummary,
+      leaderboardEntries: options?.leaderboardEntries,
+      progressScore: progress?.scores?.[levels[finalIndex].id]?.score,
+      unlocked: progress?.unlocked
+    };
+  });
+  const controlsCopy = await scoreEntryPage.evaluate(async () => {
+    const { controlBindings } = await import("/src/ui/options.ts");
+    return controlBindings.find((binding) => binding.action === "Pause")?.binding || "";
+  });
   await scoreEntryContext.close();
 
   const staleDraft = await browser.newContext({ viewport: { width: 900, height: 700 } });
@@ -489,7 +543,7 @@ try {
   const draftPlaytestRetryCount = await draftPlaytestPage.locator("[data-retry]").count();
   await draftPlaytestPage.locator("canvas").click({ position: { x: 480, y: 270 } });
   await draftPlaytestPage.keyboard.press("r");
-  await draftPlaytestPage.waitForTimeout(250);
+  await draftPlaytestPage.waitForFunction(() => document.querySelector("[data-toast]")?.textContent?.includes("Rewind disabled"));
   const draftPlaytestEchoTintsAfterR = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftVisibleEchoTints || "");
   const draftPlaytestRewindToast = await draftPlaytestPage.locator("[data-toast]").textContent();
   await draftPlaytestPage.keyboard.press("t");
@@ -2127,6 +2181,19 @@ try {
       gameplayGamepadResult.afterNeutralInput.left,
     `Expected gameplay gamepad input to require neutral after modal states, got ${JSON.stringify(gameplayGamepadResult)}`
   );
+  assert(
+    campaignFinalIntegrationResult.modalCalls === 1 &&
+      campaignFinalIntegrationResult.isFinalArg === true &&
+      campaignFinalIntegrationResult.scoreEligible === true &&
+      campaignFinalIntegrationResult.scoreRecorded === true &&
+      campaignFinalIntegrationResult.campaignSummary?.score === 3456 &&
+      campaignFinalIntegrationResult.campaignSummary?.levels === 1 &&
+      Array.isArray(campaignFinalIntegrationResult.leaderboardEntries) &&
+      campaignFinalIntegrationResult.progressScore === 3456 &&
+      campaignFinalIntegrationResult.unlocked === 5,
+    `Expected normal campaign final clear to persist score and expose leaderboard options, got ${JSON.stringify(campaignFinalIntegrationResult)}`
+  );
+  assert(controlsCopy.includes("Start/Menu"), `Expected controls copy to document gamepad pause, got ${controlsCopy}`);
   assert(menuEditorUrl.includes("editor=1"), `Expected unlocked editor button to navigate to ?editor=1, got ${menuEditorUrl}`);
   assert(
     fractionalDraftLevelName === "Draft Index Smoke B",
