@@ -15,6 +15,10 @@ export type LeaderboardEntry = {
   completedAt: string;
 };
 
+export type LeaderboardSaveResult =
+  | { ok: true; entries: LeaderboardEntry[] }
+  | { ok: false; entries: LeaderboardEntry[]; message: string };
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -69,11 +73,12 @@ export const getLocalLeaderboard = (): LeaderboardEntry[] => {
   }
 };
 
-const writeLocalLeaderboard = (entries: LeaderboardEntry[]): void => {
+const writeLocalLeaderboard = (entries: LeaderboardEntry[]): boolean => {
   try {
     window.localStorage.setItem(KEY, JSON.stringify(entries.slice(0, MAX_ENTRIES)));
+    return true;
   } catch {
-    return;
+    return false;
   }
 };
 
@@ -82,7 +87,8 @@ const entryId = (): string => {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 };
 
-export const addLocalLeaderboardEntry = (nickname: string, summary: CampaignRunSummary): LeaderboardEntry[] => {
+export const addLocalLeaderboardEntry = (nickname: string, summary: CampaignRunSummary): LeaderboardSaveResult => {
+  const existing = getLocalLeaderboard();
   const entry: LeaderboardEntry = {
     id: entryId(),
     nickname: sanitizeLeaderboardNickname(nickname),
@@ -93,7 +99,13 @@ export const addLocalLeaderboardEntry = (nickname: string, summary: CampaignRunS
     levels: summary.levels,
     completedAt: new Date().toISOString()
   };
-  const entries = sortEntries([entry, ...getLocalLeaderboard()]).slice(0, MAX_ENTRIES);
-  writeLocalLeaderboard(entries);
-  return entries;
+  const entries = sortEntries([entry, ...existing]).slice(0, MAX_ENTRIES);
+  if (!writeLocalLeaderboard(entries)) {
+    return {
+      ok: false,
+      entries: existing,
+      message: "Could not save to local leaderboard."
+    };
+  }
+  return { ok: true, entries };
 };

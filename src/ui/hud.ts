@@ -1,5 +1,5 @@
 import { formatFrames } from "../game/geometry";
-import type { LeaderboardEntry } from "../game/leaderboard";
+import type { LeaderboardEntry, LeaderboardSaveResult } from "../game/leaderboard";
 import { formatScore } from "../game/scoring";
 import type { CampaignRunSummary } from "../game/session";
 import type { LevelScore } from "../game/types";
@@ -17,7 +17,7 @@ type HudCallbacks = {
   onEditor?: () => void;
   onResume: () => void;
   onVirtualInput: (control: "left" | "right" | "jump", active: boolean) => void;
-  onSaveLeaderboard?: (nickname: string, summary: CampaignRunSummary) => LeaderboardEntry[];
+  onSaveLeaderboard?: (nickname: string, summary: CampaignRunSummary) => LeaderboardSaveResult;
   allowLevelSelect?: boolean;
   draftPlaytest?: boolean;
 };
@@ -355,10 +355,17 @@ export class Hud {
       if (saved) return;
       saved = true;
       const input = form.querySelector<HTMLInputElement>("[data-leaderboard-name]");
-      const entries = this.callbacks.onSaveLeaderboard?.(input?.value || "Runner", summary) || [];
+      const result = this.callbacks.onSaveLeaderboard?.(input?.value || "Runner", summary);
+      const entries = result?.entries || [];
       const list = this.modal().querySelector<HTMLElement>("[data-leaderboard-list]");
       if (list) list.innerHTML = this.leaderboardListHtml(entries);
       const button = form.querySelector<HTMLButtonElement>("button[type='submit']");
+      if (!result?.ok) {
+        saved = false;
+        if (button) button.textContent = "Try Again";
+        this.toast(result?.message || "Could not save score locally.");
+        return;
+      }
       if (input) input.disabled = true;
       if (button) {
         button.textContent = "Saved";

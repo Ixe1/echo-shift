@@ -166,8 +166,15 @@ export const bindMenuNavigation = (root: HTMLElement, options: MenuNavigationOpt
       const verticalDirection =
         pressed(gamepad, 12) || vertical < -AXIS_THRESHOLD ? "previous" : pressed(gamepad, 13) || vertical > AXIS_THRESHOLD ? "next" : null;
       const rangeInput = activeRangeInput();
+      const activeNativeControl = usesNativeDirectionalKeys(activeElementIn(root));
       const direction =
-        rangeInput && horizontalDirection ? (horizontalDirection === "previous" ? "range-down" : "range-up") : verticalDirection || horizontalDirection;
+        activeNativeControl && !rangeInput
+          ? null
+          : rangeInput && horizontalDirection
+            ? horizontalDirection === "previous"
+              ? "range-down"
+              : "range-up"
+            : verticalDirection || horizontalDirection;
       const button = pressed(gamepad, 0) || pressed(gamepad, 9) ? "confirm" : pressed(gamepad, 1) ? "back" : null;
       if (!gamepadPrimed) {
         heldDirection = direction;

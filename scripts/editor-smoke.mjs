@@ -379,7 +379,7 @@ try {
   const draftPlaytestBackgroundDetailLayer = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundDetailLayer);
   const draftPlaytestBackgroundPieces = Number(await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftBackgroundPieces));
   const draftPlaytestRewindDisabled = await draftPlaytestPage.locator("[data-rewind]").isDisabled();
-  const draftPlaytestRetryHidden = await draftPlaytestPage.locator("[data-retry]").isHidden();
+  const draftPlaytestRetryCount = await draftPlaytestPage.locator("[data-retry]").count();
   await draftPlaytestPage.locator("canvas").click({ position: { x: 480, y: 270 } });
   await draftPlaytestPage.keyboard.press("r");
   await draftPlaytestPage.waitForTimeout(250);
@@ -435,7 +435,7 @@ try {
   await mobileFinitePage.goto(`${url}?playtestDraft=1&level=0`, { waitUntil: "domcontentloaded" });
   await startAudioGate(mobileFinitePage);
   await waitForLevelIntro(mobileFinitePage);
-  const mobileFiniteRetryHidden = await mobileFinitePage.locator("[data-retry]").isHidden();
+  const mobileFiniteRetryCount = await mobileFinitePage.locator("[data-retry]").count();
   const mobileFiniteRewindDisabled = await mobileFinitePage.locator("[data-rewind]").isDisabled();
   await mobileFinitePage.screenshot({ path: `${outDir}/editor-playtest-draft-mobile.png`, fullPage: true });
   await mobileFiniteContext.close();
@@ -475,7 +475,7 @@ try {
   const gameOverTitle = await gameOverPage.locator("[data-modal].show h1").textContent();
   const gameOverReplayCount = await gameOverPage.locator("[data-modal] [data-replay-level]").count();
   const gameOverLevelSelectVisible = await gameOverPage.locator("[data-modal] [data-levels]").isVisible();
-  const gameOverRetryHidden = await gameOverPage.locator("[data-retry]").isHidden();
+  const gameOverRetryCount = await gameOverPage.locator("[data-retry]").count();
   const gameOverRewindHidden = await gameOverPage.locator("[data-rewind]").isHidden();
   const gameOverMenuHidden = await gameOverPage.locator("[data-menu]").isHidden();
   const gameOverTouchControlsHidden = await gameOverPage.locator(".touch-controls").isHidden();
@@ -504,7 +504,7 @@ try {
   await mobileGameOverPage.locator("[data-modal].show h1").waitFor({ state: "visible", timeout: 32000 });
   const mobileGameOverTitle = await mobileGameOverPage.locator("[data-modal].show h1").textContent();
   const mobileGameOverReplayCount = await mobileGameOverPage.locator("[data-modal] [data-replay-level]").count();
-  const mobileGameOverRetryHidden = await mobileGameOverPage.locator("[data-retry]").isHidden();
+  const mobileGameOverRetryCount = await mobileGameOverPage.locator("[data-retry]").count();
   const mobileGameOverRewindHidden = await mobileGameOverPage.locator("[data-rewind]").isHidden();
   const mobileGameOverMenuHidden = await mobileGameOverPage.locator("[data-menu]").isHidden();
   const mobileGameOverTouchControlsHidden = await mobileGameOverPage.locator(".touch-controls").isHidden();
@@ -899,7 +899,29 @@ try {
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const rangeAfterFreshAxis = document.getElementById("pad-slider").value;
     rangeBinding.destroy();
-    return { focusAfterHeldAxis, clicksAfterHeldButton, focusAfterHeldAxisRepeatWindow, clicksAfterFreshPress, rangeAfterHeldAxis, rangeAfterFreshAxis };
+
+    axisX = 1;
+    document.body.innerHTML = `
+      <section id="text-root">
+        <button id="text-first">First</button>
+        <input id="pad-name" type="text" value="Runner" />
+        <button id="text-last">Last</button>
+      </section>
+    `;
+    const textBinding = bindMenuNavigation(document.getElementById("text-root"), { autoFocus: false });
+    document.getElementById("pad-name").focus();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const textFocusAfterAxis = document.activeElement?.id;
+    textBinding.destroy();
+    return {
+      focusAfterHeldAxis,
+      clicksAfterHeldButton,
+      focusAfterHeldAxisRepeatWindow,
+      clicksAfterFreshPress,
+      rangeAfterHeldAxis,
+      rangeAfterFreshAxis,
+      textFocusAfterAxis
+    };
   });
   await navigationHarness.close();
 
@@ -955,7 +977,61 @@ try {
     const inputDisabled = input.disabled;
     const modalText = document.querySelector("[data-modal]")?.textContent || "";
     hud.destroy();
-    return { entries, listText, buttonText, buttonDisabled, inputDisabled, modalText };
+    window.localStorage.removeItem("echo-shift-leaderboard-v1");
+    const originalSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function () {
+      throw new Error("blocked");
+    };
+    const failedHud = new Hud({
+      onRewind: () => {},
+      onPause: () => {},
+      onTitle: () => {},
+      onNext: () => {},
+      onLevelSelect: () => {},
+      onResume: () => {},
+      onVirtualInput: () => {},
+      onSaveLeaderboard: addLocalLeaderboardEntry,
+      allowLevelSelect: false
+    });
+    failedHud.showComplete(
+      {
+        levelId: "campaign-final",
+        score: 5000,
+        frames: 720,
+        echoes: 2,
+        deaths: 1,
+        cores: 4,
+        timeBonus: 1200
+      },
+      true,
+      4,
+      {
+        scoreEligible: true,
+        campaignSummary: { score: 9000, frames: 2048, deaths: 2, cores: 12, levels: 4 },
+        leaderboardEntries: getLocalLeaderboard()
+      }
+    );
+    document.querySelector("[data-leaderboard-form] button[type='submit']").click();
+    const failedEntryStorage = window.localStorage.getItem("echo-shift-leaderboard-v1");
+    const failedButton = document.querySelector("[data-leaderboard-form] button[type='submit']");
+    const failedInput = document.querySelector("[data-leaderboard-name]");
+    const failedButtonText = failedButton.textContent;
+    const failedButtonDisabled = failedButton.disabled;
+    const failedInputDisabled = failedInput.disabled;
+    failedHud.destroy();
+    Storage.prototype.setItem = originalSetItem;
+    return {
+      entries,
+      listText,
+      buttonText,
+      buttonDisabled,
+      inputDisabled,
+      modalText,
+      failedEntryStorage,
+      failedButtonText,
+      failedButtonDisabled,
+      failedInputDisabled
+    };
   });
   await leaderboardHarness.close();
 
@@ -1819,7 +1895,7 @@ try {
   assert(draftPlaytestBackgroundDetailLayer === "off", `Expected draft playtest fit-level background to disable procedural detail layer, got ${draftPlaytestBackgroundDetailLayer}`);
   assert(draftPlaytestBackgroundPieces >= 1, `Expected draft playtest to create background image pieces, got ${draftPlaytestBackgroundPieces}`);
   assert(draftPlaytestRewindDisabled, "Expected draft playtest HUD rewind button to be disabled by level metadata");
-  assert(draftPlaytestRetryHidden, "Expected finite-life draft playtest retry button to be hidden");
+  assert(draftPlaytestRetryCount === 0, `Expected finite-life draft playtest retry button to be absent, got ${draftPlaytestRetryCount}`);
   assert(draftPlaytestEchoTintsAfterR === "", `Expected disabled R key not to spawn echoes, got ${draftPlaytestEchoTintsAfterR}`);
   assert(draftPlaytestRewindToast?.includes("Rewind disabled"), `Expected disabled R key toast, got ${draftPlaytestRewindToast}`);
   assert(draftPlaytestIntroAfterT !== "active", `Expected removed T retry key not to restart level intro, got ${draftPlaytestIntroAfterT}`);
@@ -1837,12 +1913,12 @@ try {
   assert(draftReturnUrl.includes("editor=1"), `Expected draft Editor button to return to editor=1, got ${draftReturnUrl}`);
   assert(!draftReturnUrl.includes("playtestDraft=1"), `Expected draft Editor button to clean playtest flag, got ${draftReturnUrl}`);
   assert(!draftReturnUrl.includes("level=1"), `Expected draft Editor button to clean level flag, got ${draftReturnUrl}`);
-  assert(mobileFiniteRetryHidden, "Expected mobile finite-life playtest retry button to be hidden");
+  assert(mobileFiniteRetryCount === 0, `Expected mobile finite-life playtest retry button to be absent, got ${mobileFiniteRetryCount}`);
   assert(mobileFiniteRewindDisabled, "Expected mobile finite-life playtest rewind button to be disabled by level metadata");
   assert(gameOverTitle === "Game Over", `Expected finite-life exhaustion to show Game Over, got ${gameOverTitle}`);
   assert(gameOverReplayCount === 0, `Expected Game Over modal to omit replay/restart, got ${gameOverReplayCount} replay buttons`);
   assert(gameOverLevelSelectVisible, "Expected Game Over modal to offer Level Select");
-  assert(gameOverRetryHidden, "Expected Game Over HUD retry button to stay hidden");
+  assert(gameOverRetryCount === 0, `Expected Game Over HUD retry button to be absent, got ${gameOverRetryCount}`);
   assert(gameOverRewindHidden, "Expected Game Over HUD rewind button to be hidden");
   assert(gameOverMenuHidden, "Expected Game Over HUD pause button to be hidden");
   assert(gameOverTouchControlsHidden, "Expected Game Over touch controls to be hidden");
@@ -1852,7 +1928,7 @@ try {
   assert(gameOverLevelSelectRestartLives === "3", `Expected Level Select after Game Over to restart with 3 lives, got ${gameOverLevelSelectRestartLives}`);
   assert(mobileGameOverTitle === "Game Over", `Expected mobile Game Over title, got ${mobileGameOverTitle}`);
   assert(mobileGameOverReplayCount === 0, `Expected mobile Game Over modal to omit replay/restart, got ${mobileGameOverReplayCount} replay buttons`);
-  assert(mobileGameOverRetryHidden, "Expected mobile Game Over HUD retry button to stay hidden");
+  assert(mobileGameOverRetryCount === 0, `Expected mobile Game Over HUD retry button to be absent, got ${mobileGameOverRetryCount}`);
   assert(mobileGameOverRewindHidden, "Expected mobile Game Over HUD rewind button to be hidden");
   assert(mobileGameOverMenuHidden, "Expected mobile Game Over HUD pause button to be hidden");
   assert(mobileGameOverTouchControlsHidden, "Expected mobile Game Over touch controls to be hidden");
@@ -1945,6 +2021,10 @@ try {
     gamepadHarnessResult.rangeAfterFreshAxis !== "5",
     `Expected fresh gamepad axis to adjust focused range, got ${gamepadHarnessResult.rangeAfterFreshAxis}`
   );
+  assert(
+    gamepadHarnessResult.textFocusAfterAxis === "pad-name",
+    `Expected gamepad axis not to move focus away from text input, got ${gamepadHarnessResult.textFocusAfterAxis}`
+  );
   assert(leaderboardHarnessResult.entries.length === 1, `Expected one saved leaderboard entry, got ${leaderboardHarnessResult.entries.length}`);
   assert(
     leaderboardHarnessResult.entries[0]?.nickname === "Ace",
@@ -1958,6 +2038,10 @@ try {
   assert(leaderboardHarnessResult.buttonDisabled, "Expected leaderboard save button to disable after save");
   assert(leaderboardHarnessResult.inputDisabled, "Expected leaderboard name input to disable after save");
   assert(leaderboardHarnessResult.listText.includes("Ace"), `Expected saved leaderboard list to include Ace, got ${leaderboardHarnessResult.listText}`);
+  assert(leaderboardHarnessResult.failedEntryStorage === null, "Expected failed leaderboard save not to persist storage");
+  assert(leaderboardHarnessResult.failedButtonText === "Try Again", `Expected failed leaderboard save button to offer retry, got ${leaderboardHarnessResult.failedButtonText}`);
+  assert(!leaderboardHarnessResult.failedButtonDisabled, "Expected failed leaderboard save button to remain enabled");
+  assert(!leaderboardHarnessResult.failedInputDisabled, "Expected failed leaderboard save input to remain enabled");
   assert(
     leaderboardHarnessResult.modalText.includes("Campaign Score"),
     `Expected final completion modal to show campaign summary, got ${leaderboardHarnessResult.modalText}`

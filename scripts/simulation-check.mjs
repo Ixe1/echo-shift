@@ -1394,6 +1394,7 @@ try {
   const { doorRequiredCoreIds, isMajorCore, movingLaserRectAt } = await server.ssrLoadModule("/src/game/objects.ts");
   const { EDITOR_DRAFT_STORAGE_KEY, readEditorDraftSnapshot } = await server.ssrLoadModule("/src/data/editorDraft.ts");
   const { getBestScores, isBetterLevelScore, recordLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
+  const { recordEligibleScore } = await server.ssrLoadModule("/src/game/scorePersistence.ts");
   const {
     CORES_PER_BONUS_LIFE,
     campaignCoreCount,
@@ -1991,6 +1992,40 @@ try {
     replacedLegacyScore.deaths === 1 && replacedLegacyScore.echoes === 3,
     `Expected replacement score to be stored, got ${JSON.stringify(replacedLegacyScore)}`
   );
+
+  resetCampaignVitals();
+  let gatedProgressWrites = 0;
+  let gatedProgressStorage = "";
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      localStorage: {
+        getItem: (key) => (key === "echo-shift-progress-v1" && gatedProgressStorage ? gatedProgressStorage : null),
+        setItem: (key, value) => {
+          if (key === "echo-shift-progress-v1") {
+            gatedProgressWrites += 1;
+            gatedProgressStorage = value;
+          }
+        }
+      }
+    }
+  });
+  const persistenceScore = { levelId: "persistence-gate", score: 2500, frames: 420, echoes: 1, deaths: 0, cores: 2, timeBonus: 700 };
+  const ineligiblePersistence = recordEligibleScore(persistenceScore, 0, false);
+  assert(!ineligiblePersistence.recorded && ineligiblePersistence.campaignSummary === null, "Expected ineligible score persistence to report no write");
+  assert(gatedProgressWrites === 0 && gatedProgressStorage === "", "Expected ineligible score persistence not to write normal progress");
+  const eligiblePersistence = recordEligibleScore(persistenceScore, 0, true);
+  if (previousProgressWindow === undefined) delete globalThis.window;
+  else Object.defineProperty(globalThis, "window", { configurable: true, value: previousProgressWindow });
+  assert(eligiblePersistence.recorded, "Expected eligible score persistence to report a write");
+  assert(gatedProgressWrites === 1, `Expected eligible score persistence to write progress once, got ${gatedProgressWrites}`);
+  assert(
+    eligiblePersistence.campaignSummary?.score === 2500 &&
+      eligiblePersistence.campaignSummary.frames === 420 &&
+      eligiblePersistence.campaignSummary.levels === 1,
+    `Expected eligible score persistence to update campaign summary, got ${JSON.stringify(eligiblePersistence.campaignSummary)}`
+  );
+  resetCampaignVitals();
 
   const echoPlateLevel = {
     ...baseLevel,
@@ -4484,6 +4519,7 @@ try {
           "score-ranking",
           "legacy-progress-migration",
           "legacy-progress-replacement",
+          "score-persistence-gate",
           "echo-plate-door",
           "core-door",
           "core-visual-contract",

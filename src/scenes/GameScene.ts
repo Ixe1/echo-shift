@@ -35,15 +35,13 @@ import {
 import { rectCenter, rectsOverlap } from "../game/geometry";
 import { doorRequiredCoreIds, droneIsActive, droneRectAt, isMajorCore, laserIsActive, movingLaserRectAt } from "../game/objects";
 import { platformRectAt } from "../game/player";
-import { recordLevelScore } from "../game/progress";
 import {
   campaignLivesForLevel,
-  currentCampaignRunSummary,
   levelUsesFiniteLives,
-  recordCampaignLevelScore,
   registerCampaignCorePickup,
   syncCampaignLives
 } from "../game/session";
+import { recordEligibleScore } from "../game/scorePersistence";
 import { isSecretAccessUnlocked } from "../game/secretAccess";
 import { solidCollisionFor } from "../game/solidCollision";
 import { solidRenderDepth, solidVisualRoleFor } from "../game/solidRenderOrder";
@@ -257,6 +255,8 @@ export class GameScene extends Phaser.Scene {
   private virtualInput: InputFrame = { left: false, right: false, jump: false };
   private gamepadInput: InputFrame = { left: false, right: false, jump: false };
   private readonly heldGamepadActions = new Set<string>();
+  private gamepadGameplayNeedsNeutral = false;
+  private gamepadActionsNeedNeutral = false;
   private echoTrails = new Map<string, Array<{ x: number; y: number }>>();
   private actorSprites = new Map<string, Phaser.GameObjects.Image>();
   private coreSprites = new Map<string, Phaser.GameObjects.Image>();
@@ -447,6 +447,8 @@ export class GameScene extends Phaser.Scene {
     this.virtualInput = { left: false, right: false, jump: false };
     this.gamepadInput = { left: false, right: false, jump: false };
     this.heldGamepadActions.clear();
+    this.gamepadGameplayNeedsNeutral = false;
+    this.gamepadActionsNeedNeutral = false;
     this.playerCastUntil = 0;
     this.echoTrails.clear();
     this.actorSprites.clear();
@@ -845,28 +847,51 @@ export class GameScene extends Phaser.Scene {
     if (!gamepad) {
       this.gamepadInput = { left: false, right: false, jump: false };
       this.heldGamepadActions.clear();
+      this.gamepadGameplayNeedsNeutral = false;
+      this.gamepadActionsNeedNeutral = false;
       return;
     }
 
     const axis = gamepad.axes[0] || 0;
     const pressed = (index: number): boolean => gamepad.buttons[index]?.pressed === true;
-    this.gamepadInput = {
+    const nextGamepadInput = {
       left: axis < -0.35 || pressed(14),
       right: axis > 0.35 || pressed(15),
       jump: pressed(0)
     };
+    const gameplayInputActive = nextGamepadInput.left || nextGamepadInput.right || nextGamepadInput.jump;
+    const pausePressed = pressed(9);
+    const rewindPressed = pressed(2) || pressed(4);
 
     const gameplayActionsAllowed =
       !this.pausedByHud && !this.completeHandled && !this.retryRequired && !this.deathPresentation;
     if (!gameplayActionsAllowed) {
+      this.gamepadInput = { left: false, right: false, jump: false };
       this.heldGamepadActions.clear();
+      this.gamepadGameplayNeedsNeutral = gameplayInputActive;
+      this.gamepadActionsNeedNeutral = pausePressed || rewindPressed;
       return;
     }
 
-    this.gamepadJustPressed("pause", pressed(9), () => {
+    if (this.gamepadGameplayNeedsNeutral) {
+      if (gameplayInputActive) this.gamepadInput = { left: false, right: false, jump: false };
+      else {
+        this.gamepadGameplayNeedsNeutral = false;
+        this.gamepadInput = nextGamepadInput;
+      }
+    } else {
+      this.gamepadInput = nextGamepadInput;
+    }
+
+    if (this.gamepadActionsNeedNeutral) {
+      if (pausePressed || rewindPressed) return;
+      this.gamepadActionsNeedNeutral = false;
+    }
+
+    this.gamepadJustPressed("pause", pausePressed, () => {
       this.togglePause();
     });
-    this.gamepadJustPressed("rewind", pressed(2) || pressed(4), () => this.rewind());
+    this.gamepadJustPressed("rewind", rewindPressed, () => this.rewind());
   }
 
   private gamepadJustPressed(action: string, pressed: boolean, handler: () => void): void {
@@ -1203,10 +1228,7 @@ export class GameScene extends Phaser.Scene {
     };
     this.syncFiniteCampaignLives();
     const scoreEligible = this.scoreEligible && !this.tutorialMode && !isDraftPlaytestActive();
-    if (scoreEligible) {
-      recordLevelScore(score, this.level.index);
-      recordCampaignLevelScore(score);
-    }
+    const persistence = recordEligibleScore(score, this.level.index, scoreEligible);
     this.cameras.main.flash(280, 255, 227, 90, false);
     const totalCores = (this.level.cores || []).length;
     if (this.tutorialMode) this.hud.showTutorialComplete(score, totalCores);
@@ -1214,7 +1236,7 @@ export class GameScene extends Phaser.Scene {
       const isFinal = this.levelIndex === levels.length - 1;
       this.hud.showComplete(score, isFinal, totalCores, {
         scoreEligible,
-        campaignSummary: isFinal && scoreEligible ? currentCampaignRunSummary() : null,
+        campaignSummary: isFinal ? persistence.campaignSummary : null,
         leaderboardEntries: getLocalLeaderboard()
       });
     }
