@@ -605,6 +605,8 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     );
     const timedOutMusicStart = await audio.waitForMusicStart("level-2", Promise.resolve(false), 0);
     assert(timedOutMusicStart === false, "Expected music-start wait to resolve false after bounded timeout when requested music never starts");
+    const stalledWarmupMusicStart = await audio.waitForMusicStart("level-2", new Promise(() => undefined), 0);
+    assert(stalledWarmupMusicStart === false, "Expected music-start timeout to be measured from wait request, not warmup settlement");
     let pausedWaitResult;
     void audio.waitForMusicStart("level-2", Promise.resolve(true), 1000).then((started) => {
       pausedWaitResult = started;

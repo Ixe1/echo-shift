@@ -446,20 +446,20 @@ export class SynthAudio {
     timeoutMs = MUSIC_START_TIMEOUT_MS
   ): Promise<boolean> {
     if (this.isMusicPlaying(key)) return Promise.resolve(true);
-    return warmup
-      .catch(() => false)
-      .then(() => {
-        if (this.isMusicPlaying(key)) return true;
-        return new Promise<boolean>((resolve) => {
-          const waiter: MusicStartWaiter = {
-            key,
-            resolve,
-            timeoutId: null
-          };
-          waiter.timeoutId = setTimeout(() => this.finishMusicStartWaiter(waiter, false), Math.max(0, timeoutMs));
-          this.musicStartWaiters.push(waiter);
+    return new Promise<boolean>((resolve) => {
+      const waiter: MusicStartWaiter = {
+        key,
+        resolve,
+        timeoutId: null
+      };
+      waiter.timeoutId = setTimeout(() => this.finishMusicStartWaiter(waiter, this.isMusicPlaying(key)), Math.max(0, timeoutMs));
+      this.musicStartWaiters.push(waiter);
+      void warmup
+        .catch(() => false)
+        .then(() => {
+          if (this.isMusicPlaying(key)) this.finishMusicStartWaiter(waiter, true);
         });
-      });
+    });
   }
 
   playMusic(key: SoundtrackKey, options: { restart?: boolean; fadeMs?: number } = {}): void {
