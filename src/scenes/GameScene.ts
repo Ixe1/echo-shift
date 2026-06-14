@@ -92,6 +92,7 @@ import type {
 } from "../game/types";
 import { Hud } from "../ui/hud";
 import { bindImageFallbacks, currentEchoShiftLogoSrc, ECHO_SHIFT_LOGO_FALLBACK_SRC, icon, uiRoot } from "../ui/dom";
+import { bindMenuNavigation, type MenuNavigationBinding } from "../ui/menuNavigation";
 
 type ActiveTerrainDecorDensity = Exclude<SolidDecorDensity, "auto" | "off">;
 
@@ -359,6 +360,7 @@ export class GameScene extends Phaser.Scene {
   private roomLoadingPercent: HTMLElement | null = null;
   private roomLoadingStatus: HTMLElement | null = null;
   private roomLoadingProgress: HTMLElement | null = null;
+  private roomFailureNavigation: MenuNavigationBinding | null = null;
   private roomLoadingFailed = false;
   private awaitingRoomBackgroundFallback = false;
   private roomBackgroundFallbackLoadId = 0;
@@ -366,6 +368,7 @@ export class GameScene extends Phaser.Scene {
   private roomBackgroundFallbackSrc: string | null = null;
   private roomLoadFailedKey: string | null = null;
   private readonly failedPrimaryBackgroundRetries = new Set<string>();
+  private readonly failedOptionalRoomAssets = new Set<string>();
   private lastTutorialHint = "";
   private readonly launchPadActiveUntil = new Map<string, number>();
   private readonly fxBursts: FxBurst[] = [];
@@ -583,7 +586,7 @@ export class GameScene extends Phaser.Scene {
   private activeLevelAssetQueue(): LevelAssetQueueItem[] {
     const assets = new Map<string, LevelAssetQueueItem>();
     const add = (asset: LevelAssetQueueItem) => {
-      if (this.textures.exists(asset.key) || assets.has(asset.key)) return;
+      if (this.textures.exists(asset.key) || assets.has(asset.key) || this.failedOptionalRoomAssets.has(asset.key)) return;
       assets.set(asset.key, asset);
     };
 
@@ -678,6 +681,13 @@ export class GameScene extends Phaser.Scene {
     for (const boss of this.level.bosses || []) {
       add({
         kind: "spritesheet",
+        key: BOSS_ATLAS_KEY,
+        src: "/assets/sprites/boss-atlas.png",
+        frameWidth: BOSS_ATLAS_FRAME_WIDTH,
+        frameHeight: BOSS_ATLAS_FRAME_HEIGHT
+      });
+      add({
+        kind: "spritesheet",
         key: POOF_SHEET_KEY,
         src: "/assets/sprites/enemy-poof-sheet.png",
         frameWidth: POOF_FRAME_WIDTH,
@@ -713,14 +723,6 @@ export class GameScene extends Phaser.Scene {
           src: "/assets/sprites/archive-book-volley-sheet.png",
           frameWidth: ARCHIVE_BOOK_VOLLEY_FRAME_WIDTH,
           frameHeight: ARCHIVE_BOOK_VOLLEY_FRAME_HEIGHT
-        });
-      } else {
-        add({
-          kind: "spritesheet",
-          key: BOSS_ATLAS_KEY,
-          src: "/assets/sprites/boss-atlas.png",
-          frameWidth: BOSS_ATLAS_FRAME_WIDTH,
-          frameHeight: BOSS_ATLAS_FRAME_HEIGHT
         });
       }
     }
@@ -916,9 +918,10 @@ export class GameScene extends Phaser.Scene {
 
   private handleRoomLoadError(file: Phaser.Loader.File): void {
     const failedKey = String(file.key);
-    if (failedKey.startsWith("terrain-decor-prop:")) {
+    if (this.optionalRoomAssetCanDegrade(failedKey)) {
+      this.failedOptionalRoomAssets.add(failedKey);
       const label = `Skipped optional ${failedKey}`;
-      this.roomLoadingStatus?.replaceChildren("Skipping missing terrain decor");
+      this.roomLoadingStatus?.replaceChildren(this.optionalRoomAssetStatus(failedKey));
       this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(label);
       this.roomLoadingProgress?.setAttribute("aria-valuetext", label);
       return;
@@ -948,6 +951,23 @@ export class GameScene extends Phaser.Scene {
     this.roomLoadingStatus?.replaceChildren(label);
     this.roomLoadingProgress?.setAttribute("aria-valuetext", label);
     this.writeBackgroundPreloadDiagnostics(failedKey, "error");
+  }
+
+  private optionalRoomAssetCanDegrade(key: string): boolean {
+    return (
+      key.startsWith("terrain-decor-prop:") ||
+      key === STORM_BOSS_CLEAN_KEY ||
+      key === CRYO_BOSS_CLEAN_KEY ||
+      key === ARCHIVE_BOSS_CLEAN_KEY ||
+      key === ARCHIVE_BOOK_VOLLEY_KEY ||
+      key === POOF_SHEET_KEY
+    );
+  }
+
+  private optionalRoomAssetStatus(key: string): string {
+    if (key.startsWith("terrain-decor-prop:")) return "Skipping missing terrain decor";
+    if (key === ARCHIVE_BOOK_VOLLEY_KEY || key === POOF_SHEET_KEY) return "Skipping missing effects";
+    return "Using fallback boss sprites";
   }
 
   private handleRoomLoadComplete(): void {
@@ -981,7 +1001,7 @@ export class GameScene extends Phaser.Scene {
 
   private setRoomLoadingError(label: string, fileLabel: string): void {
     this.roomLoadingOverlay?.classList.add("is-error");
-    this.roomLoadingBar?.style.setProperty("--load-progress", "1");
+    this.roomLoadingBar?.style.setProperty("--load-progress", "0");
     this.roomLoadingPercent?.replaceChildren("Error");
     this.roomLoadingProgress?.removeAttribute("aria-valuenow");
     this.roomLoadingProgress?.setAttribute("aria-valuetext", label);
@@ -1003,13 +1023,21 @@ export class GameScene extends Phaser.Scene {
       <button class="ui-button" data-room-menu>${icon("back")} ${escapeHtml(this.menuLabel())}</button>
     `;
     panel.append(actions);
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "true");
     const retry = actions.querySelector<HTMLButtonElement>("[data-room-retry]");
     const editor = actions.querySelector<HTMLButtonElement>("[data-room-editor]");
     const menu = actions.querySelector<HTMLButtonElement>("[data-room-menu]");
     retry?.addEventListener("click", () => this.retryRoomLoad());
     editor?.addEventListener("click", () => this.openEditor());
     menu?.addEventListener("click", () => this.openTitle());
-    retry?.focus();
+    this.roomFailureNavigation?.destroy();
+    this.roomFailureNavigation = bindMenuNavigation(this.roomLoadingOverlay, {
+      onBack: () => this.openTitle(),
+      onNavigate: () => audio.play("select"),
+      initialFocus: "[data-room-retry]",
+      trapFocus: true
+    });
   }
 
   private retryRoomLoad(): void {
@@ -1031,6 +1059,8 @@ export class GameScene extends Phaser.Scene {
 
   private finishRoomLoadingScreen(): void {
     this.cleanupRoomLoadingListeners();
+    this.roomFailureNavigation?.destroy();
+    this.roomFailureNavigation = null;
     this.roomLoadingOverlay?.remove();
     this.roomLoadingOverlay = null;
     this.roomLoadingBar = null;

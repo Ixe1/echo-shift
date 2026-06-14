@@ -66,7 +66,7 @@ export class BootScene extends Phaser.Scene {
     }
     this.loadingStatus?.replaceChildren("Preparing start screen");
     this.loadingProgress?.setAttribute("aria-valuetext", "Preparing start screen");
-    this.writeLoadingDiagnostics("loading", 100, "Preparing start screen");
+    this.writeLoadingDiagnostics("loading", 92, "Preparing start screen");
     const [logoSrc, artSrc] = await Promise.all([
       this.resolveDomImage(ECHO_SHIFT_LOGO_SRC, ECHO_SHIFT_LOGO_FALLBACK_SRC),
       this.resolveDomImage(levelBackgrounds["time-lab-prototype"].src, levelBackgrounds["time-lab-prototype"].fallbackSrc)
@@ -78,6 +78,12 @@ export class BootScene extends Phaser.Scene {
     this.startupLogoSrc = logoSrc;
     rememberEchoShiftLogoSrc(logoSrc);
     this.setArtScreenImage(artSrc);
+    this.loadingBar?.style.setProperty("--load-progress", "1");
+    this.loadingPercent?.replaceChildren("100%");
+    this.loadingProgress?.setAttribute("aria-valuenow", "100");
+    this.loadingProgress?.setAttribute("aria-valuetext", "Startup ready");
+    this.loadingStatus?.replaceChildren("Preload complete");
+    this.writeLoadingDiagnostics("complete", 100, "complete");
     this.finishLoadingScreen();
     this.showAudioGate();
   }
@@ -221,9 +227,12 @@ export class BootScene extends Phaser.Scene {
       this.showStartupLoadFailureActions();
       return;
     }
-    this.handleLoadProgress(1);
-    this.loadingStatus?.replaceChildren("Preload complete");
-    this.writeLoadingDiagnostics("complete", 100, "complete");
+    this.loadingBar?.style.setProperty("--load-progress", "0.92");
+    this.loadingPercent?.replaceChildren("92%");
+    this.loadingProgress?.setAttribute("aria-valuenow", "92");
+    this.loadingProgress?.setAttribute("aria-valuetext", "Preparing start screen");
+    this.loadingStatus?.replaceChildren("Preparing start screen");
+    this.writeLoadingDiagnostics("loading", 92, "Preparing start screen");
   }
 
   private showStartupLoadFailure(): void {
@@ -234,7 +243,7 @@ export class BootScene extends Phaser.Scene {
 
   private setStartupLoadingError(label: string, fileLabel: string): void {
     this.loadingScreen?.classList.add("is-error");
-    this.loadingBar?.style.setProperty("--load-progress", "1");
+    this.loadingBar?.style.setProperty("--load-progress", "0");
     this.loadingPercent?.replaceChildren("Error");
     this.loadingProgress?.removeAttribute("aria-valuenow");
     this.loadingProgress?.setAttribute("aria-valuetext", label);
@@ -251,11 +260,25 @@ export class BootScene extends Phaser.Scene {
     const actions = document.createElement("div");
     actions.className = "boot-loading-actions";
     actions.dataset.loadingActions = "true";
-    actions.innerHTML = `<button class="ui-button primary" data-startup-retry>${icon("restart")} Retry</button>`;
+    const editorButton = isDraftPlaytestActive() ? `<button class="ui-button" data-startup-editor>${icon("levels")} Editor</button>` : "";
+    actions.innerHTML = `
+      <button class="ui-button primary" data-startup-retry>${icon("restart")} Retry</button>
+      ${editorButton}
+    `;
     panel.append(actions);
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "true");
     const retry = actions.querySelector<HTMLButtonElement>("[data-startup-retry]");
+    const editor = actions.querySelector<HTMLButtonElement>("[data-startup-editor]");
     retry?.addEventListener("click", () => window.location.reload());
-    retry?.focus();
+    editor?.addEventListener("click", () => this.openEditor());
+    this.menuNavigation?.destroy();
+    this.menuNavigation = bindMenuNavigation(this.loadingScreen, {
+      onBack: () => (isDraftPlaytestActive() ? this.openEditor() : window.location.reload()),
+      onNavigate: () => audio.play("select"),
+      initialFocus: "[data-startup-retry]",
+      trapFocus: true
+    });
   }
 
   private cleanupLoadingListeners(): void {
@@ -343,6 +366,14 @@ export class BootScene extends Phaser.Scene {
   private setArtScreenImage(src: string): void {
     if (typeof document === "undefined") return;
     document.documentElement.style.setProperty("--art-screen-image", `url("${src}")`);
+  }
+
+  private openEditor(): void {
+    const url = new URL(window.location.href);
+    url.searchParams.set("editor", "1");
+    url.searchParams.delete("playtestDraft");
+    url.searchParams.delete("level");
+    window.location.href = `${url.pathname}${url.search}${url.hash}`;
   }
 
   private nextScene(): { scene: "MenuScene"; data?: undefined; musicKey: "menu" } | { scene: "GameScene"; data: { levelIndex: number }; musicKey: ReturnType<typeof soundtrackForLevel>["key"] } {
