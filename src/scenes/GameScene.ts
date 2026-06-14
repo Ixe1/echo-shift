@@ -383,7 +383,7 @@ export class GameScene extends Phaser.Scene {
   private sceneCleanupRegistered = false;
   private readonly handleWindowKeyDown = (event: KeyboardEvent): void => {
     if (event.key !== "Escape" || event.repeat) return;
-    if (this.musicLoadingActive || this.awaitingRoomBackgroundFallback || this.roomLoadingFailed) return;
+    if (this.musicLoadingActive || this.awaitingRoomBackgroundFallback || this.awaitingRoomBossAtlasFallback || this.roomLoadingFailed) return;
     if (typeof document !== "undefined" && document.querySelector("[data-modal].show")) return;
     event.preventDefault();
     this.togglePause();
@@ -577,6 +577,7 @@ export class GameScene extends Phaser.Scene {
     this.awaitingRoomBackgroundFallback = false;
     this.awaitingRoomBossAtlasFallback = false;
     this.roomLoadFailedKey = null;
+    this.clearRoomAssetFailureDiagnostics();
     this.showRoomLoadingScreen(background.title);
     this.roomBackgroundFallbackKey = fallbackKey;
     this.roomBackgroundFallbackSrc = fallbackSrc;
@@ -687,7 +688,7 @@ export class GameScene extends Phaser.Scene {
 
     for (const boss of this.level.bosses || []) {
       const cleanKey = this.cleanBossTextureKey(boss.kind);
-      if (!cleanKey || this.failedOptionalRoomAssets.has(cleanKey)) {
+      if (!cleanKey) {
         add(this.bossAtlasAsset());
       }
       add({
@@ -741,6 +742,10 @@ export class GameScene extends Phaser.Scene {
     return null;
   }
 
+  private isCleanBossTextureKey(key: string): boolean {
+    return key === STORM_BOSS_CLEAN_KEY || key === CRYO_BOSS_CLEAN_KEY || key === ARCHIVE_BOSS_CLEAN_KEY;
+  }
+
   private bossAtlasAsset(): Extract<LevelAssetQueueItem, { kind: "spritesheet" }> {
     return {
       kind: "spritesheet",
@@ -774,11 +779,6 @@ export class GameScene extends Phaser.Scene {
     if (this.deferCreateForBossAtlasFallback()) return;
     const background = backgroundForLevel(this.level, this.levelIndex);
     if (this.roomLoadingFailed || !this.textureKeyForBackground(background)) {
-      this.markRoomBackgroundUnavailable(
-        background,
-        this.roomLoadingFailed ? "error" : "missing",
-        this.roomLoadingFailed ? this.roomLoadFailedKey || this.roomBackgroundFallbackKey || background.key : background.key
-      );
       this.handleRoomLoadComplete();
       return;
     }
@@ -842,12 +842,11 @@ export class GameScene extends Phaser.Scene {
     this.awaitingRoomBackgroundFallback = true;
     this.roomLoadingFailed = false;
     const loadId = ++this.roomBackgroundFallbackLoadId;
-    this.roomLoadingStatus?.replaceChildren("Loading fallback room backdrop");
-    this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(`fallback: ${background.key}`);
-    this.roomLoadingProgress?.setAttribute("aria-valuetext", `Loading fallback for ${background.key}`);
-    this.roomLoadingBar?.style.setProperty("--load-progress", String(ROOM_FALLBACK_READY_PROGRESS / 100));
-    this.roomLoadingPercent?.replaceChildren(`${ROOM_FALLBACK_READY_PROGRESS}%`);
-    this.roomLoadingProgress?.setAttribute("aria-valuenow", String(ROOM_FALLBACK_READY_PROGRESS));
+    this.setRoomFallbackPendingProgress(
+      "Loading fallback room backdrop",
+      `fallback: ${background.key}`,
+      `Loading fallback for ${background.key}`
+    );
     this.writeBackgroundPreloadDiagnostics(background.key, "fallback");
     void this.loadFallbackBackgroundImage(this.roomBackgroundFallbackKey, this.roomBackgroundFallbackSrc).then((loaded) => {
       if (loadId !== this.roomBackgroundFallbackLoadId) return;
@@ -877,12 +876,7 @@ export class GameScene extends Phaser.Scene {
     this.awaitingRoomBossAtlasFallback = true;
     this.roomLoadingFailed = false;
     const loadId = ++this.roomBossAtlasFallbackLoadId;
-    this.roomLoadingStatus?.replaceChildren("Loading fallback boss sprites");
-    this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(`fallback: ${BOSS_ATLAS_KEY}`);
-    this.roomLoadingProgress?.setAttribute("aria-valuetext", `Loading fallback boss sprites`);
-    this.roomLoadingBar?.style.setProperty("--load-progress", String(ROOM_FALLBACK_READY_PROGRESS / 100));
-    this.roomLoadingPercent?.replaceChildren(`${ROOM_FALLBACK_READY_PROGRESS}%`);
-    this.roomLoadingProgress?.setAttribute("aria-valuenow", String(ROOM_FALLBACK_READY_PROGRESS));
+    this.setRoomFallbackPendingProgress("Loading fallback boss sprites", `fallback: ${BOSS_ATLAS_KEY}`, "Loading fallback boss sprites");
     void this.loadFallbackSpritesheet(this.bossAtlasAsset()).then((loaded) => {
       if (loadId !== this.roomBossAtlasFallbackLoadId) return;
       this.awaitingRoomBossAtlasFallback = false;
@@ -909,6 +903,10 @@ export class GameScene extends Phaser.Scene {
       if (!cleanKey || !this.textures.exists(cleanKey)) return true;
     }
     return false;
+  }
+
+  private roomBossAtlasFallbackPending(): boolean {
+    return this.roomNeedsBossAtlasFallback() && !this.textures.exists(BOSS_ATLAS_KEY);
   }
 
   private loadFallbackBackgroundImage(key: string, src: string): Promise<boolean> {
@@ -1020,13 +1018,14 @@ export class GameScene extends Phaser.Scene {
     ) {
       return ROOM_FALLBACK_READY_PROGRESS;
     }
+    if (this.roomBossAtlasFallbackPending()) return ROOM_FALLBACK_READY_PROGRESS;
     return 100;
   }
 
   private handleRoomLoadError(file: Phaser.Loader.File): void {
     const failedKey = String(file.key);
     if (this.optionalRoomAssetCanDegrade(failedKey)) {
-      this.failedOptionalRoomAssets.add(failedKey);
+      if (this.optionalRoomAssetFailureIsSticky(failedKey)) this.failedOptionalRoomAssets.add(failedKey);
       const label = `Skipped optional ${failedKey}`;
       this.roomLoadingStatus?.replaceChildren(this.optionalRoomAssetStatus(failedKey));
       this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(label);
@@ -1046,12 +1045,7 @@ export class GameScene extends Phaser.Scene {
       this.roomBackgroundFallbackSrc &&
       !this.textures.exists(this.roomBackgroundFallbackKey)
     ) {
-      this.roomLoadingStatus?.replaceChildren("Loading fallback room backdrop");
-      this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(`fallback: ${failedKey}`);
-      this.roomLoadingProgress?.setAttribute("aria-valuetext", `Loading fallback for ${failedKey}`);
-      this.roomLoadingBar?.style.setProperty("--load-progress", String(ROOM_FALLBACK_READY_PROGRESS / 100));
-      this.roomLoadingPercent?.replaceChildren(`${ROOM_FALLBACK_READY_PROGRESS}%`);
-      this.roomLoadingProgress?.setAttribute("aria-valuenow", String(ROOM_FALLBACK_READY_PROGRESS));
+      this.setRoomFallbackPendingProgress("Loading fallback room backdrop", `fallback: ${failedKey}`, `Loading fallback for ${failedKey}`);
       this.writeBackgroundPreloadDiagnostics(failedKey, "fallback");
       return;
     }
@@ -1060,7 +1054,7 @@ export class GameScene extends Phaser.Scene {
     const label = `Could not load ${failedKey}`;
     this.roomLoadingStatus?.replaceChildren(label);
     this.roomLoadingProgress?.setAttribute("aria-valuetext", label);
-    this.writeBackgroundPreloadDiagnostics(failedKey, "error");
+    this.writeRoomAssetFailureDiagnostics(failedKey);
   }
 
   private optionalRoomAssetCanDegrade(key: string): boolean {
@@ -1080,10 +1074,24 @@ export class GameScene extends Phaser.Scene {
     return "Using fallback boss sprites";
   }
 
+  private optionalRoomAssetFailureIsSticky(key: string): boolean {
+    return !this.isCleanBossTextureKey(key);
+  }
+
   private handleRoomLoadComplete(): void {
     const background = backgroundForLevel(this.level, this.levelIndex);
     if (this.roomLoadingFailed) {
-      this.showRoomLoadFailure(background, "error", this.roomLoadFailedKey || this.roomBackgroundFallbackKey || background.key);
+      const failedKey = this.roomLoadFailedKey || this.roomBackgroundFallbackKey || background.key;
+      if (this.roomLoadFailureIsBackground(background, failedKey)) {
+        this.showRoomLoadFailure(background, "error", failedKey);
+      } else {
+        const textureKey = this.textureKeyForBackground(background);
+        if (textureKey) {
+          if (textureKey === background.key) this.failedPrimaryBackgroundRetries.delete(background.key);
+          this.writeBackgroundPreloadDiagnostics(textureKey, "complete");
+        }
+        this.showRoomAssetLoadFailure(failedKey);
+      }
       return;
     }
     const textureKey = this.textureKeyForBackground(background);
@@ -1097,10 +1105,29 @@ export class GameScene extends Phaser.Scene {
       this.showRoomLoadFailure(background, "missing", background.key);
       return;
     }
+    if (this.roomBossAtlasFallbackPending()) {
+      if (textureKey === background.key) this.failedPrimaryBackgroundRetries.delete(background.key);
+      this.writeBackgroundPreloadDiagnostics(textureKey, "complete");
+      this.setRoomFallbackPendingProgress("Loading fallback boss sprites", `fallback: ${BOSS_ATLAS_KEY}`, "Loading fallback boss sprites");
+      return;
+    }
     this.setRoomLoadCompleteProgress();
     if (textureKey === background.key) this.failedPrimaryBackgroundRetries.delete(background.key);
     this.writeBackgroundPreloadDiagnostics(textureKey, "complete");
     this.roomLoadingStatus?.replaceChildren("Room ready");
+  }
+
+  private roomLoadFailureIsBackground(background: ReturnType<typeof backgroundForLevel>, key: string): boolean {
+    return key === background.key || key === this.roomBackgroundFallbackKey;
+  }
+
+  private setRoomFallbackPendingProgress(status: string, fileLabel: string, valueText: string): void {
+    this.roomLoadingStatus?.replaceChildren(status);
+    this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(fileLabel);
+    this.roomLoadingProgress?.setAttribute("aria-valuetext", valueText);
+    this.roomLoadingBar?.style.setProperty("--load-progress", String(ROOM_FALLBACK_READY_PROGRESS / 100));
+    this.roomLoadingPercent?.replaceChildren(`${ROOM_FALLBACK_READY_PROGRESS}%`);
+    this.roomLoadingProgress?.setAttribute("aria-valuenow", String(ROOM_FALLBACK_READY_PROGRESS));
   }
 
   private setRoomLoadCompleteProgress(): void {
@@ -1111,7 +1138,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showRoomLoadFailure(background: ReturnType<typeof backgroundForLevel>, phase: "missing" | "error", key: string): void {
+    this.clearRoomAssetFailureDiagnostics();
     this.markRoomBackgroundUnavailable(background, phase, key);
+    this.setRoomLoadingError("Room assets unavailable", `Could not load ${key}`);
+    this.showRoomLoadFailureActions();
+  }
+
+  private showRoomAssetLoadFailure(key: string): void {
+    this.writeRoomAssetFailureDiagnostics(key);
     this.setRoomLoadingError("Room assets unavailable", `Could not load ${key}`);
     this.showRoomLoadFailureActions();
   }
@@ -1190,6 +1224,7 @@ export class GameScene extends Phaser.Scene {
     this.roomBackgroundFallbackKey = null;
     this.roomBackgroundFallbackSrc = null;
     this.roomLoadFailedKey = null;
+    this.clearRoomAssetFailureDiagnostics();
   }
 
   update(_time: number, delta: number): void {
@@ -2368,6 +2403,16 @@ export class GameScene extends Phaser.Scene {
   private writeBackgroundPreloadDiagnostics(key: string, phase: string): void {
     if (!import.meta.env.DEV || typeof document === "undefined") return;
     document.documentElement.dataset.echoShiftBackgroundPreload = `${key}:${phase}`;
+  }
+
+  private writeRoomAssetFailureDiagnostics(key: string): void {
+    if (!import.meta.env.DEV || typeof document === "undefined") return;
+    document.documentElement.dataset.echoShiftRoomAssetFailure = key;
+  }
+
+  private clearRoomAssetFailureDiagnostics(): void {
+    if (!import.meta.env.DEV || typeof document === "undefined") return;
+    delete document.documentElement.dataset.echoShiftRoomAssetFailure;
   }
 
   private textureKeyForBackground(background: ReturnType<typeof backgroundForLevel>): string | null {
