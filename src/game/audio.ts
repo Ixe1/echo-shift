@@ -71,8 +71,8 @@ const effectPath = (file: string): string => `/assets/audio/effects/${file}`;
 const AUDIO_SETTINGS_KEY = "echo-shift-audio-settings-v1";
 const MUSIC_LOOP_LOOKAHEAD_SECONDS = 0.012;
 const MUSIC_LOOP_MIN_SECONDS = 1;
-const EFFECT_PRELOAD_TIMEOUT_MS = 3000;
 const MUSIC_START_TIMEOUT_MS = 1800;
+const EFFECT_PRELOAD_TIMEOUT_MS = MUSIC_START_TIMEOUT_MS;
 const DEFAULT_AUDIO_SETTINGS: AudioMixSettings = {
   masterVolume: 1,
   fxVolume: 1,
@@ -463,6 +463,7 @@ export class SynthAudio {
   }
 
   playMusic(key: SoundtrackKey, options: { restart?: boolean; fadeMs?: number } = {}): void {
+    if (this.musicStartWaiters.length > 0 && (this.musicKey !== key || options.restart)) this.clearMusicStartWaiters(false);
     this.installUnlockListeners();
     this.installRecoveryListeners();
     this.musicPaused = false;
@@ -539,6 +540,7 @@ export class SynthAudio {
   }
 
   pauseMusic(): void {
+    this.clearMusicStartWaiters(false);
     if (!this.music && !this.webMusic && !this.musicKey) return;
     this.musicPaused = true;
     this.musicPlayAttempt += 1;

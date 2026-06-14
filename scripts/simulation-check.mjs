@@ -198,6 +198,7 @@ const gameSceneMethodBody = (source, name) => {
 
 const verifyGameSceneAudioCleanupHooks = () => {
   const source = readFileSync("src/scenes/GameScene.ts", "utf8");
+  const audioSource = readFileSync("src/game/audio.ts", "utf8");
   const helperBody = gameSceneMethodBody(source, "clearAttemptScopedAudio");
   assert(
     helperBody.includes("audio.clearBlockedSamples()"),
@@ -228,6 +229,10 @@ const verifyGameSceneAudioCleanupHooks = () => {
   const audioGateBody = gameSceneMethodBody(source, "startLevelWhenAudioReady");
   assert(audioGateBody.includes("audio.waitForMusicStart"), "Expected level start gate to wait for requested music playback");
   assert(audioGateBody.includes("effectWarmup"), "Expected level start gate to include SFX warmup");
+  assert(
+    audioSource.includes("const EFFECT_PRELOAD_TIMEOUT_MS = MUSIC_START_TIMEOUT_MS;"),
+    "Expected sampled SFX warmup timeout to stay within the music-start gate budget"
+  );
   assert(source.includes("this.resetFiniteCoreBonusProgress();\n    this.simulation = new RoomSimulation"), "Expected new level init to reset core bonus progress before play");
   assert(source.includes("const effectWarmup = audio.preloadEffects();"), "Expected GameScene to warm sampled gameplay SFX before level intro");
 };
@@ -600,6 +605,25 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     );
     const timedOutMusicStart = await audio.waitForMusicStart("level-2", Promise.resolve(false), 0);
     assert(timedOutMusicStart === false, "Expected music-start wait to resolve false after bounded timeout when requested music never starts");
+    let pausedWaitResult;
+    void audio.waitForMusicStart("level-2", Promise.resolve(true), 1000).then((started) => {
+      pausedWaitResult = started;
+    });
+    await settlePromises();
+    audio.pauseMusic();
+    await settlePromises();
+    assert(pausedWaitResult === false, `Expected pauseMusic to cancel pending music-start waiters, got ${pausedWaitResult}`);
+    audio.resumeMusic();
+    await settlePromises();
+    assert(menu.playing && audio.isMusicPlaying("menu"), "Expected menu music to resume after pause waiter cancellation test");
+    let supersededWaitResult;
+    void audio.waitForMusicStart("level-2", Promise.resolve(true), 1000).then((started) => {
+      supersededWaitResult = started;
+    });
+    await settlePromises();
+    audio.playMusic("menu", { restart: true });
+    await settlePromises();
+    assert(supersededWaitResult === false, `Expected restarted music to cancel superseded music-start waiters, got ${supersededWaitResult}`);
     const menuCallsBeforeTransportLoss = menu.playCalls;
     menu.pause();
     assert(
