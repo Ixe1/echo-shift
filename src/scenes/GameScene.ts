@@ -1006,9 +1006,10 @@ export class GameScene extends Phaser.Scene {
   private handleRoomFileProgress(file: Phaser.Loader.File): void {
     const key = String(file.key);
     const label = `Loading ${key}`;
-    this.roomLoadingStatus?.replaceChildren(this.roomLoadingStatusForFile(key));
+    const status = this.roomLoadingStatusForFile(key);
+    this.roomLoadingStatus?.replaceChildren(status);
     this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(label);
-    this.roomLoadingProgress?.setAttribute("aria-valuetext", label);
+    this.roomLoadingProgress?.setAttribute("aria-valuetext", status);
   }
 
   private roomLoadingStatusForFile(key: string): string {
@@ -1017,7 +1018,8 @@ export class GameScene extends Phaser.Scene {
     if (key.startsWith("terrain-decor-prop:")) return "Loading terrain decor";
     if (key === TERRAIN_TILE_KEY) return "Loading terrain tiles";
     if (key === BOSS_ATLAS_KEY || this.isCleanBossTextureKey(key) || key === ARCHIVE_BOOK_VOLLEY_KEY) return "Loading boss sprites";
-    if (key === MONSTER_ATLAS_KEY || key === POOF_SHEET_KEY) return "Loading enemy sprites";
+    if (key === POOF_SHEET_KEY) return (this.level.bosses || []).length > 0 && (this.level.monsters || []).length === 0 ? "Loading effects" : "Loading enemy sprites";
+    if (key === MONSTER_ATLAS_KEY) return "Loading enemy sprites";
     if (key === TIME_RUNNER_KEY || key === TIME_EFFECTS_KEY) return "Loading rewind sprites";
     if (key === OBJECT_ATLAS_KEY || key === LAUNCH_PAD_KEY || key === HAZARD_VENT_KEY || key === CORE_MAJOR_KEY) return "Loading room objects";
     return "Loading room assets";
@@ -1039,10 +1041,11 @@ export class GameScene extends Phaser.Scene {
     const failedKey = String(file.key);
     if (this.optionalRoomAssetCanDegrade(failedKey)) {
       if (this.optionalRoomAssetFailureIsSticky(failedKey)) this.failedOptionalRoomAssets.add(failedKey);
+      const status = this.optionalRoomAssetStatus(failedKey);
       const label = `Skipped optional ${failedKey}`;
-      this.roomLoadingStatus?.replaceChildren(this.optionalRoomAssetStatus(failedKey));
+      this.roomLoadingStatus?.replaceChildren(status);
       this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(label);
-      this.roomLoadingProgress?.setAttribute("aria-valuetext", label);
+      this.roomLoadingProgress?.setAttribute("aria-valuetext", status);
       return;
     }
     const background = backgroundForLevel(this.level, this.levelIndex);
