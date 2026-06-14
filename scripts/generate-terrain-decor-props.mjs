@@ -7,7 +7,7 @@ const RAINHOUSE_SOURCE = "docs/concepts/rainhouse-decor-props-reference-20260610
 const CRYO_SOURCE = "docs/concepts/cryo-decor-props-reference-20260610.png";
 const TIMBER_SOURCE = "docs/concepts/timber-archive-decor-props-reference-20260610.png";
 const OUT_DIR = "public/assets/sprites/terrain-decor-props";
-const CONTACT_SHEET = "public/assets/sprites/terrain-decor-props.png";
+const CONTACT_SHEET = "docs/concepts/terrain-decor-props-contact-sheet.png";
 const CONTACT_FRAME = 192;
 const CONTACT_COLUMNS = 6;
 const BYTES_PER_PIXEL = 4;
@@ -367,6 +367,7 @@ const setContactPixel = (x, y, color) => {
 };
 
 mkdirSync(OUT_DIR, { recursive: true });
+mkdirSync("docs/concepts", { recursive: true });
 
 for (let index = 0; index < crops.length; index += 1) {
   const crop = trimCrop(crops[index]);

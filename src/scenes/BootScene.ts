@@ -14,6 +14,8 @@ import {
 } from "../ui/dom";
 import { bindMenuNavigation, type MenuNavigationBinding } from "../ui/menuNavigation";
 
+const STARTUP_READY_PROGRESS = 92;
+
 const playtestLevelIndex = (): number => {
   const raw = new URLSearchParams(window.location.search).get("level");
   const parsed = Number(raw);
@@ -66,7 +68,7 @@ export class BootScene extends Phaser.Scene {
     }
     this.loadingStatus?.replaceChildren("Preparing start screen");
     this.loadingProgress?.setAttribute("aria-valuetext", "Preparing start screen");
-    this.writeLoadingDiagnostics("loading", 92, "Preparing start screen");
+    this.writeLoadingDiagnostics("loading", STARTUP_READY_PROGRESS, "Preparing start screen");
     const [logoSrc, artSrc] = await Promise.all([
       this.resolveDomImage(ECHO_SHIFT_LOGO_SRC, ECHO_SHIFT_LOGO_FALLBACK_SRC),
       this.resolveDomImage(levelBackgrounds["time-lab-prototype"].src, levelBackgrounds["time-lab-prototype"].fallbackSrc)
@@ -188,7 +190,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private handleLoadProgress(progress: number): void {
-    const percent = Math.max(0, Math.min(100, Math.round(progress * 100)));
+    const percent = Math.max(0, Math.min(STARTUP_READY_PROGRESS, Math.round(progress * STARTUP_READY_PROGRESS)));
     this.loadingBar?.style.setProperty("--load-progress", String(percent / 100));
     this.loadingPercent?.replaceChildren(`${percent}%`);
     this.loadingProgress?.setAttribute("aria-valuenow", String(percent));
@@ -227,12 +229,12 @@ export class BootScene extends Phaser.Scene {
       this.showStartupLoadFailureActions();
       return;
     }
-    this.loadingBar?.style.setProperty("--load-progress", "0.92");
-    this.loadingPercent?.replaceChildren("92%");
-    this.loadingProgress?.setAttribute("aria-valuenow", "92");
+    this.loadingBar?.style.setProperty("--load-progress", String(STARTUP_READY_PROGRESS / 100));
+    this.loadingPercent?.replaceChildren(`${STARTUP_READY_PROGRESS}%`);
+    this.loadingProgress?.setAttribute("aria-valuenow", String(STARTUP_READY_PROGRESS));
     this.loadingProgress?.setAttribute("aria-valuetext", "Preparing start screen");
     this.loadingStatus?.replaceChildren("Preparing start screen");
-    this.writeLoadingDiagnostics("loading", 92, "Preparing start screen");
+    this.writeLoadingDiagnostics("loading", STARTUP_READY_PROGRESS, "Preparing start screen");
   }
 
   private showStartupLoadFailure(): void {

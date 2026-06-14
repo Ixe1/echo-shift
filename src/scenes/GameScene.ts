@@ -248,6 +248,8 @@ type LevelAssetQueueItem =
   | { kind: "image"; key: string; src: string }
   | { kind: "spritesheet"; key: string; src: string; frameWidth: number; frameHeight: number; margin?: number; spacing?: number };
 
+const ROOM_FALLBACK_READY_PROGRESS = 92;
+
 export class GameScene extends Phaser.Scene {
   private levelIndex = 0;
   private tutorialMode = false;
@@ -682,7 +684,7 @@ export class GameScene extends Phaser.Scene {
       add({
         kind: "spritesheet",
         key: BOSS_ATLAS_KEY,
-        src: "/assets/sprites/boss-atlas.png",
+        src: "/assets/sprites/boss-atlas.webp",
         frameWidth: BOSS_ATLAS_FRAME_WIDTH,
         frameHeight: BOSS_ATLAS_FRAME_HEIGHT
       });
@@ -819,6 +821,9 @@ export class GameScene extends Phaser.Scene {
     this.roomLoadingStatus?.replaceChildren("Loading fallback room backdrop");
     this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(`fallback: ${background.key}`);
     this.roomLoadingProgress?.setAttribute("aria-valuetext", `Loading fallback for ${background.key}`);
+    this.roomLoadingBar?.style.setProperty("--load-progress", String(ROOM_FALLBACK_READY_PROGRESS / 100));
+    this.roomLoadingPercent?.replaceChildren(`${ROOM_FALLBACK_READY_PROGRESS}%`);
+    this.roomLoadingProgress?.setAttribute("aria-valuenow", String(ROOM_FALLBACK_READY_PROGRESS));
     this.writeBackgroundPreloadDiagnostics(background.key, "fallback");
     void this.loadFallbackBackgroundImage(this.roomBackgroundFallbackKey, this.roomBackgroundFallbackSrc).then((loaded) => {
       if (loadId !== this.roomBackgroundFallbackLoadId) return;
@@ -902,7 +907,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleRoomLoadProgress(progress: number): void {
-    const percent = Math.max(0, Math.min(100, Math.round(progress * 100)));
+    const ceiling = this.roomLoadProgressCeiling();
+    const percent = Math.max(0, Math.min(ceiling, Math.round(progress * ceiling)));
     this.roomLoadingBar?.style.setProperty("--load-progress", String(percent / 100));
     this.roomLoadingPercent?.replaceChildren(`${percent}%`);
     this.roomLoadingProgress?.setAttribute("aria-valuenow", String(percent));
@@ -914,6 +920,17 @@ export class GameScene extends Phaser.Scene {
     this.roomLoadingStatus?.replaceChildren("Loading room backdrop");
     this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(label);
     this.roomLoadingProgress?.setAttribute("aria-valuetext", label);
+  }
+
+  private roomLoadProgressCeiling(): number {
+    if (
+      this.roomBackgroundFallbackKey &&
+      this.roomBackgroundFallbackSrc &&
+      !this.textures.exists(this.roomBackgroundFallbackKey)
+    ) {
+      return ROOM_FALLBACK_READY_PROGRESS;
+    }
+    return 100;
   }
 
   private handleRoomLoadError(file: Phaser.Loader.File): void {
@@ -942,6 +959,9 @@ export class GameScene extends Phaser.Scene {
       this.roomLoadingStatus?.replaceChildren("Loading fallback room backdrop");
       this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(`fallback: ${failedKey}`);
       this.roomLoadingProgress?.setAttribute("aria-valuetext", `Loading fallback for ${failedKey}`);
+      this.roomLoadingBar?.style.setProperty("--load-progress", String(ROOM_FALLBACK_READY_PROGRESS / 100));
+      this.roomLoadingPercent?.replaceChildren(`${ROOM_FALLBACK_READY_PROGRESS}%`);
+      this.roomLoadingProgress?.setAttribute("aria-valuenow", String(ROOM_FALLBACK_READY_PROGRESS));
       this.writeBackgroundPreloadDiagnostics(failedKey, "fallback");
       return;
     }
