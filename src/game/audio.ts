@@ -965,8 +965,10 @@ export class SynthAudio {
     const settings = sampledEffects[name as keyof typeof sampledEffects];
     if (!settings || typeof Audio === "undefined") return false;
 
-    const element = new Audio(settings.src);
+    const element = this.preloadedEffects.get(name) || new Audio(settings.src);
+    this.preloadedEffects.delete(name);
     element.preload = "auto";
+    element.currentTime = 0;
     element.volume = settings.volume * this.fxOutputMultiplier();
     this.activeEffects.set(element, settings.volume);
     let released = false;

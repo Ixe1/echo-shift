@@ -598,6 +598,8 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       menu.playCalls === menuRestartPlayCalls + 1 && menu.playing && audio.isMusicPlaying("menu"),
       "Expected same-key restart to report playing only after replay resolves"
     );
+    const timedOutMusicStart = await audio.waitForMusicStart("level-2", Promise.resolve(false), 0);
+    assert(timedOutMusicStart === false, "Expected music-start wait to resolve false after bounded timeout when requested music never starts");
     const menuCallsBeforeTransportLoss = menu.playCalls;
     menu.pause();
     assert(
@@ -1053,6 +1055,30 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     const repeatedEffectWarmup = await audio.preloadEffects(["jump"]);
     assert(repeatedEffectWarmup[0] === true, `Expected repeated jump warmup to reuse a ready sample, got ${JSON.stringify(repeatedEffectWarmup)}`);
     assert(mediaElements.length === effectsAfterWarmup, "Expected repeated effect warmup not to create another media element");
+    const warmedJump = mediaElements.find((element) => element.src.includes("player_jump"));
+    const elementsBeforeWarmedJumpPlay = mediaElements.length;
+    audio.play("jump");
+    await settlePromises();
+    assert(warmedJump?.playCalls === 1 && warmedJump.playing, "Expected first real jump SFX playback to use the warmed sample element");
+    assert(mediaElements.length === elementsBeforeWarmedJumpPlay, "Expected warmed SFX playback not to allocate a fresh media element");
+    warmedJump.dispatchEvent("ended");
+    const defaultWarmup = await audio.preloadEffects();
+    assert(defaultWarmup.every(Boolean), `Expected default gameplay effect warmup to preload sampled cues, got ${JSON.stringify(defaultWarmup)}`);
+    for (const fragment of [
+      "player_jump",
+      "rewind",
+      "switch",
+      "core_pickup",
+      "big_core_pickup",
+      "core_extra_life",
+      "spring_launch_pad",
+      "player_death",
+      "player_laser_vaporised",
+      "echo_laser_vaporised",
+      "portal"
+    ]) {
+      assert(mediaElements.some((element) => element.src.includes(fragment)), `Expected default SFX warmup to include ${fragment}`);
+    }
 
     assert(!audio.isMusicReady("boss"), "Expected an untouched looped boss soundtrack not to be Web Audio ready before preload");
     deferNextFetch = true;
@@ -1079,7 +1105,9 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
 
 	    runAnimationFrames = false;
 	    audio.playMusic("level-1");
+	    const levelOneMusicStart = audio.waitForMusicStart("level-1", Promise.resolve(true));
 	    await settlePromises();
+	    assert((await levelOneMusicStart) === true, "Expected looped Web Audio level music to resolve the music-start waiter");
 	    const levelOneFadePauseSource = startedMusicSources.at(-1);
 	    const levelOneContext = audioContexts.at(-1);
 	    assert(audio.isMusicPlaying("level-1"), "Expected started Web Audio level music to report as playing");
