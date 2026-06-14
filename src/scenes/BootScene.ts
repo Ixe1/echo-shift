@@ -2,25 +2,7 @@ import Phaser from "phaser";
 import { isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
 import { backgroundForLevel, levelBackgrounds, type LevelBackground } from "../game/backgrounds";
-import {
-  BOSS_ATLAS_FRAME_HEIGHT,
-  BOSS_ATLAS_FRAME_WIDTH,
-  BOSS_ATLAS_KEY,
-  ARCHIVE_BOSS_CLEAN_KEY,
-  ARCHIVE_BOOK_VOLLEY_FRAME_HEIGHT,
-  ARCHIVE_BOOK_VOLLEY_FRAME_WIDTH,
-  ARCHIVE_BOOK_VOLLEY_KEY,
-  CRYO_BOSS_CLEAN_KEY,
-  MONSTER_ATLAS_FRAME_HEIGHT,
-  MONSTER_ATLAS_FRAME_WIDTH,
-  MONSTER_ATLAS_KEY,
-  POOF_FRAME_HEIGHT,
-  POOF_FRAME_WIDTH,
-  POOF_SHEET_KEY,
-  STORM_BOSS_CLEAN_KEY
-} from "../game/enemySprites";
 import { soundtrackForLevel } from "../game/soundtracks";
-import { allTerrainDecorProps, terrainDecorPropSrc, terrainDecorPropTextureKey } from "../game/terrainDecorProps";
 import { TERRAIN_TILE_KEY, TERRAIN_TILE_SIZE } from "../game/terrainMaterials";
 import {
   bindImageFallbacks,
@@ -83,43 +65,12 @@ export class BootScene extends Phaser.Scene {
       frameWidth: 352,
       frameHeight: 288
     });
-    this.load.spritesheet(BOSS_ATLAS_KEY, "/assets/sprites/boss-atlas.png", {
-      frameWidth: BOSS_ATLAS_FRAME_WIDTH,
-      frameHeight: BOSS_ATLAS_FRAME_HEIGHT
-    });
-    this.load.spritesheet(STORM_BOSS_CLEAN_KEY, "/assets/sprites/storm-relay-warden-clean.png", {
-      frameWidth: BOSS_ATLAS_FRAME_WIDTH,
-      frameHeight: BOSS_ATLAS_FRAME_HEIGHT
-    });
-    this.load.spritesheet(CRYO_BOSS_CLEAN_KEY, "/assets/sprites/cryo-conservator-clean.png", {
-      frameWidth: BOSS_ATLAS_FRAME_WIDTH,
-      frameHeight: BOSS_ATLAS_FRAME_HEIGHT
-    });
-    this.load.spritesheet(ARCHIVE_BOSS_CLEAN_KEY, "/assets/sprites/archive-custodian-clean.png", {
-      frameWidth: BOSS_ATLAS_FRAME_WIDTH,
-      frameHeight: BOSS_ATLAS_FRAME_HEIGHT
-    });
-    this.load.spritesheet(ARCHIVE_BOOK_VOLLEY_KEY, "/assets/sprites/archive-book-volley-sheet.png", {
-      frameWidth: ARCHIVE_BOOK_VOLLEY_FRAME_WIDTH,
-      frameHeight: ARCHIVE_BOOK_VOLLEY_FRAME_HEIGHT
-    });
-    this.load.spritesheet(MONSTER_ATLAS_KEY, "/assets/sprites/monster-atlas.png", {
-      frameWidth: MONSTER_ATLAS_FRAME_WIDTH,
-      frameHeight: MONSTER_ATLAS_FRAME_HEIGHT
-    });
-    this.load.spritesheet(POOF_SHEET_KEY, "/assets/sprites/enemy-poof-sheet.png", {
-      frameWidth: POOF_FRAME_WIDTH,
-      frameHeight: POOF_FRAME_HEIGHT
-    });
     this.load.spritesheet(TERRAIN_TILE_KEY, "/assets/sprites/terrain-tiles.png", {
       frameWidth: TERRAIN_TILE_SIZE,
       frameHeight: TERRAIN_TILE_SIZE,
       margin: 1,
       spacing: 2
     });
-    for (const prop of allTerrainDecorProps) {
-      this.load.image(terrainDecorPropTextureKey(prop), terrainDecorPropSrc(prop));
-    }
     for (const background of this.startupBackgrounds()) {
       if (this.textures.exists(background.key)) continue;
       this.load.image(background.key, background.src);

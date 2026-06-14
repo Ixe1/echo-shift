@@ -20,11 +20,17 @@ import {
   ARCHIVE_BOOK_VOLLEY_FRAME_HEIGHT,
   ARCHIVE_BOOK_VOLLEY_FRAME_WIDTH,
   ARCHIVE_BOOK_VOLLEY_KEY,
+  BOSS_ATLAS_FRAME_HEIGHT,
+  BOSS_ATLAS_FRAME_WIDTH,
   BOSS_ATLAS_KEY,
   BOSS_STATE_FRAME_COUNT,
   CRYO_BOSS_CLEAN_KEY,
+  MONSTER_ATLAS_FRAME_HEIGHT,
+  MONSTER_ATLAS_FRAME_WIDTH,
   MONSTER_ATLAS_KEY,
   POOF_FRAME_COUNT,
+  POOF_FRAME_HEIGHT,
+  POOF_FRAME_WIDTH,
   POOF_SHEET_KEY,
   STORM_BOSS_CLEAN_KEY,
   bossFrameForKind,
@@ -53,6 +59,7 @@ import {
   effectiveSolidDecorDensity,
   terrainDecorPropTextureKey,
   terrainDecorPropsForMaterial,
+  terrainDecorPropSrc,
   type TerrainDecorPropCategory,
   type TerrainDecorPropDefinition
 } from "../game/terrainDecorProps";
@@ -234,6 +241,10 @@ type GameSceneData = {
   scoreEligible?: boolean;
 };
 
+type LevelAssetQueueItem =
+  | { kind: "image"; key: string; src: string }
+  | { kind: "spritesheet"; key: string; src: string; frameWidth: number; frameHeight: number };
+
 export class GameScene extends Phaser.Scene {
   private levelIndex = 0;
   private tutorialMode = false;
@@ -351,6 +362,7 @@ export class GameScene extends Phaser.Scene {
   private roomBackgroundFallbackLoadId = 0;
   private roomBackgroundFallbackKey: string | null = null;
   private roomBackgroundFallbackSrc: string | null = null;
+  private roomLoadFailedKey: string | null = null;
   private lastTutorialHint = "";
   private readonly launchPadActiveUntil = new Map<string, number>();
   private readonly fxBursts: FxBurst[] = [];
@@ -526,6 +538,7 @@ export class GameScene extends Phaser.Scene {
     this.roomBackgroundFallbackLoadId = 0;
     this.roomBackgroundFallbackKey = null;
     this.roomBackgroundFallbackSrc = null;
+    this.roomLoadFailedKey = null;
     this.lastTutorialHint = "";
     this.launchPadActiveUntil.clear();
     this.fxBursts.length = 0;
@@ -536,22 +549,129 @@ export class GameScene extends Phaser.Scene {
 
   preload(): void {
     const background = backgroundForLevel(this.level, this.levelIndex);
-    if (this.textures.exists(background.key)) {
+    const fallbackKey = background.fallbackSrc ? this.backgroundFallbackTextureKey(background.key) : null;
+    const fallbackSrc = background.fallbackSrc || null;
+    const fallbackCached = fallbackKey ? this.textures.exists(fallbackKey) : false;
+    const primaryBackgroundCached = this.textures.exists(background.key);
+    const activeLevelAssets = this.activeLevelAssetQueue();
+    if (primaryBackgroundCached && activeLevelAssets.length === 0) {
       this.writeBackgroundPreloadDiagnostics(background.key, "cached");
       return;
     }
     this.finishRoomLoadingScreen();
     this.roomLoadingFailed = false;
     this.awaitingRoomBackgroundFallback = false;
-    const fallbackKey = background.fallbackSrc ? this.backgroundFallbackTextureKey(background.key) : null;
-    const fallbackSrc = background.fallbackSrc || null;
-    const fallbackCached = fallbackKey ? this.textures.exists(fallbackKey) : false;
-    if (!fallbackCached) this.showRoomLoadingScreen(background.title);
+    this.roomLoadFailedKey = null;
+    this.showRoomLoadingScreen(background.title);
     this.roomBackgroundFallbackKey = fallbackKey;
     this.roomBackgroundFallbackSrc = fallbackSrc;
     this.bindRoomLoadingProgress();
-    this.load.image(background.key, background.src);
-    this.writeBackgroundPreloadDiagnostics(background.key, fallbackCached ? "retry" : "queued");
+    if (primaryBackgroundCached) {
+      this.writeBackgroundPreloadDiagnostics(background.key, "cached");
+    } else {
+      this.load.image(background.key, background.src);
+      this.writeBackgroundPreloadDiagnostics(background.key, fallbackCached ? "retry" : "queued");
+    }
+    for (const asset of activeLevelAssets) this.queueLevelAsset(asset);
+  }
+
+  private activeLevelAssetQueue(): LevelAssetQueueItem[] {
+    const assets = new Map<string, LevelAssetQueueItem>();
+    const add = (asset: LevelAssetQueueItem) => {
+      if (this.textures.exists(asset.key) || assets.has(asset.key)) return;
+      assets.set(asset.key, asset);
+    };
+
+    const decorMaterials = new Set<TerrainMaterial>();
+    for (const solid of this.level.solids) {
+      const material = terrainMaterialForSolid(solid);
+      if (this.activeTerrainDecorDensity(effectiveSolidDecorDensity(solid, material))) decorMaterials.add(material);
+    }
+    for (const material of decorMaterials) {
+      for (const prop of terrainDecorPropsForMaterial(material)) {
+        add({ kind: "image", key: terrainDecorPropTextureKey(prop), src: terrainDecorPropSrc(prop) });
+      }
+    }
+
+    if ((this.level.monsters || []).length > 0) {
+      add({
+        kind: "spritesheet",
+        key: MONSTER_ATLAS_KEY,
+        src: "/assets/sprites/monster-atlas.png",
+        frameWidth: MONSTER_ATLAS_FRAME_WIDTH,
+        frameHeight: MONSTER_ATLAS_FRAME_HEIGHT
+      });
+      add({
+        kind: "spritesheet",
+        key: POOF_SHEET_KEY,
+        src: "/assets/sprites/enemy-poof-sheet.png",
+        frameWidth: POOF_FRAME_WIDTH,
+        frameHeight: POOF_FRAME_HEIGHT
+      });
+    }
+
+    for (const boss of this.level.bosses || []) {
+      add({
+        kind: "spritesheet",
+        key: POOF_SHEET_KEY,
+        src: "/assets/sprites/enemy-poof-sheet.png",
+        frameWidth: POOF_FRAME_WIDTH,
+        frameHeight: POOF_FRAME_HEIGHT
+      });
+      if (boss.kind === "storm-relay-warden") {
+        add({
+          kind: "spritesheet",
+          key: STORM_BOSS_CLEAN_KEY,
+          src: "/assets/sprites/storm-relay-warden-clean.png",
+          frameWidth: BOSS_ATLAS_FRAME_WIDTH,
+          frameHeight: BOSS_ATLAS_FRAME_HEIGHT
+        });
+      } else if (boss.kind === "cryo-conservator") {
+        add({
+          kind: "spritesheet",
+          key: CRYO_BOSS_CLEAN_KEY,
+          src: "/assets/sprites/cryo-conservator-clean.png",
+          frameWidth: BOSS_ATLAS_FRAME_WIDTH,
+          frameHeight: BOSS_ATLAS_FRAME_HEIGHT
+        });
+      } else if (boss.kind === "archive-custodian") {
+        add({
+          kind: "spritesheet",
+          key: ARCHIVE_BOSS_CLEAN_KEY,
+          src: "/assets/sprites/archive-custodian-clean.png",
+          frameWidth: BOSS_ATLAS_FRAME_WIDTH,
+          frameHeight: BOSS_ATLAS_FRAME_HEIGHT
+        });
+        add({
+          kind: "spritesheet",
+          key: ARCHIVE_BOOK_VOLLEY_KEY,
+          src: "/assets/sprites/archive-book-volley-sheet.png",
+          frameWidth: ARCHIVE_BOOK_VOLLEY_FRAME_WIDTH,
+          frameHeight: ARCHIVE_BOOK_VOLLEY_FRAME_HEIGHT
+        });
+      } else {
+        add({
+          kind: "spritesheet",
+          key: BOSS_ATLAS_KEY,
+          src: "/assets/sprites/boss-atlas.png",
+          frameWidth: BOSS_ATLAS_FRAME_WIDTH,
+          frameHeight: BOSS_ATLAS_FRAME_HEIGHT
+        });
+      }
+    }
+
+    return [...assets.values()];
+  }
+
+  private queueLevelAsset(asset: LevelAssetQueueItem): void {
+    if (asset.kind === "image") {
+      this.load.image(asset.key, asset.src);
+      return;
+    }
+    this.load.spritesheet(asset.key, asset.src, {
+      frameWidth: asset.frameWidth,
+      frameHeight: asset.frameHeight
+    });
   }
 
   create(): void {
@@ -729,12 +849,14 @@ export class GameScene extends Phaser.Scene {
 
   private handleRoomLoadError(file: Phaser.Loader.File): void {
     const failedKey = String(file.key);
-    if (this.roomBackgroundFallbackKey && this.textures.exists(this.roomBackgroundFallbackKey)) {
+    const background = backgroundForLevel(this.level, this.levelIndex);
+    const backgroundFailed = failedKey === background.key;
+    if (backgroundFailed && this.roomBackgroundFallbackKey && this.textures.exists(this.roomBackgroundFallbackKey)) {
       this.writeBackgroundPreloadDiagnostics(this.roomBackgroundFallbackKey, "cached");
       return;
     }
     if (
-      failedKey !== this.roomBackgroundFallbackKey &&
+      backgroundFailed &&
       this.roomBackgroundFallbackKey &&
       this.roomBackgroundFallbackSrc &&
       !this.textures.exists(this.roomBackgroundFallbackKey)
@@ -746,6 +868,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.roomLoadingFailed = true;
+    this.roomLoadFailedKey = failedKey;
     const label = `Could not load ${failedKey}`;
     this.roomLoadingStatus?.replaceChildren(label);
     this.roomLoadingProgress?.setAttribute("aria-valuetext", label);
@@ -756,7 +879,7 @@ export class GameScene extends Phaser.Scene {
     this.handleRoomLoadProgress(1);
     const background = backgroundForLevel(this.level, this.levelIndex);
     if (this.roomLoadingFailed) {
-      this.markRoomBackgroundUnavailable(background, "error", this.roomBackgroundFallbackKey || background.key);
+      this.markRoomBackgroundUnavailable(background, "error", this.roomLoadFailedKey || this.roomBackgroundFallbackKey || background.key);
       this.roomLoadingStatus?.replaceChildren("Room assets unavailable");
       return;
     }
@@ -795,6 +918,7 @@ export class GameScene extends Phaser.Scene {
     this.awaitingRoomBackgroundFallback = false;
     this.roomBackgroundFallbackKey = null;
     this.roomBackgroundFallbackSrc = null;
+    this.roomLoadFailedKey = null;
   }
 
   update(_time: number, delta: number): void {
