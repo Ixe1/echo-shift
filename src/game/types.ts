@@ -141,6 +141,13 @@ export type Core = Rect & {
   size?: CoreSize;
 };
 
+export type CoreMagnetState = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+};
+
 export type Hazard = Rect & {
   id: string;
 };
@@ -424,6 +431,7 @@ export type SimulationSnapshot = {
   openDoors: Set<string>;
   collectedCores: Set<string>;
   claimedCores: Set<string>;
+  coreOffsets: Map<string, CoreMagnetState>;
   spilledCores: Map<string, SpilledCore>;
   blockedLasers: Set<string>;
   crates: Map<string, Rect>;

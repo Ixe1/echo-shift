@@ -1,6 +1,6 @@
 import { clamp, rectsOverlap } from "./geometry";
 import { oscillatingOffsetAt } from "./motion";
-import { solidHasFullCollision, solidHasGameplayCollision, solidHasTopOnlyCollision } from "./solidCollision";
+import { solidHasFullCollision, solidHasTopOnlyCollision } from "./solidCollision";
 import type { ActorBody, Conveyor, InputFrame, MovingPlatform, OneWayPlatform, Rect, Solid } from "./types";
 
 const PLAYER_WIDTH = 24;
@@ -16,7 +16,6 @@ const COYOTE_FRAMES = 7;
 const JUMP_BUFFER_FRAMES = 7;
 const LEDGE_FORGIVENESS_VERTICAL = 10;
 const LEDGE_FORGIVENESS_HORIZONTAL = 8;
-const LEDGE_FORGIVENESS_MAX_UPWARD_SPEED = -1.2;
 const LAUNCH_CONTROL_ACCEL_SCALE = 0.35;
 const LAUNCH_FLOAT_GRAVITY_SCALE = 0.92;
 const LAUNCH_FLOAT_MAX_FALL_SCALE = 0.88;
@@ -167,8 +166,9 @@ export const moveActor = (
   actor.onGround = false;
   actor.standingOn = null;
 
+  const fullSolidRects = solids.filter(solidHasFullCollision);
   const collisionRects: CollisionRect[] = [
-    ...solids.filter(solidHasFullCollision),
+    ...fullSolidRects,
     ...doors,
     ...(dynamic.conveyors || []).map((conveyor) => ({ ...conveyor, conveyor }))
   ];
@@ -181,15 +181,7 @@ export const moveActor = (
       platformId: platform.platform.id
     }))
   ];
-  const ledgeRects: CollisionRect[] = [
-    ...solids.filter(solidHasGameplayCollision),
-    ...(dynamic.oneWays || []).map((oneWay) => ({ ...oneWay, oneWay: true })),
-    ...platforms.map((platform) => ({
-      ...platform.current,
-      oneWay: true,
-      platformId: platform.platform.id
-    }))
-  ];
+  const ledgeRects: CollisionRect[] = fullSolidRects;
   const platformCrateBlockers: Rect[] = platforms.map((platform) => ({ ...platform.current }));
   const crateRects = crateCollisionRects(dynamic.crates);
   const attemptedVx = actor.vx;
@@ -208,7 +200,7 @@ export const moveActor = (
 
   const previousY = actor.y;
   actor.y += actor.vy;
-  resolveAxis(actor, [...collisionRects, ...oneWayRects, ...crateCollisionRects(dynamic.crates)], "y", bounds, dynamic.crates, previousY, dynamic.actorBlockers);
+  resolveAxis(actor, [...collisionRects, ...oneWayRects, ...crateRects], "y", bounds, dynamic.crates, previousY, dynamic.actorBlockers);
   if (!actor.onGround) {
     tryApplyLedgeForgiveness(
       actor,
@@ -223,7 +215,7 @@ export const moveActor = (
   applyConveyor(
     actor,
     dynamic.conveyors || [],
-    [...collisionRects, ...crateCollisionRects(dynamic.crates)],
+    [...collisionRects, ...crateRects],
     bounds,
     dynamic.crates,
     dynamic.actorBlockers,
@@ -292,7 +284,7 @@ const tryApplyLedgeForgiveness = (
   attemptedVx: number
 ): void => {
   if (Math.abs(attemptedVx) < 0.05) return;
-  if (actor.vy < LEDGE_FORGIVENESS_MAX_UPWARD_SPEED) return;
+  if (actor.vy <= 0) return;
   const previousBottom = previousY + actor.h;
   const currentBottom = actor.y + actor.h;
 

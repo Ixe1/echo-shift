@@ -326,6 +326,7 @@ try {
   });
   assertNoOutline("left-wall-upper");
   assertNoOutline("left-wall-lower");
+  assertNoOutline("thin-wall");
   assertOutline("block-a", {
     segments: ["top:560-592", "bottom:560-592", "left:420-480"]
   });
@@ -365,6 +366,58 @@ try {
     `Expected low-overhang terrain decor to still render on clear eligible column, got ${diagnostics.terrainDecor}`
   );
   const terrainDecorPropEntries = diagnostics.terrainDecorProps.split("|").filter(Boolean);
+  const terrainDecorPlacements = diagnostics.terrainDecor.split("|").filter(Boolean).flatMap((entry) => {
+    const match = entry.match(/^solid:([^:]+):(surface|decor):\d+:\d+:(cap|decor):([^:]+):(\d+):(-?\d+),(-?\d+):(\d+)x(\d+):(-?\d+(?:\.\d+)?)$/);
+    return match
+      ? [{
+          solidId: match[1],
+          kind: match[3],
+          material: match[4],
+          frame: Number(match[5]),
+          x: Number(match[6]),
+          y: Number(match[7]),
+          w: Number(match[8]),
+          h: Number(match[9]),
+          depth: Number(match[10]),
+          entry
+        }]
+      : [];
+  });
+  const parsedTerrainDecorProps = terrainDecorPropEntries.flatMap((entry) => {
+    const match = entry.match(/^solid:([^:]+):decor-prop:[^:]+:[^:]+:([^:]+):([^:]+):([^:]+):(low|medium|high):(\d+):(-?\d+),(-?\d+):(\d+)x(\d+):(-?\d+(?:\.\d+)?)$/);
+    return match
+      ? [{
+          solidId: match[1],
+          propId: match[2],
+          category: match[3],
+          material: match[4],
+          density: match[5],
+          frame: Number(match[6]),
+          x: Number(match[7]),
+          y: Number(match[8]),
+          w: Number(match[9]),
+          h: Number(match[10]),
+          depth: Number(match[11]),
+          entry
+        }]
+      : [];
+  });
+  for (const placement of terrainDecorPlacements) {
+    const solid = solidDiagnosticsById.get(placement.solidId);
+    assert(solid, `Expected solid diagnostic for terrain decor placement ${placement.entry}`);
+    assert(
+      placement.depth < solid.depth,
+      `Expected terrain ${placement.kind} decor to render behind ${placement.solidId}, got decor depth ${placement.depth} vs solid depth ${solid.depth}: ${placement.entry}`
+    );
+  }
+  for (const prop of parsedTerrainDecorProps.filter((item) => item.category === "surface-small" || item.category === "surface-medium")) {
+    const solid = solidDiagnosticsById.get(prop.solidId);
+    assert(solid, `Expected solid diagnostic for terrain decor prop ${prop.entry}`);
+    assert(
+      prop.depth < solid.depth,
+      `Expected surface decor prop to render behind ${prop.solidId}, got prop depth ${prop.depth} vs solid depth ${solid.depth}: ${prop.entry}`
+    );
+  }
   const newGardenFillerPropIds = [
     "tiny-flower-tuft",
     "glow-moss-clump",
@@ -456,6 +509,25 @@ try {
   const timberHighDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:timber-high-decor-base:"));
   const timberAutoDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:timber-auto-base:"));
   const timberWallDecorProps = terrainDecorPropEntries.filter((entry) => entry.includes("solid:timber-wall-decor-base:"));
+  const timberTopBySolidId = new Map([
+    ["timber-visible-sample", 300],
+    ["timber-high-decor-base", 120],
+    ["timber-auto-base", 120],
+    ["timber-wall-decor-base", 70]
+  ]);
+  for (const prop of parsedTerrainDecorProps.filter(
+    (item) =>
+      item.material === "wood-archive" &&
+      (item.category === "surface-small" || item.category === "surface-medium" || item.category === "behind-surface-large") &&
+      timberTopBySolidId.has(item.solidId)
+  )) {
+    const embed = prop.category === "behind-surface-large" ? 18 : 14;
+    const top = timberTopBySolidId.get(prop.solidId);
+    assert(
+      prop.y + prop.h >= top + embed,
+      `Expected archive decor prop to be embedded in ${prop.solidId} surface, got bottom ${prop.y + prop.h} vs top ${top}: ${prop.entry}`
+    );
+  }
   const timberDecorSizes = [...timberVisibleDecorProps, ...timberHighDecorProps, ...timberAutoDecorProps, ...timberWallDecorProps].flatMap((entry) => {
     const match = entry.match(/:(\d+)x(\d+):[-.\d]+$/);
     return match ? [{ w: Number(match[1]), h: Number(match[2]), entry }] : [];

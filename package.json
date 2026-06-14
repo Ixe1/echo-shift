@@ -12,6 +12,7 @@
     "preview:restart": "npm run preview:stop && npm run build && npm run preview",
     "test:sim": "node scripts/simulation-check.mjs",
     "qa:door-solid": "node scripts/door-solid-render-check.mjs",
+    "qa:core-spill": "node scripts/core-spill-render-check.mjs",
     "qa:editor": "node scripts/editor-smoke.mjs"
   },
   "dependencies": {

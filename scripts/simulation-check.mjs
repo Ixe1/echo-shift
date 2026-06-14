@@ -219,9 +219,11 @@ const verifyGameSceneAudioCleanupHooks = () => {
   }
   const handleEventsBody = gameSceneMethodBody(source, "handleEvents");
   assert(
-    handleEventsBody.includes("const freshCores = events.cores.filter((core) => !core.recovered);") &&
-      handleEventsBody.includes("if (!events.died && freshCores.length > 0) this.processCoreLifeAwards(freshCores);"),
-    "Expected death-frame and recovered core pickups not to be counted toward bonus-life awards"
+    handleEventsBody.includes("let coreInventoryChanged = false;") &&
+      handleEventsBody.includes("coreInventoryChanged = true;") &&
+      handleEventsBody.includes("} else if (coreInventoryChanged)") &&
+      handleEventsBody.includes("this.processCoreLifeAwards(this.simulation.snapshot().collectedCores.size);"),
+    "Expected bonus-life progress to sync from current carried cores after pickup/spill frames resolve"
   );
   assert(
     handleEventsBody.includes("this.resetFiniteCoreBonusProgress();"),
@@ -242,15 +244,15 @@ const verifyExtraLifeSfxContract = () => {
   const assetPath = "public/assets/audio/effects/core_extra_life.mp3";
   const gameSceneSource = readFileSync("src/scenes/GameScene.ts", "utf8");
   const body = gameSceneMethodBody(gameSceneSource, "processCoreLifeAwards");
-  const awardRegistrationIndex = body.indexOf("const award = registerCampaignCorePickup(this.level.id, core.id)");
-  const awardedAccumulatorIndex = body.indexOf("awarded += award.livesAwarded");
+  const awardRegistrationIndex = body.indexOf("const award = syncCampaignCoreBonusProgress(carriedCoreCount)");
+  const awardedAccumulatorIndex = body.indexOf("const awarded = award.livesAwarded");
   const bonusBranchIndex = body.indexOf("if (awarded > 0 && lives !== null)");
   const extraLifePlayIndex = body.indexOf('audio.play("extraLife")');
   const toastIndex = body.indexOf("this.hud.toast", bonusBranchIndex);
   const extraLifePlayCalls = body.match(/audio\.play\("extraLife"\)/g) || [];
   assert(existsSync(assetPath) && statSync(assetPath).size > 0, "Expected core extra-life SFX asset to exist");
-  assert(awardRegistrationIndex >= 0, "Expected bonus-life SFX path to be fed by registered campaign core pickups");
-  assert(awardedAccumulatorIndex > awardRegistrationIndex, "Expected bonus-life SFX path to use the awarded life count");
+  assert(awardRegistrationIndex >= 0, "Expected bonus-life SFX path to be fed by current carried core count");
+  assert(awardedAccumulatorIndex > awardRegistrationIndex, "Expected bonus-life SFX path to use the synced awarded life count");
   assert(bonusBranchIndex > awardedAccumulatorIndex, "Expected bonus-life SFX branch to run after bonus lives are counted");
   assert(extraLifePlayCalls.length === 1, `Expected exactly one extra-life SFX trigger in bonus-life processing, got ${extraLifePlayCalls.length}`);
   assert(
@@ -1445,6 +1447,7 @@ try {
     registerCampaignCorePickup,
     resetCampaignCoreBonusProgress,
     resetCampaignVitals,
+    syncCampaignCoreBonusProgress,
     syncCampaignLives
   } = await server.ssrLoadModule("/src/game/session.ts");
   const { soundtrackForBoss, soundtrackForLevel, soundtracks } = await server.ssrLoadModule("/src/game/soundtracks.ts");
@@ -1723,6 +1726,33 @@ try {
   const duplicateAward = registerCampaignCorePickup("bonus-test", `core-${CORES_PER_BONUS_LIFE}`);
   assert(!duplicateAward.counted && duplicateAward.livesAwarded === 0, `Expected duplicate core pickup to be ignored, got ${JSON.stringify(duplicateAward)}`);
   assert(campaignCoreCount() === CORES_PER_BONUS_LIFE, `Expected campaign core count to stop at ${CORES_PER_BONUS_LIFE}, got ${campaignCoreCount()}`);
+  resetCampaignVitals(3);
+  const nearThresholdProgress = syncCampaignCoreBonusProgress(CORES_PER_BONUS_LIFE - 1);
+  assert(
+    nearThresholdProgress.livesAwarded === 0 && nearThresholdProgress.lives === 3 && campaignCoreCount() === CORES_PER_BONUS_LIFE - 1,
+    `Expected carried-core progress below threshold not to award, got ${JSON.stringify(nearThresholdProgress)}`
+  );
+  const lostCoreProgress = syncCampaignCoreBonusProgress(12);
+  assert(
+    lostCoreProgress.livesAwarded === 0 && lostCoreProgress.lives === 3 && campaignCoreCount() === 12,
+    `Expected carried-core loss to lower bonus progress without awarding, got ${JSON.stringify(lostCoreProgress)}`
+  );
+  const thresholdProgress = syncCampaignCoreBonusProgress(CORES_PER_BONUS_LIFE);
+  assert(
+    thresholdProgress.livesAwarded === 1 && thresholdProgress.lives === 4,
+    `Expected current carried cores at threshold to award one life, got ${JSON.stringify(thresholdProgress)}`
+  );
+  syncCampaignCoreBonusProgress(12);
+  const repeatedThresholdProgress = syncCampaignCoreBonusProgress(CORES_PER_BONUS_LIFE);
+  assert(
+    repeatedThresholdProgress.livesAwarded === 0 && repeatedThresholdProgress.lives === 4,
+    `Expected recovered same threshold not to award twice, got ${JSON.stringify(repeatedThresholdProgress)}`
+  );
+  const secondThresholdProgress = syncCampaignCoreBonusProgress(CORES_PER_BONUS_LIFE * 2);
+  assert(
+    secondThresholdProgress.livesAwarded === 1 && secondThresholdProgress.lives === 5,
+    `Expected next carried-core threshold to award another life, got ${JSON.stringify(secondThresholdProgress)}`
+  );
   resetCampaignVitals(2);
   for (let index = 1; index < CORES_PER_BONUS_LIFE; index += 1) registerCampaignCorePickup("death-reset", `core-${index}`);
   syncCampaignLives(1);
@@ -2225,9 +2255,9 @@ try {
       break;
     }
   }
-  assert(echoCoreEvent, "Echo did not collect the core from its anchor");
-  assert(echoCoreEvent.x > 100, `Echo core pickup event used the wrong origin: ${JSON.stringify(echoCoreEvent)}`);
-  assert(echoCoreSim.score === 100, `Echo-collected core should add score once in the active timeline, got ${echoCoreSim.score}`);
+  assert(!echoCoreEvent, `Stationary echoes should not collect cores, got ${JSON.stringify(echoCoreEvent)}`);
+  assert(!echoCoreSim.objectState.claimedCores.has("core-echo"), "Echo-overlapped core should remain available for the player");
+  assert(echoCoreSim.score === 0, `Echo-overlapped core should not add score, got ${echoCoreSim.score}`);
 
   const laserLevel = {
     ...baseLevel,
@@ -2283,6 +2313,14 @@ try {
   assert(coreSaveSim.objectState.collectedCores.size === 2, "Recovered spilled core should return to carried cores while the lost core stays gone");
   assert(coreSaveSim.score === 200, `Recovered spilled core should restore only recoverable score, got ${coreSaveSim.score}`);
 
+  const coreMagnetSim = new RoomSimulation({
+    ...baseLevel,
+    cores: [{ id: "magnet-core", x: 78, y: 90, w: 18, h: 18 }]
+  });
+  coreMagnetSim.step(idle);
+  const magnetOffset = coreMagnetSim.snapshot().coreOffsets.get("magnet-core");
+  assert(magnetOffset && magnetOffset.x < 0, `Expected nearby placed core to drift toward player, got ${JSON.stringify(magnetOffset)}`);
+
   const coreExpireSim = new RoomSimulation({
     ...baseLevel,
     cores: [{ id: "expire-core", x: 18, y: 86, w: 18, h: 18 }],
@@ -2296,6 +2334,26 @@ try {
   assert(coreExpireSim.objectState.spilledCores.size === 0, "Unrecovered spilled core should expire");
   assert(!coreExpireSim.objectState.collectedCores.has("expire-core"), "Expired spilled core should stay lost from carried cores");
   assert(coreExpireSim.score === 0, `Expired spilled core should stay removed from score, got ${coreExpireSim.score}`);
+
+  const coreOneWaySupportSim = new RoomSimulation({
+    ...baseLevel,
+    bounds: { x: 0, y: 0, w: 240, h: 210 },
+    solids: [{ id: "player-safe-floor", x: 146, y: 120, w: 80, h: 20 }],
+    oneWays: [{ id: "loose-core-catcher", x: 0, y: 132, w: 120, h: 12 }],
+    cores: [{ id: "one-way-spill-core", x: 18, y: 86, w: 18, h: 18 }],
+    hazards: [{ id: "one-way-spill-spark", x: 18, y: 86, w: 36, h: 34 }]
+  });
+  const coreOneWaySpill = coreOneWaySupportSim.step(idle);
+  assert(coreOneWaySpill.coreSpill?.coreIds.length === 1, `Expected one recoverable core to spill, got ${JSON.stringify(coreOneWaySpill.coreSpill)}`);
+  coreOneWaySupportSim.level.hazards = [];
+  Object.assign(coreOneWaySupportSim.player, { x: 170, y: 86, vx: 0, vy: 0, onGround: true });
+  runFrames(coreOneWaySupportSim, 120, idle);
+  const oneWayLooseCore = [...coreOneWaySupportSim.objectState.spilledCores.values()][0];
+  assert(oneWayLooseCore, "Expected loose core to remain on one-way support before expiry");
+  assert(
+    Math.abs(oneWayLooseCore.y + oneWayLooseCore.h - 132) <= 1.5,
+    `Expected spilled core to settle on one-way platform, got ${JSON.stringify(oneWayLooseCore)}`
+  );
 
   const coreLaserDeathSim = new RoomSimulation({
     ...baseLevel,
@@ -2315,6 +2373,25 @@ try {
   const largeOnlyDeathEvent = largeOnlyDeathSim.step(idle);
   assert(largeOnlyDeathSim.dead && largeOnlyDeathEvent.died, "Large/key-only cores should not be spent as core-save buffer");
   assert(!largeOnlyDeathEvent.coreSpill, "Large/key-only death should not emit a core spill");
+
+  const requiredSmallCoreSaveSim = new RoomSimulation({
+    ...baseLevel,
+    cores: [
+      { id: "required-small-key", x: 18, y: 86, w: 18, h: 18 },
+      { id: "required-small-buffer", x: 34, y: 86, w: 18, h: 18 }
+    ],
+    doors: [{ id: "required-small-door", x: 160, y: 68, w: 20, h: 52, requiresCore: "required-small-key" }],
+    hazards: [{ id: "required-small-spark", x: 18, y: 86, w: 40, h: 34 }]
+  });
+  const requiredSmallCoreSave = requiredSmallCoreSaveSim.step(idle);
+  assert(!requiredSmallCoreSaveSim.dead && requiredSmallCoreSave.coreSpill?.coreIds.includes("required-small-buffer"), `Expected buffer core to save required-core hit, got ${JSON.stringify(requiredSmallCoreSave.coreSpill)}`);
+  assert(
+    !requiredSmallCoreSave.coreSpill.coreIds.includes("required-small-key") &&
+      !requiredSmallCoreSave.coreSpill.lostCoreIds.includes("required-small-key"),
+    `Required small core should not spill or be lost, got ${JSON.stringify(requiredSmallCoreSave.coreSpill)}`
+  );
+  assert(requiredSmallCoreSaveSim.objectState.collectedCores.has("required-small-key"), "Required small core should stay carried after core-save spill");
+  assert(requiredSmallCoreSaveSim.objectState.openDoors.has("required-small-door"), "Required small core should continue opening its door after core-save spill");
 
   const vaporizedEchoInteractionSim = new RoomSimulation({
     ...laserLevel,
@@ -2807,6 +2884,20 @@ try {
   assert(lifeResetSim.totalFrames === 0, `Life reset should restart visible time, got ${lifeResetSim.totalFrames}`);
   assert(lifeResetSim.score === 0, `Life reset should restart visible score, got ${lifeResetSim.score}`);
   assert(!lifeResetSim.dead && lifeResetSim.player.alive, "Life reset should respawn a live player");
+
+  const echoDeathResetSim = new RoomSimulation({
+    ...baseLevel,
+    hazards: []
+  });
+  runFrames(echoDeathResetSim, 20, right);
+  assert(echoDeathResetSim.rewindToEcho(), "Expected echo reset fixture to anchor an echo");
+  assert(echoDeathResetSim.echoRecordings.length === 1 && echoDeathResetSim.echoes.length === 1, "Expected echo reset fixture to have one stored echo before death");
+  echoDeathResetSim.level.hazards = [{ id: "echo-reset-loss", x: 90, y: 86, w: 28, h: 34 }];
+  Object.assign(echoDeathResetSim.player, { x: 90, y: 86, vx: 0, vy: 0, onGround: true });
+  const echoResetDeath = echoDeathResetSim.step(idle);
+  assert(echoResetDeath.died, "Expected echo reset fixture to die before life reset");
+  echoDeathResetSim.resetLifeAttempt();
+  assert(echoDeathResetSim.echoRecordings.length === 0 && echoDeathResetSim.echoes.length === 0, "Life reset after death should clear stored echoes");
 
   const exhaustedLivesSim = new RoomSimulation(deathLevel, { lives: 2 });
   const firstDeath = exhaustedLivesSim.step(idle);
@@ -4573,6 +4664,25 @@ try {
   assert(bossCheckpointSim.score === 1000, `Expected checkpoint restore to preserve score without a death penalty, got ${bossCheckpointSim.score}`);
   assert(bossCheckpointSim.totalFrames === 1, `Expected checkpoint restore to preserve pre-boss frame count, got ${bossCheckpointSim.totalFrames}`);
   assert(bossCheckpointSim.currentRecording.length === 0, "Expected checkpoint restore to start a fresh continuous recording");
+
+  const checkpointInvulnerabilitySim = new RoomSimulation({
+    ...baseLevel,
+    cores: [{ id: "pre-checkpoint-buffer", x: 18, y: 86, w: 18, h: 18 }],
+    hazards: [{ id: "pre-checkpoint-spark", x: 18, y: 86, w: 36, h: 34 }],
+    bosses: [{ id: "checkpoint-immunity-boss", kind: "clockwork-regent", x: 78, y: 20, w: 190, h: 130, entrySide: "right", weakSpot: "core", introSeconds: 1, health: 2, score: 2000 }]
+  });
+  const checkpointSave = checkpointInvulnerabilitySim.step(idle);
+  assert(checkpointSave.coreSpill && checkpointInvulnerabilitySim.snapshot().coreInvulnerabilityFrames > 0, "Expected pre-checkpoint core-save to grant temporary invulnerability");
+  checkpointInvulnerabilitySim.level.hazards = [];
+  Object.assign(checkpointInvulnerabilitySim.player, { x: 76, y: 86, vx: 0, vy: 0, onGround: true });
+  const checkpointWithInvulnerability = checkpointInvulnerabilitySim.step(idle);
+  assert(checkpointWithInvulnerability.bossCheckpointActivated === "checkpoint-immunity-boss", "Expected boss checkpoint activation while core invulnerability is active");
+  checkpointInvulnerabilitySim.resetLifeAttempt();
+  assert(
+    checkpointInvulnerabilitySim.snapshot().coreInvulnerabilityFrames === 0,
+    `Expected boss checkpoint restore to clear temporary core invulnerability, got ${checkpointInvulnerabilitySim.snapshot().coreInvulnerabilityFrames}`
+  );
+
   const checkpointRewindTarget = { x: bossCheckpointSim.player.x, y: bossCheckpointSim.player.y };
   const checkpointRewindScore = bossCheckpointSim.score;
   const checkpointRewindFrames = bossCheckpointSim.totalFrames;
@@ -4680,6 +4790,37 @@ try {
   ledgeTooLowSim.step(right);
   assert(!ledgeTooLowSim.player.onGround, "Too-low ledge miss should not be auto-climbed");
 
+  const ledgeTopOnlySim = new RoomSimulation({
+    ...ledgeForgivenessLevel,
+    solids: [{ id: "catch-top-only-ledge", x: 80, y: 100, w: 96, h: 20, collision: "top-only" }]
+  });
+  Object.assign(ledgeTopOnlySim.player, { x: 56, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  ledgeTopOnlySim.step(right);
+  assert(!ledgeTopOnlySim.player.onGround, "Ledge forgiveness should not snap onto top-only solids");
+
+  const ledgeOneWaySim = new RoomSimulation({
+    ...ledgeForgivenessLevel,
+    solids: [],
+    oneWays: [{ id: "catch-one-way-ledge", x: 80, y: 100, w: 96, h: 12 }]
+  });
+  Object.assign(ledgeOneWaySim.player, { x: 56, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  ledgeOneWaySim.step(right);
+  assert(!ledgeOneWaySim.player.onGround, "Ledge forgiveness should not snap onto one-way platforms");
+
+  const ledgeMovingPlatformSim = new RoomSimulation({
+    ...ledgeForgivenessLevel,
+    solids: [],
+    platforms: [{ id: "catch-moving-platform-ledge", x: 80, y: 100, w: 96, h: 12, axis: "x", distance: 20, period: 120 }]
+  });
+  Object.assign(ledgeMovingPlatformSim.player, { x: 56, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  ledgeMovingPlatformSim.step(right);
+  assert(!ledgeMovingPlatformSim.player.onGround, "Ledge forgiveness should not snap onto moving platforms");
+
+  const ledgeRisingSim = new RoomSimulation(ledgeForgivenessLevel);
+  Object.assign(ledgeRisingSim.player, { x: 56, y: 74, vx: 0, vy: -1, onGround: false, coyote: 0 });
+  ledgeRisingSim.step(right);
+  assert(!ledgeRisingSim.player.onGround, "Rising ledge miss should not be auto-climbed");
+
   const deterministicLevel = {
     ...baseLevel,
     platforms: [{ id: "lift-test", x: 108, y: 96, w: 72, h: 14, axis: "y", distance: 24, period: 90 }]
@@ -4746,6 +4887,7 @@ try {
           "level-data",
           "tutorial-laser-station",
           "score-ranking",
+          "carried-core-bonus-life",
           "legacy-progress-migration",
           "legacy-progress-replacement",
           "score-persistence-gate",
@@ -4753,11 +4895,15 @@ try {
           "core-door",
           "core-visual-contract",
           "multi-core-score",
-          "echo-core-origin",
+          "player-only-core-pickups",
           "core-spill-save",
+          "core-magnetism",
+          "spilled-core-supports",
+          "required-core-spill-protection",
           "laser-disable-vaporization",
           "entity-toolkit",
           "death-freeze",
+          "death-clears-echoes",
           "unlimited-lives",
           "monster-combat",
           "monster-defaults",
@@ -4765,6 +4911,7 @@ try {
           "drone-disable-vaporization",
           "fall-death-freeze",
           "ledge-forgiveness",
+          "ledge-forgiveness-constraints",
           "deterministic-anchor",
           "audio-unlock-retry",
           "game-scene-audio-cleanup-hooks",

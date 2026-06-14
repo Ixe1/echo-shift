@@ -44,8 +44,8 @@ import { platformRectAt } from "../game/player";
 import {
   campaignLivesForLevel,
   levelUsesFiniteLives,
-  registerCampaignCorePickup,
   resetCampaignCoreBonusProgress,
+  syncCampaignCoreBonusProgress,
   syncCampaignLives
 } from "../game/session";
 import { recordEligibleScore } from "../game/scorePersistence";
@@ -86,6 +86,7 @@ import type {
   Monster,
   MovingPlatform,
   Rect,
+  SimulationSnapshot,
   Solid,
   SolidDecorDensity,
   SpilledCore,
@@ -194,6 +195,7 @@ type RenderView = {
   openDoors: Set<string>;
   collectedCores: Set<string>;
   claimedCores: Set<string>;
+  coreOffsets: SimulationSnapshot["coreOffsets"];
   spilledCores: Map<string, SpilledCore>;
   blockedLasers: Set<string>;
   crates: Map<string, Rect>;
@@ -328,6 +330,7 @@ export class GameScene extends Phaser.Scene {
     openDoors: new Set(),
     collectedCores: new Set(),
     claimedCores: new Set(),
+    coreOffsets: new Map(),
     spilledCores: new Map(),
     blockedLasers: new Set(),
     crates: new Map(),
@@ -1658,12 +1661,12 @@ export class GameScene extends Phaser.Scene {
     }
     if (events.landed) audio.play("land");
     if (events.switched) audio.play("switch");
+    let coreInventoryChanged = false;
     if (events.cores.length > 0) {
       for (const core of events.cores) {
         audio.play(this.corePickupIsLarge(core.id) ? "bigCore" : "core");
       }
-      const freshCores = events.cores.filter((core) => !core.recovered);
-      if (!events.died && freshCores.length > 0) this.processCoreLifeAwards(freshCores);
+      coreInventoryChanged = true;
     }
     if (events.coreSpill) {
       audio.play("core");
@@ -1671,6 +1674,7 @@ export class GameScene extends Phaser.Scene {
       const scatteredCount = events.coreSpill.coreIds.length;
       this.cameras.main.shake(150, 0.004);
       this.addFxBurst(events.coreSpill.x, events.coreSpill.y, 0xffe35a, `-${scatteredCount + lostCount}`);
+      coreInventoryChanged = true;
     }
     for (let index = 0; index < events.echoLaserVaporized; index += 1) audio.play("echoLaserVaporized");
     for (const cue of events.bossSoundCues) this.playBossSoundCue(cue.cue);
@@ -1719,6 +1723,8 @@ export class GameScene extends Phaser.Scene {
       this.resetFiniteCoreBonusProgress();
       const lives = this.simulation.livesRemaining();
       this.startDeathPresentation(lives !== null && lives <= 0, events.playerLaserVaporized);
+    } else if (coreInventoryChanged) {
+      this.processCoreLifeAwards(this.simulation.snapshot().collectedCores.size);
     }
     if (events.won) {
       if (this.simulation.finalBossDefeatCompletesLevel()) this.queueBossDefeatCompletion();
@@ -1731,15 +1737,11 @@ export class GameScene extends Phaser.Scene {
     return core ? this.coreIsLarge(core) : false;
   }
 
-  private processCoreLifeAwards(cores: ReturnType<RoomSimulation["step"]>["cores"]): void {
+  private processCoreLifeAwards(carriedCoreCount: number): void {
     if (!levelUsesFiniteLives(this.level)) return;
-    let awarded = 0;
-    let lives = this.simulation.livesRemaining();
-    for (const core of cores) {
-      const award = registerCampaignCorePickup(this.level.id, core.id);
-      awarded += award.livesAwarded;
-      lives = award.lives;
-    }
+    const award = syncCampaignCoreBonusProgress(carriedCoreCount);
+    const awarded = award.livesAwarded;
+    const lives = award.lives;
     if (lives !== null) this.simulation.setLivesRemaining(lives);
     if (awarded > 0 && lives !== null) {
       audio.play("extraLife");
@@ -2291,6 +2293,7 @@ export class GameScene extends Phaser.Scene {
     view.openDoors = simulationSnapshot.openDoors;
     view.collectedCores = simulationSnapshot.collectedCores;
     view.claimedCores = simulationSnapshot.claimedCores;
+    view.coreOffsets = simulationSnapshot.coreOffsets;
     view.spilledCores = simulationSnapshot.spilledCores;
     view.blockedLasers = simulationSnapshot.blockedLasers;
     view.crates = simulationSnapshot.crates;
@@ -2651,6 +2654,7 @@ export class GameScene extends Phaser.Scene {
 
         const capVariant = this.terrainTileVariant(solid, material, "surfaceCap", segmentIndex, column);
         const capId = `solid:${solid.id}:surface:${segmentIndex}:${column}`;
+        const capDepth = depth - 0.08;
         this.syncTerrainTileAsset(
           capId,
           terrainTileFrame(material, "surfaceCap", capVariant),
@@ -2658,12 +2662,12 @@ export class GameScene extends Phaser.Scene {
           solid.y - TERRAIN_SURFACE_CAP_OVERLAP,
           width,
           TERRAIN_TILE_SIZE,
-          depth + 0.12
+          capDepth
         );
         ids.push(capId);
         if (this.diagnosticsEnabled) {
           this.staticTerrainDecorFrames.push(
-            `${capId}:cap:${material}:${capVariant}:${Math.round(from)},${Math.round(solid.y - TERRAIN_SURFACE_CAP_OVERLAP)}:${Math.round(width)}x${TERRAIN_TILE_SIZE}`
+            `${capId}:cap:${material}:${capVariant}:${Math.round(from)},${Math.round(solid.y - TERRAIN_SURFACE_CAP_OVERLAP)}:${Math.round(width)}x${TERRAIN_TILE_SIZE}:${capDepth.toFixed(3)}`
           );
         }
 
@@ -2678,6 +2682,7 @@ export class GameScene extends Phaser.Scene {
         if (decorRect.w <= 12 || !this.terrainDecorHasClearance(solid, decorRect)) continue;
         const decorVariant = this.terrainTileVariant(solid, material, "surfaceDecor", segmentIndex, column);
         const decorId = `solid:${solid.id}:decor:${segmentIndex}:${column}`;
+        const decorDepth = depth - 0.1;
         this.syncTerrainTileAsset(
           decorId,
           terrainTileFrame(material, "surfaceDecor", decorVariant),
@@ -2685,12 +2690,12 @@ export class GameScene extends Phaser.Scene {
           decorRect.y,
           decorRect.w,
           decorRect.h,
-          depth + 0.16
+          decorDepth
         );
         ids.push(decorId);
         if (this.diagnosticsEnabled) {
           this.staticTerrainDecorFrames.push(
-            `${decorId}:decor:${material}:${decorVariant}:${Math.round(decorRect.x)},${Math.round(decorRect.y)}:${Math.round(decorRect.w)}x${Math.round(decorRect.h)}`
+            `${decorId}:decor:${material}:${decorVariant}:${Math.round(decorRect.x)},${Math.round(decorRect.y)}:${Math.round(decorRect.w)}x${Math.round(decorRect.h)}:${decorDepth.toFixed(3)}`
           );
         }
       }
@@ -2759,10 +2764,10 @@ export class GameScene extends Phaser.Scene {
         this.pickTerrainDecorProp(props, preferredCategory, density, segmentWidth, hash >>> 8, nearbyPropIds) ||
         this.pickTerrainDecorProp(props, "surface-small", density, segmentWidth, hash >>> 12, nearbyPropIds);
       if (!prop) return false;
-      const rect = this.surfaceTerrainDecorRect(solid, segment, slotFrom, slotTo, prop, hash);
+      const rect = this.surfaceTerrainDecorRect(solid, material, segment, slotFrom, slotTo, prop, hash);
       if (!rect || !this.canPlaceTerrainDecorProp(solid, prop, rect, placedRects)) return false;
       const id = `solid:${solid.id}:decor-prop:${segmentIndex}:${slotIndex}:${prop.id}`;
-      this.syncTerrainDecorPropAsset(id, prop, rect, depth + prop.depthOffset, material, density);
+      this.syncTerrainDecorPropAsset(id, prop, rect, this.terrainDecorPropDepth(depth, prop), material, density);
       ids.push(id);
       placedRects.push(rect);
       placedSlotIndexes.add(slotIndex);
@@ -2824,7 +2829,7 @@ export class GameScene extends Phaser.Scene {
     const left = this.decorRangeValue(hash >>> 6, segment.from + 10, segment.to - prop.w - 10);
     const rect = {
       x: Math.round(left),
-      y: Math.round(solid.y - prop.h + 14),
+      y: Math.round(solid.y - prop.h + this.terrainDecorSurfaceEmbed(material, prop)),
       w: prop.w,
       h: prop.h
     };
@@ -2948,6 +2953,7 @@ export class GameScene extends Phaser.Scene {
 
   private surfaceTerrainDecorRect(
     solid: Solid,
+    material: TerrainMaterial,
     segment: { from: number; to: number },
     slotFrom: number,
     slotTo: number,
@@ -2963,10 +2969,20 @@ export class GameScene extends Phaser.Scene {
     const center = Phaser.Math.Clamp(slotCenter + jitter, minCenter, maxCenter);
     return {
       x: Math.round(center - prop.w / 2),
-      y: Math.round(solid.y - prop.h + 8),
+      y: Math.round(solid.y - prop.h + this.terrainDecorSurfaceEmbed(material, prop)),
       w: prop.w,
       h: prop.h
     };
+  }
+
+  private terrainDecorSurfaceEmbed(material: TerrainMaterial, prop: TerrainDecorPropDefinition): number {
+    if (material === "wood-archive") return prop.category === "behind-surface-large" ? 20 : 16;
+    return prop.category === "behind-surface-large" ? 14 : 8;
+  }
+
+  private terrainDecorPropDepth(baseDepth: number, prop: TerrainDecorPropDefinition): number {
+    if (prop.category === "surface-small" || prop.category === "surface-medium") return baseDepth - 0.06;
+    return baseDepth + prop.depthOffset;
   }
 
   private canPlaceTerrainDecorProp(
@@ -3332,7 +3348,7 @@ export class GameScene extends Phaser.Scene {
   private drawCores(snapshot: RenderView): void {
     for (const core of this.level.cores || []) {
       if (snapshot.claimedCores.has(core.id)) continue;
-      const center = rectCenter(core);
+      const center = rectCenter(this.renderCoreRect(core, snapshot));
       const pulse = 1 + Math.sin(this.time.now / 140) * 0.12;
       const large = this.coreIsLarge(core);
       if (!this.textures.exists(large ? CORE_MAJOR_KEY : "time-effects")) {
@@ -4253,6 +4269,7 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftLaserAssetPositions = this.laserAssetPositions.join("|");
     document.documentElement.dataset.echoShiftDoorAssetTransforms = this.doorAssetTransforms.join("|");
     document.documentElement.dataset.echoShiftCoreSpriteFrames = this.coreSpriteFrames.join("|");
+    document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames = String(snapshot.coreInvulnerabilityFrames);
     document.documentElement.dataset.echoShiftExitUnlocked = snapshot.exitUnlocked ? "true" : "false";
     document.documentElement.dataset.echoShiftBossCheckpoint = snapshot.bossCheckpointActive ? "active" : "idle";
     document.documentElement.dataset.echoShiftPlayerRect = formatRect(snapshot.player);
@@ -4390,6 +4407,11 @@ export class GameScene extends Phaser.Scene {
     return isMajorCore(core, this.requiredCoreIds);
   }
 
+  private renderCoreRect(core: Core, snapshot: RenderView): Rect {
+    const offset = snapshot.coreOffsets.get(core.id);
+    return offset ? { ...core, x: core.x + offset.x, y: core.y + offset.y } : core;
+  }
+
   private syncCoreSprites(snapshot: RenderView): void {
     const activeIds = this.activeCoreSpriteIds;
     activeIds.clear();
@@ -4401,7 +4423,8 @@ export class GameScene extends Phaser.Scene {
       const textureKey = large ? CORE_MAJOR_KEY : "time-effects";
       if (!this.textures.exists(textureKey)) continue;
       const frame = snapshot.tick % 44 < 22 ? 0 : 1;
-      const center = rectCenter(core);
+      const renderRect = this.renderCoreRect(core, snapshot);
+      const center = rectCenter(renderRect);
       let sprite = this.coreSprites.get(core.id);
       if (!sprite) {
         sprite = this.add.image(0, 0, textureKey, 0).setDepth(11);
@@ -4413,7 +4436,11 @@ export class GameScene extends Phaser.Scene {
         .setPosition(Math.round(center.x), Math.round(center.y))
         .setScale(large ? 0.58 : 0.34)
         .setAlpha(large ? 0.98 : 0.94);
-      if (this.diagnosticsEnabled) this.coreSpriteFrames.push(`${core.id}:${textureKey}:${frame}:${large ? "large" : "small"}`);
+      if (this.diagnosticsEnabled) {
+        this.coreSpriteFrames.push(
+          `${core.id}:${textureKey}:${frame}:${large ? "large" : "small"}:${Math.round(renderRect.x)},${Math.round(renderRect.y)}`
+        );
+      }
       activeIds.add(core.id);
     }
 
@@ -4439,7 +4466,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     for (const [id, sprite] of this.coreSprites) {
-      if (!activeIds.has(id)) sprite.setVisible(false);
+      if (activeIds.has(id)) continue;
+      if (id.startsWith("spill:")) {
+        sprite.destroy();
+        this.coreSprites.delete(id);
+      } else {
+        sprite.setVisible(false);
+      }
     }
   }
 

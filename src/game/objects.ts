@@ -2,6 +2,7 @@ import { rectsOverlap } from "./geometry";
 import { oscillatingOffsetAt } from "./motion";
 import type {
   ActorBody,
+  CoreMagnetState,
   CorePickupEvent,
   EchoSensor,
   Core,
@@ -23,10 +24,18 @@ export type ObjectState = {
   openDoors: Set<string>;
   collectedCores: Set<string>;
   claimedCores: Set<string>;
+  coreOffsets: Map<string, CoreMagnetState>;
   spilledCores: Map<string, SpilledCore>;
   blockedLasers: Set<string>;
   crates: Map<string, Rect>;
 };
+
+const CORE_MAGNET_RADIUS = 58;
+const CORE_MAGNET_ACCEL = 0.24;
+const CORE_MAGNET_HOME_ACCEL = 0.08;
+const CORE_MAGNET_MAX_SPEED = 3.4;
+const CORE_MAGNET_DRAG = 0.88;
+const CORE_MAGNET_REST_EPSILON = 0.08;
 
 export const createObjectState = (level?: Level): ObjectState => {
   const activePlates = new Set<string>();
@@ -38,10 +47,71 @@ export const createObjectState = (level?: Level): ObjectState => {
     openDoors: collectOpenDoors(level?.doors || [], activePlates, collectedCores, new Set()),
     collectedCores,
     claimedCores: new Set(),
+    coreOffsets: new Map(),
     spilledCores: new Map(),
     blockedLasers: new Set(),
     crates: new Map((level?.crates || []).map((crate) => [crate.id, { x: crate.x, y: crate.y, w: crate.w, h: crate.h }]))
   };
+};
+
+const offsetCoreRect = (core: Core, offset: Pick<CoreMagnetState, "x" | "y"> = { x: 0, y: 0 }): Core => ({
+  ...core,
+  x: core.x + offset.x,
+  y: core.y + offset.y
+});
+
+const coreMagnetTarget = (core: Core, offset: Pick<CoreMagnetState, "x" | "y">, actor: ActorBody): { dx: number; dy: number; distance: number } => {
+  const coreCenterX = core.x + offset.x + core.w / 2;
+  const coreCenterY = core.y + offset.y + core.h / 2;
+  const actorCenterX = actor.x + actor.w / 2;
+  const actorCenterY = actor.y + actor.h / 2;
+  const dx = actorCenterX - coreCenterX;
+  const dy = actorCenterY - coreCenterY;
+  return { dx, dy, distance: Math.hypot(dx, dy) };
+};
+
+const clampCoreMagnetVelocity = (state: CoreMagnetState): void => {
+  const speed = Math.hypot(state.vx, state.vy);
+  if (speed <= CORE_MAGNET_MAX_SPEED || speed === 0) return;
+  const scale = CORE_MAGNET_MAX_SPEED / speed;
+  state.vx *= scale;
+  state.vy *= scale;
+};
+
+const advanceCoreMagnetState = (
+  core: Core,
+  previous: CoreMagnetState | undefined,
+  attractor: ActorBody | undefined
+): CoreMagnetState | null => {
+  const next: CoreMagnetState = previous ? { ...previous } : { x: 0, y: 0, vx: 0, vy: 0 };
+  if (attractor?.alive) {
+    const target = coreMagnetTarget(core, next, attractor);
+    if (target.distance > 0 && target.distance <= CORE_MAGNET_RADIUS) {
+      const pull = CORE_MAGNET_ACCEL * (1 - target.distance / CORE_MAGNET_RADIUS + 0.35);
+      next.vx += (target.dx / target.distance) * pull;
+      next.vy += (target.dy / target.distance) * pull;
+    } else {
+      next.vx += -next.x * CORE_MAGNET_HOME_ACCEL;
+      next.vy += -next.y * CORE_MAGNET_HOME_ACCEL;
+    }
+  } else {
+    next.vx += -next.x * CORE_MAGNET_HOME_ACCEL;
+    next.vy += -next.y * CORE_MAGNET_HOME_ACCEL;
+  }
+  next.vx *= CORE_MAGNET_DRAG;
+  next.vy *= CORE_MAGNET_DRAG;
+  clampCoreMagnetVelocity(next);
+  next.x += next.vx;
+  next.y += next.vy;
+  if (
+    Math.abs(next.x) < CORE_MAGNET_REST_EPSILON &&
+    Math.abs(next.y) < CORE_MAGNET_REST_EPSILON &&
+    Math.abs(next.vx) < CORE_MAGNET_REST_EPSILON &&
+    Math.abs(next.vy) < CORE_MAGNET_REST_EPSILON
+  ) {
+    return null;
+  }
+  return next;
 };
 
 export const updateObjects = (
@@ -63,24 +133,31 @@ export const updateObjects = (
 
   const collectedCores = new Set(previous.collectedCores);
   const claimedCores = new Set(previous.claimedCores);
+  const coreOffsets = new Map<string, CoreMagnetState>();
   const spilledCores = new Map([...previous.spilledCores.entries()].map(([id, core]) => [id, { ...core }]));
   const cores: CorePickupEvent[] = [];
+  const playerActor = actors.find((actor) => actor.kind === "player" && actor.alive);
   for (const item of level.cores || []) {
-    const collector = actors.find((actor) => actor.alive && rectsOverlap(actor, item));
-    if (!claimedCores.has(item.id) && collector) {
+    if (claimedCores.has(item.id)) continue;
+    const previousOffset = previous.coreOffsets.get(item.id);
+    const wasCollected = Boolean(playerActor && rectsOverlap(playerActor, offsetCoreRect(item, previousOffset)));
+    const nextOffset = wasCollected ? null : advanceCoreMagnetState(item, previousOffset, playerActor);
+    const collected = wasCollected || Boolean(playerActor && rectsOverlap(playerActor, offsetCoreRect(item, nextOffset || undefined)));
+    if (collected && playerActor) {
       claimedCores.add(item.id);
       collectedCores.add(item.id);
       cores.push({
         id: item.id,
-        x: collector.x + collector.w / 2,
-        y: collector.y + collector.h / 2
+        x: playerActor.x + playerActor.w / 2,
+        y: playerActor.y + playerActor.h / 2
       });
+      continue;
     }
+    if (nextOffset) coreOffsets.set(item.id, nextOffset);
   }
   for (const [id, looseCore] of spilledCores) {
     if (looseCore.pickupDelayFrames > 0) continue;
-    const collector = actors.find((actor) => actor.alive && rectsOverlap(actor, looseCore));
-    if (!collector) continue;
+    if (!playerActor || !rectsOverlap(playerActor, looseCore)) continue;
     spilledCores.delete(id);
     claimedCores.add(looseCore.sourceId);
     collectedCores.add(looseCore.sourceId);
@@ -107,6 +184,7 @@ export const updateObjects = (
       openDoors,
       collectedCores,
       claimedCores,
+      coreOffsets,
       spilledCores,
       blockedLasers,
       crates: previous.crates

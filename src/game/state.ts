@@ -90,7 +90,6 @@ type BossCheckpoint = {
   totalFrames: number;
   score: number;
   deaths: number;
-  coreInvulnerabilityFrames: number;
   coreSpillSerial: number;
 };
 
@@ -103,6 +102,7 @@ const cloneObjectState = (state: ObjectState): ObjectState => ({
   openDoors: new Set(state.openDoors),
   collectedCores: new Set(state.collectedCores),
   claimedCores: new Set(state.claimedCores),
+  coreOffsets: new Map([...state.coreOffsets.entries()].map(([id, offset]) => [id, { ...offset }])),
   spilledCores: new Map([...state.spilledCores.entries()].map(([id, core]) => [id, { ...core }])),
   blockedLasers: new Set(state.blockedLasers),
   crates: new Map([...state.crates.entries()].map(([id, rect]) => [id, { ...rect }]))
@@ -268,6 +268,18 @@ export class RoomSimulation {
     this.dead = false;
     this.won = false;
     this.player = this.playerForRewindTarget();
+    this.clearCoreOffsets();
+    this.currentRecording = [];
+  }
+
+  private clearCoreOffsets(): void {
+    if (this.objectState.coreOffsets.size === 0) return;
+    this.objectState = { ...this.objectState, coreOffsets: new Map() };
+  }
+
+  private clearEchoes(): void {
+    this.echoRecordings.length = 0;
+    this.echoes = [];
     this.currentRecording = [];
   }
 
@@ -286,8 +298,10 @@ export class RoomSimulation {
   resetLifeAttempt(): void {
     if (this.bossCheckpoint) {
       this.restoreBossCheckpoint();
+      this.clearEchoes();
       return;
     }
+    this.clearEchoes();
     this.resetAttempt(false);
     this.totalFrames = 0;
     this.score = 0;
@@ -332,7 +346,7 @@ export class RoomSimulation {
     const platforms = platformFramesAt(this.level.platforms, this.tick);
     const doors = closedDoorRects(this.level, this.objectState.openDoors);
     const solids = this.runtimeSolids;
-    this.advanceSpilledCores();
+    this.advanceSpilledCores(this.spilledCoreSupportRects(doors, platforms));
     const baseDynamic = {
       oneWays: this.level.oneWays,
       conveyors: this.level.conveyors,
@@ -426,6 +440,7 @@ export class RoomSimulation {
       openDoors: new Set(this.objectState.openDoors),
       collectedCores: new Set(this.objectState.collectedCores),
       claimedCores: new Set(this.objectState.claimedCores),
+      coreOffsets: new Map([...this.objectState.coreOffsets.entries()].map(([id, offset]) => [id, { ...offset }])),
       spilledCores: new Map([...this.objectState.spilledCores.entries()].map(([id, core]) => [id, { ...core }])),
       blockedLasers: new Set(this.objectState.blockedLasers),
       crates: new Map([...this.objectState.crates.entries()].map(([id, rect]) => [id, { ...rect }])),
@@ -530,7 +545,6 @@ export class RoomSimulation {
       totalFrames: this.totalFrames,
       score: this.score,
       deaths: this.deaths,
-      coreInvulnerabilityFrames: this.coreInvulnerabilityFrames,
       coreSpillSerial: this.coreSpillSerial
     };
     events.bossCheckpointActivated = boss.id;
@@ -594,7 +608,7 @@ export class RoomSimulation {
     for (const key of checkpoint.handledArchiveImpactKeys) this.handledArchiveImpactKeys.add(key);
     this.handledArchiveImpactSoundKeys.clear();
     for (const key of checkpoint.handledArchiveImpactSoundKeys) this.handledArchiveImpactSoundKeys.add(key);
-    this.coreInvulnerabilityFrames = checkpoint.coreInvulnerabilityFrames;
+    this.coreInvulnerabilityFrames = 0;
     this.coreSpillSerial = checkpoint.coreSpillSerial;
   }
 
@@ -703,7 +717,7 @@ export class RoomSimulation {
       if (this.killedMonsterIds.has(monster.id)) continue;
       const rect = monsterRectAt(monster, this.tick);
       if (!rectsOverlap(this.player, rect)) continue;
-      if (this.coreInvulnerabilityFrames <= 0 && actorKillsMonster(this.player, previousPlayerY, monster, rect)) {
+      if (actorKillsMonster(this.player, previousPlayerY, monster, rect)) {
         this.killMonster(monster, rect, events);
         continue;
       }
@@ -890,7 +904,6 @@ export class RoomSimulation {
         handledArchiveImpactKeys: new Set(this.handledArchiveImpactKeys),
         handledArchiveImpactSoundKeys: new Set(this.handledArchiveImpactSoundKeys),
         score: this.score,
-        coreInvulnerabilityFrames: this.coreInvulnerabilityFrames,
         coreSpillSerial: this.coreSpillSerial
       };
     }
@@ -1052,7 +1065,7 @@ export class RoomSimulation {
     this.score = Math.max(0, this.score - this.level.score.coreScore);
   }
 
-  private advanceSpilledCores(): void {
+  private advanceSpilledCores(supports: Rect[]): void {
     if (this.objectState.spilledCores.size === 0) return;
     const nextSpilledCores = new Map<string, SpilledCore>();
     for (const [id, looseCore] of this.objectState.spilledCores) {
@@ -1068,10 +1081,21 @@ export class RoomSimulation {
       moved.x += moved.vx;
       moved.y += moved.vy;
       this.resolveSpilledCoreBounds(moved);
-      this.resolveSpilledCoreTerrain(moved, previousY);
+      this.resolveSpilledCoreTerrain(moved, previousY, supports);
       nextSpilledCores.set(id, moved);
     }
     this.objectState = { ...this.objectState, spilledCores: nextSpilledCores };
+  }
+
+  private spilledCoreSupportRects(doors: Rect[], platforms: Array<{ current: Rect }>): Rect[] {
+    return [
+      ...this.runtimeSolids.filter(solidHasGameplayCollision),
+      ...doors,
+      ...(this.level.oneWays || []),
+      ...platforms.map((platform) => platform.current),
+      ...(this.level.conveyors || []),
+      ...this.objectState.crates.values()
+    ];
   }
 
   private resolveSpilledCoreBounds(core: SpilledCore): void {
@@ -1086,15 +1110,14 @@ export class RoomSimulation {
     }
   }
 
-  private resolveSpilledCoreTerrain(core: SpilledCore, previousY: number): void {
+  private resolveSpilledCoreTerrain(core: SpilledCore, previousY: number, supports: Rect[]): void {
     if (core.vy < 0) return;
     const previousBottom = previousY + core.h;
-    for (const solid of this.runtimeSolids) {
-      if (!solidHasGameplayCollision(solid)) continue;
-      if (previousBottom > solid.y + 2) continue;
-      if (core.y + core.h < solid.y || core.y > solid.y + solid.h) continue;
-      if (core.x + core.w <= solid.x || core.x >= solid.x + solid.w) continue;
-      core.y = solid.y - core.h;
+    for (const support of supports) {
+      if (previousBottom > support.y + 2) continue;
+      if (core.y + core.h < support.y || core.y > support.y + support.h) continue;
+      if (core.x + core.w <= support.x || core.x >= support.x + support.w) continue;
+      core.y = support.y - core.h;
       core.vy = Math.abs(core.vy) > 1.2 ? -Math.abs(core.vy) * CORE_SPILL_BOUNCE : 0;
       core.vx *= 0.82;
       return;

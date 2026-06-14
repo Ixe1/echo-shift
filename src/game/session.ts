@@ -7,6 +7,7 @@ type CampaignVitals = {
   lives: number;
   collectedCoreCount: number;
   collectedCoreKeys: Set<string>;
+  awardedBonusLives: number;
 };
 
 export type CoreLifeAward = {
@@ -27,7 +28,8 @@ export type CampaignRunSummary = {
 const defaultVitals = (): CampaignVitals => ({
   lives: DEFAULT_GLOBAL_LIVES,
   collectedCoreCount: 0,
-  collectedCoreKeys: new Set<string>()
+  collectedCoreKeys: new Set<string>(),
+  awardedBonusLives: 0
 });
 
 let campaignVitals = defaultVitals();
@@ -47,13 +49,15 @@ const finiteLifeCount = (value: unknown, fallback = DEFAULT_GLOBAL_LIVES): numbe
 export const resetCampaignCoreBonusProgress = (): void => {
   campaignVitals.collectedCoreCount = 0;
   campaignVitals.collectedCoreKeys.clear();
+  campaignVitals.awardedBonusLives = 0;
 };
 
 export const resetCampaignVitals = (lives = DEFAULT_GLOBAL_LIVES): void => {
   campaignVitals = {
     lives: finiteLifeCount(lives),
     collectedCoreCount: 0,
-    collectedCoreKeys: new Set<string>()
+    collectedCoreKeys: new Set<string>(),
+    awardedBonusLives: 0
   };
   campaignRunSummary = {
     score: 0,
@@ -85,15 +89,29 @@ export const registerCampaignCorePickup = (levelId: string, coreId: string): Cor
     };
   }
 
-  const previousBonusLives = Math.floor(campaignVitals.collectedCoreCount / CORES_PER_BONUS_LIFE);
   campaignVitals.collectedCoreKeys.add(key);
-  campaignVitals.collectedCoreCount += 1;
-  const nextBonusLives = Math.floor(campaignVitals.collectedCoreCount / CORES_PER_BONUS_LIFE);
-  const livesAwarded = Math.max(0, nextBonusLives - previousBonusLives);
-  if (livesAwarded > 0) campaignVitals.lives += livesAwarded;
+  const award = syncCampaignCoreBonusProgress(campaignVitals.collectedCoreCount + 1);
 
   return {
     counted: true,
+    livesAwarded: award.livesAwarded,
+    lives: award.lives,
+    collectedCoreCount: award.collectedCoreCount
+  };
+};
+
+export const syncCampaignCoreBonusProgress = (carriedCoreCount: number): CoreLifeAward => {
+  const nextCoreCount = finiteLifeCount(carriedCoreCount, 0);
+  const nextBonusLives = Math.floor(nextCoreCount / CORES_PER_BONUS_LIFE);
+  const livesAwarded = Math.max(0, nextBonusLives - campaignVitals.awardedBonusLives);
+  if (livesAwarded > 0) {
+    campaignVitals.lives += livesAwarded;
+    campaignVitals.awardedBonusLives += livesAwarded;
+  }
+  const counted = nextCoreCount !== campaignVitals.collectedCoreCount || livesAwarded > 0;
+  campaignVitals.collectedCoreCount = nextCoreCount;
+  return {
+    counted,
     livesAwarded,
     lives: campaignVitals.lives,
     collectedCoreCount: campaignVitals.collectedCoreCount
