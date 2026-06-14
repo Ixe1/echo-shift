@@ -48,7 +48,8 @@ export class Hud {
   private toastTimer = 0;
   private callbacks: HudCallbacks;
   private modalNavigation: MenuNavigationBinding | null = null;
-  private inertHudControls: Array<{ element: HTMLElement; tabIndex: string | null }> = [];
+  private controlsBlocked = false;
+  private inertHudControls: Array<{ element: HTMLButtonElement; tabIndex: string | null; disabled: boolean }> = [];
 
   constructor(callbacks: HudCallbacks) {
     this.callbacks = callbacks;
@@ -158,6 +159,11 @@ export class Hud {
     scanline.classList.remove("run");
     void scanline.offsetHeight;
     scanline.classList.add("run");
+  }
+
+  setControlsBlocked(blocked: boolean): void {
+    this.controlsBlocked = blocked;
+    this.setHudControlsInert(blocked);
   }
 
   showPause(levelName: string): void {
@@ -433,19 +439,24 @@ export class Hud {
   }
 
   private setHudControlsInert(inert: boolean): void {
-    const controls = Array.from(this.root.querySelectorAll<HTMLElement>(".hud-actions button, .touch-controls button"));
+    const controls = Array.from(this.root.querySelectorAll<HTMLButtonElement>(".hud-actions button, .touch-controls button"));
     if (inert) {
       if (this.inertHudControls.length > 0) return;
       this.inertHudControls = controls.map((element) => ({
         element,
-        tabIndex: element.getAttribute("tabindex")
+        tabIndex: element.getAttribute("tabindex"),
+        disabled: element.disabled
       }));
-      for (const { element } of this.inertHudControls) element.setAttribute("tabindex", "-1");
+      for (const { element } of this.inertHudControls) {
+        element.setAttribute("tabindex", "-1");
+        element.disabled = true;
+      }
       return;
     }
-    for (const { element, tabIndex } of this.inertHudControls) {
+    for (const { element, tabIndex, disabled } of this.inertHudControls) {
       if (tabIndex === null) element.removeAttribute("tabindex");
       else element.setAttribute("tabindex", tabIndex);
+      element.disabled = disabled;
     }
     this.inertHudControls = [];
   }
@@ -485,7 +496,7 @@ export class Hud {
   private setCommandButton(selector: string, disabled: boolean, title: string, hidden = false): void {
     const button = this.root.querySelector<HTMLButtonElement>(selector);
     if (!button) return;
-    button.disabled = disabled;
+    button.disabled = disabled || this.controlsBlocked;
     button.hidden = hidden;
     button.title = title;
     button.setAttribute("aria-label", title);

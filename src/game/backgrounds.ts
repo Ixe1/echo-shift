@@ -67,6 +67,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-1-springtide-garden-fit",
     title: "Springtide Garden Full-Plate",
     src: "/assets/backgrounds/level-1-springtide-garden-fit.webp",
+    fallbackSrc: "/assets/backgrounds/level-1-springtide-garden-fit.jpg",
     sourceSize: { w: 4800, h: 1440 },
     renderMode: "fit-level"
   },
@@ -74,6 +75,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-1-readable-lab",
     title: "Level 1 Calibration Atrium",
     src: "/assets/backgrounds/level-1-readable-lab.webp",
+    fallbackSrc: "/assets/backgrounds/level-1-readable-lab.jpg",
     sourceSize: { w: 1881, h: 836 },
     renderMode: "repeat-x"
   },
@@ -89,6 +91,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-2-rainhouse-relay-fit",
     title: "Rainhouse Relay Full-Plate",
     src: "/assets/backgrounds/level-2-rainhouse-relay-fit.webp",
+    fallbackSrc: "/assets/backgrounds/level-2-rainhouse-relay-fit.jpg",
     sourceSize: { w: 6800, h: 1440 },
     renderMode: "fit-level"
   },
@@ -96,6 +99,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-2-readable-lab",
     title: "Level 2 Relay Chamber",
     src: "/assets/backgrounds/level-2-readable-lab.webp",
+    fallbackSrc: "/assets/backgrounds/level-2-readable-lab.jpg",
     sourceSize: { w: 1920, h: 819 },
     renderMode: "repeat-x"
   },
@@ -103,6 +107,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-3-readable-lab",
     title: "Level 3 Maintenance Wing",
     src: "/assets/backgrounds/level-3-readable-lab.webp",
+    fallbackSrc: "/assets/backgrounds/level-3-readable-lab.jpg",
     sourceSize: { w: 1915, h: 821 },
     renderMode: "repeat-x"
   },
@@ -118,6 +123,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-3-cryo-grove-fit",
     title: "Cryo Grove Full-Plate",
     src: "/assets/backgrounds/level-3-cryo-grove-fit.webp",
+    fallbackSrc: "/assets/backgrounds/level-3-cryo-grove-fit.jpg",
     sourceSize: { w: 6800, h: 1440 },
     renderMode: "fit-level"
   },
@@ -125,6 +131,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-4-readable-lab",
     title: "Level 4 Relay Vault",
     src: "/assets/backgrounds/level-4-readable-lab.webp",
+    fallbackSrc: "/assets/backgrounds/level-4-readable-lab.jpg",
     sourceSize: { w: 1881, h: 836 },
     renderMode: "repeat-x"
   },
@@ -140,6 +147,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-4-timber-archive-fit",
     title: "Timber Archive Full-Plate",
     src: "/assets/backgrounds/level-4-timber-archive-fit.webp",
+    fallbackSrc: "/assets/backgrounds/level-4-timber-archive-fit.jpg",
     sourceSize: { w: 7200, h: 1440 },
     renderMode: "fit-level"
   },
@@ -147,6 +155,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-5-readable-lab",
     title: "Level 5 Lift Machinery Bay",
     src: "/assets/backgrounds/level-5-readable-lab.webp",
+    fallbackSrc: "/assets/backgrounds/level-5-readable-lab.jpg",
     sourceSize: { w: 1983, h: 793 },
     renderMode: "repeat-x"
   },
@@ -162,6 +171,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-5-sunken-clockwork-fit",
     title: "Sunken Clockwork Full-Plate",
     src: "/assets/backgrounds/level-5-sunken-clockwork-fit.webp",
+    fallbackSrc: "/assets/backgrounds/level-5-sunken-clockwork-fit.jpg",
     sourceSize: { w: 6800, h: 1440 },
     renderMode: "fit-level"
   },
@@ -169,6 +179,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-6-readable-lab",
     title: "Level 6 Security Corridor",
     src: "/assets/backgrounds/level-6-readable-lab.webp",
+    fallbackSrc: "/assets/backgrounds/level-6-readable-lab.jpg",
     sourceSize: { w: 1881, h: 836 },
     renderMode: "repeat-x"
   },
@@ -176,6 +187,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-7-readable-lab",
     title: "Level 7 Dual Reactor Hall",
     src: "/assets/backgrounds/level-7-readable-lab.webp",
+    fallbackSrc: "/assets/backgrounds/level-7-readable-lab.jpg",
     sourceSize: { w: 1838, h: 856 },
     renderMode: "repeat-x"
   },
@@ -183,6 +195,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-8-readable-lab",
     title: "Level 8 Cross Current Conduit",
     src: "/assets/backgrounds/level-8-readable-lab.webp",
+    fallbackSrc: "/assets/backgrounds/level-8-readable-lab.jpg",
     sourceSize: { w: 1838, h: 856 },
     renderMode: "repeat-x"
   },
@@ -190,6 +203,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-9-readable-lab",
     title: "Level 9 Phase Braid Loom",
     src: "/assets/backgrounds/level-9-readable-lab.webp",
+    fallbackSrc: "/assets/backgrounds/level-9-readable-lab.jpg",
     sourceSize: { w: 1983, h: 793 },
     renderMode: "repeat-x"
   },
@@ -197,6 +211,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-10-readable-lab",
     title: "Level 10 Synchronization Chamber",
     src: "/assets/backgrounds/level-10-readable-lab.webp",
+    fallbackSrc: "/assets/backgrounds/level-10-readable-lab.jpg",
     sourceSize: { w: 1939, h: 811 },
     renderMode: "repeat-x"
   }

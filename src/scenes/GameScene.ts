@@ -109,7 +109,6 @@ const HAZARD_VENT_FRAMES = 6;
 const RUN_FRAMES = [1, 2, 3, 4] as const;
 const LEVEL_INTRO_MS = 3000;
 const LEVEL_INTRO_OUTRO_MS = 820;
-const MUSIC_LOADING_OVERLAY_DELAY_MS = 220;
 const BOSS_MUSIC_FADE_MS = 620;
 const PLAYER_CAMERA_REFERENCE_HEIGHT = 540;
 const PLAYER_CAMERA_ZOOM = 1.152;
@@ -362,6 +361,7 @@ export class GameScene extends Phaser.Scene {
   private sceneCleanupRegistered = false;
   private readonly handleWindowKeyDown = (event: KeyboardEvent): void => {
     if (event.key !== "Escape" || event.repeat) return;
+    if (this.musicLoadingActive || this.awaitingRoomBackgroundFallback || this.roomLoadingFailed) return;
     if (typeof document !== "undefined" && document.querySelector("[data-modal].show")) return;
     event.preventDefault();
     this.togglePause();
@@ -536,19 +536,22 @@ export class GameScene extends Phaser.Scene {
 
   preload(): void {
     const background = backgroundForLevel(this.level, this.levelIndex);
-    const cachedTextureKey = this.textureKeyForBackground(background);
-    if (cachedTextureKey) {
-      this.writeBackgroundPreloadDiagnostics(cachedTextureKey, "cached");
+    if (this.textures.exists(background.key)) {
+      this.writeBackgroundPreloadDiagnostics(background.key, "cached");
       return;
     }
-    this.showRoomLoadingScreen(background.title);
+    this.finishRoomLoadingScreen();
     this.roomLoadingFailed = false;
     this.awaitingRoomBackgroundFallback = false;
-    this.roomBackgroundFallbackKey = background.fallbackSrc ? this.backgroundFallbackTextureKey(background.key) : null;
-    this.roomBackgroundFallbackSrc = background.fallbackSrc || null;
+    const fallbackKey = background.fallbackSrc ? this.backgroundFallbackTextureKey(background.key) : null;
+    const fallbackSrc = background.fallbackSrc || null;
+    const fallbackCached = fallbackKey ? this.textures.exists(fallbackKey) : false;
+    if (!fallbackCached) this.showRoomLoadingScreen(background.title);
+    this.roomBackgroundFallbackKey = fallbackKey;
+    this.roomBackgroundFallbackSrc = fallbackSrc;
     this.bindRoomLoadingProgress();
     this.load.image(background.key, background.src);
-    this.writeBackgroundPreloadDiagnostics(background.key, "queued");
+    this.writeBackgroundPreloadDiagnostics(background.key, fallbackCached ? "retry" : "queued");
   }
 
   create(): void {
@@ -556,6 +559,11 @@ export class GameScene extends Phaser.Scene {
     if (this.deferCreateForRoomFallback()) return;
     const background = backgroundForLevel(this.level, this.levelIndex);
     if (this.roomLoadingFailed || !this.textureKeyForBackground(background)) {
+      this.markRoomBackgroundUnavailable(
+        background,
+        this.roomLoadingFailed ? "error" : "missing",
+        this.roomLoadingFailed ? this.roomBackgroundFallbackKey || background.key : background.key
+      );
       this.handleRoomLoadComplete();
       return;
     }
@@ -628,7 +636,7 @@ export class GameScene extends Phaser.Scene {
       this.awaitingRoomBackgroundFallback = false;
       if (!loaded) {
         this.roomLoadingFailed = true;
-        this.writeBackgroundPreloadDiagnostics(this.roomBackgroundFallbackKey || background.key, "error");
+        this.markRoomBackgroundUnavailable(background, "error", this.roomBackgroundFallbackKey || background.key);
         this.handleRoomLoadComplete();
         return;
       }
@@ -746,11 +754,12 @@ export class GameScene extends Phaser.Scene {
 
   private handleRoomLoadComplete(): void {
     this.handleRoomLoadProgress(1);
+    const background = backgroundForLevel(this.level, this.levelIndex);
     if (this.roomLoadingFailed) {
+      this.markRoomBackgroundUnavailable(background, "error", this.roomBackgroundFallbackKey || background.key);
       this.roomLoadingStatus?.replaceChildren("Room assets unavailable");
       return;
     }
-    const background = backgroundForLevel(this.level, this.levelIndex);
     const textureKey = this.textureKeyForBackground(background);
     if (!textureKey) {
       if (this.roomBackgroundFallbackKey && this.roomBackgroundFallbackSrc && !this.textures.exists(this.roomBackgroundFallbackKey)) {
@@ -760,7 +769,7 @@ export class GameScene extends Phaser.Scene {
       }
       this.roomLoadingFailed = true;
       this.roomLoadingStatus?.replaceChildren("Room assets unavailable");
-      this.writeBackgroundPreloadDiagnostics(background.key, "missing");
+      this.markRoomBackgroundUnavailable(background, "missing", background.key);
       return;
     }
     this.writeBackgroundPreloadDiagnostics(textureKey, "complete");
@@ -923,9 +932,8 @@ export class GameScene extends Phaser.Scene {
     this.musicLoadingActive = true;
     const token = ++this.musicLoadingToken;
     this.writeMusicLoadingDiagnostics("pending");
-    this.musicLoadingTimer = window.setTimeout(() => {
-      if (this.musicLoadingToken === token && this.musicLoadingActive) this.showMusicLoadingOverlay(key);
-    }, MUSIC_LOADING_OVERLAY_DELAY_MS);
+    this.hud.setControlsBlocked(true);
+    this.showMusicLoadingOverlay(key);
 
     const musicStarted = audio.waitForMusicStart(key, musicWarmup);
     void Promise.all([musicStarted, effectWarmup.catch(() => [])]).then(([started]) => {
@@ -956,6 +964,8 @@ export class GameScene extends Phaser.Scene {
     `;
     uiRoot().append(overlay);
     this.musicLoadingOverlay = overlay;
+    overlay.tabIndex = -1;
+    overlay.focus({ preventScroll: true });
     this.writeMusicLoadingDiagnostics("visible");
   }
 
@@ -967,6 +977,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.musicLoadingOverlay?.remove();
     this.musicLoadingOverlay = null;
+    this._hud?.setControlsBlocked(false);
     this.writeMusicLoadingDiagnostics("idle");
   }
 
@@ -1920,14 +1931,7 @@ export class GameScene extends Phaser.Scene {
     const bounds = this.level.bounds;
     const textureKey = this.textureKeyForBackground(background);
     if (!textureKey) {
-      this.backgroundTextureFilter = `${background.key}:missing`;
-      this.writeBackgroundPreloadDiagnostics(background.key, "missing");
-      if (import.meta.env.DEV) {
-        document.documentElement.dataset.echoShiftBackgroundKey = background.key;
-        document.documentElement.dataset.echoShiftBackgroundRenderMode = "missing";
-        document.documentElement.dataset.echoShiftBackgroundDetailLayer = "off";
-        document.documentElement.dataset.echoShiftBackgroundPieces = "0";
-      }
+      this.markRoomBackgroundUnavailable(background, "missing", background.key);
       return;
     }
     this.writeBackgroundPreloadDiagnostics(textureKey, "complete");
@@ -1975,6 +1979,23 @@ export class GameScene extends Phaser.Scene {
     if (!background.fallbackSrc) return null;
     const fallbackKey = this.backgroundFallbackTextureKey(background.key);
     return this.textures.exists(fallbackKey) ? fallbackKey : null;
+  }
+
+  private markRoomBackgroundUnavailable(
+    background: ReturnType<typeof backgroundForLevel>,
+    phase: "missing" | "error",
+    key: string = background.key
+  ): void {
+    this.backgroundImages = [];
+    this.backgroundTextureFilter = `${key}:${phase}`;
+    this.writeBackgroundPreloadDiagnostics(key, phase);
+    if (!this.diagnosticsEnabled || typeof document === "undefined") return;
+    document.documentElement.dataset.echoShiftBackgroundKey = background.key;
+    document.documentElement.dataset.echoShiftBackgroundRenderMode = "missing";
+    document.documentElement.dataset.echoShiftBackgroundDetailLayer = "off";
+    document.documentElement.dataset.echoShiftBackgroundPieces = "0";
+    document.documentElement.dataset.echoShiftBackgroundAmbience = JSON.stringify(backgroundAmbienceForLevel(this.level));
+    document.documentElement.dataset.echoShiftBackgroundFilter = this.backgroundTextureFilter;
   }
 
   private backgroundFallbackTextureKey(key: string): string {
