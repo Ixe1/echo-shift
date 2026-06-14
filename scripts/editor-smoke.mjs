@@ -842,13 +842,14 @@ try {
     const { bindMenuNavigation } = await import("/src/ui/menuNavigation.ts");
     let buttonPressed = true;
     let axisX = 1;
+    let axisY = 0;
     let clickCount = 0;
     const buttons = Array.from({ length: 16 }, () => ({ pressed: false }));
     Object.defineProperty(navigator, "getGamepads", {
       configurable: true,
       value: () => [
         {
-          axes: [axisX, 0],
+          axes: [axisX, axisY],
           buttons: buttons.map((button, index) => ({
             ...button,
             pressed: index === 0 ? buttonPressed : button.pressed
@@ -898,9 +899,14 @@ try {
     axisX = 1;
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const rangeAfterFreshAxis = document.getElementById("pad-slider").value;
+    axisX = 0;
+    axisY = 1;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const rangeFocusAfterVerticalAxis = document.activeElement?.id;
     rangeBinding.destroy();
 
     axisX = 1;
+    axisY = 0;
     document.body.innerHTML = `
       <section id="text-root">
         <button id="text-first">First</button>
@@ -920,6 +926,7 @@ try {
       clicksAfterFreshPress,
       rangeAfterHeldAxis,
       rangeAfterFreshAxis,
+      rangeFocusAfterVerticalAxis,
       textFocusAfterAxis
     };
   });
@@ -964,6 +971,8 @@ try {
         leaderboardEntries: getLocalLeaderboard()
       }
     );
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const initialFinalFocus = document.activeElement?.textContent?.trim() || "";
     const input = document.querySelector("[data-leaderboard-name]");
     input.value = "<Ace>&!!!";
     const form = document.querySelector("[data-leaderboard-form]");
@@ -1027,6 +1036,7 @@ try {
       buttonDisabled,
       inputDisabled,
       modalText,
+      initialFinalFocus,
       failedEntryStorage,
       failedButtonText,
       failedButtonDisabled,
@@ -2022,6 +2032,10 @@ try {
     `Expected fresh gamepad axis to adjust focused range, got ${gamepadHarnessResult.rangeAfterFreshAxis}`
   );
   assert(
+    gamepadHarnessResult.rangeFocusAfterVerticalAxis === "pad-slider",
+    `Expected vertical gamepad axis not to move focus away from range, got ${gamepadHarnessResult.rangeFocusAfterVerticalAxis}`
+  );
+  assert(
     gamepadHarnessResult.textFocusAfterAxis === "pad-name",
     `Expected gamepad axis not to move focus away from text input, got ${gamepadHarnessResult.textFocusAfterAxis}`
   );
@@ -2038,6 +2052,10 @@ try {
   assert(leaderboardHarnessResult.buttonDisabled, "Expected leaderboard save button to disable after save");
   assert(leaderboardHarnessResult.inputDisabled, "Expected leaderboard name input to disable after save");
   assert(leaderboardHarnessResult.listText.includes("Ace"), `Expected saved leaderboard list to include Ace, got ${leaderboardHarnessResult.listText}`);
+  assert(
+    leaderboardHarnessResult.initialFinalFocus.includes("Main Menu"),
+    `Expected final leaderboard modal to focus primary action instead of nickname field, got ${leaderboardHarnessResult.initialFinalFocus}`
+  );
   assert(leaderboardHarnessResult.failedEntryStorage === null, "Expected failed leaderboard save not to persist storage");
   assert(leaderboardHarnessResult.failedButtonText === "Try Again", `Expected failed leaderboard save button to offer retry, got ${leaderboardHarnessResult.failedButtonText}`);
   assert(!leaderboardHarnessResult.failedButtonDisabled, "Expected failed leaderboard save button to remain enabled");

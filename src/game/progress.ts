@@ -90,11 +90,12 @@ const readProgress = (): ProgressData => {
   }
 };
 
-const writeProgress = (data: ProgressData): void => {
+const writeProgress = (data: ProgressData): boolean => {
   try {
     window.localStorage.setItem(KEY, JSON.stringify(data));
+    return true;
   } catch {
-    return;
+    return false;
   }
 };
 
@@ -112,7 +113,7 @@ export const isBetterLevelScore = (score: LevelScore, previous: LevelScore | und
   return score.frames < previous.frames;
 };
 
-export const recordLevelScore = (score: LevelScore, completedIndex: number): void => {
+export const recordLevelScore = (score: LevelScore, completedIndex: number): boolean => {
   const data = readProgress();
   const previous = data.scores[score.levelId];
 
@@ -121,7 +122,7 @@ export const recordLevelScore = (score: LevelScore, completedIndex: number): voi
   }
 
   data.unlocked = Math.max(data.unlocked, completedIndex + 2);
-  writeProgress(data);
+  return writeProgress(data);
 };
 
 export const unlockAllLevelsForSession = (count: number): void => {

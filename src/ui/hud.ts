@@ -36,6 +36,8 @@ type HudState = {
 
 type CompleteOptions = {
   scoreEligible: boolean;
+  scoreRecorded?: boolean;
+  scoreSaveMessage?: string;
   campaignSummary: CampaignRunSummary | null;
   leaderboardEntries: LeaderboardEntry[];
 };
@@ -162,7 +164,7 @@ export class Hud {
         <h1>Paused</h1>
         <p>${levelName}</p>
         <div class="button-grid">
-          <button class="ui-button primary" data-resume>Resume</button>
+          <button class="ui-button primary" data-resume data-default-focus>Resume</button>
           <button class="ui-button" data-options>Options</button>
           ${levelSelectButton}
           ${this.callbacks.draftPlaytest ? `<button class="ui-button" data-editor>${icon("levels")} Editor</button>` : ""}
@@ -193,13 +195,15 @@ export class Hud {
     const modal = this.modal();
     const finalLeaderboard = isFinal ? this.finalLeaderboardHtml(options) : "";
     const levelSelectButton = this.callbacks.allowLevelSelect
-      ? `<button class="ui-button ${isFinal ? "primary" : ""}" data-levels>${icon("levels")} Level Select</button>`
+      ? `<button class="ui-button ${isFinal ? "primary" : ""}" data-levels ${isFinal ? "data-default-focus" : ""}>${icon("levels")} Level Select</button>`
       : "";
-    const primaryAction = isFinal ? levelSelectButton || `<button class="ui-button primary" data-exit-menu>${icon("back")} Main Menu</button>` : `<button class="ui-button primary" data-next>${icon("next")} Next Room</button>`;
+    const primaryAction = isFinal
+      ? levelSelectButton || `<button class="ui-button primary" data-exit-menu data-default-focus>${icon("back")} Main Menu</button>`
+      : `<button class="ui-button primary" data-next data-default-focus>${icon("next")} Next Room</button>`;
     modal.innerHTML = `
       <section class="panel complete-panel">
         <h1>${isFinal ? "Timeline Complete" : "Room Clear"}</h1>
-        <p>${this.completionMessage(isFinal, options.scoreEligible)}</p>
+        <p>${this.completionMessage(isFinal, options)}</p>
         <div class="score-row">
           <div class="score-cell"><strong>Score</strong><span>${formatScore(score.score)}</span></div>
           <div class="score-cell"><strong>Time</strong><span>${formatFrames(score.frames)}</span></div>
@@ -240,7 +244,7 @@ export class Hud {
           <div class="score-cell"><strong>Deaths</strong><span>${score.deaths}</span></div>
         </div>
         <div class="button-grid">
-          <button class="ui-button primary" data-exit-menu>${icon("back")} Main Menu</button>
+          <button class="ui-button primary" data-exit-menu data-default-focus>${icon("back")} Main Menu</button>
         </div>
       </section>
     `;
@@ -254,8 +258,8 @@ export class Hud {
     this.setHudControlsInert(true);
     const modal = this.modal();
     const primaryAction = this.callbacks.allowLevelSelect
-      ? `<button class="ui-button primary" data-levels>${icon("levels")} Level Select</button>`
-      : `<button class="ui-button primary" data-exit-menu>${icon("back")} Main Menu</button>`;
+      ? `<button class="ui-button primary" data-levels data-default-focus>${icon("levels")} Level Select</button>`
+      : `<button class="ui-button primary" data-exit-menu data-default-focus>${icon("back")} Main Menu</button>`;
     modal.innerHTML = `
       <section class="panel complete-panel">
         <h1>Game Over</h1>
@@ -300,13 +304,17 @@ export class Hud {
     this.bindModalNavigation(() => this.optionsBack(() => this.showPause(levelName)));
   }
 
-  private completionMessage(isFinal: boolean, scoreEligible: boolean): string {
-    if (!scoreEligible) return "Practice clear. Scores are not written to normal progress.";
+  private completionMessage(isFinal: boolean, options: CompleteOptions): string {
+    if (options.scoreEligible && options.scoreRecorded === false) return options.scoreSaveMessage || "Score could not be saved locally.";
+    if (!options.scoreEligible) return "Practice clear. Scores are not written to normal progress.";
     return isFinal ? "Every shift is synchronized." : "Score locked for this run.";
   }
 
   private finalLeaderboardHtml(options: CompleteOptions): string {
     const summary = options.campaignSummary;
+    if (options.scoreEligible && options.scoreRecorded === false) {
+      return `<p class="credits-text">${this.escapeHtml(options.scoreSaveMessage || "Score could not be saved locally.")}</p>`;
+    }
     if (!options.scoreEligible || !summary) {
       return `<p class="credits-text">Practice runs do not update the campaign leaderboard.</p>`;
     }
@@ -379,6 +387,7 @@ export class Hud {
     this.modalNavigation = bindMenuNavigation(this.modal(), {
       onBack,
       onNavigate: () => audio.play("select"),
+      initialFocus: "[data-default-focus]",
       trapFocus: true
     });
   }

@@ -1399,6 +1399,7 @@ try {
     CORES_PER_BONUS_LIFE,
     campaignCoreCount,
     campaignLivesForLevel,
+    currentCampaignRunSummary,
     registerCampaignCorePickup,
     resetCampaignVitals,
     syncCampaignLives
@@ -2024,6 +2025,27 @@ try {
       eligiblePersistence.campaignSummary.frames === 420 &&
       eligiblePersistence.campaignSummary.levels === 1,
     `Expected eligible score persistence to update campaign summary, got ${JSON.stringify(eligiblePersistence.campaignSummary)}`
+  );
+
+  resetCampaignVitals();
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      localStorage: {
+        getItem: () => null,
+        setItem: () => {
+          throw new Error("progress blocked");
+        }
+      }
+    }
+  });
+  const failedPersistence = recordEligibleScore(persistenceScore, 0, true);
+  if (previousProgressWindow === undefined) delete globalThis.window;
+  else Object.defineProperty(globalThis, "window", { configurable: true, value: previousProgressWindow });
+  assert(!failedPersistence.recorded && failedPersistence.campaignSummary === null, "Expected failed progress persistence not to report recorded score");
+  assert(
+    currentCampaignRunSummary().score === 0 && currentCampaignRunSummary().levels === 0,
+    `Expected failed progress persistence not to advance campaign summary, got ${JSON.stringify(currentCampaignRunSummary())}`
   );
   resetCampaignVitals();
 

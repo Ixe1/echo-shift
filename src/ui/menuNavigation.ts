@@ -2,6 +2,7 @@ type MenuNavigationOptions = {
   onBack?: () => void;
   onNavigate?: () => void;
   autoFocus?: boolean;
+  initialFocus?: string;
   trapFocus?: boolean;
 };
 
@@ -32,8 +33,15 @@ const visible = (element: HTMLElement): boolean => {
 const focusableControls = (root: HTMLElement): HTMLElement[] =>
   Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(visible);
 
-export const focusFirstMenuControl = (root: HTMLElement): void => {
-  const first = focusableControls(root)[0];
+const gamepadFocusableControls = (root: HTMLElement): HTMLElement[] =>
+  focusableControls(root).filter((control) => !usesNativeDirectionalKeys(control) || (control instanceof HTMLInputElement && control.type === "range"));
+
+export const focusFirstMenuControl = (root: HTMLElement, preferredSelector?: string): void => {
+  const controls = focusableControls(root);
+  const preferred = preferredSelector
+    ? controls.find((control) => control.matches(preferredSelector))
+    : null;
+  const first = preferred || controls[0];
   first?.focus();
 };
 
@@ -73,8 +81,7 @@ export const bindMenuNavigation = (root: HTMLElement, options: MenuNavigationOpt
   let gamepadPrimed = false;
   let waitingForNeutralDirection = false;
 
-  const navigate = (delta: number): void => {
-    const controls = focusableControls(root);
+  const navigate = (delta: number, controls = focusableControls(root)): void => {
     if (controls.length === 0) return;
     const active = activeElementIn(root);
     const current = active ? controls.indexOf(active) : -1;
@@ -92,6 +99,9 @@ export const bindMenuNavigation = (root: HTMLElement, options: MenuNavigationOpt
     if (usesNativeDirectionalKeys(active)) return;
     active.click();
   };
+
+  const isRangeInput = (element: HTMLElement | null): element is HTMLInputElement =>
+    element instanceof HTMLInputElement && element.type === "range";
 
   const activeRangeInput = (): HTMLInputElement | null => {
     const active = activeElementIn(root);
@@ -135,7 +145,16 @@ export const bindMenuNavigation = (root: HTMLElement, options: MenuNavigationOpt
       trapTab(event);
       return;
     }
-    if (usesNativeDirectionalKeys(active) && event.key !== "Escape") return;
+    if (usesNativeDirectionalKeys(active) && event.key !== "Escape") {
+      if (isRangeInput(active) && (event.key === "ArrowUp" || event.key.toLowerCase() === "w")) {
+        event.preventDefault();
+        navigate(-1);
+      } else if (isRangeInput(active) && (event.key === "ArrowDown" || event.key.toLowerCase() === "s")) {
+        event.preventDefault();
+        navigate(1);
+      }
+      return;
+    }
     if (event.key === "ArrowUp" || event.key === "ArrowLeft" || event.key.toLowerCase() === "w" || event.key.toLowerCase() === "a") {
       event.preventDefault();
       navigate(-1);
@@ -170,10 +189,12 @@ export const bindMenuNavigation = (root: HTMLElement, options: MenuNavigationOpt
       const direction =
         activeNativeControl && !rangeInput
           ? null
-          : rangeInput && horizontalDirection
-            ? horizontalDirection === "previous"
-              ? "range-down"
-              : "range-up"
+          : rangeInput
+            ? horizontalDirection
+              ? horizontalDirection === "previous"
+                ? "range-down"
+                : "range-up"
+              : null
             : verticalDirection || horizontalDirection;
       const button = pressed(gamepad, 0) || pressed(gamepad, 9) ? "confirm" : pressed(gamepad, 1) ? "back" : null;
       if (!gamepadPrimed) {
@@ -197,7 +218,7 @@ export const bindMenuNavigation = (root: HTMLElement, options: MenuNavigationOpt
       }
       if (direction && (direction !== heldDirection || now >= nextMoveAt)) {
         if (rangeInput && (direction === "range-down" || direction === "range-up")) adjustRangeInput(rangeInput, direction === "range-down" ? -1 : 1);
-        else navigate(direction === "previous" ? -1 : 1);
+        else navigate(direction === "previous" ? -1 : 1, gamepadFocusableControls(root));
         nextMoveAt = now + (direction === heldDirection ? HELD_REPEAT_MS : INITIAL_REPEAT_MS);
       }
       heldDirection = direction;
@@ -218,7 +239,7 @@ export const bindMenuNavigation = (root: HTMLElement, options: MenuNavigationOpt
 
   window.addEventListener("keydown", keydown);
   raf = window.requestAnimationFrame(pollGamepad);
-  if (options.autoFocus !== false) window.setTimeout(() => focusFirstMenuControl(root), 0);
+  if (options.autoFocus !== false) window.setTimeout(() => focusFirstMenuControl(root, options.initialFocus), 0);
 
   return {
     destroy: () => {
@@ -226,6 +247,6 @@ export const bindMenuNavigation = (root: HTMLElement, options: MenuNavigationOpt
       window.removeEventListener("keydown", keydown);
       window.cancelAnimationFrame(raf);
     },
-    focusFirst: () => focusFirstMenuControl(root)
+    focusFirst: () => focusFirstMenuControl(root, options.initialFocus)
   };
 };

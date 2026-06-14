@@ -1236,6 +1236,8 @@ export class GameScene extends Phaser.Scene {
       const isFinal = this.levelIndex === levels.length - 1;
       this.hud.showComplete(score, isFinal, totalCores, {
         scoreEligible,
+        scoreRecorded: !scoreEligible || persistence.recorded,
+        scoreSaveMessage: persistence.message,
         campaignSummary: isFinal ? persistence.campaignSummary : null,
         leaderboardEntries: getLocalLeaderboard()
       });
