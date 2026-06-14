@@ -178,6 +178,16 @@ try {
   await page.goto(`${url}?editor=0`, { waitUntil: "domcontentloaded" });
   await startAudioGate(page);
   await page.locator("[data-play]").waitFor({ state: "visible" });
+  await page.waitForFunction(() => document.activeElement instanceof HTMLElement && document.activeElement.hasAttribute("data-play"));
+  await page.keyboard.press("ArrowDown");
+  const mainMenuFocusAfterArrow = await page.evaluate(() => document.activeElement?.textContent?.trim() || "");
+  await page.locator("[data-options]").click();
+  await page.locator("[data-options-audio]").click();
+  await page.keyboard.press("Escape");
+  const menuOptionsNestedBackTitle = await page.locator(".options-panel h1").textContent();
+  await page.keyboard.press("Escape");
+  await page.locator("[data-play]").waitFor({ state: "visible" });
+  const menuOptionsRootBackTitle = await page.locator(".menu-panel h1").textContent();
   const inactiveEditorVisible = await page.locator("[data-level-editor]").isVisible();
   const lockedEditorVisible = await page.locator("[data-editor]").isVisible();
   const lockedLevelSelectVisible = await page.locator("[data-levels]").isVisible();
@@ -196,6 +206,13 @@ try {
     await page.keyboard.press(key);
   }
   await page.locator("[data-editor]").waitFor({ state: "visible" });
+  await page.locator("[data-levels]").click();
+  await page.locator(".level-button[data-level='0']").waitFor({ state: "visible" });
+  await page.waitForFunction(() => document.activeElement instanceof HTMLElement && document.activeElement.matches(".level-button[data-level='0']"));
+  await page.keyboard.press("ArrowDown");
+  const levelSelectFocusAfterArrow = await page.evaluate(() => document.activeElement?.textContent?.trim() || "");
+  await page.keyboard.press("Escape");
+  await page.locator("[data-play]").waitFor({ state: "visible" });
   await page.locator("[data-editor]").click();
   await page.locator("[data-level-editor]").waitFor({ state: "visible" });
   const menuEditorUrl = page.url();
@@ -210,6 +227,31 @@ try {
   const barePlaytestEditorVisible = await barePlaytestPage.locator("[data-editor]").isVisible();
   const barePlaytestLevelSelectVisible = await barePlaytestPage.locator("[data-levels]").isVisible();
   await barePlaytestContext.close();
+
+  const scoreEntryContext = await browser.newContext({ viewport: { width: 960, height: 540 } });
+  await scoreEntryContext.addInitScript(() => window.localStorage.clear());
+  const scoreEntryPage = await scoreEntryContext.newPage();
+  collectConsole(scoreEntryPage);
+  await scoreEntryPage.goto(`${url}?editor=0`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(scoreEntryPage);
+  await scoreEntryPage.locator("[data-play]").waitFor({ state: "visible" });
+  for (const key of ["ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight", "r"]) {
+    await scoreEntryPage.keyboard.press(key);
+  }
+  await scoreEntryPage.locator("[data-tutorial]").click();
+  await scoreEntryPage.locator(".hud [data-level]").waitFor({ state: "visible" });
+  const tutorialScoreEligible = await scoreEntryPage.evaluate(() => document.documentElement.dataset.echoShiftScoreEligible);
+  await scoreEntryPage.goto(`${url}?editor=0`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(scoreEntryPage);
+  await scoreEntryPage.locator("[data-play]").waitFor({ state: "visible" });
+  for (const key of ["ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight", "r"]) {
+    await scoreEntryPage.keyboard.press(key);
+  }
+  await scoreEntryPage.locator("[data-levels]").click();
+  await scoreEntryPage.locator(".level-button[data-level='0']").click();
+  await scoreEntryPage.locator(".hud [data-level]").waitFor({ state: "visible" });
+  const levelSelectScoreEligible = await scoreEntryPage.evaluate(() => document.documentElement.dataset.echoShiftScoreEligible);
+  await scoreEntryContext.close();
 
   const staleDraft = await browser.newContext({ viewport: { width: 900, height: 700 } });
   const stalePage = await staleDraft.newPage();
@@ -351,6 +393,12 @@ try {
   await draftPlaytestPage.screenshot({ path: `${outDir}/editor-playtest-draft.png`, fullPage: true });
   await draftPlaytestPage.locator("[data-menu]").click();
   const draftPauseReplayCount = await draftPlaytestPage.locator("[data-modal] [data-replay-level]").count();
+  await draftPlaytestPage.locator("[data-modal] [data-options]").click();
+  await draftPlaytestPage.locator("[data-options-audio]").click();
+  await draftPlaytestPage.keyboard.press("Escape");
+  const draftPauseOptionsNestedBackTitle = await draftPlaytestPage.locator("[data-modal].show h1").textContent();
+  await draftPlaytestPage.keyboard.press("Escape");
+  const draftPauseOptionsRootBackTitle = await draftPlaytestPage.locator("[data-modal].show h1").textContent();
   const draftEditorButton = draftPlaytestPage.locator("[data-modal] [data-editor]");
   await draftEditorButton.waitFor({ state: "visible" });
   await draftEditorButton.click();
@@ -822,6 +870,8 @@ try {
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const focusAfterHeldAxis = document.activeElement?.id;
     const clicksAfterHeldButton = clickCount;
+    await new Promise((resolve) => setTimeout(resolve, 360));
+    const focusAfterHeldAxisRepeatWindow = document.activeElement?.id;
     buttonPressed = false;
     axisX = 0;
     await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -829,7 +879,27 @@ try {
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const clicksAfterFreshPress = clickCount;
     binding.destroy();
-    return { focusAfterHeldAxis, clicksAfterHeldButton, clicksAfterFreshPress };
+
+    buttonPressed = false;
+    axisX = 1;
+    document.body.innerHTML = `
+      <section id="range-root">
+        <button id="range-first">First</button>
+        <input id="pad-slider" type="range" min="0" max="10" step="1" value="5" />
+        <button id="range-last">Last</button>
+      </section>
+    `;
+    const rangeBinding = bindMenuNavigation(document.getElementById("range-root"), { autoFocus: false });
+    document.getElementById("pad-slider").focus();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const rangeAfterHeldAxis = document.getElementById("pad-slider").value;
+    axisX = 0;
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    axisX = 1;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const rangeAfterFreshAxis = document.getElementById("pad-slider").value;
+    rangeBinding.destroy();
+    return { focusAfterHeldAxis, clicksAfterHeldButton, focusAfterHeldAxisRepeatWindow, clicksAfterFreshPress, rangeAfterHeldAxis, rangeAfterFreshAxis };
   });
   await navigationHarness.close();
 
@@ -874,16 +944,18 @@ try {
     );
     const input = document.querySelector("[data-leaderboard-name]");
     input.value = "<Ace>&!!!";
+    const form = document.querySelector("[data-leaderboard-form]");
     const button = document.querySelector("[data-leaderboard-form] button[type='submit']");
     button.click();
-    button.click();
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     const entries = JSON.parse(window.localStorage.getItem("echo-shift-leaderboard-v1") || "[]");
     const listText = document.querySelector("[data-leaderboard-list]")?.textContent || "";
     const buttonText = button.textContent;
     const buttonDisabled = button.disabled;
+    const inputDisabled = input.disabled;
     const modalText = document.querySelector("[data-modal]")?.textContent || "";
     hud.destroy();
-    return { entries, listText, buttonText, buttonDisabled, modalText };
+    return { entries, listText, buttonText, buttonDisabled, inputDisabled, modalText };
   });
   await leaderboardHarness.close();
 
@@ -1701,6 +1773,9 @@ try {
   await mobile.close();
 
   assert(!inactiveEditorVisible, "Editor should not activate for ?editor=0");
+  assert(mainMenuFocusAfterArrow.includes("Tutorial"), `Expected real main menu ArrowDown to focus Tutorial, got ${mainMenuFocusAfterArrow}`);
+  assert(menuOptionsNestedBackTitle === "Options", `Expected Escape from main menu Audio options to return to Options root, got ${menuOptionsNestedBackTitle}`);
+  assert(menuOptionsRootBackTitle === "Main Menu", `Expected Escape from main menu Options root to return to Main Menu, got ${menuOptionsRootBackTitle}`);
   assert(!lockedEditorVisible, "Expected locked main menu to hide Level Editor before the secret code");
   assert(!lockedLevelSelectVisible, "Expected locked main menu to hide Level Select before the secret code");
   assert(secretEditorVisible, "Expected secret code to reveal Level Editor on the main menu");
@@ -1709,6 +1784,9 @@ try {
   assert(!reloadedLevelSelectVisible, "Expected Level Select unlock to be forgotten after a plain page reload");
   assert(!barePlaytestEditorVisible, "Expected bare ?playtestDraft=1 without a saved draft not to unlock Level Editor");
   assert(!barePlaytestLevelSelectVisible, "Expected bare ?playtestDraft=1 without a saved draft not to unlock Level Select");
+  assert(levelSelectFocusAfterArrow.includes("Rainhouse Relay"), `Expected real Level Select ArrowDown to focus second room, got ${levelSelectFocusAfterArrow}`);
+  assert(tutorialScoreEligible === "false", `Expected tutorial entry to be non-scoring, got ${tutorialScoreEligible}`);
+  assert(levelSelectScoreEligible === "false", `Expected Level Select entry to be non-scoring, got ${levelSelectScoreEligible}`);
   assert(menuEditorUrl.includes("editor=1"), `Expected unlocked editor button to navigate to ?editor=1, got ${menuEditorUrl}`);
   assert(
     fractionalDraftLevelName === "Draft Index Smoke B",
@@ -1748,6 +1826,14 @@ try {
   assert(!draftPlaytestNoRetryToast?.includes("Retry unavailable"), `Expected removed T retry key not to show retry toast, got ${draftPlaytestNoRetryToast}`);
   assert(draftPlaytestModalAfterT === 0, `Expected disabled T key not to open a modal, got ${draftPlaytestModalAfterT}`);
   assert(draftPauseReplayCount === 0, `Expected pause modal to omit restart/replay, got ${draftPauseReplayCount} replay buttons`);
+  assert(
+    draftPauseOptionsNestedBackTitle === "Options",
+    `Expected Escape from pause Audio options to return to Options root, got ${draftPauseOptionsNestedBackTitle}`
+  );
+  assert(
+    draftPauseOptionsRootBackTitle === "Paused",
+    `Expected Escape from pause Options root to return to pause modal, got ${draftPauseOptionsRootBackTitle}`
+  );
   assert(draftReturnUrl.includes("editor=1"), `Expected draft Editor button to return to editor=1, got ${draftReturnUrl}`);
   assert(!draftReturnUrl.includes("playtestDraft=1"), `Expected draft Editor button to clean playtest flag, got ${draftReturnUrl}`);
   assert(!draftReturnUrl.includes("level=1"), `Expected draft Editor button to clean level flag, got ${draftReturnUrl}`);
@@ -1844,8 +1930,20 @@ try {
     `Expected held gamepad confirm not to activate on menu open, got ${gamepadHarnessResult.clicksAfterHeldButton}`
   );
   assert(
+    gamepadHarnessResult.focusAfterHeldAxisRepeatWindow === "pad-first",
+    `Expected held gamepad axis not to auto-repeat before neutral, got ${gamepadHarnessResult.focusAfterHeldAxisRepeatWindow}`
+  );
+  assert(
     gamepadHarnessResult.clicksAfterFreshPress === 1,
     `Expected fresh gamepad confirm to activate once, got ${gamepadHarnessResult.clicksAfterFreshPress}`
+  );
+  assert(
+    gamepadHarnessResult.rangeAfterHeldAxis === "5",
+    `Expected held gamepad axis not to adjust focused range before neutral, got ${gamepadHarnessResult.rangeAfterHeldAxis}`
+  );
+  assert(
+    gamepadHarnessResult.rangeAfterFreshAxis !== "5",
+    `Expected fresh gamepad axis to adjust focused range, got ${gamepadHarnessResult.rangeAfterFreshAxis}`
   );
   assert(leaderboardHarnessResult.entries.length === 1, `Expected one saved leaderboard entry, got ${leaderboardHarnessResult.entries.length}`);
   assert(
@@ -1858,6 +1956,7 @@ try {
   );
   assert(leaderboardHarnessResult.buttonText === "Saved", `Expected saved leaderboard button label, got ${leaderboardHarnessResult.buttonText}`);
   assert(leaderboardHarnessResult.buttonDisabled, "Expected leaderboard save button to disable after save");
+  assert(leaderboardHarnessResult.inputDisabled, "Expected leaderboard name input to disable after save");
   assert(leaderboardHarnessResult.listText.includes("Ace"), `Expected saved leaderboard list to include Ace, got ${leaderboardHarnessResult.listText}`);
   assert(
     leaderboardHarnessResult.modalText.includes("Campaign Score"),

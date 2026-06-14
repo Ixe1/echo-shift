@@ -297,7 +297,7 @@ export class Hud {
       onBack: () => this.showPause(levelName),
       onNavigate: () => audio.play("select")
     });
-    this.bindModalNavigation(() => this.showPause(levelName));
+    this.bindModalNavigation(() => this.optionsBack(() => this.showPause(levelName)));
   }
 
   private completionMessage(isFinal: boolean, scoreEligible: boolean): string {
@@ -349,13 +349,17 @@ export class Hud {
     const summary = options.campaignSummary;
     const form = this.modal().querySelector<HTMLFormElement>("[data-leaderboard-form]");
     if (!summary || !form || !this.callbacks.onSaveLeaderboard) return;
+    let saved = false;
     form.addEventListener("submit", (event) => {
       event.preventDefault();
+      if (saved) return;
+      saved = true;
       const input = form.querySelector<HTMLInputElement>("[data-leaderboard-name]");
       const entries = this.callbacks.onSaveLeaderboard?.(input?.value || "Runner", summary) || [];
       const list = this.modal().querySelector<HTMLElement>("[data-leaderboard-list]");
       if (list) list.innerHTML = this.leaderboardListHtml(entries);
       const button = form.querySelector<HTMLButtonElement>("button[type='submit']");
+      if (input) input.disabled = true;
       if (button) {
         button.textContent = "Saved";
         button.disabled = true;
@@ -375,6 +379,16 @@ export class Hud {
   private destroyModalNavigation(): void {
     this.modalNavigation?.destroy();
     this.modalNavigation = null;
+  }
+
+  private optionsBack(fallback: () => void): void {
+    const rootButton = this.modal().querySelector<HTMLButtonElement>("[data-options-root]");
+    if (!rootButton) {
+      fallback();
+      return;
+    }
+    rootButton.click();
+    window.setTimeout(() => this.modalNavigation?.focusFirst(), 0);
   }
 
   private setHudControlsInert(inert: boolean): void {

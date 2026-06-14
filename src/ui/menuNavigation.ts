@@ -21,6 +21,7 @@ const FOCUSABLE_SELECTOR = [
 const AXIS_THRESHOLD = 0.55;
 const INITIAL_REPEAT_MS = 280;
 const HELD_REPEAT_MS = 150;
+const RANGE_GAMEPAD_STEP = 5;
 
 const visible = (element: HTMLElement): boolean => {
   if (element.hidden) return false;
@@ -70,6 +71,7 @@ export const bindMenuNavigation = (root: HTMLElement, options: MenuNavigationOpt
   let heldButton: string | null = null;
   let nextMoveAt = 0;
   let gamepadPrimed = false;
+  let waitingForNeutralDirection = false;
 
   const navigate = (delta: number): void => {
     const controls = focusableControls(root);
@@ -89,6 +91,21 @@ export const bindMenuNavigation = (root: HTMLElement, options: MenuNavigationOpt
     }
     if (usesNativeDirectionalKeys(active)) return;
     active.click();
+  };
+
+  const activeRangeInput = (): HTMLInputElement | null => {
+    const active = activeElementIn(root);
+    return active instanceof HTMLInputElement && active.type === "range" ? active : null;
+  };
+
+  const adjustRangeInput = (input: HTMLInputElement, delta: number): void => {
+    const step = Number(input.step);
+    const increment = Number.isFinite(step) && step > 0 ? step : RANGE_GAMEPAD_STEP;
+    const min = Number.isFinite(Number(input.min)) ? Number(input.min) : 0;
+    const max = Number.isFinite(Number(input.max)) ? Number(input.max) : 100;
+    const next = Math.max(min, Math.min(max, Number(input.value) + delta * increment));
+    input.value = `${next}`;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
   };
 
   const trapTab = (event: KeyboardEvent): void => {
@@ -144,23 +161,36 @@ export const bindMenuNavigation = (root: HTMLElement, options: MenuNavigationOpt
     if (gamepad && root.isConnected && visible(root)) {
       const axis = gamepad.axes[0] || 0;
       const vertical = gamepad.axes[1] || 0;
+      const horizontalDirection =
+        pressed(gamepad, 14) || axis < -AXIS_THRESHOLD ? "previous" : pressed(gamepad, 15) || axis > AXIS_THRESHOLD ? "next" : null;
+      const verticalDirection =
+        pressed(gamepad, 12) || vertical < -AXIS_THRESHOLD ? "previous" : pressed(gamepad, 13) || vertical > AXIS_THRESHOLD ? "next" : null;
+      const rangeInput = activeRangeInput();
       const direction =
-        pressed(gamepad, 14) || axis < -AXIS_THRESHOLD || pressed(gamepad, 12) || vertical < -AXIS_THRESHOLD
-          ? "previous"
-          : pressed(gamepad, 15) || axis > AXIS_THRESHOLD || pressed(gamepad, 13) || vertical > AXIS_THRESHOLD
-            ? "next"
-            : null;
+        rangeInput && horizontalDirection ? (horizontalDirection === "previous" ? "range-down" : "range-up") : verticalDirection || horizontalDirection;
       const button = pressed(gamepad, 0) || pressed(gamepad, 9) ? "confirm" : pressed(gamepad, 1) ? "back" : null;
       if (!gamepadPrimed) {
         heldDirection = direction;
         heldButton = button;
+        waitingForNeutralDirection = direction !== null;
         nextMoveAt = now + INITIAL_REPEAT_MS;
         gamepadPrimed = true;
         raf = window.requestAnimationFrame(pollGamepad);
         return;
       }
+      if (waitingForNeutralDirection) {
+        if (!direction) {
+          waitingForNeutralDirection = false;
+          heldDirection = null;
+        } else {
+          heldDirection = direction;
+          raf = window.requestAnimationFrame(pollGamepad);
+          return;
+        }
+      }
       if (direction && (direction !== heldDirection || now >= nextMoveAt)) {
-        navigate(direction === "previous" ? -1 : 1);
+        if (rangeInput && (direction === "range-down" || direction === "range-up")) adjustRangeInput(rangeInput, direction === "range-down" ? -1 : 1);
+        else navigate(direction === "previous" ? -1 : 1);
         nextMoveAt = now + (direction === heldDirection ? HELD_REPEAT_MS : INITIAL_REPEAT_MS);
       }
       heldDirection = direction;
@@ -174,6 +204,7 @@ export const bindMenuNavigation = (root: HTMLElement, options: MenuNavigationOpt
       heldDirection = null;
       heldButton = null;
       gamepadPrimed = false;
+      waitingForNeutralDirection = false;
     }
     raf = window.requestAnimationFrame(pollGamepad);
   };

@@ -148,7 +148,7 @@ export class MenuScene extends Phaser.Scene {
       onBack: () => this.create(),
       onNavigate: () => audio.play("select")
     });
-    this.bindMenuNavigation(() => this.create());
+    this.bindMenuNavigation(() => this.optionsBack(() => this.create()));
   }
 
   private registerUiCleanup(): void {
@@ -181,5 +181,15 @@ export class MenuScene extends Phaser.Scene {
   private destroyMenuNavigation(): void {
     this.menuNavigation?.destroy();
     this.menuNavigation = null;
+  }
+
+  private optionsBack(fallback: () => void): void {
+    const rootButton = uiRoot().querySelector<HTMLButtonElement>("[data-options-root]");
+    if (!rootButton) {
+      fallback();
+      return;
+    }
+    rootButton.click();
+    window.setTimeout(() => this.menuNavigation?.focusFirst(), 0);
   }
 }

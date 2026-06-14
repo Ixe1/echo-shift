@@ -351,6 +351,7 @@ export class GameScene extends Phaser.Scene {
   private sceneCleanupRegistered = false;
   private readonly handleWindowKeyDown = (event: KeyboardEvent): void => {
     if (event.key !== "Escape" || event.repeat) return;
+    if (typeof document !== "undefined" && document.querySelector("[data-modal].show")) return;
     event.preventDefault();
     this.togglePause();
   };
@@ -436,6 +437,7 @@ export class GameScene extends Phaser.Scene {
     this.levelIndex = this.tutorialMode ? 0 : data.levelIndex || 0;
     this.level = this.tutorialMode ? tutorialLevel : getLevel(this.levelIndex);
     this.scoreEligible = data.scoreEligible === true && !this.tutorialMode && !isDraftPlaytestActive();
+    if (typeof document !== "undefined") document.documentElement.dataset.echoShiftScoreEligible = this.scoreEligible ? "true" : "false";
     this.simulation = new RoomSimulation(this.level, { lives: campaignLivesForLevel(this.level) });
     this.accumulator = 0;
     this.pausedByHud = false;
@@ -1381,6 +1383,7 @@ export class GameScene extends Phaser.Scene {
     this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.recordCameraDiagnostics, this);
     this.scale.off(Phaser.Scale.Events.RESIZE, this.configureCameraFrame, this);
     window.removeEventListener("keydown", this.handleWindowKeyDown);
+    if (typeof document !== "undefined") delete document.documentElement.dataset.echoShiftScoreEligible;
     this.stopBossDefeatLoops();
     this.clearAttemptScopedAudio();
     this.sceneCleanupRegistered = false;
