@@ -111,7 +111,7 @@ button {
   background:
     linear-gradient(90deg, rgba(5, 7, 13, 0.2), rgba(5, 7, 13, 0.72) 54%, rgba(5, 7, 13, 0.36)),
     linear-gradient(180deg, rgba(5, 7, 13, 0.16), rgba(5, 7, 13, 0.84)),
-    url("/assets/time-lab-background.png") center / cover no-repeat;
+    url("/assets/time-lab-background.webp") center / cover no-repeat;
 }
 
 .art-screen::after {
@@ -123,6 +123,163 @@ button {
     radial-gradient(circle at 72% 38%, rgba(67, 247, 255, 0.1), transparent 28%),
     linear-gradient(180deg, transparent 74%, rgba(5, 7, 13, 0.54));
   pointer-events: none;
+}
+
+.boot-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: clamp(18px, 4vw, 44px);
+  overflow: hidden;
+  pointer-events: auto;
+  background:
+    linear-gradient(rgba(67, 247, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(67, 247, 255, 0.04) 1px, transparent 1px),
+    radial-gradient(circle at 18% 22%, rgba(67, 247, 255, 0.16), transparent 28%),
+    radial-gradient(circle at 78% 66%, rgba(255, 227, 90, 0.1), transparent 26%),
+    linear-gradient(135deg, #05070d 0%, #09111d 48%, #10091a 100%);
+  background-size: 36px 36px, 36px 36px, auto, auto, auto;
+}
+
+.boot-loading::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(110deg, transparent 0 34%, rgba(67, 247, 255, 0.14) 46%, transparent 58%),
+    repeating-linear-gradient(0deg, rgba(236, 251, 255, 0.05) 0 1px, transparent 1px 12px);
+  opacity: 0.72;
+  transform: translateX(-38%);
+  animation: bootLoadSweep 2200ms ease-in-out infinite;
+  pointer-events: none;
+}
+
+.boot-loading-panel {
+  position: relative;
+  z-index: 1;
+  width: min(560px, calc(100vw - 32px));
+  display: grid;
+  gap: 18px;
+  padding: clamp(20px, 4vw, 30px);
+  border: 1px solid rgba(67, 247, 255, 0.34);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(255, 227, 90, 0.08), transparent 30%),
+    linear-gradient(180deg, rgba(10, 18, 38, 0.92), rgba(5, 7, 13, 0.94));
+  box-shadow: var(--shadow), inset 0 0 34px rgba(67, 247, 255, 0.06);
+  overflow: hidden;
+}
+
+.boot-loading-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(255, 227, 90, 0.08);
+  pointer-events: none;
+}
+
+.boot-loading-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #ecfbff;
+  text-transform: uppercase;
+  font-weight: 900;
+}
+
+.boot-loading-mark {
+  width: 42px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 227, 90, 0.58);
+  border-radius: 6px;
+  background: rgba(255, 227, 90, 0.1);
+  color: #fff8bf;
+  font-size: 0.92rem;
+  line-height: 1;
+  box-shadow: inset 0 0 18px rgba(255, 227, 90, 0.08), 0 0 24px rgba(67, 247, 255, 0.16);
+}
+
+.boot-loading-brand strong {
+  font-size: clamp(1rem, 3vw, 1.18rem);
+  line-height: 1;
+}
+
+.boot-loading-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.boot-loading-kicker,
+.boot-loading-copy p,
+.boot-loading-meta {
+  text-transform: uppercase;
+  font-weight: 900;
+}
+
+.boot-loading-kicker {
+  color: var(--cyan);
+  font-size: clamp(0.78rem, 2vw, 0.92rem);
+}
+
+.boot-loading-copy h1 {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(2rem, 7vw, 4rem);
+  line-height: 0.92;
+  text-transform: uppercase;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.72), 0 0 18px rgba(67, 247, 255, 0.22);
+}
+
+.boot-loading-copy p {
+  min-height: 1.2em;
+  margin: 0;
+  color: rgba(236, 251, 255, 0.74);
+  font-size: clamp(0.8rem, 2vw, 0.95rem);
+  line-height: 1.2;
+}
+
+.boot-loading-progress {
+  position: relative;
+  height: 14px;
+  border: 1px solid rgba(67, 247, 255, 0.38);
+  border-radius: 999px;
+  background: rgba(4, 9, 18, 0.72);
+  overflow: hidden;
+}
+
+.boot-loading-progress span {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, rgba(255, 227, 90, 0.95), rgba(67, 247, 255, 0.95)),
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  box-shadow: 0 0 18px rgba(67, 247, 255, 0.42);
+  transform: scaleX(var(--load-progress, 0));
+  transform-origin: left center;
+  transition: transform 140ms ease;
+}
+
+.boot-loading-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  color: rgba(236, 251, 255, 0.64);
+  font-size: clamp(0.72rem, 1.8vw, 0.84rem);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.boot-loading-meta span:last-child {
+  min-width: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .menu-shell {
@@ -1111,6 +1268,16 @@ button {
   }
 }
 
+@keyframes bootLoadSweep {
+  0%,
+  100% {
+    transform: translateX(-38%);
+  }
+  50% {
+    transform: translateX(38%);
+  }
+}
+
 @keyframes scan {
   0% {
     opacity: 0.8;
@@ -1205,6 +1372,20 @@ button {
     gap: 16px;
   }
 
+  .boot-loading-panel {
+    width: min(390px, calc(100vw - 24px));
+    gap: 16px;
+  }
+
+  .boot-loading-meta {
+    display: grid;
+    gap: 6px;
+  }
+
+  .boot-loading-meta span:last-child {
+    text-align: left;
+  }
+
   .music-loading-meter {
     width: 68px;
     height: 38px;
@@ -1234,6 +1415,15 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .boot-loading::before {
+    animation: none;
+    transform: none;
+  }
+
+  .boot-loading-progress span {
+    transition: none;
+  }
+
   .music-loading-meter span {
     animation: none;
     opacity: 0.86;

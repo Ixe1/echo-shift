@@ -169,7 +169,7 @@ export class Hud {
     const titleId = "hud-pause-title";
     modal.innerHTML = `
       <section class="panel complete-panel" ${this.dialogAttributes(titleId)}>
-        <img class="modal-logo" src="/assets/echo-shift-logo.png" alt="Echo Shift" />
+        <img class="modal-logo" src="/assets/echo-shift-logo.webp" alt="Echo Shift" />
         <h1 id="${titleId}">Paused</h1>
         <p>${levelName}</p>
         <div class="button-grid">

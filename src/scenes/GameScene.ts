@@ -514,6 +514,17 @@ export class GameScene extends Phaser.Scene {
     this.bossMusicKey = null;
   }
 
+  preload(): void {
+    const background = backgroundForLevel(this.level, this.levelIndex);
+    if (this.textures.exists(background.key)) {
+      this.writeBackgroundPreloadDiagnostics(background.key, "cached");
+      return;
+    }
+    this.load.image(background.key, background.src);
+    this.writeBackgroundPreloadDiagnostics(background.key, "queued");
+    this.load.once(Phaser.Loader.Events.COMPLETE, () => this.writeBackgroundPreloadDiagnostics(background.key, "complete"));
+  }
+
   create(): void {
     this.syncDraftPlaytestUrl();
     const levelMusicKey = this.currentLevelSoundtrackKey();
@@ -764,7 +775,7 @@ export class GameScene extends Phaser.Scene {
     overlay.dataset.levelIntro = "active";
     overlay.innerHTML = `
       <div class="level-intro-track" aria-hidden="true">
-        <img class="level-intro-track-logo" src="/assets/echo-shift-logo.png" alt="" />
+        <img class="level-intro-track-logo" src="/assets/echo-shift-logo.webp" alt="" />
       </div>
       <section class="level-intro-card" aria-label="Level start">
         <div class="level-intro-number">${this.tutorialMode ? "T" : this.level.index + 1}</div>
@@ -776,7 +787,7 @@ export class GameScene extends Phaser.Scene {
         <div class="level-intro-ready">Ready</div>
       </section>
       <div class="level-intro-sweep" aria-hidden="true">
-        <img class="level-intro-sweep-logo" src="/assets/echo-shift-logo.png" alt="" />
+        <img class="level-intro-sweep-logo" src="/assets/echo-shift-logo.webp" alt="" />
       </div>
     `;
     uiRoot().append(overlay);
@@ -1691,6 +1702,18 @@ export class GameScene extends Phaser.Scene {
   private createBackgroundImages(): void {
     const background = backgroundForLevel(this.level, this.levelIndex);
     const bounds = this.level.bounds;
+    if (!this.textures.exists(background.key)) {
+      this.backgroundTextureFilter = `${background.key}:missing`;
+      this.writeBackgroundPreloadDiagnostics(background.key, "missing");
+      if (import.meta.env.DEV) {
+        document.documentElement.dataset.echoShiftBackgroundKey = background.key;
+        document.documentElement.dataset.echoShiftBackgroundRenderMode = "missing";
+        document.documentElement.dataset.echoShiftBackgroundDetailLayer = "off";
+        document.documentElement.dataset.echoShiftBackgroundPieces = "0";
+      }
+      return;
+    }
+    this.writeBackgroundPreloadDiagnostics(background.key, "complete");
     const texture = this.textures.get(background.key);
     texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
     this.backgroundTextureFilter = `${background.key}:${Phaser.Textures.FilterMode.LINEAR}`;
@@ -1723,6 +1746,11 @@ export class GameScene extends Phaser.Scene {
       document.documentElement.dataset.echoShiftBackgroundPieces = String(this.backgroundImages.length);
       document.documentElement.dataset.echoShiftBackgroundAmbience = JSON.stringify(backgroundAmbienceForLevel(this.level));
     }
+  }
+
+  private writeBackgroundPreloadDiagnostics(key: string, phase: string): void {
+    if (!import.meta.env.DEV || typeof document === "undefined") return;
+    document.documentElement.dataset.echoShiftBackgroundPreload = `${key}:${phase}`;
   }
 
   private configureWorldTextureFilters(): void {

@@ -53,7 +53,7 @@ export class MenuScene extends Phaser.Scene {
       <main class="screen art-screen menu-screen">
         <div class="menu-shell">
           <section class="brand-block">
-            <img class="brand-logo" src="/assets/echo-shift-logo.png" alt="Echo Shift" />
+            <img class="brand-logo" src="/assets/echo-shift-logo.webp" alt="Echo Shift" />
             <p class="tagline">Rewind to leave reliable echoes in place, then cooperate with your anchored selves through ${levels.length} compact time-shift rooms.</p>
           </section>
           <section class="panel menu-panel">
