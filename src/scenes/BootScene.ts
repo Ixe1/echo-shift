@@ -194,8 +194,9 @@ export class BootScene extends Phaser.Scene {
     this.loadingBar?.style.setProperty("--load-progress", String(percent / 100));
     this.loadingPercent?.replaceChildren(`${percent}%`);
     this.loadingProgress?.setAttribute("aria-valuenow", String(percent));
-    this.loadingProgress?.setAttribute("aria-valuetext", `${percent}% loaded`);
-    this.writeLoadingDiagnostics("loading", percent, this.loadingStatus?.textContent || "loading");
+    const status = this.loadingStatus?.textContent || "Loading assets";
+    this.loadingProgress?.setAttribute("aria-valuetext", `${percent}% loaded, ${status}`);
+    this.writeLoadingDiagnostics("loading", percent, status);
   }
 
   private handleFileProgress(file: Phaser.Loader.File): void {
@@ -205,7 +206,7 @@ export class BootScene extends Phaser.Scene {
     this.loadingStatus?.replaceChildren(label);
     const fileNode = this.loadingScreen?.querySelector<HTMLElement>("[data-loading-file]");
     fileNode?.replaceChildren(detail);
-    this.loadingProgress?.setAttribute("aria-valuetext", label);
+    this.loadingProgress?.setAttribute("aria-valuetext", `${this.currentLoadingPercent()} loaded, ${label}`);
     this.writeLoadingDiagnostics("loading", undefined, label);
   }
 
@@ -323,6 +324,10 @@ export class BootScene extends Phaser.Scene {
     if (key.includes("boss") || key.includes("monster")) return "Enemy sprites";
     if (key.includes("time") || key.includes("runner")) return "Rewind sprites";
     return "Runtime textures";
+  }
+
+  private currentLoadingPercent(): string {
+    return this.loadingPercent?.textContent || "0%";
   }
 
   private startupBackgrounds(): LevelBackground[] {

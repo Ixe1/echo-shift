@@ -1000,7 +1000,8 @@ export class GameScene extends Phaser.Scene {
     this.roomLoadingBar?.style.setProperty("--load-progress", String(percent / 100));
     this.roomLoadingPercent?.replaceChildren(`${percent}%`);
     this.roomLoadingProgress?.setAttribute("aria-valuenow", String(percent));
-    this.roomLoadingProgress?.setAttribute("aria-valuetext", `${percent}% loaded`);
+    const status = this.roomLoadingStatus?.textContent || "Loading room assets";
+    this.roomLoadingProgress?.setAttribute("aria-valuetext", `${percent}% loaded, ${status}`);
   }
 
   private handleRoomFileProgress(file: Phaser.Loader.File): void {
@@ -1009,7 +1010,7 @@ export class GameScene extends Phaser.Scene {
     const detail = this.roomLoadingDetailForFile(key);
     this.roomLoadingStatus?.replaceChildren(status);
     this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(detail);
-    this.roomLoadingProgress?.setAttribute("aria-valuetext", status);
+    this.roomLoadingProgress?.setAttribute("aria-valuetext", `${this.currentRoomLoadingPercent()} loaded, ${status}`);
   }
 
   private roomLoadingStatusForFile(key: string): string {
@@ -1017,7 +1018,8 @@ export class GameScene extends Phaser.Scene {
     if (key === background.key || key === this.roomBackgroundFallbackKey) return "Loading room backdrop";
     if (key.startsWith("terrain-decor-prop:")) return "Loading terrain decor";
     if (key === TERRAIN_TILE_KEY) return "Loading terrain tiles";
-    if (key === BOSS_ATLAS_KEY || this.isCleanBossTextureKey(key) || key === ARCHIVE_BOOK_VOLLEY_KEY) return "Loading boss sprites";
+    if (key === ARCHIVE_BOOK_VOLLEY_KEY) return "Loading effects";
+    if (key === BOSS_ATLAS_KEY || this.isCleanBossTextureKey(key)) return "Loading boss sprites";
     if (key === POOF_SHEET_KEY) return (this.level.bosses || []).length > 0 && (this.level.monsters || []).length === 0 ? "Loading effects" : "Loading enemy sprites";
     if (key === MONSTER_ATLAS_KEY) return "Loading enemy sprites";
     if (key === TIME_RUNNER_KEY || key === TIME_EFFECTS_KEY) return "Loading rewind sprites";
@@ -1030,7 +1032,8 @@ export class GameScene extends Phaser.Scene {
     if (key === background.key || key === this.roomBackgroundFallbackKey) return "Room backdrop";
     if (key.startsWith("terrain-decor-prop:")) return "Terrain decor";
     if (key === TERRAIN_TILE_KEY) return "Terrain tiles";
-    if (key === BOSS_ATLAS_KEY || this.isCleanBossTextureKey(key) || key === ARCHIVE_BOOK_VOLLEY_KEY) return "Boss sprites";
+    if (key === ARCHIVE_BOOK_VOLLEY_KEY) return "Effects";
+    if (key === BOSS_ATLAS_KEY || this.isCleanBossTextureKey(key)) return "Boss sprites";
     if (key === POOF_SHEET_KEY) return (this.level.bosses || []).length > 0 && (this.level.monsters || []).length === 0 ? "Effects" : "Enemy sprites";
     if (key === MONSTER_ATLAS_KEY) return "Enemy sprites";
     if (key === TIME_RUNNER_KEY || key === TIME_EFFECTS_KEY) return "Rewind sprites";
@@ -1058,7 +1061,7 @@ export class GameScene extends Phaser.Scene {
       const detail = this.optionalRoomAssetDetail(failedKey);
       this.roomLoadingStatus?.replaceChildren(status);
       this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(detail);
-      this.roomLoadingProgress?.setAttribute("aria-valuetext", status);
+      this.roomLoadingProgress?.setAttribute("aria-valuetext", `${this.currentRoomLoadingPercent()} loaded, ${status}`);
       return;
     }
     const background = backgroundForLevel(this.level, this.levelIndex);
@@ -1123,8 +1126,16 @@ export class GameScene extends Phaser.Scene {
     return "Required room asset unavailable";
   }
 
+  private currentRoomLoadingPercent(): string {
+    return this.roomLoadingPercent?.textContent || "0%";
+  }
+
   private optionalRoomAssetFailureIsSticky(key: string): boolean {
     return !this.isCleanBossTextureKey(key);
+  }
+
+  private clearOptionalRoomAssetSkips(): void {
+    this.failedOptionalRoomAssets.clear();
   }
 
   private handleRoomLoadComplete(): void {
@@ -1173,7 +1184,7 @@ export class GameScene extends Phaser.Scene {
   private setRoomFallbackPendingProgress(status: string, fileLabel: string, valueText: string): void {
     this.roomLoadingStatus?.replaceChildren(status);
     this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(fileLabel);
-    this.roomLoadingProgress?.setAttribute("aria-valuetext", valueText);
+    this.roomLoadingProgress?.setAttribute("aria-valuetext", `${ROOM_FALLBACK_READY_PROGRESS}% loaded, ${valueText}`);
     this.roomLoadingBar?.style.setProperty("--load-progress", String(ROOM_FALLBACK_READY_PROGRESS / 100));
     this.roomLoadingPercent?.replaceChildren(`${ROOM_FALLBACK_READY_PROGRESS}%`);
     this.roomLoadingProgress?.setAttribute("aria-valuenow", String(ROOM_FALLBACK_READY_PROGRESS));
@@ -1183,7 +1194,7 @@ export class GameScene extends Phaser.Scene {
     this.roomLoadingBar?.style.setProperty("--load-progress", "1");
     this.roomLoadingPercent?.replaceChildren("100%");
     this.roomLoadingProgress?.setAttribute("aria-valuenow", "100");
-    this.roomLoadingProgress?.setAttribute("aria-valuetext", "100% loaded");
+    this.roomLoadingProgress?.setAttribute("aria-valuetext", "100% loaded, Room ready");
   }
 
   private showRoomLoadFailure(background: ReturnType<typeof backgroundForLevel>, phase: "missing" | "error", key: string): void {
@@ -1245,6 +1256,7 @@ export class GameScene extends Phaser.Scene {
   private retryRoomLoad(): void {
     const background = backgroundForLevel(this.level, this.levelIndex);
     this.failedPrimaryBackgroundRetries.delete(background.key);
+    this.clearOptionalRoomAssetSkips();
     this.scene.start("GameScene", {
       levelIndex: this.levelIndex,
       tutorial: this.tutorialMode,
@@ -1993,6 +2005,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.stopBossDefeatLoops();
+    this.clearOptionalRoomAssetSkips();
     this.rememberDraftLevel();
     this.scene.start("MenuScene");
   }
@@ -2017,6 +2030,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.stopBossDefeatLoops();
+    this.clearOptionalRoomAssetSkips();
     this.rememberDraftLevel();
     const url = new URL(window.location.href);
     url.searchParams.set("editor", "1");
