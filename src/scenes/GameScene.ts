@@ -1004,10 +1004,23 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleRoomFileProgress(file: Phaser.Loader.File): void {
-    const label = `Loading ${file.key}`;
-    this.roomLoadingStatus?.replaceChildren("Loading room backdrop");
+    const key = String(file.key);
+    const label = `Loading ${key}`;
+    this.roomLoadingStatus?.replaceChildren(this.roomLoadingStatusForFile(key));
     this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(label);
     this.roomLoadingProgress?.setAttribute("aria-valuetext", label);
+  }
+
+  private roomLoadingStatusForFile(key: string): string {
+    const background = backgroundForLevel(this.level, this.levelIndex);
+    if (key === background.key || key === this.roomBackgroundFallbackKey) return "Loading room backdrop";
+    if (key.startsWith("terrain-decor-prop:")) return "Loading terrain decor";
+    if (key === TERRAIN_TILE_KEY) return "Loading terrain tiles";
+    if (key === BOSS_ATLAS_KEY || this.isCleanBossTextureKey(key) || key === ARCHIVE_BOOK_VOLLEY_KEY) return "Loading boss sprites";
+    if (key === MONSTER_ATLAS_KEY || key === POOF_SHEET_KEY) return "Loading enemy sprites";
+    if (key === TIME_RUNNER_KEY || key === TIME_EFFECTS_KEY) return "Loading rewind sprites";
+    if (key === OBJECT_ATLAS_KEY || key === LAUNCH_PAD_KEY || key === HAZARD_VENT_KEY || key === CORE_MAJOR_KEY) return "Loading room objects";
+    return "Loading room assets";
   }
 
   private roomLoadProgressCeiling(): number {
