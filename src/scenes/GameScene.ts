@@ -1007,10 +1007,17 @@ export class GameScene extends Phaser.Scene {
       this.showRoomLoadFailure(background, "missing", background.key);
       return;
     }
-    this.handleRoomLoadProgress(1);
+    this.setRoomLoadCompleteProgress();
     if (textureKey === background.key) this.failedPrimaryBackgroundRetries.delete(background.key);
     this.writeBackgroundPreloadDiagnostics(textureKey, "complete");
     this.roomLoadingStatus?.replaceChildren("Room ready");
+  }
+
+  private setRoomLoadCompleteProgress(): void {
+    this.roomLoadingBar?.style.setProperty("--load-progress", "1");
+    this.roomLoadingPercent?.replaceChildren("100%");
+    this.roomLoadingProgress?.setAttribute("aria-valuenow", "100");
+    this.roomLoadingProgress?.setAttribute("aria-valuetext", "100% loaded");
   }
 
   private showRoomLoadFailure(background: ReturnType<typeof backgroundForLevel>, phase: "missing" | "error", key: string): void {
@@ -1261,8 +1268,9 @@ export class GameScene extends Phaser.Scene {
     `;
     uiRoot().append(overlay);
     this.musicLoadingOverlay = overlay;
-    overlay.tabIndex = -1;
-    overlay.focus({ preventScroll: true });
+    const panel = overlay.querySelector<HTMLElement>(".music-loading-panel");
+    panel?.setAttribute("tabindex", "-1");
+    (panel || overlay).focus({ preventScroll: true });
     this.writeMusicLoadingDiagnostics("visible");
   }
 
