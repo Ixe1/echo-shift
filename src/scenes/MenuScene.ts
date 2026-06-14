@@ -15,6 +15,7 @@ export class MenuScene extends Phaser.Scene {
   private menuNavigation: MenuNavigationBinding | null = null;
   private secretProgress = 0;
   private secretCodeEnabled = false;
+  private secretJustUnlocked = false;
   private readonly handleSecretKeyDown = (event: KeyboardEvent): void => {
     if (!this.secretCodeEnabled || isSecretAccessUnlocked() || event.repeat) return;
     const input = secretInputFromKeyboardEvent(event);
@@ -26,6 +27,7 @@ export class MenuScene extends Phaser.Scene {
     event.preventDefault();
     this.secretProgress = 0;
     unlockSecretAccess();
+    this.secretJustUnlocked = true;
     audio.play("extraLife");
     this.create();
   };
@@ -43,6 +45,7 @@ export class MenuScene extends Phaser.Scene {
     const root = uiRoot();
     const draftPlaytest = isDraftPlaytestActive();
     const secretUnlocked = isSecretAccessUnlocked();
+    const secretStatus = this.secretJustUnlocked ? "Level Select and Level Editor unlocked." : "";
     this.preloadLikelyMusic(draftPlaytest);
     const editorButton = secretUnlocked ? `<button class="ui-button" data-editor>${icon("levels")} Level Editor</button>` : "";
     const levelSelectButton = secretUnlocked ? `<button class="ui-button" data-levels>${icon("levels")} Level Select</button>` : "";
@@ -60,6 +63,7 @@ export class MenuScene extends Phaser.Scene {
                 ? "Testing the browser-saved editor draft. Clears and scores are not written to normal progress."
                 : "Community Dev Challenge build. Codex-assisted design, code, and QA."
             }</p>
+            <p class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-secret-status>${secretStatus}</p>
             <div class="button-grid">
               <button class="ui-button primary" data-play>${icon("play")} ${draftPlaytest ? "Play Draft" : "Play"}</button>
               ${draftPlaytest ? "" : `<button class="ui-button" data-tutorial>${icon("play")} Tutorial</button>`}
@@ -97,7 +101,9 @@ export class MenuScene extends Phaser.Scene {
     });
     root.querySelector("[data-credits]")?.addEventListener("click", () => this.showCredits());
     root.querySelector("[data-options]")?.addEventListener("click", () => this.showOptions());
-    this.bindMenuNavigation();
+    const initialFocus = this.secretJustUnlocked ? "[data-levels]" : undefined;
+    this.secretJustUnlocked = false;
+    this.bindMenuNavigation(undefined, initialFocus);
   }
 
   private currentDraftLevelIndex(): number {
@@ -170,10 +176,11 @@ export class MenuScene extends Phaser.Scene {
     clearUi();
   };
 
-  private bindMenuNavigation(onBack?: () => void): void {
+  private bindMenuNavigation(onBack?: () => void, initialFocus?: string): void {
     this.destroyMenuNavigation();
     this.menuNavigation = bindMenuNavigation(uiRoot(), {
       onBack,
+      initialFocus,
       onNavigate: () => audio.play("select")
     });
   }

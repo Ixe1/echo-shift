@@ -7,6 +7,10 @@ type OptionsCallbacks = {
   onNavigate?: () => void;
 };
 
+type OptionsPanelConfig = {
+  dialog?: boolean;
+};
+
 type AudioSettingDefinition = {
   key: keyof AudioMixSettings;
   label: string;
@@ -56,11 +60,16 @@ const controlsRows = (): string =>
     )
     .join("");
 
-export const optionsPanelHtml = (view: OptionsView = "root"): string => {
+const dialogAttributes = (view: OptionsView, config: OptionsPanelConfig): string =>
+  config.dialog ? `role="dialog" aria-modal="true" aria-labelledby="options-${view}-title"` : "";
+
+const titleId = (view: OptionsView, config: OptionsPanelConfig): string => (config.dialog ? ` id="options-${view}-title"` : "");
+
+export const optionsPanelHtml = (view: OptionsView = "root", config: OptionsPanelConfig = {}): string => {
   if (view === "audio") {
     return `
-      <section class="panel menu-panel options-panel">
-        <h1>Audio</h1>
+      <section class="panel menu-panel options-panel" ${dialogAttributes(view, config)}>
+        <h1${titleId(view, config)}>Audio</h1>
         <div class="settings-list">${audioSettingRows()}</div>
         <div class="button-grid">
           <button class="ui-button primary" data-options-root>Back</button>
@@ -71,8 +80,8 @@ export const optionsPanelHtml = (view: OptionsView = "root"): string => {
 
   if (view === "controls") {
     return `
-      <section class="panel menu-panel options-panel">
-        <h1>Controls</h1>
+      <section class="panel menu-panel options-panel" ${dialogAttributes(view, config)}>
+        <h1${titleId(view, config)}>Controls</h1>
         <div class="controls-list">${controlsRows()}</div>
         <div class="button-grid">
           <button class="ui-button primary" data-options-root>Back</button>
@@ -82,8 +91,8 @@ export const optionsPanelHtml = (view: OptionsView = "root"): string => {
   }
 
   return `
-    <section class="panel menu-panel options-panel">
-      <h1>Options</h1>
+    <section class="panel menu-panel options-panel" ${dialogAttributes(view, config)}>
+      <h1${titleId(view, config)}>Options</h1>
       <div class="button-grid">
         <button class="ui-button primary" data-options-audio>Audio</button>
         <button class="ui-button" data-options-controls>Controls</button>
@@ -95,9 +104,10 @@ export const optionsPanelHtml = (view: OptionsView = "root"): string => {
 
 export const bindOptionsPanel = (root: HTMLElement, callbacks: OptionsCallbacks): void => {
   const navigate = () => callbacks.onNavigate?.();
+  const config = { dialog: root.hasAttribute("data-modal") };
   const focusFirst = () => window.setTimeout(() => root.querySelector<HTMLElement>("button:not([disabled]), input:not([disabled])")?.focus(), 0);
   const show = (view: OptionsView) => {
-    root.innerHTML = optionsPanelHtml(view);
+    root.innerHTML = optionsPanelHtml(view, config);
     bindOptionsPanel(root, callbacks);
     focusFirst();
   };

@@ -40,6 +40,7 @@ type CompleteOptions = {
   scoreSaveMessage?: string;
   campaignSummary: CampaignRunSummary | null;
   leaderboardEntries: LeaderboardEntry[];
+  leaderboardMessage?: string;
 };
 
 export class Hud {
@@ -159,10 +160,11 @@ export class Hud {
     const modal = this.modal();
     const levelSelectButton = this.callbacks.allowLevelSelect ? `<button class="ui-button" data-levels>${icon("levels")} Level Select</button>` : "";
     const menuLabel = this.menuLabel();
+    const titleId = "hud-pause-title";
     modal.innerHTML = `
-      <section class="panel complete-panel">
+      <section class="panel complete-panel" ${this.dialogAttributes(titleId)}>
         <img class="modal-logo" src="/assets/echo-shift-logo.png" alt="Echo Shift" />
-        <h1>Paused</h1>
+        <h1 id="${titleId}">Paused</h1>
         <p>${levelName}</p>
         <div class="button-grid">
           <button class="ui-button primary" data-resume data-default-focus>Resume</button>
@@ -202,9 +204,10 @@ export class Hud {
     const primaryAction = isFinal
       ? levelSelectButton || `<button class="ui-button primary" data-exit-menu data-default-focus>${icon("back")} ${menuLabel}</button>`
       : `<button class="ui-button primary" data-next data-default-focus>${icon("next")} Next Room</button>`;
+    const titleId = isFinal ? "hud-final-complete-title" : "hud-room-complete-title";
     modal.innerHTML = `
-      <section class="panel complete-panel">
-        <h1>${isFinal ? "Timeline Complete" : "Room Clear"}</h1>
+      <section class="panel complete-panel" ${this.dialogAttributes(titleId)}>
+        <h1 id="${titleId}">${isFinal ? "Timeline Complete" : "Room Clear"}</h1>
         <p>${this.completionMessage(isFinal, options)}</p>
         <div class="score-row">
           <div class="score-cell"><strong>Score</strong><span>${formatScore(score.score)}</span></div>
@@ -236,9 +239,10 @@ export class Hud {
     this.setHudControlsInert(true);
     const modal = this.modal();
     const menuLabel = this.menuLabel();
+    const titleId = "hud-tutorial-complete-title";
     modal.innerHTML = `
-      <section class="panel complete-panel">
-        <h1>Tutorial Complete</h1>
+      <section class="panel complete-panel" ${this.dialogAttributes(titleId)}>
+        <h1 id="${titleId}">Tutorial Complete</h1>
         <p>Echo timing confirmed.</p>
         <div class="score-row">
           <div class="score-cell"><strong>Time</strong><span>${formatFrames(score.frames)}</span></div>
@@ -264,9 +268,10 @@ export class Hud {
     const primaryAction = this.callbacks.allowLevelSelect
       ? `<button class="ui-button primary" data-levels data-default-focus>${icon("levels")} Level Select</button>`
       : `<button class="ui-button primary" data-exit-menu data-default-focus>${icon("back")} ${menuLabel}</button>`;
+    const titleId = "hud-game-over-title";
     modal.innerHTML = `
-      <section class="panel complete-panel">
-        <h1>Game Over</h1>
+      <section class="panel complete-panel" ${this.dialogAttributes(titleId)}>
+        <h1 id="${titleId}">Game Over</h1>
         <p>${levelName} signal budget exhausted.</p>
         <div class="button-grid">
           ${primaryAction}
@@ -303,7 +308,7 @@ export class Hud {
     this.destroyModalNavigation();
     this.setHudControlsInert(true);
     const modal = this.modal();
-    modal.innerHTML = optionsPanelHtml();
+    modal.innerHTML = optionsPanelHtml("root", { dialog: true });
     modal.classList.add("show");
     bindOptionsPanel(modal, {
       onBack: () => this.showPause(levelName),
@@ -341,12 +346,13 @@ export class Hud {
         <button class="ui-button primary" type="submit" data-default-focus>Save Score</button>
       </form>
       <div class="leaderboard-list" data-leaderboard-list>
-        ${this.leaderboardListHtml(options.leaderboardEntries)}
+        ${this.leaderboardListHtml(options.leaderboardEntries, options.leaderboardMessage)}
       </div>
     `;
   }
 
-  private leaderboardListHtml(entries: LeaderboardEntry[]): string {
+  private leaderboardListHtml(entries: LeaderboardEntry[], message?: string): string {
+    if (message) return `<p class="credits-text">${this.escapeHtml(message)}</p>`;
     if (entries.length === 0) return `<p class="credits-text">No local campaign scores yet.</p>`;
     return entries
       .map(
@@ -374,7 +380,7 @@ export class Hud {
       const result = this.callbacks.onSaveLeaderboard?.(input?.value || "Runner", summary);
       const entries = result?.entries || [];
       const list = this.modal().querySelector<HTMLElement>("[data-leaderboard-list]");
-      if (list) list.innerHTML = this.leaderboardListHtml(entries);
+      if (list) list.innerHTML = this.leaderboardListHtml(entries, result?.ok ? undefined : result?.message);
       const button = form.querySelector<HTMLButtonElement>("button[type='submit']");
       if (!result?.ok) {
         saved = false;
@@ -403,6 +409,10 @@ export class Hud {
   private destroyModalNavigation(): void {
     this.modalNavigation?.destroy();
     this.modalNavigation = null;
+  }
+
+  private dialogAttributes(titleId: string): string {
+    return `role="dialog" aria-modal="true" aria-labelledby="${titleId}"`;
   }
 
   private optionsBack(fallback: () => void): void {

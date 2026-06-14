@@ -195,6 +195,11 @@ try {
     await page.keyboard.press(key);
   }
   await page.locator("[data-editor]").waitFor({ state: "visible" });
+  await page.waitForFunction(() => document.documentElement.dataset.echoShiftAudioEffects?.includes("play:extraLife"));
+  await page.waitForFunction(() => document.activeElement instanceof HTMLElement && document.activeElement.hasAttribute("data-levels"));
+  const secretUnlockAudioEffects = await page.evaluate(() => document.documentElement.dataset.echoShiftAudioEffects);
+  const secretUnlockStatusText = await page.locator("[data-secret-status]").textContent();
+  const secretUnlockFocusText = await page.evaluate(() => document.activeElement?.textContent?.trim() || "");
   const secretEditorVisible = await page.locator("[data-editor]").isVisible();
   const secretLevelSelectVisible = await page.locator("[data-levels]").isVisible();
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -1042,7 +1047,7 @@ try {
   collectConsole(leaderboardPage);
   await leaderboardPage.goto(`${url}?editor=1`, { waitUntil: "domcontentloaded" });
   const leaderboardHarnessResult = await leaderboardPage.evaluate(async () => {
-    const [{ Hud }, { addLocalLeaderboardEntry, getLocalLeaderboard }] = await Promise.all([
+    const [{ Hud }, { addLocalLeaderboardEntry, getLocalLeaderboard, getLocalLeaderboardState }] = await Promise.all([
       import("/src/ui/hud.ts"),
       import("/src/game/leaderboard.ts")
     ]);
@@ -1057,6 +1062,32 @@ try {
       onSaveLeaderboard: addLocalLeaderboardEntry,
       allowLevelSelect: false
     });
+    const dialogSnapshot = () => {
+      const dialog = document.querySelector("[data-modal] .panel");
+      const labelId = dialog?.getAttribute("aria-labelledby") || "";
+      return {
+        role: dialog?.getAttribute("role") || "",
+        modal: dialog?.getAttribute("aria-modal") || "",
+        label: document.getElementById(labelId)?.textContent || ""
+      };
+    };
+    const dialogScore = {
+      levelId: "dialog-smoke",
+      score: 100,
+      frames: 120,
+      echoes: 0,
+      deaths: 0,
+      cores: 0,
+      timeBonus: 0
+    };
+    hud.showPause("Dialog Smoke");
+    const pauseDialog = dialogSnapshot();
+    document.querySelector("[data-options]").click();
+    const optionsDialog = dialogSnapshot();
+    hud.showTutorialComplete(dialogScore, 0);
+    const tutorialDialog = dialogSnapshot();
+    hud.showGameOver("Dialog Smoke");
+    const gameOverDialog = dialogSnapshot();
     hud.showComplete(
       {
         levelId: "campaign-final",
@@ -1083,6 +1114,9 @@ try {
     const panelRect = panel.getBoundingClientRect();
     const summaryRect = summary.getBoundingClientRect();
     const summaryTopVisible = summaryRect.top >= panelRect.top - 1 && summaryRect.top < panelRect.bottom;
+    const finalDialogRole = panel.getAttribute("role");
+    const finalDialogModal = panel.getAttribute("aria-modal");
+    const finalDialogLabel = document.getElementById(panel.getAttribute("aria-labelledby") || "")?.textContent || "";
     const input = document.querySelector("[data-leaderboard-name]");
     input.value = "<Ace>&!!!";
     const form = document.querySelector("[data-leaderboard-form]");
@@ -1163,6 +1197,40 @@ try {
     window.localStorage.setItem("echo-shift-leaderboard-v1", mixedDamagedStorage);
     const mixedDamagedSave = addLocalLeaderboardEntry("Mixed", { score: 2, frames: 2, deaths: 0, cores: 0, levels: 1 });
     const mixedDamagedAfterSave = window.localStorage.getItem("echo-shift-leaderboard-v1");
+    const damagedHud = new Hud({
+      onRewind: () => {},
+      onPause: () => {},
+      onTitle: () => {},
+      onNext: () => {},
+      onLevelSelect: () => {},
+      onResume: () => {},
+      onVirtualInput: () => {},
+      onSaveLeaderboard: addLocalLeaderboardEntry,
+      allowLevelSelect: false
+    });
+    const damagedLeaderboard = getLocalLeaderboardState();
+    damagedHud.showComplete(
+      {
+        levelId: "campaign-final",
+        score: 5000,
+        frames: 720,
+        echoes: 2,
+        deaths: 1,
+        cores: 4,
+        timeBonus: 1200
+      },
+      true,
+      4,
+      {
+        scoreEligible: true,
+        scoreRecorded: true,
+        campaignSummary: { score: 9000, frames: 2048, deaths: 2, cores: 12, levels: 4 },
+        leaderboardEntries: damagedLeaderboard.entries,
+        leaderboardMessage: damagedLeaderboard.ok ? undefined : damagedLeaderboard.message
+      }
+    );
+    const damagedListText = document.querySelector("[data-leaderboard-list]")?.textContent || "";
+    damagedHud.destroy();
     return {
       entries,
       listText,
@@ -1172,6 +1240,13 @@ try {
       modalText,
       initialFinalFocus,
       summaryTopVisible,
+      pauseDialog,
+      optionsDialog,
+      tutorialDialog,
+      gameOverDialog,
+      finalDialogRole,
+      finalDialogModal,
+      finalDialogLabel,
       failedEntryStorage,
       failedButtonText,
       failedButtonDisabled,
@@ -1182,7 +1257,8 @@ try {
       damagedSaveOk: damagedSave.ok,
       damagedStorage,
       mixedDamagedSaveOk: mixedDamagedSave.ok,
-      mixedDamagedAfterSave
+      mixedDamagedAfterSave,
+      damagedListText
     };
   });
   await leaderboardHarness.close();
@@ -2008,6 +2084,12 @@ try {
   assert(!lockedLevelSelectVisible, "Expected locked main menu to hide Level Select before the secret code");
   assert(secretEditorVisible, "Expected secret code to reveal Level Editor on the main menu");
   assert(secretLevelSelectVisible, "Expected secret code to reveal Level Select on the main menu");
+  assert(secretUnlockAudioEffects?.includes("play:extraLife"), `Expected secret unlock to play extra-life SFX, got ${secretUnlockAudioEffects}`);
+  assert(
+    secretUnlockStatusText?.includes("Level Select") && secretUnlockStatusText.includes("Level Editor"),
+    `Expected secret unlock status to announce revealed actions, got ${secretUnlockStatusText}`
+  );
+  assert(secretUnlockFocusText.includes("Level Select"), `Expected secret unlock to focus Level Select, got ${secretUnlockFocusText}`);
   assert(!reloadedEditorVisible, "Expected secret unlock to be forgotten after a plain page reload");
   assert(!reloadedLevelSelectVisible, "Expected Level Select unlock to be forgotten after a plain page reload");
   assert(!barePlaytestEditorVisible, "Expected bare ?playtestDraft=1 without a saved draft not to unlock Level Editor");
@@ -2222,6 +2304,22 @@ try {
     `Expected final leaderboard modal to focus Save Score instead of scrolling to the exit row, got ${leaderboardHarnessResult.initialFinalFocus}`
   );
   assert(leaderboardHarnessResult.summaryTopVisible, "Expected final leaderboard summary to stay visible when the modal opens");
+  for (const [name, snapshot] of Object.entries({
+    pause: leaderboardHarnessResult.pauseDialog,
+    options: leaderboardHarnessResult.optionsDialog,
+    tutorial: leaderboardHarnessResult.tutorialDialog,
+    gameOver: leaderboardHarnessResult.gameOverDialog
+  })) {
+    assert(snapshot.role === "dialog", `Expected ${name} modal to expose role=dialog, got ${JSON.stringify(snapshot)}`);
+    assert(snapshot.modal === "true", `Expected ${name} modal to expose aria-modal=true, got ${JSON.stringify(snapshot)}`);
+    assert(snapshot.label, `Expected ${name} modal to have an aria-labelledby heading, got ${JSON.stringify(snapshot)}`);
+  }
+  assert(leaderboardHarnessResult.finalDialogRole === "dialog", `Expected final modal role=dialog, got ${leaderboardHarnessResult.finalDialogRole}`);
+  assert(leaderboardHarnessResult.finalDialogModal === "true", `Expected final modal aria-modal=true, got ${leaderboardHarnessResult.finalDialogModal}`);
+  assert(
+    leaderboardHarnessResult.finalDialogLabel === "Timeline Complete",
+    `Expected final modal to be labelled by its heading, got ${leaderboardHarnessResult.finalDialogLabel}`
+  );
   assert(leaderboardHarnessResult.failedEntryStorage === null, "Expected failed leaderboard save not to persist storage");
   assert(leaderboardHarnessResult.failedButtonText === "Try Again", `Expected failed leaderboard save button to offer retry, got ${leaderboardHarnessResult.failedButtonText}`);
   assert(!leaderboardHarnessResult.failedButtonDisabled, "Expected failed leaderboard save button to remain enabled");
@@ -2241,6 +2339,10 @@ try {
   assert(
     leaderboardHarnessResult.mixedDamagedAfterSave.includes('"bad"') && !leaderboardHarnessResult.mixedDamagedAfterSave.includes('"Mixed"'),
     `Expected partially malformed leaderboard storage to remain untouched, got ${leaderboardHarnessResult.mixedDamagedAfterSave}`
+  );
+  assert(
+    leaderboardHarnessResult.damagedListText.includes("damaged") && !leaderboardHarnessResult.damagedListText.includes("No local campaign scores yet"),
+    `Expected damaged leaderboard state to render as damaged data, got ${leaderboardHarnessResult.damagedListText}`
   );
   assert(
     leaderboardHarnessResult.modalText.includes("Campaign Score"),

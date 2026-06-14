@@ -86,7 +86,9 @@ const readLocalLeaderboard = (): LeaderboardSaveResult => {
   }
 };
 
-export const getLocalLeaderboard = (): LeaderboardEntry[] => readLocalLeaderboard().entries;
+export const getLocalLeaderboardState = (): LeaderboardSaveResult => readLocalLeaderboard();
+
+export const getLocalLeaderboard = (): LeaderboardEntry[] => getLocalLeaderboardState().entries;
 
 const writeLocalLeaderboard = (entries: LeaderboardEntry[]): boolean => {
   try {

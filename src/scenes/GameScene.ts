@@ -3,7 +3,7 @@ import { updateEditorDraftCurrentIndex } from "../data/editorDraft";
 import { getLevel, isDraftPlaytestActive, levels } from "../data/levels";
 import { tutorialLevel } from "../data/tutorialLevel";
 import { audio } from "../game/audio";
-import { addLocalLeaderboardEntry, getLocalLeaderboard } from "../game/leaderboard";
+import { addLocalLeaderboardEntry, getLocalLeaderboardState } from "../game/leaderboard";
 import { backgroundAmbienceForLevel, backgroundAmbienceIsActive, type NormalizedBackgroundAmbience } from "../game/backgroundAmbience";
 import { backgroundForLevel } from "../game/backgrounds";
 import {
@@ -1235,12 +1235,14 @@ export class GameScene extends Phaser.Scene {
     if (this.tutorialMode) this.hud.showTutorialComplete(score, totalCores);
     else {
       const isFinal = this.levelIndex === levels.length - 1;
+      const leaderboard = getLocalLeaderboardState();
       this.hud.showComplete(score, isFinal, totalCores, {
         scoreEligible,
         scoreRecorded: !scoreEligible || persistence.recorded,
         scoreSaveMessage: persistence.message,
         campaignSummary: isFinal ? persistence.campaignSummary : null,
-        leaderboardEntries: getLocalLeaderboard()
+        leaderboardEntries: leaderboard.entries,
+        leaderboardMessage: leaderboard.ok ? undefined : leaderboard.message
       });
     }
   }
@@ -1265,7 +1267,7 @@ export class GameScene extends Phaser.Scene {
 
   private openTitle(): void {
     if (this.pendingBossDefeatCompletion) {
-      this.hud.toast("Main Menu locked during final sync");
+      this.hud.toast(`${this.menuLabel()} locked during final sync`);
       return;
     }
     this.stopBossDefeatLoops();
@@ -1299,6 +1301,10 @@ export class GameScene extends Phaser.Scene {
     url.searchParams.delete("playtestDraft");
     url.searchParams.delete("level");
     window.location.href = `${url.pathname}${url.search}${url.hash}`;
+  }
+
+  private menuLabel(): string {
+    return isDraftPlaytestActive() ? "Draft Menu" : "Main Menu";
   }
 
   private syncDraftPlaytestUrl(): void {
