@@ -1042,15 +1042,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   private roomLoadProgressCeiling(): number {
-    if (
-      this.roomBackgroundFallbackKey &&
-      this.roomBackgroundFallbackSrc &&
-      !this.textures.exists(this.roomBackgroundFallbackKey)
-    ) {
+    if (this.roomBackgroundFallbackPending()) {
       return ROOM_FALLBACK_READY_PROGRESS;
     }
     if (this.roomBossAtlasFallbackPending()) return ROOM_FALLBACK_READY_PROGRESS;
     return 100;
+  }
+
+  private roomBackgroundFallbackPending(): boolean {
+    if (this.awaitingRoomBackgroundFallback) return true;
+    const background = backgroundForLevel(this.level, this.levelIndex);
+    return (
+      this.roomLoadFailedKey === background.key &&
+      this.roomBackgroundFallbackKey !== null &&
+      this.roomBackgroundFallbackSrc !== null &&
+      !this.textures.exists(this.roomBackgroundFallbackKey)
+    );
   }
 
   private handleRoomLoadError(file: Phaser.Loader.File): void {
@@ -1077,6 +1084,7 @@ export class GameScene extends Phaser.Scene {
       this.roomBackgroundFallbackSrc &&
       !this.textures.exists(this.roomBackgroundFallbackKey)
     ) {
+      this.roomLoadFailedKey = failedKey;
       this.setRoomFallbackPendingProgress("Loading fallback room backdrop", "Fallback room backdrop", "Loading fallback room backdrop");
       this.writeBackgroundPreloadDiagnostics(failedKey, "fallback");
       return;

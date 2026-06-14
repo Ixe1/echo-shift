@@ -1,11 +1,9 @@
 import Phaser from "phaser";
 import { readEditorDraftCurrentIndex } from "../data/editorDraft";
-import { getLevel, isDraftPlaytestActive, levels } from "../data/levels";
-import { tutorialLevel } from "../data/tutorialLevel";
+import { isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
 import { isSecretAccessUnlocked, secretInputFromKeyboardEvent, secretSequence, unlockSecretAccess } from "../game/secretAccess";
 import { resetCampaignVitals } from "../game/session";
-import { soundtrackForLevel } from "../game/soundtracks";
 import { bindImageFallbacks, clearUi, currentEchoShiftLogoSrc, ECHO_SHIFT_LOGO_FALLBACK_SRC, icon, uiRoot } from "../ui/dom";
 import { bindMenuNavigation, type MenuNavigationBinding } from "../ui/menuNavigation";
 import { bindOptionsPanel, optionsPanelHtml } from "../ui/options";
@@ -46,7 +44,6 @@ export class MenuScene extends Phaser.Scene {
     const draftPlaytest = isDraftPlaytestActive();
     const secretUnlocked = isSecretAccessUnlocked();
     const secretStatus = this.secretJustUnlocked ? "Level Select and Level Editor unlocked." : "";
-    this.preloadLikelyMusic(draftPlaytest);
     const editorButton = secretUnlocked ? `<button class="ui-button" data-editor>${icon("levels")} Level Editor</button>` : "";
     const levelSelectButton = secretUnlocked ? `<button class="ui-button" data-levels>${icon("levels")} Level Select</button>` : "";
     root.innerHTML = `
@@ -111,13 +108,6 @@ export class MenuScene extends Phaser.Scene {
     const parsed = Number(new URLSearchParams(window.location.search).get("level"));
     if (Number.isFinite(parsed)) return Math.max(0, Math.round(parsed));
     return readEditorDraftCurrentIndex();
-  }
-
-  private preloadLikelyMusic(draftPlaytest: boolean): void {
-    const levelIndex = draftPlaytest ? this.currentDraftLevelIndex() : 0;
-    const level = draftPlaytest ? getLevel(levelIndex) : levels[0];
-    void audio.preloadMusic(soundtrackForLevel(level, levelIndex).key);
-    if (!draftPlaytest) void audio.preloadMusic(soundtrackForLevel(tutorialLevel, 0).key);
   }
 
   private showCredits(): void {
