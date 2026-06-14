@@ -37,6 +37,15 @@ export const sanitizeLeaderboardNickname = (value: string): string => {
 const normalizeEntry = (value: unknown): LeaderboardEntry | null => {
   if (!isRecord(value)) return null;
   if (typeof value.id !== "string" || typeof value.nickname !== "string" || typeof value.completedAt !== "string") return null;
+  if (
+    !finiteNumber(value.score) ||
+    !finiteNumber(value.frames) ||
+    !finiteNumber(value.deaths) ||
+    !finiteNumber(value.cores) ||
+    !finiteNumber(value.levels)
+  ) {
+    return null;
+  }
   return {
     id: value.id,
     nickname: sanitizeLeaderboardNickname(value.nickname),
@@ -66,10 +75,12 @@ const readLocalLeaderboard = (): LeaderboardSaveResult => {
     if (!Array.isArray(parsed)) {
       return { ok: false, entries: [], message: "Local leaderboard data is damaged." };
     }
-    return { ok: true, entries: sortEntries(parsed.flatMap((entry) => {
-      const normalized = normalizeEntry(entry);
-      return normalized ? [normalized] : [];
-    })).slice(0, MAX_ENTRIES) };
+    const entries = parsed.map(normalizeEntry);
+    if (entries.some((entry) => entry === null)) {
+      return { ok: false, entries: [], message: "Local leaderboard data is damaged." };
+    }
+    const normalizedEntries = entries.filter((entry): entry is LeaderboardEntry => entry !== null);
+    return { ok: true, entries: sortEntries(normalizedEntries).slice(0, MAX_ENTRIES) };
   } catch {
     return { ok: false, entries: [], message: "Local leaderboard data is damaged." };
   }

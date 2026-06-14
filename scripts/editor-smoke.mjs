@@ -251,6 +251,108 @@ try {
   await scoreEntryPage.locator(".level-button[data-level='0']").click();
   await scoreEntryPage.locator(".hud [data-level]").waitFor({ state: "visible" });
   const levelSelectScoreEligible = await scoreEntryPage.evaluate(() => document.documentElement.dataset.echoShiftScoreEligible);
+  const practicePropagationResult = await scoreEntryPage.evaluate(async () => {
+    const { GameScene } = await import("/src/scenes/GameScene.ts");
+    const scene = Object.create(GameScene.prototype);
+    let started = null;
+    Object.assign(scene, {
+      tutorialMode: false,
+      levelIndex: 0,
+      scoreEligible: false,
+      stopBossDefeatLoops: () => {},
+      scene: {
+        start: (key, data) => {
+          started = { key, data };
+        }
+      }
+    });
+    scene.nextLevel();
+    return started;
+  });
+  const gameplayGamepadResult = await scoreEntryPage.evaluate(async () => {
+    const { GameScene } = await import("/src/scenes/GameScene.ts");
+    const scene = Object.create(GameScene.prototype);
+    let pauseCount = 0;
+    let rewindCount = 0;
+    let axisX = 0;
+    let button0 = false;
+    let button2 = false;
+    let button9 = false;
+    Object.assign(scene, {
+      gamepadInput: { left: false, right: false, jump: false },
+      heldGamepadActions: new Set(),
+      gamepadGameplayNeedsNeutral: false,
+      gamepadActionsNeedNeutral: false,
+      pausedByHud: false,
+      completeHandled: false,
+      retryRequired: false,
+      deathPresentation: null,
+      virtualInput: { left: false, right: false, jump: false },
+      keys: {
+        left: { isDown: false },
+        right: { isDown: false },
+        up: { isDown: false },
+        a: { isDown: false },
+        d: { isDown: false },
+        w: { isDown: false },
+        space: { isDown: false },
+        r: { isDown: false }
+      },
+      togglePause: () => {
+        pauseCount += 1;
+      },
+      rewind: () => {
+        rewindCount += 1;
+      }
+    });
+    Object.defineProperty(navigator, "getGamepads", {
+      configurable: true,
+      value: () => [
+        {
+          axes: [axisX, 0],
+          buttons: Array.from({ length: 16 }, (_, index) => ({
+            pressed: index === 0 ? button0 : index === 2 ? button2 : index === 9 ? button9 : false
+          }))
+        }
+      ]
+    });
+    axisX = 1;
+    button0 = true;
+    scene.updateGamepadInput();
+    const movingInput = scene.readInput();
+    button9 = true;
+    scene.updateGamepadInput();
+    scene.updateGamepadInput();
+    const pauseCountAfterHeld = pauseCount;
+    button2 = true;
+    scene.updateGamepadInput();
+    scene.pausedByHud = true;
+    axisX = -1;
+    button0 = true;
+    button2 = true;
+    button9 = true;
+    scene.updateGamepadInput();
+    const blockedInput = { ...scene.gamepadInput };
+    scene.pausedByHud = false;
+    scene.updateGamepadInput();
+    const stillLatchedInput = { ...scene.gamepadInput };
+    button0 = false;
+    button2 = false;
+    button9 = false;
+    axisX = 0;
+    scene.updateGamepadInput();
+    axisX = -1;
+    scene.updateGamepadInput();
+    const afterNeutralInput = scene.readInput();
+    return {
+      movingInput,
+      pauseCountAfterHeld,
+      rewindCount,
+      blockedInput,
+      stillLatchedInput,
+      afterNeutralInput
+    };
+  });
   await scoreEntryContext.close();
 
   const staleDraft = await browser.newContext({ viewport: { width: 900, height: 700 } });
@@ -976,6 +1078,11 @@ try {
     );
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const initialFinalFocus = document.activeElement?.textContent?.trim() || "";
+    const panel = document.querySelector(".complete-panel");
+    const summary = document.querySelector(".campaign-summary");
+    const panelRect = panel.getBoundingClientRect();
+    const summaryRect = summary.getBoundingClientRect();
+    const summaryTopVisible = summaryRect.top >= panelRect.top - 1 && summaryRect.top < panelRect.bottom;
     const input = document.querySelector("[data-leaderboard-name]");
     input.value = "<Ace>&!!!";
     const form = document.querySelector("[data-leaderboard-form]");
@@ -1028,14 +1135,34 @@ try {
     const failedEntryStorage = window.localStorage.getItem("echo-shift-leaderboard-v1");
     const failedButton = document.querySelector("[data-leaderboard-form] button[type='submit']");
     const failedInput = document.querySelector("[data-leaderboard-name]");
+    const toast = document.querySelector("[data-toast]");
     const failedButtonText = failedButton.textContent;
     const failedButtonDisabled = failedButton.disabled;
     const failedInputDisabled = failedInput.disabled;
+    const failedToastRole = toast.getAttribute("role");
+    const failedToastLive = toast.getAttribute("aria-live");
+    const failedToastText = toast.textContent;
     failedHud.destroy();
     Storage.prototype.setItem = originalSetItem;
     window.localStorage.setItem("echo-shift-leaderboard-v1", "{broken");
     const damagedSave = addLocalLeaderboardEntry("Corrupt", { score: 1, frames: 1, deaths: 0, cores: 0, levels: 1 });
     const damagedStorage = window.localStorage.getItem("echo-shift-leaderboard-v1");
+    const mixedDamagedStorage = JSON.stringify([
+      {
+        id: "valid",
+        nickname: "Valid",
+        score: 10,
+        frames: 20,
+        deaths: 0,
+        cores: 1,
+        levels: 1,
+        completedAt: "2026-01-01T00:00:00.000Z"
+      },
+      { id: "bad", nickname: "Bad", completedAt: "2026-01-01T00:00:00.000Z" }
+    ]);
+    window.localStorage.setItem("echo-shift-leaderboard-v1", mixedDamagedStorage);
+    const mixedDamagedSave = addLocalLeaderboardEntry("Mixed", { score: 2, frames: 2, deaths: 0, cores: 0, levels: 1 });
+    const mixedDamagedAfterSave = window.localStorage.getItem("echo-shift-leaderboard-v1");
     return {
       entries,
       listText,
@@ -1044,12 +1171,18 @@ try {
       inputDisabled,
       modalText,
       initialFinalFocus,
+      summaryTopVisible,
       failedEntryStorage,
       failedButtonText,
       failedButtonDisabled,
       failedInputDisabled,
+      failedToastRole,
+      failedToastLive,
+      failedToastText,
       damagedSaveOk: damagedSave.ok,
-      damagedStorage
+      damagedStorage,
+      mixedDamagedSaveOk: mixedDamagedSave.ok,
+      mixedDamagedAfterSave
     };
   });
   await leaderboardHarness.close();
@@ -1882,6 +2015,29 @@ try {
   assert(levelSelectFocusAfterArrow.includes("Rainhouse Relay"), `Expected real Level Select ArrowDown to focus second room, got ${levelSelectFocusAfterArrow}`);
   assert(tutorialScoreEligible === "false", `Expected tutorial entry to be non-scoring, got ${tutorialScoreEligible}`);
   assert(levelSelectScoreEligible === "false", `Expected Level Select entry to be non-scoring, got ${levelSelectScoreEligible}`);
+  assert(
+    practicePropagationResult?.key === "GameScene" && practicePropagationResult.data?.scoreEligible === false,
+    `Expected practice Next Room to preserve scoreEligible=false, got ${JSON.stringify(practicePropagationResult)}`
+  );
+  assert(
+    gameplayGamepadResult.movingInput.right && gameplayGamepadResult.movingInput.jump,
+    `Expected GameScene gameplay gamepad movement/jump input, got ${JSON.stringify(gameplayGamepadResult.movingInput)}`
+  );
+  assert(
+    gameplayGamepadResult.pauseCountAfterHeld === 1,
+    `Expected held gamepad pause to trigger once, got ${gameplayGamepadResult.pauseCountAfterHeld}`
+  );
+  assert(gameplayGamepadResult.rewindCount === 1, `Expected gamepad rewind to trigger once, got ${gameplayGamepadResult.rewindCount}`);
+  assert(
+    !gameplayGamepadResult.blockedInput.left &&
+      !gameplayGamepadResult.blockedInput.right &&
+      !gameplayGamepadResult.blockedInput.jump &&
+      !gameplayGamepadResult.stillLatchedInput.left &&
+      !gameplayGamepadResult.stillLatchedInput.right &&
+      !gameplayGamepadResult.stillLatchedInput.jump &&
+      gameplayGamepadResult.afterNeutralInput.left,
+    `Expected gameplay gamepad input to require neutral after modal states, got ${JSON.stringify(gameplayGamepadResult)}`
+  );
   assert(menuEditorUrl.includes("editor=1"), `Expected unlocked editor button to navigate to ?editor=1, got ${menuEditorUrl}`);
   assert(
     fractionalDraftLevelName === "Draft Index Smoke B",
@@ -2062,15 +2218,30 @@ try {
   assert(leaderboardHarnessResult.inputDisabled, "Expected leaderboard name input to disable after save");
   assert(leaderboardHarnessResult.listText.includes("Ace"), `Expected saved leaderboard list to include Ace, got ${leaderboardHarnessResult.listText}`);
   assert(
-    leaderboardHarnessResult.initialFinalFocus.includes("Main Menu"),
-    `Expected final leaderboard modal to focus primary action instead of nickname field, got ${leaderboardHarnessResult.initialFinalFocus}`
+    leaderboardHarnessResult.initialFinalFocus.includes("Save Score"),
+    `Expected final leaderboard modal to focus Save Score instead of scrolling to the exit row, got ${leaderboardHarnessResult.initialFinalFocus}`
   );
+  assert(leaderboardHarnessResult.summaryTopVisible, "Expected final leaderboard summary to stay visible when the modal opens");
   assert(leaderboardHarnessResult.failedEntryStorage === null, "Expected failed leaderboard save not to persist storage");
   assert(leaderboardHarnessResult.failedButtonText === "Try Again", `Expected failed leaderboard save button to offer retry, got ${leaderboardHarnessResult.failedButtonText}`);
   assert(!leaderboardHarnessResult.failedButtonDisabled, "Expected failed leaderboard save button to remain enabled");
   assert(!leaderboardHarnessResult.failedInputDisabled, "Expected failed leaderboard save input to remain enabled");
+  assert(leaderboardHarnessResult.failedToastRole === "status", `Expected leaderboard failure toast to use role=status, got ${leaderboardHarnessResult.failedToastRole}`);
+  assert(
+    leaderboardHarnessResult.failedToastLive === "polite",
+    `Expected leaderboard failure toast to be an aria-live region, got ${leaderboardHarnessResult.failedToastLive}`
+  );
+  assert(
+    leaderboardHarnessResult.failedToastText.includes("Could not save"),
+    `Expected leaderboard failure toast to announce save failure, got ${leaderboardHarnessResult.failedToastText}`
+  );
   assert(!leaderboardHarnessResult.damagedSaveOk, "Expected malformed leaderboard storage not to be overwritten as a successful save");
   assert(leaderboardHarnessResult.damagedStorage === "{broken", `Expected malformed leaderboard storage to remain untouched, got ${leaderboardHarnessResult.damagedStorage}`);
+  assert(!leaderboardHarnessResult.mixedDamagedSaveOk, "Expected partially malformed leaderboard arrays not to be overwritten as successful saves");
+  assert(
+    leaderboardHarnessResult.mixedDamagedAfterSave.includes('"bad"') && !leaderboardHarnessResult.mixedDamagedAfterSave.includes('"Mixed"'),
+    `Expected partially malformed leaderboard storage to remain untouched, got ${leaderboardHarnessResult.mixedDamagedAfterSave}`
+  );
   assert(
     leaderboardHarnessResult.modalText.includes("Campaign Score"),
     `Expected final completion modal to show campaign summary, got ${leaderboardHarnessResult.modalText}`

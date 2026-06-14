@@ -73,7 +73,7 @@ export class Hud {
             </div>
           </div>
         </div>
-        <div class="toast" data-toast></div>
+        <div class="toast" data-toast role="status" aria-live="polite" aria-atomic="true"></div>
         <div class="hud-actions">
           <div class="command-row">
             <button class="icon-button" data-rewind title="Rewind and create an echo" aria-label="Rewind and create an echo">${icon("rewind")}</button>
@@ -338,7 +338,7 @@ export class Hud {
           <span>Nickname</span>
           <input type="text" maxlength="16" autocomplete="off" spellcheck="false" data-leaderboard-name value="Runner" />
         </label>
-        <button class="ui-button primary" type="submit">Save Score</button>
+        <button class="ui-button primary" type="submit" data-default-focus>Save Score</button>
       </form>
       <div class="leaderboard-list" data-leaderboard-list>
         ${this.leaderboardListHtml(options.leaderboardEntries)}
