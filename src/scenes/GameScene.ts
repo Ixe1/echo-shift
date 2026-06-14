@@ -84,7 +84,7 @@ import type {
   TerrainMaterial
 } from "../game/types";
 import { Hud } from "../ui/hud";
-import { bindImageFallbacks, ECHO_SHIFT_LOGO_FALLBACK_SRC, ECHO_SHIFT_LOGO_SRC, uiRoot } from "../ui/dom";
+import { bindImageFallbacks, currentEchoShiftLogoSrc, ECHO_SHIFT_LOGO_FALLBACK_SRC, uiRoot } from "../ui/dom";
 
 type ActiveTerrainDecorDensity = Exclude<SolidDecorDensity, "auto" | "off">;
 
@@ -536,8 +536,9 @@ export class GameScene extends Phaser.Scene {
 
   preload(): void {
     const background = backgroundForLevel(this.level, this.levelIndex);
-    if (this.textures.exists(background.key)) {
-      this.writeBackgroundPreloadDiagnostics(background.key, "cached");
+    const cachedTextureKey = this.textureKeyForBackground(background);
+    if (cachedTextureKey) {
+      this.writeBackgroundPreloadDiagnostics(cachedTextureKey, "cached");
       return;
     }
     this.showRoomLoadingScreen(background.title);
@@ -553,6 +554,11 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.syncDraftPlaytestUrl();
     if (this.deferCreateForRoomFallback()) return;
+    const background = backgroundForLevel(this.level, this.levelIndex);
+    if (this.roomLoadingFailed || !this.textureKeyForBackground(background)) {
+      this.handleRoomLoadComplete();
+      return;
+    }
     this.createLoadedLevel();
   }
 
@@ -623,6 +629,8 @@ export class GameScene extends Phaser.Scene {
       if (!loaded) {
         this.roomLoadingFailed = true;
         this.writeBackgroundPreloadDiagnostics(this.roomBackgroundFallbackKey || background.key, "error");
+        this.handleRoomLoadComplete();
+        return;
       }
       this.handleRoomLoadComplete();
       this.createLoadedLevel();
@@ -713,6 +721,10 @@ export class GameScene extends Phaser.Scene {
 
   private handleRoomLoadError(file: Phaser.Loader.File): void {
     const failedKey = String(file.key);
+    if (this.roomBackgroundFallbackKey && this.textures.exists(this.roomBackgroundFallbackKey)) {
+      this.writeBackgroundPreloadDiagnostics(this.roomBackgroundFallbackKey, "cached");
+      return;
+    }
     if (
       failedKey !== this.roomBackgroundFallbackKey &&
       this.roomBackgroundFallbackKey &&
@@ -777,7 +789,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
-    if (this.awaitingRoomBackgroundFallback) return;
+    if (this.awaitingRoomBackgroundFallback || this.roomLoadingFailed) return;
     const updateStart = performance.now();
     if (this.musicLoadingActive) {
       const updateMs = performance.now() - updateStart;
@@ -931,7 +943,7 @@ export class GameScene extends Phaser.Scene {
     overlay.className = "music-loading";
     overlay.dataset.musicLoading = key;
     overlay.innerHTML = `
-      <section class="music-loading-panel" aria-label="Preparing level audio">
+      <section class="music-loading-panel" role="status" aria-live="polite" aria-atomic="true" aria-label="Preparing level audio">
         <div class="music-loading-meter" aria-hidden="true">
           <span></span><span></span><span></span>
         </div>
@@ -978,7 +990,7 @@ export class GameScene extends Phaser.Scene {
     overlay.dataset.levelIntro = "active";
     overlay.innerHTML = `
       <div class="level-intro-track" aria-hidden="true">
-        <img class="level-intro-track-logo" src="${ECHO_SHIFT_LOGO_SRC}" data-fallback-src="${ECHO_SHIFT_LOGO_FALLBACK_SRC}" alt="" />
+        <img class="level-intro-track-logo" src="${currentEchoShiftLogoSrc()}" data-fallback-src="${ECHO_SHIFT_LOGO_FALLBACK_SRC}" alt="" />
       </div>
       <section class="level-intro-card" aria-label="Level start">
         <div class="level-intro-number">${this.tutorialMode ? "T" : this.level.index + 1}</div>
@@ -990,7 +1002,7 @@ export class GameScene extends Phaser.Scene {
         <div class="level-intro-ready">Ready</div>
       </section>
       <div class="level-intro-sweep" aria-hidden="true">
-        <img class="level-intro-sweep-logo" src="${ECHO_SHIFT_LOGO_SRC}" data-fallback-src="${ECHO_SHIFT_LOGO_FALLBACK_SRC}" alt="" />
+        <img class="level-intro-sweep-logo" src="${currentEchoShiftLogoSrc()}" data-fallback-src="${ECHO_SHIFT_LOGO_FALLBACK_SRC}" alt="" />
       </div>
     `;
     uiRoot().append(overlay);

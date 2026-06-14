@@ -3,7 +3,7 @@ import type { LeaderboardEntry, LeaderboardSaveResult } from "../game/leaderboar
 import { formatScore } from "../game/scoring";
 import type { CampaignRunSummary } from "../game/session";
 import type { LevelScore } from "../game/types";
-import { bindImageFallbacks, clearUi, ECHO_SHIFT_LOGO_FALLBACK_SRC, ECHO_SHIFT_LOGO_SRC, icon, uiRoot } from "./dom";
+import { bindImageFallbacks, clearUi, currentEchoShiftLogoSrc, ECHO_SHIFT_LOGO_FALLBACK_SRC, icon, uiRoot } from "./dom";
 import { audio } from "../game/audio";
 import { bindOptionsPanel, optionsPanelHtml } from "./options";
 import { bindMenuNavigation, type MenuNavigationBinding } from "./menuNavigation";
@@ -169,7 +169,7 @@ export class Hud {
     const titleId = "hud-pause-title";
     modal.innerHTML = `
       <section class="panel complete-panel" ${this.dialogAttributes(titleId)}>
-        <img class="modal-logo" src="${ECHO_SHIFT_LOGO_SRC}" data-fallback-src="${ECHO_SHIFT_LOGO_FALLBACK_SRC}" alt="Echo Shift" />
+        <img class="modal-logo" src="${currentEchoShiftLogoSrc()}" data-fallback-src="${ECHO_SHIFT_LOGO_FALLBACK_SRC}" alt="Echo Shift" />
         <h1 id="${titleId}">Paused</h1>
         <p>${levelName}</p>
         <div class="button-grid">

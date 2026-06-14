@@ -22,7 +22,15 @@ import {
 import { soundtrackForLevel } from "../game/soundtracks";
 import { allTerrainDecorProps, terrainDecorPropSrc, terrainDecorPropTextureKey } from "../game/terrainDecorProps";
 import { TERRAIN_TILE_KEY, TERRAIN_TILE_SIZE } from "../game/terrainMaterials";
-import { bindImageFallbacks, clearUi, ECHO_SHIFT_LOGO_FALLBACK_SRC, ECHO_SHIFT_LOGO_SRC, icon, uiRoot } from "../ui/dom";
+import {
+  bindImageFallbacks,
+  clearUi,
+  ECHO_SHIFT_LOGO_FALLBACK_SRC,
+  ECHO_SHIFT_LOGO_SRC,
+  icon,
+  rememberEchoShiftLogoSrc,
+  uiRoot
+} from "../ui/dom";
 import { bindMenuNavigation, type MenuNavigationBinding } from "../ui/menuNavigation";
 
 const playtestLevelIndex = (): number => {
@@ -132,6 +140,10 @@ export class BootScene extends Phaser.Scene {
   }
 
   private async showAudioGateWhenReady(): Promise<void> {
+    if (this.loadingFailed) {
+      this.showStartupLoadFailure();
+      return;
+    }
     this.loadingStatus?.replaceChildren("Preparing start screen");
     this.loadingProgress?.setAttribute("aria-valuetext", "Preparing start screen");
     this.writeLoadingDiagnostics("loading", 100, "Preparing start screen");
@@ -139,7 +151,12 @@ export class BootScene extends Phaser.Scene {
       this.resolveDomImage(ECHO_SHIFT_LOGO_SRC, ECHO_SHIFT_LOGO_FALLBACK_SRC),
       this.resolveDomImage(levelBackgrounds["time-lab-prototype"].src, levelBackgrounds["time-lab-prototype"].fallbackSrc)
     ]);
+    if (this.loadingFailed) {
+      this.showStartupLoadFailure();
+      return;
+    }
     this.startupLogoSrc = logoSrc;
+    rememberEchoShiftLogoSrc(logoSrc);
     this.setArtScreenImage(artSrc);
     this.finishLoadingScreen();
     this.showAudioGate();
@@ -263,8 +280,16 @@ export class BootScene extends Phaser.Scene {
   }
 
   private handleLoadError(file: Phaser.Loader.File): void {
+    const key = String(file.key);
+    if (this.startupBackgroundFallbackSrcFor(key)) {
+      const label = `Loading fallback for ${key}`;
+      this.loadingStatus?.replaceChildren("Loading fallback start art");
+      this.loadingProgress?.setAttribute("aria-valuetext", label);
+      this.writeLoadingDiagnostics("fallback", undefined, label);
+      return;
+    }
     this.loadingFailed = true;
-    const label = `Could not load ${file.key}`;
+    const label = `Could not load ${key}`;
     this.loadingStatus?.replaceChildren(label);
     this.loadingProgress?.setAttribute("aria-valuetext", label);
     this.writeLoadingDiagnostics("error", undefined, label);
@@ -279,6 +304,17 @@ export class BootScene extends Phaser.Scene {
     }
     this.loadingStatus?.replaceChildren("Preload complete");
     this.writeLoadingDiagnostics("complete", 100, "complete");
+  }
+
+  private showStartupLoadFailure(): void {
+    const label = "Startup assets unavailable";
+    this.loadingBar?.style.setProperty("--load-progress", "1");
+    this.loadingPercent?.replaceChildren("100%");
+    this.loadingProgress?.setAttribute("aria-valuenow", "100");
+    this.loadingProgress?.setAttribute("aria-valuetext", label);
+    this.loadingStatus?.replaceChildren(label);
+    this.loadingScreen?.querySelector<HTMLElement>("[data-loading-file]")?.replaceChildren("Refresh to retry");
+    this.writeLoadingDiagnostics("error", 100, label);
   }
 
   private cleanupLoadingListeners(): void {
@@ -316,6 +352,10 @@ export class BootScene extends Phaser.Scene {
       backgrounds.push(backgroundForLevel(levels[levelIndex], levelIndex));
     }
     return [...new Map(backgrounds.map((background) => [background.key, background])).values()];
+  }
+
+  private startupBackgroundFallbackSrcFor(key: string): string | undefined {
+    return this.startupBackgrounds().find((background) => background.key === key)?.fallbackSrc;
   }
 
   private writeLoadingDiagnostics(phase: string, percent?: number, current?: string): void {

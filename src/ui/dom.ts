@@ -11,13 +11,23 @@ export const clearUi = (): void => {
 export const ECHO_SHIFT_LOGO_SRC = "/assets/echo-shift-logo.webp";
 export const ECHO_SHIFT_LOGO_FALLBACK_SRC = "/assets/echo-shift-logo.png";
 
+let activeEchoShiftLogoSrc = ECHO_SHIFT_LOGO_SRC;
+
+export const currentEchoShiftLogoSrc = (): string => activeEchoShiftLogoSrc;
+
+export const rememberEchoShiftLogoSrc = (src: string): void => {
+  if (src === ECHO_SHIFT_LOGO_SRC || src === ECHO_SHIFT_LOGO_FALLBACK_SRC) activeEchoShiftLogoSrc = src;
+};
+
 export const bindImageFallbacks = (root: ParentNode = uiRoot()): void => {
   root.querySelectorAll<HTMLImageElement>("img[data-fallback-src]").forEach((image) => {
     image.addEventListener(
       "error",
       () => {
         const fallbackSrc = image.dataset.fallbackSrc;
-        if (fallbackSrc) image.src = fallbackSrc;
+        if (!fallbackSrc) return;
+        rememberEchoShiftLogoSrc(fallbackSrc);
+        image.src = fallbackSrc;
       },
       { once: true }
     );
