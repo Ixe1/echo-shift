@@ -16,8 +16,8 @@ export const controlBindings: Array<{ action: string; binding: string }> = [
   { action: "Move", binding: "A / D or Left / Right" },
   { action: "Jump", binding: "W, Up, or Space" },
   { action: "Rewind / Echo", binding: "R creates an echo from your previous run" },
-  { action: "Retry", binding: "T" },
-  { action: "Pause", binding: "Esc" }
+  { action: "Pause", binding: "Esc" },
+  { action: "Gamepad", binding: "D-pad or left stick, A/Cross to jump or confirm, B/Circle to go back, X/Square or left shoulder to rewind" }
 ];
 
 const audioSettings: AudioSettingDefinition[] = [

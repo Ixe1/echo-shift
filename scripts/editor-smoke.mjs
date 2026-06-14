@@ -179,6 +179,14 @@ try {
   await startAudioGate(page);
   await page.locator("[data-play]").waitFor({ state: "visible" });
   const inactiveEditorVisible = await page.locator("[data-level-editor]").isVisible();
+  const lockedEditorVisible = await page.locator("[data-editor]").isVisible();
+  const lockedLevelSelectVisible = await page.locator("[data-levels]").isVisible();
+  for (const key of ["ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight", "r"]) {
+    await page.keyboard.press(key);
+  }
+  await page.locator("[data-editor]").waitFor({ state: "visible" });
+  const secretEditorVisible = await page.locator("[data-editor]").isVisible();
+  const secretLevelSelectVisible = await page.locator("[data-levels]").isVisible();
   await page.locator("[data-editor]").click();
   await page.locator("[data-level-editor]").waitFor({ state: "visible" });
   const menuEditorUrl = page.url();
@@ -318,7 +326,7 @@ try {
   await draftPlaytestPage.keyboard.press("t");
   await draftPlaytestPage.waitForTimeout(700);
   const draftPlaytestIntroAfterT = await draftPlaytestPage.evaluate(() => document.documentElement.dataset.echoShiftLevelIntro || "");
-  const draftPlaytestRetryToast = await draftPlaytestPage.locator("[data-toast]").textContent();
+  const draftPlaytestNoRetryToast = await draftPlaytestPage.locator("[data-toast]").textContent();
   const draftPlaytestModalAfterT = await draftPlaytestPage.locator("[data-modal].show").count();
   await draftPlaytestPage.screenshot({ path: `${outDir}/editor-playtest-draft.png`, fullPage: true });
   await draftPlaytestPage.locator("[data-menu]").click();
@@ -1535,7 +1543,11 @@ try {
   await mobile.close();
 
   assert(!inactiveEditorVisible, "Editor should not activate for ?editor=0");
-  assert(menuEditorUrl.includes("editor=1"), `Expected menu editor button to navigate to ?editor=1, got ${menuEditorUrl}`);
+  assert(!lockedEditorVisible, "Expected locked main menu to hide Level Editor before the secret code");
+  assert(!lockedLevelSelectVisible, "Expected locked main menu to hide Level Select before the secret code");
+  assert(secretEditorVisible, "Expected secret code to reveal Level Editor on the main menu");
+  assert(secretLevelSelectVisible, "Expected secret code to reveal Level Select on the main menu");
+  assert(menuEditorUrl.includes("editor=1"), `Expected unlocked editor button to navigate to ?editor=1, got ${menuEditorUrl}`);
   assert(
     fractionalDraftLevelName === "Draft Index Smoke B",
     `Expected fractional draft currentIndex to normalize to second level, got ${fractionalDraftLevelName}`
@@ -1570,8 +1582,8 @@ try {
   assert(draftPlaytestRetryHidden, "Expected finite-life draft playtest retry button to be hidden");
   assert(draftPlaytestEchoTintsAfterR === "", `Expected disabled R key not to spawn echoes, got ${draftPlaytestEchoTintsAfterR}`);
   assert(draftPlaytestRewindToast?.includes("Rewind disabled"), `Expected disabled R key toast, got ${draftPlaytestRewindToast}`);
-  assert(draftPlaytestIntroAfterT !== "active", `Expected disabled T key not to restart level intro, got ${draftPlaytestIntroAfterT}`);
-  assert(draftPlaytestRetryToast?.includes("Retry unavailable"), `Expected disabled T key toast, got ${draftPlaytestRetryToast}`);
+  assert(draftPlaytestIntroAfterT !== "active", `Expected removed T retry key not to restart level intro, got ${draftPlaytestIntroAfterT}`);
+  assert(!draftPlaytestNoRetryToast?.includes("Retry unavailable"), `Expected removed T retry key not to show retry toast, got ${draftPlaytestNoRetryToast}`);
   assert(draftPlaytestModalAfterT === 0, `Expected disabled T key not to open a modal, got ${draftPlaytestModalAfterT}`);
   assert(draftPauseReplayCount === 0, `Expected pause modal to omit restart/replay, got ${draftPauseReplayCount} replay buttons`);
   assert(draftReturnUrl.includes("editor=1"), `Expected draft Editor button to return to editor=1, got ${draftReturnUrl}`);

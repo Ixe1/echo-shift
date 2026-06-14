@@ -4,12 +4,15 @@ import { audio } from "../game/audio";
 import { formatFrames } from "../game/geometry";
 import { getBestScores } from "../game/progress";
 import { formatScore } from "../game/scoring";
+import { isSecretAccessUnlocked } from "../game/secretAccess";
 import { resetCampaignVitals } from "../game/session";
 import { soundtrackForLevel } from "../game/soundtracks";
 import { clearUi, icon, uiRoot } from "../ui/dom";
+import { bindMenuNavigation, type MenuNavigationBinding } from "../ui/menuNavigation";
 
 export class LevelSelectScene extends Phaser.Scene {
   private uiCleanupRegistered = false;
+  private menuNavigation: MenuNavigationBinding | null = null;
 
   constructor() {
     super("LevelSelectScene");
@@ -17,10 +20,15 @@ export class LevelSelectScene extends Phaser.Scene {
 
   create(): void {
     audio.playMusic("menu");
+    this.destroyMenuNavigation();
     clearUi();
     this.registerUiCleanup();
     const root = uiRoot();
     const draftPlaytest = isDraftPlaytestActive();
+    if (!draftPlaytest && !isSecretAccessUnlocked()) {
+      this.scene.start("MenuScene");
+      return;
+    }
     levels.forEach((level, levelPosition) => void audio.preloadMusic(soundtrackForLevel(level, levelPosition).key));
     const unlocked = levels.length;
     const scores = draftPlaytest ? {} : getBestScores();
@@ -49,12 +57,14 @@ export class LevelSelectScene extends Phaser.Scene {
           <div>
             <h1>${draftPlaytest ? "Draft Levels" : "Level Select"}</h1>
             <p class="credits-text">${
-              draftPlaytest ? "Testing the browser-saved editor draft. Draft clears do not save scores." : "All rooms are available. Cleared runs save scores."
+              draftPlaytest
+                ? "Testing the browser-saved editor draft. Draft clears do not save scores."
+                : "Practice access unlocked for this page. These clears do not save scores."
             }</p>
           </div>
           <div class="level-grid">${buttons}</div>
           <div class="button-grid">
-            <button class="ui-button" data-back>${icon("back")} Title</button>
+            <button class="ui-button" data-back>${icon("back")} Main Menu</button>
           </div>
         </section>
       </main>
@@ -77,8 +87,12 @@ export class LevelSelectScene extends Phaser.Scene {
         const levelIndex = Number(button.dataset.level || 0);
         audio.play("select");
         resetCampaignVitals();
-        this.scene.start("GameScene", { levelIndex });
+        this.scene.start("GameScene", { levelIndex, scoreEligible: false });
       });
+    });
+    this.menuNavigation = bindMenuNavigation(root, {
+      onBack: () => this.scene.start("MenuScene"),
+      onNavigate: () => audio.play("select")
     });
   }
 
@@ -92,7 +106,13 @@ export class LevelSelectScene extends Phaser.Scene {
   private cleanupUi = (): void => {
     this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.cleanupUi);
     this.events.off(Phaser.Scenes.Events.DESTROY, this.cleanupUi);
+    this.destroyMenuNavigation();
     this.uiCleanupRegistered = false;
     clearUi();
   };
+
+  private destroyMenuNavigation(): void {
+    this.menuNavigation?.destroy();
+    this.menuNavigation = null;
+  }
 }

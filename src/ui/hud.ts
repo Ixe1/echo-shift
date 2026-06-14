@@ -1,21 +1,24 @@
 import { formatFrames } from "../game/geometry";
+import type { LeaderboardEntry } from "../game/leaderboard";
 import { formatScore } from "../game/scoring";
+import type { CampaignRunSummary } from "../game/session";
 import type { LevelScore } from "../game/types";
 import { clearUi, icon, uiRoot } from "./dom";
 import { audio } from "../game/audio";
 import { bindOptionsPanel, optionsPanelHtml } from "./options";
+import { bindMenuNavigation, type MenuNavigationBinding } from "./menuNavigation";
 
 type HudCallbacks = {
   onRewind: () => void;
-  onRetry: () => void;
   onPause: () => void;
   onTitle: () => void;
   onNext: () => void;
-  onReplay: () => void;
   onLevelSelect: () => void;
   onEditor?: () => void;
   onResume: () => void;
   onVirtualInput: (control: "left" | "right" | "jump", active: boolean) => void;
+  onSaveLeaderboard?: (nickname: string, summary: CampaignRunSummary) => LeaderboardEntry[];
+  allowLevelSelect?: boolean;
   draftPlaytest?: boolean;
 };
 
@@ -28,14 +31,20 @@ type HudState = {
   coresCollected: number;
   coresTotal: number;
   rewindDisabled: boolean;
-  retryDisabled: boolean;
   gameOver: boolean;
+};
+
+type CompleteOptions = {
+  scoreEligible: boolean;
+  campaignSummary: CampaignRunSummary | null;
+  leaderboardEntries: LeaderboardEntry[];
 };
 
 export class Hud {
   private root = uiRoot();
   private toastTimer = 0;
   private callbacks: HudCallbacks;
+  private modalNavigation: MenuNavigationBinding | null = null;
 
   constructor(callbacks: HudCallbacks) {
     this.callbacks = callbacks;
@@ -65,7 +74,6 @@ export class Hud {
         <div class="hud-actions">
           <div class="command-row">
             <button class="icon-button" data-rewind title="Rewind and create an echo" aria-label="Rewind and create an echo">${icon("rewind")}</button>
-            <button class="icon-button" data-retry title="Retry" aria-label="Retry">${icon("restart")}</button>
             <button class="icon-button" data-menu title="Pause">${icon("pause")}</button>
           </div>
         </div>
@@ -100,7 +108,6 @@ export class Hud {
       state.rewindDisabled ? "Rewind disabled for this level" : "Rewind and create an echo",
       state.gameOver
     );
-    this.setCommandButton("[data-retry]", state.retryDisabled || state.gameOver, "Retry unavailable in finite-life levels", state.retryDisabled || state.gameOver);
     this.setCommandButton("[data-menu]", state.gameOver, "Pause", state.gameOver);
     const touchControls = this.root.querySelector<HTMLElement>(".touch-controls");
     if (touchControls) touchControls.hidden = state.gameOver;
@@ -144,7 +151,9 @@ export class Hud {
   }
 
   showPause(levelName: string): void {
+    this.destroyModalNavigation();
     const modal = this.modal();
+    const levelSelectButton = this.callbacks.allowLevelSelect ? `<button class="ui-button" data-levels>${icon("levels")} Level Select</button>` : "";
     modal.innerHTML = `
       <section class="panel complete-panel">
         <img class="modal-logo" src="/assets/echo-shift-logo.png" alt="Echo Shift" />
@@ -153,9 +162,9 @@ export class Hud {
         <div class="button-grid">
           <button class="ui-button primary" data-resume>Resume</button>
           <button class="ui-button" data-options>Options</button>
-          <button class="ui-button" data-levels>${icon("levels")} Level Select</button>
+          ${levelSelectButton}
           ${this.callbacks.draftPlaytest ? `<button class="ui-button" data-editor>${icon("levels")} Editor</button>` : ""}
-          <button class="ui-button" data-exit-menu>${icon("back")} Title</button>
+          <button class="ui-button" data-exit-menu>${icon("back")} Main Menu</button>
         </div>
       </section>
     `;
@@ -165,20 +174,28 @@ export class Hud {
     this.modalButton("[data-levels]", this.callbacks.onLevelSelect);
     this.modalButton("[data-editor]", () => this.callbacks.onEditor?.());
     this.modalButton("[data-exit-menu]", this.callbacks.onTitle);
+    this.bindModalNavigation(() => this.callbacks.onResume());
   }
 
   hideModal(): void {
+    this.destroyModalNavigation();
     const modal = this.modal();
     modal.classList.remove("show");
     modal.replaceChildren();
   }
 
-  showComplete(score: LevelScore, isFinal: boolean, totalCores: number): void {
+  showComplete(score: LevelScore, isFinal: boolean, totalCores: number, options: CompleteOptions): void {
+    this.destroyModalNavigation();
     const modal = this.modal();
+    const finalLeaderboard = isFinal ? this.finalLeaderboardHtml(options) : "";
+    const levelSelectButton = this.callbacks.allowLevelSelect
+      ? `<button class="ui-button ${isFinal ? "primary" : ""}" data-levels>${icon("levels")} Level Select</button>`
+      : "";
+    const primaryAction = isFinal ? levelSelectButton || `<button class="ui-button primary" data-exit-menu>${icon("back")} Main Menu</button>` : `<button class="ui-button primary" data-next>${icon("next")} Next Room</button>`;
     modal.innerHTML = `
       <section class="panel complete-panel">
         <h1>${isFinal ? "Timeline Complete" : "Room Clear"}</h1>
-        <p>${isFinal ? "Every shift is synchronized." : "Score locked for this run."}</p>
+        <p>${this.completionMessage(isFinal, options.scoreEligible)}</p>
         <div class="score-row">
           <div class="score-cell"><strong>Score</strong><span>${formatScore(score.score)}</span></div>
           <div class="score-cell"><strong>Time</strong><span>${formatFrames(score.frames)}</span></div>
@@ -187,14 +204,11 @@ export class Hud {
           <div class="score-cell"><strong>Deaths</strong><span>${score.deaths}</span></div>
           <div class="score-cell"><strong>Echoes</strong><span>${score.echoes}</span></div>
         </div>
+        ${finalLeaderboard}
         <div class="button-grid">
-          ${
-            isFinal
-              ? `<button class="ui-button primary" data-levels>${icon("levels")} Level Select</button>`
-              : `<button class="ui-button primary" data-next>${icon("next")} Next Room</button>`
-          }
+          ${primaryAction}
           ${this.callbacks.draftPlaytest ? `<button class="ui-button" data-editor>${icon("levels")} Editor</button>` : ""}
-          <button class="ui-button" data-exit-menu>${icon("back")} Title</button>
+          ${isFinal && !levelSelectButton ? "" : `<button class="ui-button" data-exit-menu>${icon("back")} Main Menu</button>`}
         </div>
       </section>
     `;
@@ -203,9 +217,12 @@ export class Hud {
     this.modalButton("[data-levels]", this.callbacks.onLevelSelect);
     this.modalButton("[data-editor]", () => this.callbacks.onEditor?.());
     this.modalButton("[data-exit-menu]", this.callbacks.onTitle);
+    this.bindLeaderboardForm(options);
+    this.bindModalNavigation(() => this.callbacks.onTitle());
   }
 
   showTutorialComplete(score: LevelScore, totalCores: number): void {
+    this.destroyModalNavigation();
     const modal = this.modal();
     modal.innerHTML = `
       <section class="panel complete-panel">
@@ -218,26 +235,29 @@ export class Hud {
           <div class="score-cell"><strong>Deaths</strong><span>${score.deaths}</span></div>
         </div>
         <div class="button-grid">
-          <button class="ui-button primary" data-replay-level>${icon("restart")} Replay Tutorial</button>
-          <button class="ui-button" data-exit-menu>${icon("back")} Title</button>
+          <button class="ui-button primary" data-exit-menu>${icon("back")} Main Menu</button>
         </div>
       </section>
     `;
     modal.classList.add("show");
-    this.modalButton("[data-replay-level]", this.callbacks.onReplay);
     this.modalButton("[data-exit-menu]", this.callbacks.onTitle);
+    this.bindModalNavigation(() => this.callbacks.onTitle());
   }
 
   showGameOver(levelName: string): void {
+    this.destroyModalNavigation();
     const modal = this.modal();
+    const primaryAction = this.callbacks.allowLevelSelect
+      ? `<button class="ui-button primary" data-levels>${icon("levels")} Level Select</button>`
+      : `<button class="ui-button primary" data-exit-menu>${icon("back")} Main Menu</button>`;
     modal.innerHTML = `
       <section class="panel complete-panel">
         <h1>Game Over</h1>
         <p>${levelName} signal budget exhausted.</p>
         <div class="button-grid">
-          <button class="ui-button primary" data-levels>${icon("levels")} Level Select</button>
+          ${primaryAction}
           ${this.callbacks.draftPlaytest ? `<button class="ui-button" data-editor>${icon("levels")} Editor</button>` : ""}
-          <button class="ui-button" data-exit-menu>${icon("back")} Title</button>
+          ${this.callbacks.allowLevelSelect ? `<button class="ui-button" data-exit-menu>${icon("back")} Main Menu</button>` : ""}
         </div>
       </section>
     `;
@@ -245,21 +265,23 @@ export class Hud {
     this.modalButton("[data-levels]", this.callbacks.onLevelSelect);
     this.modalButton("[data-editor]", () => this.callbacks.onEditor?.());
     this.modalButton("[data-exit-menu]", this.callbacks.onTitle);
+    this.bindModalNavigation(() => this.callbacks.onTitle());
   }
 
   destroy(): void {
     window.clearTimeout(this.toastTimer);
+    this.destroyModalNavigation();
     clearUi();
   }
 
   private bind(): void {
     this.root.querySelector("[data-rewind]")?.addEventListener("click", this.callbacks.onRewind);
-    this.root.querySelector("[data-retry]")?.addEventListener("click", this.callbacks.onRetry);
     this.root.querySelector("[data-menu]")?.addEventListener("click", this.callbacks.onPause);
     this.bindTouchControls();
   }
 
   private showOptions(levelName: string): void {
+    this.destroyModalNavigation();
     const modal = this.modal();
     modal.innerHTML = optionsPanelHtml();
     modal.classList.add("show");
@@ -267,6 +289,92 @@ export class Hud {
       onBack: () => this.showPause(levelName),
       onNavigate: () => audio.play("select")
     });
+    this.bindModalNavigation(() => this.showPause(levelName));
+  }
+
+  private completionMessage(isFinal: boolean, scoreEligible: boolean): string {
+    if (!scoreEligible) return "Practice clear. Scores are not written to normal progress.";
+    return isFinal ? "Every shift is synchronized." : "Score locked for this run.";
+  }
+
+  private finalLeaderboardHtml(options: CompleteOptions): string {
+    const summary = options.campaignSummary;
+    if (!options.scoreEligible || !summary) {
+      return `<p class="credits-text">Practice runs do not update the campaign leaderboard.</p>`;
+    }
+    return `
+      <div class="campaign-summary">
+        <div class="score-cell campaign-total"><strong>Campaign Score</strong><span>${formatScore(summary.score)}</span></div>
+        <div class="score-cell"><strong>Total Time</strong><span>${formatFrames(summary.frames)}</span></div>
+        <div class="score-cell"><strong>Total Deaths</strong><span>${summary.deaths}</span></div>
+        <div class="score-cell"><strong>Total Cores</strong><span>${summary.cores}</span></div>
+      </div>
+      <form class="leaderboard-form" data-leaderboard-form>
+        <label>
+          <span>Nickname</span>
+          <input type="text" maxlength="16" autocomplete="off" spellcheck="false" data-leaderboard-name value="Runner" />
+        </label>
+        <button class="ui-button primary" type="submit">Save Score</button>
+      </form>
+      <div class="leaderboard-list" data-leaderboard-list>
+        ${this.leaderboardListHtml(options.leaderboardEntries)}
+      </div>
+    `;
+  }
+
+  private leaderboardListHtml(entries: LeaderboardEntry[]): string {
+    if (entries.length === 0) return `<p class="credits-text">No local campaign scores yet.</p>`;
+    return entries
+      .map(
+        (entry, index) => `
+          <div class="leaderboard-entry">
+            <strong>${index + 1}. ${this.escapeHtml(entry.nickname)}</strong>
+            <span>${formatScore(entry.score)}</span>
+            <small>${formatFrames(entry.frames)} · ${entry.deaths}D · ${entry.cores}C</small>
+          </div>
+        `
+      )
+      .join("");
+  }
+
+  private bindLeaderboardForm(options: CompleteOptions): void {
+    const summary = options.campaignSummary;
+    const form = this.modal().querySelector<HTMLFormElement>("[data-leaderboard-form]");
+    if (!summary || !form || !this.callbacks.onSaveLeaderboard) return;
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const input = form.querySelector<HTMLInputElement>("[data-leaderboard-name]");
+      const entries = this.callbacks.onSaveLeaderboard?.(input?.value || "Runner", summary) || [];
+      const list = this.modal().querySelector<HTMLElement>("[data-leaderboard-list]");
+      if (list) list.innerHTML = this.leaderboardListHtml(entries);
+      const button = form.querySelector<HTMLButtonElement>("button[type='submit']");
+      if (button) {
+        button.textContent = "Saved";
+        button.disabled = true;
+      }
+    });
+  }
+
+  private bindModalNavigation(onBack: () => void): void {
+    this.destroyModalNavigation();
+    this.modalNavigation = bindMenuNavigation(this.modal(), {
+      onBack,
+      onNavigate: () => audio.play("select")
+    });
+  }
+
+  private destroyModalNavigation(): void {
+    this.modalNavigation?.destroy();
+    this.modalNavigation = null;
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
   }
 
   private bindTouchControls(): void {

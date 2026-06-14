@@ -207,9 +207,6 @@ const verifyGameSceneAudioCleanupHooks = () => {
     "startDeathPresentation",
     "finishDeathPresentation",
     "rewind",
-    "startRetryPresentation",
-    "finishRetryPresentation",
-    "restartLevel",
     "completeLevel",
     "shutdownScene"
   ]) {
@@ -235,31 +232,97 @@ const verifyCampaignVitalsLevelSelectContract = () => {
   );
 };
 
-const verifyFiniteLifeRestartContract = () => {
+const verifyNoPlayerRetryContract = () => {
   const gameSceneSource = readFileSync("src/scenes/GameScene.ts", "utf8");
   const hudSource = readFileSync("src/ui/hud.ts", "utf8");
+  const optionsSource = readFileSync("src/ui/options.ts", "utf8");
   const handleHotkeysBody = gameSceneMethodBody(gameSceneSource, "handleHotkeys");
-  const retryAttemptBody = gameSceneMethodBody(gameSceneSource, "retryAttempt");
-  const restartLevelBody = gameSceneMethodBody(gameSceneSource, "restartLevel");
   assert(
-    handleHotkeysBody.includes("if (this.retryRequired) return;") && !handleHotkeysBody.includes("this.restartLevel()"),
-    "Expected exhausted-life hotkeys to avoid restarting the level"
+    handleHotkeysBody.includes("if (this.retryRequired) return;") &&
+      !handleHotkeysBody.includes("restartLevel") &&
+      !handleHotkeysBody.includes("retryAttempt") &&
+      !handleHotkeysBody.includes("this.keys.t"),
+    "Expected hotkeys to avoid any manual level retry path"
   );
-  assert(
-    retryAttemptBody.includes("this.levelRetryDisabled()") && retryAttemptBody.includes("Retry unavailable in finite-life rooms"),
-    "Expected T/retry attempts to be blocked for finite-life levels"
-  );
-  assert(
-    restartLevelBody.includes("levelUsesFiniteLives(this.level)") && restartLevelBody.includes("Restart from Level Select"),
-    "Expected direct level restart to be blocked for finite-life levels"
-  );
+  for (const forbidden of [
+    "retryAttempt(",
+    "restartLevel(",
+    "startRetryPresentation",
+    "finishRetryPresentation",
+    "KeyCodes.T",
+    "data-retry"
+  ]) {
+    assert(!gameSceneSource.includes(forbidden), `Expected GameScene to omit manual retry hook ${forbidden}`);
+  }
   assert(
     hudSource.includes("showGameOver") &&
       hudSource.includes("<h1>Game Over</h1>") &&
+      !hudSource.includes("data-retry") &&
+      !hudSource.includes("data-replay-level") &&
       !hudSource.includes("<h1>Retry Required</h1>") &&
       !hudSource.includes("Restart Level</button>") &&
-      !hudSource.includes("Replay Room</button>"),
-    "Expected HUD to expose Game Over without finite-life restart/replay buttons"
+      !hudSource.includes("Replay Room</button>") &&
+      !hudSource.includes("Replay Tutorial"),
+    "Expected HUD to expose terminal Game Over without retry/replay buttons"
+  );
+  assert(!optionsSource.includes("Retry"), "Expected controls help to omit retry input hints");
+};
+
+const verifySecretAccessAndLeaderboardContract = () => {
+  const secretSource = readFileSync("src/game/secretAccess.ts", "utf8");
+  const leaderboardSource = readFileSync("src/game/leaderboard.ts", "utf8");
+  const menuSource = readFileSync("src/scenes/MenuScene.ts", "utf8");
+  const levelSelectSource = readFileSync("src/scenes/LevelSelectScene.ts", "utf8");
+  const gameSceneSource = readFileSync("src/scenes/GameScene.ts", "utf8");
+  const hudSource = readFileSync("src/ui/hud.ts", "utf8");
+  const completeLevelBody = gameSceneMethodBody(gameSceneSource, "completeLevel");
+  assert(
+    secretSource.includes('"up", "up", "down", "down", "left", "right", "left", "right", "r"'),
+    "Expected secret access to use the selected Sonic-style sequence"
+  );
+  assert(
+    secretSource.includes("let unlocked = false") &&
+      secretSource.includes('params.get("editor") === "1"') &&
+      secretSource.includes('params.get("playtestDraft") === "1"') &&
+      !secretSource.includes("localStorage") &&
+      !secretSource.includes("sessionStorage"),
+    "Expected secret access to be memory-only except editor/playtest URLs"
+  );
+  assert(
+    menuSource.includes("unlockSecretAccess();") &&
+      menuSource.includes('audio.play("extraLife")') &&
+      menuSource.includes("isSecretAccessUnlocked()") &&
+      menuSource.includes("scoreEligible: !draftPlaytest") &&
+      menuSource.includes("scoreEligible: false"),
+    "Expected main menu to unlock secret access with extra-life SFX and mark non-campaign starts as practice"
+  );
+  assert(
+    levelSelectSource.includes("isSecretAccessUnlocked()") &&
+      levelSelectSource.includes('this.scene.start("MenuScene")') &&
+      levelSelectSource.includes("scoreEligible: false"),
+    "Expected Level Select to require secret access and launch non-scoring practice runs"
+  );
+  assert(
+    completeLevelBody.includes("const scoreEligible = this.scoreEligible") &&
+      completeLevelBody.includes("if (scoreEligible)") &&
+      completeLevelBody.indexOf("recordLevelScore(score, this.level.index)") > completeLevelBody.indexOf("if (scoreEligible)") &&
+      completeLevelBody.indexOf("recordCampaignLevelScore(score)") > completeLevelBody.indexOf("if (scoreEligible)") &&
+      completeLevelBody.includes("campaignSummary: isFinal && scoreEligible ? currentCampaignRunSummary() : null"),
+    "Expected progress and campaign leaderboard score to record only for eligible campaign runs"
+  );
+  assert(
+    leaderboardSource.includes("echo-shift-leaderboard-v1") &&
+      leaderboardSource.includes("window.localStorage") &&
+      leaderboardSource.includes("sanitizeLeaderboardNickname") &&
+      leaderboardSource.includes("MAX_ENTRIES = 10"),
+    "Expected whole-game leaderboard to be sanitized and persisted locally"
+  );
+  assert(
+    hudSource.includes("data-leaderboard-form") &&
+      hudSource.includes("data-leaderboard-list") &&
+      hudSource.includes("Practice runs do not update the campaign leaderboard.") &&
+      hudSource.includes("Main Menu"),
+    "Expected final completion UI to expose local leaderboard entry and practice-run messaging"
   );
 };
 
@@ -1810,7 +1873,8 @@ try {
   );
   verifyGameSceneAudioCleanupHooks();
   verifyCampaignVitalsLevelSelectContract();
-  verifyFiniteLifeRestartContract();
+  verifyNoPlayerRetryContract();
+  verifySecretAccessAndLeaderboardContract();
   verifyExtraLifeSfxContract();
   await verifyAudioUnlockRetry(SynthAudio, soundtracks);
 

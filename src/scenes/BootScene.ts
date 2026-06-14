@@ -23,6 +23,7 @@ import { soundtrackForLevel } from "../game/soundtracks";
 import { allTerrainDecorProps, terrainDecorPropSrc, terrainDecorPropTextureKey } from "../game/terrainDecorProps";
 import { TERRAIN_TILE_KEY, TERRAIN_TILE_SIZE } from "../game/terrainMaterials";
 import { clearUi, icon, uiRoot } from "../ui/dom";
+import { bindMenuNavigation, type MenuNavigationBinding } from "../ui/menuNavigation";
 
 const playtestLevelIndex = (): number => {
   const raw = new URLSearchParams(window.location.search).get("level");
@@ -32,6 +33,8 @@ const playtestLevelIndex = (): number => {
 };
 
 export class BootScene extends Phaser.Scene {
+  private menuNavigation: MenuNavigationBinding | null = null;
+
   constructor() {
     super("BootScene");
   }
@@ -118,6 +121,8 @@ export class BootScene extends Phaser.Scene {
   }
 
   private showAudioGate(): void {
+    this.menuNavigation?.destroy();
+    this.menuNavigation = null;
     clearUi();
     const root = uiRoot();
     root.innerHTML = `
@@ -140,6 +145,8 @@ export class BootScene extends Phaser.Scene {
     let started = false;
     const cleanup = () => {
       window.removeEventListener("keydown", handleKeyDown);
+      this.menuNavigation?.destroy();
+      this.menuNavigation = null;
       this.events.off(Phaser.Scenes.Events.SHUTDOWN, cleanup);
       this.events.off(Phaser.Scenes.Events.DESTROY, cleanup);
       if (!started) clearUi();
@@ -161,6 +168,7 @@ export class BootScene extends Phaser.Scene {
 
     startButton?.addEventListener("click", start, { once: true });
     window.addEventListener("keydown", handleKeyDown);
+    this.menuNavigation = bindMenuNavigation(root, { onNavigate: () => audio.play("select") });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, cleanup);
     this.events.once(Phaser.Scenes.Events.DESTROY, cleanup);
     startButton?.focus();

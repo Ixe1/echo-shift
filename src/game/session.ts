@@ -16,6 +16,14 @@ export type CoreLifeAward = {
   collectedCoreCount: number;
 };
 
+export type CampaignRunSummary = {
+  score: number;
+  frames: number;
+  deaths: number;
+  cores: number;
+  levels: number;
+};
+
 const defaultVitals = (): CampaignVitals => ({
   lives: DEFAULT_GLOBAL_LIVES,
   collectedCoreCount: 0,
@@ -23,6 +31,13 @@ const defaultVitals = (): CampaignVitals => ({
 });
 
 let campaignVitals = defaultVitals();
+let campaignRunSummary: CampaignRunSummary = {
+  score: 0,
+  frames: 0,
+  deaths: 0,
+  cores: 0,
+  levels: 0
+};
 
 const finiteLifeCount = (value: unknown, fallback = DEFAULT_GLOBAL_LIVES): number => {
   const numeric = Number(value);
@@ -34,6 +49,13 @@ export const resetCampaignVitals = (lives = DEFAULT_GLOBAL_LIVES): void => {
     lives: finiteLifeCount(lives),
     collectedCoreCount: 0,
     collectedCoreKeys: new Set<string>()
+  };
+  campaignRunSummary = {
+    score: 0,
+    frames: 0,
+    deaths: 0,
+    cores: 0,
+    levels: 0
   };
 };
 
@@ -74,3 +96,16 @@ export const registerCampaignCorePickup = (levelId: string, coreId: string): Cor
 };
 
 export const campaignCoreCount = (): number => campaignVitals.collectedCoreCount;
+
+export const recordCampaignLevelScore = (score: Pick<CampaignRunSummary, "score" | "frames" | "deaths" | "cores">): CampaignRunSummary => {
+  campaignRunSummary = {
+    score: campaignRunSummary.score + finiteLifeCount(score.score, 0),
+    frames: campaignRunSummary.frames + finiteLifeCount(score.frames, 0),
+    deaths: campaignRunSummary.deaths + finiteLifeCount(score.deaths, 0),
+    cores: campaignRunSummary.cores + finiteLifeCount(score.cores, 0),
+    levels: campaignRunSummary.levels + 1
+  };
+  return currentCampaignRunSummary();
+};
+
+export const currentCampaignRunSummary = (): CampaignRunSummary => ({ ...campaignRunSummary });

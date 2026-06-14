@@ -3,6 +3,7 @@ import { updateEditorDraftCurrentIndex } from "../data/editorDraft";
 import { getLevel, isDraftPlaytestActive, levels } from "../data/levels";
 import { tutorialLevel } from "../data/tutorialLevel";
 import { audio } from "../game/audio";
+import { addLocalLeaderboardEntry, getLocalLeaderboard } from "../game/leaderboard";
 import { backgroundAmbienceForLevel, backgroundAmbienceIsActive, type NormalizedBackgroundAmbience } from "../game/backgroundAmbience";
 import { backgroundForLevel } from "../game/backgrounds";
 import {
@@ -37,10 +38,13 @@ import { platformRectAt } from "../game/player";
 import { recordLevelScore } from "../game/progress";
 import {
   campaignLivesForLevel,
+  currentCampaignRunSummary,
   levelUsesFiniteLives,
+  recordCampaignLevelScore,
   registerCampaignCorePickup,
   syncCampaignLives
 } from "../game/session";
+import { isSecretAccessUnlocked } from "../game/secretAccess";
 import { solidCollisionFor } from "../game/solidCollision";
 import { solidRenderDepth, solidVisualRoleFor } from "../game/solidRenderOrder";
 import { soundtrackForBoss, soundtrackForLevel } from "../game/soundtracks";
@@ -205,10 +209,6 @@ type DeathPresentation = {
   fadeStarted: boolean;
 };
 
-type RetryPresentation = {
-  elapsedMs: number;
-};
-
 type FxBurst = {
   id: number;
   x: number;
@@ -228,17 +228,18 @@ type KeyMap = {
   w: Phaser.Input.Keyboard.Key;
   space: Phaser.Input.Keyboard.Key;
   r: Phaser.Input.Keyboard.Key;
-  t: Phaser.Input.Keyboard.Key;
 };
 
 type GameSceneData = {
   levelIndex?: number;
   tutorial?: boolean;
+  scoreEligible?: boolean;
 };
 
 export class GameScene extends Phaser.Scene {
   private levelIndex = 0;
   private tutorialMode = false;
+  private scoreEligible = false;
   private level!: Level;
   private _simulation: RoomSimulation | null = null;
   private _keys: KeyMap | null = null;
@@ -254,6 +255,8 @@ export class GameScene extends Phaser.Scene {
   private pendingBossDefeatCompletion = false;
   private retryRequired = false;
   private virtualInput: InputFrame = { left: false, right: false, jump: false };
+  private gamepadInput: InputFrame = { left: false, right: false, jump: false };
+  private readonly heldGamepadActions = new Set<string>();
   private echoTrails = new Map<string, Array<{ x: number; y: number }>>();
   private actorSprites = new Map<string, Phaser.GameObjects.Image>();
   private coreSprites = new Map<string, Phaser.GameObjects.Image>();
@@ -331,7 +334,6 @@ export class GameScene extends Phaser.Scene {
   private cameraTarget?: Phaser.GameObjects.Zone;
   private playerCastUntil = 0;
   private deathPresentation: DeathPresentation | null = null;
-  private retryPresentation: RetryPresentation | null = null;
   private introActive = false;
   private introElapsedMs = 0;
   private levelIntroOverlay: HTMLElement | null = null;
@@ -433,6 +435,7 @@ export class GameScene extends Phaser.Scene {
     this.tutorialMode = data.tutorial === true;
     this.levelIndex = this.tutorialMode ? 0 : data.levelIndex || 0;
     this.level = this.tutorialMode ? tutorialLevel : getLevel(this.levelIndex);
+    this.scoreEligible = data.scoreEligible === true && !this.tutorialMode && !isDraftPlaytestActive();
     this.simulation = new RoomSimulation(this.level, { lives: campaignLivesForLevel(this.level) });
     this.accumulator = 0;
     this.pausedByHud = false;
@@ -440,6 +443,8 @@ export class GameScene extends Phaser.Scene {
     this.pendingBossDefeatCompletion = false;
     this.retryRequired = false;
     this.virtualInput = { left: false, right: false, jump: false };
+    this.gamepadInput = { left: false, right: false, jump: false };
+    this.heldGamepadActions.clear();
     this.playerCastUntil = 0;
     this.echoTrails.clear();
     this.actorSprites.clear();
@@ -488,7 +493,6 @@ export class GameScene extends Phaser.Scene {
     this.texturePrewarmSprites = [];
     this.cameraTarget = undefined;
     this.deathPresentation = null;
-    this.retryPresentation = null;
     this.introActive = false;
     this.introElapsedMs = 0;
     this.levelIntroOverlay = null;
@@ -530,17 +534,17 @@ export class GameScene extends Phaser.Scene {
     window.addEventListener("keydown", this.handleWindowKeyDown);
     this.hud = new Hud({
       onRewind: () => this.rewind(),
-      onRetry: () => this.retryAttempt(),
       onPause: () => this.togglePause(),
       onTitle: () => this.openTitle(),
       onNext: () => this.nextLevel(),
-      onReplay: () => this.restartLevel(),
       onLevelSelect: () => this.openLevelSelect(),
       onEditor: () => this.openEditor(),
+      onSaveLeaderboard: (nickname, summary) => addLocalLeaderboardEntry(nickname, summary),
       onResume: () => this.togglePause(false),
       onVirtualInput: (control, active) => {
         this.virtualInput[control] = active;
       },
+      allowLevelSelect: this.levelSelectAccessAllowed(),
       draftPlaytest: isDraftPlaytestActive()
     });
     this.mountPerfOverlay();
@@ -572,24 +576,8 @@ export class GameScene extends Phaser.Scene {
       this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
       return;
     }
-    if (this.retryPresentation) {
-      this.updateRetryPresentation(delta);
-      const updateMs = performance.now() - updateStart;
-      const renderStart = performance.now();
-      this.renderWorld();
-      this.updateHud();
-      this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
-      return;
-    }
+    this.updateGamepadInput();
     this.handleHotkeys();
-    if (this.retryPresentation) {
-      const updateMs = performance.now() - updateStart;
-      const renderStart = performance.now();
-      this.renderWorld();
-      this.updateHud();
-      this.recordPerfSample(delta, updateMs, performance.now() - renderStart);
-      return;
-    }
     if (this.deathPresentation) {
       this.updateDeathPresentation(delta);
       const updateMs = performance.now() - updateStart;
@@ -641,7 +629,6 @@ export class GameScene extends Phaser.Scene {
       coresCollected: this.simulation.objectState.collectedCores.size,
       coresTotal: (this.level.cores || []).length,
       rewindDisabled: this.levelRewindDisabled(),
-      retryDisabled: this.levelRetryDisabled(),
       gameOver: this.retryRequired
     });
     this.updateTutorialHint();
@@ -653,10 +640,6 @@ export class GameScene extends Phaser.Scene {
 
   private levelRewindDisabled(): boolean {
     return this.level.rewindDisabled === true;
-  }
-
-  private levelRetryDisabled(): boolean {
-    return levelUsesFiniteLives(this.level);
   }
 
   private preloadUpcomingSoundtracks(): void {
@@ -837,16 +820,15 @@ export class GameScene extends Phaser.Scene {
       d: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
       w: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
       space: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
-      r: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R),
-      t: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.T)
+      r: keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R)
     };
   }
 
   private readInput(): InputFrame {
     return {
-      left: this.keys.left.isDown || this.keys.a.isDown || this.virtualInput.left,
-      right: this.keys.right.isDown || this.keys.d.isDown || this.virtualInput.right,
-      jump: this.keys.up.isDown || this.keys.w.isDown || this.keys.space.isDown || this.virtualInput.jump
+      left: this.keys.left.isDown || this.keys.a.isDown || this.virtualInput.left || this.gamepadInput.left,
+      right: this.keys.right.isDown || this.keys.d.isDown || this.virtualInput.right || this.gamepadInput.right,
+      jump: this.keys.up.isDown || this.keys.w.isDown || this.keys.space.isDown || this.virtualInput.jump || this.gamepadInput.jump
     };
   }
 
@@ -854,7 +836,46 @@ export class GameScene extends Phaser.Scene {
     if (this.deathPresentation) return;
     if (this.retryRequired) return;
     if (Phaser.Input.Keyboard.JustDown(this.keys.r)) this.rewind();
-    if (Phaser.Input.Keyboard.JustDown(this.keys.t)) this.retryAttempt();
+  }
+
+  private updateGamepadInput(): void {
+    const gamepad = Array.from(navigator.getGamepads?.() || []).find((pad): pad is Gamepad => Boolean(pad));
+    if (!gamepad) {
+      this.gamepadInput = { left: false, right: false, jump: false };
+      this.heldGamepadActions.clear();
+      return;
+    }
+
+    const axis = gamepad.axes[0] || 0;
+    const pressed = (index: number): boolean => gamepad.buttons[index]?.pressed === true;
+    this.gamepadInput = {
+      left: axis < -0.35 || pressed(14),
+      right: axis > 0.35 || pressed(15),
+      jump: pressed(0)
+    };
+
+    const gameplayActionsAllowed =
+      !this.pausedByHud && !this.completeHandled && !this.retryRequired && !this.deathPresentation;
+    if (!gameplayActionsAllowed) {
+      this.heldGamepadActions.clear();
+      return;
+    }
+
+    this.gamepadJustPressed("pause", pressed(9), () => {
+      this.togglePause();
+    });
+    this.gamepadJustPressed("rewind", pressed(2) || pressed(4), () => this.rewind());
+  }
+
+  private gamepadJustPressed(action: string, pressed: boolean, handler: () => void): void {
+    if (pressed) {
+      if (!this.heldGamepadActions.has(action)) {
+        this.heldGamepadActions.add(action);
+        handler();
+      }
+      return;
+    }
+    this.heldGamepadActions.delete(action);
   }
 
   private handleEvents(events: ReturnType<RoomSimulation["step"]>): void {
@@ -1039,7 +1060,7 @@ export class GameScene extends Phaser.Scene {
     this.virtualInput = { left: false, right: false, jump: false };
     if (!livesExhausted) {
       const lives = this.simulation.livesRemaining();
-      this.hud.toast(lives === null ? "Signal lost. Retrying." : `Signal lost. ${lives} lives left.`);
+      this.hud.toast(lives === null ? "Signal lost. Resynchronizing." : `Signal lost. ${lives} lives left.`);
     }
     this.writeDeathPresentationDiagnostics("fall");
   }
@@ -1100,7 +1121,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private rewind(): void {
-    if (this.levelIntroBlocksGameplay() || this.retryPresentation || this.deathPresentation || this.completeHandled || this.pausedByHud || this.retryRequired) return;
+    if (this.levelIntroBlocksGameplay() || this.deathPresentation || this.completeHandled || this.pausedByHud || this.retryRequired) return;
     if (this.levelRewindDisabled()) {
       this.hud.toast("Rewind disabled in this room");
       return;
@@ -1124,87 +1145,8 @@ export class GameScene extends Phaser.Scene {
     this.hud.toast(added ? `Echo ${this.simulation.echoRecordings.length} anchored` : "Returned to start");
   }
 
-  private retryAttempt(): void {
-    if (this.levelIntroBlocksGameplay() || this.retryPresentation || this.deathPresentation || this.completeHandled || this.pausedByHud || this.retryRequired) return;
-    if (this.levelRetryDisabled()) {
-      this.hud.toast("Retry unavailable in finite-life rooms");
-      return;
-    }
-    if (this.pendingBossDefeatCompletion) {
-      this.hud.toast("Retry locked during final sync");
-      return;
-    }
-    this.startRetryPresentation();
-    audio.play("select");
-  }
-
-  private startRetryPresentation(): void {
-    this.finishLevelIntro();
-    this.stopBossDefeatLoops();
-    this.clearAttemptScopedAudio();
-    this.retryPresentation = { elapsedMs: 0 };
-    this.virtualInput = { left: false, right: false, jump: false };
-    this.hud.hideToast();
-    this.cameras.main.fadeOut(DEATH_FADE_OUT_MS, 5, 7, 13);
-  }
-
-  private updateRetryPresentation(delta: number): void {
-    const presentation = this.retryPresentation;
-    if (!presentation) return;
-    presentation.elapsedMs += Math.min(delta, 80);
-    if (presentation.elapsedMs < DEATH_FADE_OUT_MS) return;
-    this.finishRetryPresentation();
-  }
-
-  private finishRetryPresentation(): void {
-    if (!this.retryPresentation) return;
-    this.retryPresentation = null;
-    this.stopBossDefeatLoops();
-    this.clearAttemptScopedAudio();
-    this.simulation.resetLevel(campaignLivesForLevel(this.level));
-    this.accumulator = 0;
-    this.completeHandled = false;
-    this.pendingBossDefeatCompletion = false;
-    this.pausedByHud = false;
-    this.retryRequired = false;
-    this.playerCastUntil = 0;
-    this.echoTrails.clear();
-    this.launchPadActiveUntil.clear();
-    this.restartLevelMusic();
-    this.cameraTarget?.setPosition(this.level.start.x + this.simulation.player.w / 2, this.level.start.y + this.simulation.player.h / 2);
-    this.cameras.main.fadeIn(DEATH_FADE_IN_MS, 5, 7, 13);
-    this.startLevelIntro();
-  }
-
-  private restartLevel(): void {
-    if (this.pendingBossDefeatCompletion) {
-      this.hud.toast("Restart locked during final sync");
-      return;
-    }
-    if (levelUsesFiniteLives(this.level)) {
-      this.hud.toast("Restart from Level Select");
-      return;
-    }
-    this.stopBossDefeatLoops();
-    this.clearAttemptScopedAudio();
-    this.completeHandled = false;
-    this.pendingBossDefeatCompletion = false;
-    this.pausedByHud = false;
-    this.retryRequired = false;
-    this.deathPresentation = null;
-    this.virtualInput = { left: false, right: false, jump: false };
-    this.restartLevelMusic();
-    this.cameras.main.fadeIn(DEATH_FADE_IN_MS, 5, 7, 13);
-    this.simulation.resetLevel(campaignLivesForLevel(this.level));
-    this.playerCastUntil = 0;
-    this.echoTrails.clear();
-    this.launchPadActiveUntil.clear();
-    this.startLevelIntro();
-    this.hud.hideModal();
-  }
-
-	  private togglePause(force?: boolean): void {
-	    if (this.retryPresentation || this.deathPresentation || this.completeHandled || this.retryRequired) return;
+  private togglePause(force?: boolean): void {
+    if (this.deathPresentation || this.completeHandled || this.retryRequired) return;
     if (this.musicLoadingActive) return;
     if (this.introActive) this.finishLevelIntro();
     this.pausedByHud = force ?? !this.pausedByHud;
@@ -1258,11 +1200,22 @@ export class GameScene extends Phaser.Scene {
       timeBonus: this.simulation.timeBonus()
     };
     this.syncFiniteCampaignLives();
-    if (!this.tutorialMode && !isDraftPlaytestActive()) recordLevelScore(score, this.level.index);
+    const scoreEligible = this.scoreEligible && !this.tutorialMode && !isDraftPlaytestActive();
+    if (scoreEligible) {
+      recordLevelScore(score, this.level.index);
+      recordCampaignLevelScore(score);
+    }
     this.cameras.main.flash(280, 255, 227, 90, false);
     const totalCores = (this.level.cores || []).length;
     if (this.tutorialMode) this.hud.showTutorialComplete(score, totalCores);
-    else this.hud.showComplete(score, this.levelIndex === levels.length - 1, totalCores);
+    else {
+      const isFinal = this.levelIndex === levels.length - 1;
+      this.hud.showComplete(score, isFinal, totalCores, {
+        scoreEligible,
+        campaignSummary: isFinal && scoreEligible ? currentCampaignRunSummary() : null,
+        leaderboardEntries: getLocalLeaderboard()
+      });
+    }
   }
 
   private nextLevel(): void {
@@ -1272,7 +1225,11 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     const next = Math.min(this.levelIndex + 1, levels.length - 1);
-    this.scene.start("GameScene", { levelIndex: next });
+    this.scene.start("GameScene", { levelIndex: next, scoreEligible: this.scoreEligible });
+  }
+
+  private levelSelectAccessAllowed(): boolean {
+    return isDraftPlaytestActive() || isSecretAccessUnlocked();
   }
 
   private rememberDraftLevel(): void {
@@ -1281,7 +1238,7 @@ export class GameScene extends Phaser.Scene {
 
   private openTitle(): void {
     if (this.pendingBossDefeatCompletion) {
-      this.hud.toast("Title locked during final sync");
+      this.hud.toast("Main Menu locked during final sync");
       return;
     }
     this.stopBossDefeatLoops();
@@ -1292,6 +1249,10 @@ export class GameScene extends Phaser.Scene {
   private openLevelSelect(): void {
     if (this.pendingBossDefeatCompletion) {
       this.hud.toast("Level select locked during final sync");
+      return;
+    }
+    if (!this.levelSelectAccessAllowed()) {
+      this.hud.toast("Level select is locked");
       return;
     }
     this.stopBossDefeatLoops();
@@ -1476,7 +1437,6 @@ export class GameScene extends Phaser.Scene {
     this.texturePrewarmSprites = [];
     this.cameraTarget = undefined;
     this.deathPresentation = null;
-    this.retryPresentation = null;
     this.cancelMusicLoading();
     this.finishLevelIntro();
     this.launchPadActiveUntil.clear();
