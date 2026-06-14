@@ -342,6 +342,11 @@ export class GameScene extends Phaser.Scene {
   private musicLoadingOverlay: HTMLElement | null = null;
   private musicLoadingTimer: number | null = null;
   private musicLoadingToken = 0;
+  private roomLoadingOverlay: HTMLElement | null = null;
+  private roomLoadingBar: HTMLElement | null = null;
+  private roomLoadingPercent: HTMLElement | null = null;
+  private roomLoadingStatus: HTMLElement | null = null;
+  private roomLoadingProgress: HTMLElement | null = null;
   private lastTutorialHint = "";
   private readonly launchPadActiveUntil = new Map<string, number>();
   private readonly fxBursts: FxBurst[] = [];
@@ -506,6 +511,11 @@ export class GameScene extends Phaser.Scene {
     this.musicLoadingOverlay = null;
     this.musicLoadingTimer = null;
     this.musicLoadingToken = 0;
+    this.roomLoadingOverlay = null;
+    this.roomLoadingBar = null;
+    this.roomLoadingPercent = null;
+    this.roomLoadingStatus = null;
+    this.roomLoadingProgress = null;
     this.lastTutorialHint = "";
     this.launchPadActiveUntil.clear();
     this.fxBursts.length = 0;
@@ -520,6 +530,8 @@ export class GameScene extends Phaser.Scene {
       this.writeBackgroundPreloadDiagnostics(background.key, "cached");
       return;
     }
+    this.showRoomLoadingScreen(background.title);
+    this.bindRoomLoadingProgress();
     this.load.image(background.key, background.src);
     this.writeBackgroundPreloadDiagnostics(background.key, "queued");
     this.load.once(Phaser.Loader.Events.COMPLETE, () => this.writeBackgroundPreloadDiagnostics(background.key, "complete"));
@@ -571,7 +583,94 @@ export class GameScene extends Phaser.Scene {
     this.preloadUpcomingSoundtracks();
     this.renderWorld();
     this.updateHud();
+    this.finishRoomLoadingScreen();
     this.startLevelWhenAudioReady(levelMusicKey, levelMusicWarmup, effectWarmup);
+  }
+
+  private showRoomLoadingScreen(title: string): void {
+    this.finishRoomLoadingScreen();
+    const overlay = document.createElement("main");
+    overlay.className = "boot-loading room-loading";
+    overlay.dataset.roomLoading = "active";
+    overlay.innerHTML = `
+      <section class="boot-loading-panel" aria-label="Echo Shift room loading">
+        <div class="boot-loading-brand" aria-hidden="true">
+          <span class="boot-loading-mark">${this.tutorialMode ? "T" : String(this.level.index + 1).padStart(2, "0")}</span>
+          <strong>Echo Shift</strong>
+        </div>
+        <div class="boot-loading-copy">
+          <span class="boot-loading-kicker">${this.tutorialMode ? "Training room" : `Room ${String(this.level.index + 1).padStart(2, "0")}`}</span>
+          <h1>Loading room</h1>
+          <p data-room-loading-status role="status" aria-live="polite" aria-atomic="true">Preparing ${escapeHtml(title)}</p>
+        </div>
+        <div class="boot-loading-progress" role="progressbar" aria-label="Room loading progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <span data-room-loading-bar></span>
+        </div>
+        <div class="boot-loading-meta">
+          <span data-room-loading-percent>0%</span>
+          <span data-room-loading-file>${escapeHtml(title)}</span>
+        </div>
+      </section>
+    `;
+    uiRoot().append(overlay);
+    this.roomLoadingOverlay = overlay;
+    this.roomLoadingBar = overlay.querySelector<HTMLElement>("[data-room-loading-bar]");
+    this.roomLoadingPercent = overlay.querySelector<HTMLElement>("[data-room-loading-percent]");
+    this.roomLoadingStatus = overlay.querySelector<HTMLElement>("[data-room-loading-status]");
+    this.roomLoadingProgress = overlay.querySelector<HTMLElement>(".boot-loading-progress");
+  }
+
+  private bindRoomLoadingProgress(): void {
+    this.load.on(Phaser.Loader.Events.PROGRESS, this.handleRoomLoadProgress, this);
+    this.load.on(Phaser.Loader.Events.FILE_PROGRESS, this.handleRoomFileProgress, this);
+    this.load.on(Phaser.Loader.Events.FILE_LOAD_ERROR, this.handleRoomLoadError, this);
+    this.load.once(Phaser.Loader.Events.COMPLETE, this.handleRoomLoadComplete, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.finishRoomLoadingScreen, this);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.finishRoomLoadingScreen, this);
+  }
+
+  private handleRoomLoadProgress(progress: number): void {
+    const percent = Math.max(0, Math.min(100, Math.round(progress * 100)));
+    this.roomLoadingBar?.style.setProperty("--load-progress", String(percent / 100));
+    this.roomLoadingPercent?.replaceChildren(`${percent}%`);
+    this.roomLoadingProgress?.setAttribute("aria-valuenow", String(percent));
+    this.roomLoadingProgress?.setAttribute("aria-valuetext", `${percent}% loaded`);
+  }
+
+  private handleRoomFileProgress(file: Phaser.Loader.File): void {
+    const label = `Loading ${file.key}`;
+    this.roomLoadingStatus?.replaceChildren("Loading room backdrop");
+    this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(label);
+    this.roomLoadingProgress?.setAttribute("aria-valuetext", label);
+  }
+
+  private handleRoomLoadError(file: Phaser.Loader.File): void {
+    const label = `Could not load ${file.key}`;
+    this.roomLoadingStatus?.replaceChildren(label);
+    this.roomLoadingProgress?.setAttribute("aria-valuetext", label);
+    this.writeBackgroundPreloadDiagnostics(file.key, "error");
+  }
+
+  private handleRoomLoadComplete(): void {
+    this.handleRoomLoadProgress(1);
+    this.roomLoadingStatus?.replaceChildren("Room ready");
+  }
+
+  private cleanupRoomLoadingListeners(): void {
+    this.load.off(Phaser.Loader.Events.PROGRESS, this.handleRoomLoadProgress, this);
+    this.load.off(Phaser.Loader.Events.FILE_PROGRESS, this.handleRoomFileProgress, this);
+    this.load.off(Phaser.Loader.Events.FILE_LOAD_ERROR, this.handleRoomLoadError, this);
+    this.load.off(Phaser.Loader.Events.COMPLETE, this.handleRoomLoadComplete, this);
+  }
+
+  private finishRoomLoadingScreen(): void {
+    this.cleanupRoomLoadingListeners();
+    this.roomLoadingOverlay?.remove();
+    this.roomLoadingOverlay = null;
+    this.roomLoadingBar = null;
+    this.roomLoadingPercent = null;
+    this.roomLoadingStatus = null;
+    this.roomLoadingProgress = null;
   }
 
   update(_time: number, delta: number): void {

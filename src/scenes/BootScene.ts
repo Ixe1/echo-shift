@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
-import { backgroundForLevel } from "../game/backgrounds";
+import { backgroundForLevel, levelBackgrounds, type LevelBackground } from "../game/backgrounds";
 import {
   BOSS_ATLAS_FRAME_HEIGHT,
   BOSS_ATLAS_FRAME_WIDTH,
@@ -38,6 +38,7 @@ export class BootScene extends Phaser.Scene {
   private loadingBar: HTMLElement | null = null;
   private loadingPercent: HTMLElement | null = null;
   private loadingStatus: HTMLElement | null = null;
+  private loadingProgress: HTMLElement | null = null;
 
   constructor() {
     super("BootScene");
@@ -46,7 +47,6 @@ export class BootScene extends Phaser.Scene {
   preload(): void {
     this.showLoadingScreen();
     this.bindLoadingProgress();
-    this.load.image("echo-logo", "/assets/echo-shift-logo.webp");
     this.load.spritesheet("time-runner", "/assets/sprites/time-runner-sheet.png", {
       frameWidth: 64,
       frameHeight: 64
@@ -108,8 +108,8 @@ export class BootScene extends Phaser.Scene {
     for (const prop of allTerrainDecorProps) {
       this.load.image(terrainDecorPropTextureKey(prop), terrainDecorPropSrc(prop));
     }
-    const background = this.startupBackground();
-    if (background && !this.textures.exists(background.key)) {
+    for (const background of this.startupBackgrounds()) {
+      if (this.textures.exists(background.key)) continue;
       this.load.image(background.key, background.src);
     }
   }
@@ -197,7 +197,7 @@ export class BootScene extends Phaser.Scene {
         <div class="boot-loading-copy">
           <span class="boot-loading-kicker">Time-lab startup</span>
           <h1>Loading assets</h1>
-          <p data-loading-status>Preparing preload queue</p>
+          <p data-loading-status role="status" aria-live="polite" aria-atomic="true">Preparing preload queue</p>
         </div>
         <div class="boot-loading-progress" role="progressbar" aria-label="Asset loading progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <span data-loading-bar></span>
@@ -213,12 +213,14 @@ export class BootScene extends Phaser.Scene {
     this.loadingBar = screen.querySelector<HTMLElement>("[data-loading-bar]");
     this.loadingPercent = screen.querySelector<HTMLElement>("[data-loading-percent]");
     this.loadingStatus = screen.querySelector<HTMLElement>("[data-loading-status]");
+    this.loadingProgress = screen.querySelector<HTMLElement>(".boot-loading-progress");
     this.writeLoadingDiagnostics("visible", 0, "queue");
   }
 
   private bindLoadingProgress(): void {
     this.load.on(Phaser.Loader.Events.PROGRESS, this.handleLoadProgress, this);
     this.load.on(Phaser.Loader.Events.FILE_PROGRESS, this.handleFileProgress, this);
+    this.load.on(Phaser.Loader.Events.FILE_LOAD_ERROR, this.handleLoadError, this);
     this.load.once(Phaser.Loader.Events.COMPLETE, this.handleLoadComplete, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.cleanupLoadingListeners, this);
     this.events.once(Phaser.Scenes.Events.DESTROY, this.cleanupLoadingListeners, this);
@@ -228,7 +230,8 @@ export class BootScene extends Phaser.Scene {
     const percent = Math.max(0, Math.min(100, Math.round(progress * 100)));
     this.loadingBar?.style.setProperty("--load-progress", String(percent / 100));
     this.loadingPercent?.replaceChildren(`${percent}%`);
-    this.loadingScreen?.querySelector<HTMLElement>(".boot-loading-progress")?.setAttribute("aria-valuenow", String(percent));
+    this.loadingProgress?.setAttribute("aria-valuenow", String(percent));
+    this.loadingProgress?.setAttribute("aria-valuetext", `${percent}% loaded`);
     this.writeLoadingDiagnostics("loading", percent, this.loadingStatus?.textContent || "loading");
   }
 
@@ -237,7 +240,15 @@ export class BootScene extends Phaser.Scene {
     this.loadingStatus?.replaceChildren(label);
     const fileNode = this.loadingScreen?.querySelector<HTMLElement>("[data-loading-file]");
     fileNode?.replaceChildren(`${file.type}: ${file.key}`);
+    this.loadingProgress?.setAttribute("aria-valuetext", `${label}: ${file.key}`);
     this.writeLoadingDiagnostics("loading", undefined, label);
+  }
+
+  private handleLoadError(file: Phaser.Loader.File): void {
+    const label = `Could not load ${file.key}`;
+    this.loadingStatus?.replaceChildren(label);
+    this.loadingProgress?.setAttribute("aria-valuetext", label);
+    this.writeLoadingDiagnostics("error", undefined, label);
   }
 
   private handleLoadComplete(): void {
@@ -249,6 +260,7 @@ export class BootScene extends Phaser.Scene {
   private cleanupLoadingListeners(): void {
     this.load.off(Phaser.Loader.Events.PROGRESS, this.handleLoadProgress, this);
     this.load.off(Phaser.Loader.Events.FILE_PROGRESS, this.handleFileProgress, this);
+    this.load.off(Phaser.Loader.Events.FILE_LOAD_ERROR, this.handleLoadError, this);
     this.load.off(Phaser.Loader.Events.COMPLETE, this.handleLoadComplete, this);
   }
 
@@ -259,6 +271,8 @@ export class BootScene extends Phaser.Scene {
     this.loadingBar = null;
     this.loadingPercent = null;
     this.loadingStatus = null;
+    this.loadingProgress = null;
+    this.clearLoadingDiagnostics();
   }
 
   private loadingLabelFor(key: string): string {
@@ -271,10 +285,13 @@ export class BootScene extends Phaser.Scene {
     return "Loading runtime textures";
   }
 
-  private startupBackground(): ReturnType<typeof backgroundForLevel> | null {
-    if (!isDraftPlaytestActive()) return null;
-    const levelIndex = playtestLevelIndex();
-    return backgroundForLevel(levels[levelIndex], levelIndex);
+  private startupBackgrounds(): LevelBackground[] {
+    const backgrounds = [levelBackgrounds["time-lab-prototype"]];
+    if (isDraftPlaytestActive()) {
+      const levelIndex = playtestLevelIndex();
+      backgrounds.push(backgroundForLevel(levels[levelIndex], levelIndex));
+    }
+    return [...new Map(backgrounds.map((background) => [background.key, background])).values()];
   }
 
   private writeLoadingDiagnostics(phase: string, percent?: number, current?: string): void {
@@ -282,6 +299,13 @@ export class BootScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftBootLoading = phase;
     if (typeof percent === "number") document.documentElement.dataset.echoShiftBootLoadProgress = String(percent);
     if (current) document.documentElement.dataset.echoShiftBootLoadCurrent = current;
+  }
+
+  private clearLoadingDiagnostics(): void {
+    if (typeof document === "undefined") return;
+    delete document.documentElement.dataset.echoShiftBootLoading;
+    delete document.documentElement.dataset.echoShiftBootLoadProgress;
+    delete document.documentElement.dataset.echoShiftBootLoadCurrent;
   }
 
   private nextScene(): { scene: "MenuScene"; data?: undefined; musicKey: "menu" } | { scene: "GameScene"; data: { levelIndex: number }; musicKey: ReturnType<typeof soundtrackForLevel>["key"] } {
