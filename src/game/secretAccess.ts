@@ -1,3 +1,5 @@
+import { isDraftPlaytestActive } from "../data/levels";
+
 const SECRET_SEQUENCE = ["up", "up", "down", "down", "left", "right", "left", "right", "r"] as const;
 
 type SecretInput = (typeof SECRET_SEQUENCE)[number];
@@ -13,7 +15,7 @@ export const secretSequence = (): readonly SecretInput[] => SECRET_SEQUENCE;
 
 export const isSecretAccessUrl = (): boolean => {
   const params = currentParams();
-  return params.get("editor") === "1" || params.get("playtestDraft") === "1";
+  return params.get("editor") === "1" || (params.get("playtestDraft") === "1" && isDraftPlaytestActive());
 };
 
 export const isSecretAccessUnlocked = (): boolean => unlocked || isSecretAccessUrl();

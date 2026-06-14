@@ -268,64 +268,6 @@ const verifyNoPlayerRetryContract = () => {
   assert(!optionsSource.includes("Retry"), "Expected controls help to omit retry input hints");
 };
 
-const verifySecretAccessAndLeaderboardContract = () => {
-  const secretSource = readFileSync("src/game/secretAccess.ts", "utf8");
-  const leaderboardSource = readFileSync("src/game/leaderboard.ts", "utf8");
-  const menuSource = readFileSync("src/scenes/MenuScene.ts", "utf8");
-  const levelSelectSource = readFileSync("src/scenes/LevelSelectScene.ts", "utf8");
-  const gameSceneSource = readFileSync("src/scenes/GameScene.ts", "utf8");
-  const hudSource = readFileSync("src/ui/hud.ts", "utf8");
-  const completeLevelBody = gameSceneMethodBody(gameSceneSource, "completeLevel");
-  assert(
-    secretSource.includes('"up", "up", "down", "down", "left", "right", "left", "right", "r"'),
-    "Expected secret access to use the selected Sonic-style sequence"
-  );
-  assert(
-    secretSource.includes("let unlocked = false") &&
-      secretSource.includes('params.get("editor") === "1"') &&
-      secretSource.includes('params.get("playtestDraft") === "1"') &&
-      !secretSource.includes("localStorage") &&
-      !secretSource.includes("sessionStorage"),
-    "Expected secret access to be memory-only except editor/playtest URLs"
-  );
-  assert(
-    menuSource.includes("unlockSecretAccess();") &&
-      menuSource.includes('audio.play("extraLife")') &&
-      menuSource.includes("isSecretAccessUnlocked()") &&
-      menuSource.includes("scoreEligible: !draftPlaytest") &&
-      menuSource.includes("scoreEligible: false"),
-    "Expected main menu to unlock secret access with extra-life SFX and mark non-campaign starts as practice"
-  );
-  assert(
-    levelSelectSource.includes("isSecretAccessUnlocked()") &&
-      levelSelectSource.includes('this.scene.start("MenuScene")') &&
-      levelSelectSource.includes("scoreEligible: false"),
-    "Expected Level Select to require secret access and launch non-scoring practice runs"
-  );
-  assert(
-    completeLevelBody.includes("const scoreEligible = this.scoreEligible") &&
-      completeLevelBody.includes("if (scoreEligible)") &&
-      completeLevelBody.indexOf("recordLevelScore(score, this.level.index)") > completeLevelBody.indexOf("if (scoreEligible)") &&
-      completeLevelBody.indexOf("recordCampaignLevelScore(score)") > completeLevelBody.indexOf("if (scoreEligible)") &&
-      completeLevelBody.includes("campaignSummary: isFinal && scoreEligible ? currentCampaignRunSummary() : null"),
-    "Expected progress and campaign leaderboard score to record only for eligible campaign runs"
-  );
-  assert(
-    leaderboardSource.includes("echo-shift-leaderboard-v1") &&
-      leaderboardSource.includes("window.localStorage") &&
-      leaderboardSource.includes("sanitizeLeaderboardNickname") &&
-      leaderboardSource.includes("MAX_ENTRIES = 10"),
-    "Expected whole-game leaderboard to be sanitized and persisted locally"
-  );
-  assert(
-    hudSource.includes("data-leaderboard-form") &&
-      hudSource.includes("data-leaderboard-list") &&
-      hudSource.includes("Practice runs do not update the campaign leaderboard.") &&
-      hudSource.includes("Main Menu"),
-    "Expected final completion UI to expose local leaderboard entry and practice-run messaging"
-  );
-};
-
 const verifyExtraLifeSfxContract = () => {
   const assetPath = "public/assets/audio/effects/core_extra_life.mp3";
   const gameSceneSource = readFileSync("src/scenes/GameScene.ts", "utf8");
@@ -1874,7 +1816,6 @@ try {
   verifyGameSceneAudioCleanupHooks();
   verifyCampaignVitalsLevelSelectContract();
   verifyNoPlayerRetryContract();
-  verifySecretAccessAndLeaderboardContract();
   verifyExtraLifeSfxContract();
   await verifyAudioUnlockRetry(SynthAudio, soundtracks);
 

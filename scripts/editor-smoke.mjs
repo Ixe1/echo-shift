@@ -187,9 +187,29 @@ try {
   await page.locator("[data-editor]").waitFor({ state: "visible" });
   const secretEditorVisible = await page.locator("[data-editor]").isVisible();
   const secretLevelSelectVisible = await page.locator("[data-levels]").isVisible();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await startAudioGate(page);
+  await page.locator("[data-play]").waitFor({ state: "visible" });
+  const reloadedEditorVisible = await page.locator("[data-editor]").isVisible();
+  const reloadedLevelSelectVisible = await page.locator("[data-levels]").isVisible();
+  for (const key of ["ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight", "r"]) {
+    await page.keyboard.press(key);
+  }
+  await page.locator("[data-editor]").waitFor({ state: "visible" });
   await page.locator("[data-editor]").click();
   await page.locator("[data-level-editor]").waitFor({ state: "visible" });
   const menuEditorUrl = page.url();
+
+  const barePlaytestContext = await browser.newContext({ viewport: { width: 960, height: 540 } });
+  await barePlaytestContext.addInitScript(() => window.localStorage.clear());
+  const barePlaytestPage = await barePlaytestContext.newPage();
+  collectConsole(barePlaytestPage);
+  await barePlaytestPage.goto(`${url}?playtestDraft=1`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(barePlaytestPage);
+  await barePlaytestPage.locator("[data-play]").waitFor({ state: "visible" });
+  const barePlaytestEditorVisible = await barePlaytestPage.locator("[data-editor]").isVisible();
+  const barePlaytestLevelSelectVisible = await barePlaytestPage.locator("[data-levels]").isVisible();
+  await barePlaytestContext.close();
 
   const staleDraft = await browser.newContext({ viewport: { width: 900, height: 700 } });
   const stalePage = await staleDraft.newPage();
@@ -487,6 +507,8 @@ try {
   const directClearTitle = await directClearPage.locator("[data-modal].show h1").textContent();
   const directClearReplayCount = await directClearPage.locator("[data-modal] [data-replay-level]").count();
   const directClearNextVisible = await directClearPage.locator("[data-modal] [data-next]").isVisible();
+  const directClearProgress = await directClearPage.evaluate(() => window.localStorage.getItem("echo-shift-progress-v1"));
+  const directClearLeaderboard = await directClearPage.evaluate(() => window.localStorage.getItem("echo-shift-leaderboard-v1"));
   await directClearContext.close();
 
   const corruptDraftPlaytest = await browser.newContext({ viewport: { width: 960, height: 540 } });
@@ -727,7 +749,143 @@ try {
   await mismatchedDraftCompletionPage.locator("[data-modal].show h1").waitFor({ state: "visible" });
   const mismatchedDraftLastCompleteTitle = await mismatchedDraftCompletionPage.locator("[data-modal].show h1").textContent();
   const mismatchedDraftLastNextCount = await mismatchedDraftCompletionPage.locator("[data-modal] [data-next]").count();
+  const mismatchedDraftCompletionProgress = await mismatchedDraftCompletionPage.evaluate(() => window.localStorage.getItem("echo-shift-progress-v1"));
+  const mismatchedDraftCompletionLeaderboard = await mismatchedDraftCompletionPage.evaluate(() => window.localStorage.getItem("echo-shift-leaderboard-v1"));
   await mismatchedDraftCompletion.close();
+
+  const navigationHarness = await browser.newContext({ viewport: { width: 960, height: 540 } });
+  const navigationPage = await navigationHarness.newPage();
+  collectConsole(navigationPage);
+  await navigationPage.goto(`${url}?editor=1`, { waitUntil: "domcontentloaded" });
+  await navigationPage.evaluate(async () => {
+    const { bindMenuNavigation } = await import("/src/ui/menuNavigation.ts");
+    document.body.innerHTML = `
+      <main>
+        <button id="outside">Outside</button>
+        <section id="nav-root">
+          <button id="first">First</button>
+          <input id="slider" type="range" min="0" max="10" value="5" />
+          <button id="last">Last</button>
+        </section>
+      </main>
+    `;
+    window.__echoShiftNavMoves = 0;
+    window.__echoShiftNavBinding = bindMenuNavigation(document.getElementById("nav-root"), {
+      autoFocus: false,
+      trapFocus: true,
+      onNavigate: () => {
+        window.__echoShiftNavMoves += 1;
+      }
+    });
+    document.getElementById("first").focus();
+  });
+  await navigationPage.keyboard.press("ArrowDown");
+  const keyboardNavigationFocus = await navigationPage.evaluate(() => document.activeElement?.id);
+  const keyboardNavigationMoves = await navigationPage.evaluate(() => window.__echoShiftNavMoves);
+  await navigationPage.keyboard.press("ArrowRight");
+  const rangeFocusAfterArrow = await navigationPage.evaluate(() => document.activeElement?.id);
+  const rangeValueAfterArrow = await navigationPage.evaluate(() => document.getElementById("slider").value);
+  const movesAfterRangeArrow = await navigationPage.evaluate(() => window.__echoShiftNavMoves);
+  await navigationPage.evaluate(() => document.getElementById("last").focus());
+  await navigationPage.keyboard.press("Tab");
+  const trappedTabFocus = await navigationPage.evaluate(() => document.activeElement?.id);
+  const gamepadHarnessResult = await navigationPage.evaluate(async () => {
+    window.__echoShiftNavBinding.destroy();
+    const { bindMenuNavigation } = await import("/src/ui/menuNavigation.ts");
+    let buttonPressed = true;
+    let axisX = 1;
+    let clickCount = 0;
+    const buttons = Array.from({ length: 16 }, () => ({ pressed: false }));
+    Object.defineProperty(navigator, "getGamepads", {
+      configurable: true,
+      value: () => [
+        {
+          axes: [axisX, 0],
+          buttons: buttons.map((button, index) => ({
+            ...button,
+            pressed: index === 0 ? buttonPressed : button.pressed
+          }))
+        }
+      ]
+    });
+    document.body.innerHTML = `
+      <section id="pad-root">
+        <button id="pad-first">Pad First</button>
+        <button id="pad-second">Pad Second</button>
+      </section>
+    `;
+    document.getElementById("pad-first").addEventListener("click", () => {
+      clickCount += 1;
+    });
+    const binding = bindMenuNavigation(document.getElementById("pad-root"), { autoFocus: false });
+    document.getElementById("pad-first").focus();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const focusAfterHeldAxis = document.activeElement?.id;
+    const clicksAfterHeldButton = clickCount;
+    buttonPressed = false;
+    axisX = 0;
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    buttonPressed = true;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const clicksAfterFreshPress = clickCount;
+    binding.destroy();
+    return { focusAfterHeldAxis, clicksAfterHeldButton, clicksAfterFreshPress };
+  });
+  await navigationHarness.close();
+
+  const leaderboardHarness = await browser.newContext({ viewport: { width: 960, height: 540 } });
+  await leaderboardHarness.addInitScript(() => window.localStorage.clear());
+  const leaderboardPage = await leaderboardHarness.newPage();
+  collectConsole(leaderboardPage);
+  await leaderboardPage.goto(`${url}?editor=1`, { waitUntil: "domcontentloaded" });
+  const leaderboardHarnessResult = await leaderboardPage.evaluate(async () => {
+    const [{ Hud }, { addLocalLeaderboardEntry, getLocalLeaderboard }] = await Promise.all([
+      import("/src/ui/hud.ts"),
+      import("/src/game/leaderboard.ts")
+    ]);
+    const hud = new Hud({
+      onRewind: () => {},
+      onPause: () => {},
+      onTitle: () => {},
+      onNext: () => {},
+      onLevelSelect: () => {},
+      onResume: () => {},
+      onVirtualInput: () => {},
+      onSaveLeaderboard: addLocalLeaderboardEntry,
+      allowLevelSelect: false
+    });
+    hud.showComplete(
+      {
+        levelId: "campaign-final",
+        score: 5000,
+        frames: 720,
+        echoes: 2,
+        deaths: 1,
+        cores: 4,
+        timeBonus: 1200
+      },
+      true,
+      4,
+      {
+        scoreEligible: true,
+        campaignSummary: { score: 9000, frames: 2048, deaths: 2, cores: 12, levels: 4 },
+        leaderboardEntries: getLocalLeaderboard()
+      }
+    );
+    const input = document.querySelector("[data-leaderboard-name]");
+    input.value = "<Ace>&!!!";
+    const button = document.querySelector("[data-leaderboard-form] button[type='submit']");
+    button.click();
+    button.click();
+    const entries = JSON.parse(window.localStorage.getItem("echo-shift-leaderboard-v1") || "[]");
+    const listText = document.querySelector("[data-leaderboard-list]")?.textContent || "";
+    const buttonText = button.textContent;
+    const buttonDisabled = button.disabled;
+    const modalText = document.querySelector("[data-modal]")?.textContent || "";
+    hud.destroy();
+    return { entries, listText, buttonText, buttonDisabled, modalText };
+  });
+  await leaderboardHarness.close();
 
   await page.goto(`${url}?editor=1`, { waitUntil: "domcontentloaded" });
   await page.locator("[data-level-editor]").waitFor({ state: "visible" });
@@ -1547,6 +1705,10 @@ try {
   assert(!lockedLevelSelectVisible, "Expected locked main menu to hide Level Select before the secret code");
   assert(secretEditorVisible, "Expected secret code to reveal Level Editor on the main menu");
   assert(secretLevelSelectVisible, "Expected secret code to reveal Level Select on the main menu");
+  assert(!reloadedEditorVisible, "Expected secret unlock to be forgotten after a plain page reload");
+  assert(!reloadedLevelSelectVisible, "Expected Level Select unlock to be forgotten after a plain page reload");
+  assert(!barePlaytestEditorVisible, "Expected bare ?playtestDraft=1 without a saved draft not to unlock Level Editor");
+  assert(!barePlaytestLevelSelectVisible, "Expected bare ?playtestDraft=1 without a saved draft not to unlock Level Select");
   assert(menuEditorUrl.includes("editor=1"), `Expected unlocked editor button to navigate to ?editor=1, got ${menuEditorUrl}`);
   assert(
     fractionalDraftLevelName === "Draft Index Smoke B",
@@ -1611,6 +1773,8 @@ try {
   assert(directClearTitle === "Room Clear", `Expected direct clear draft to show Room Clear, got ${directClearTitle}`);
   assert(directClearReplayCount === 0, `Expected Room Clear modal to omit replay/restart, got ${directClearReplayCount} replay buttons`);
   assert(directClearNextVisible, "Expected Room Clear modal to keep Next Room as the primary progression action");
+  assert(directClearProgress === null, `Expected direct draft clear not to write normal progress, got ${directClearProgress}`);
+  assert(directClearLeaderboard === null, `Expected direct draft clear not to write leaderboard, got ${directClearLeaderboard}`);
   assert(corruptDraftBootedMenu, "Expected corrupt draft playtest data to fall back to normal menu instead of crashing");
   assert(corruptDraftHudCount === 0, `Expected corrupt draft playtest fallback not to boot game HUD, got ${corruptDraftHudCount}`);
   assert(mixedCorruptDraftBootedMenu, "Expected mixed corrupt draft playtest data to fall back to normal menu instead of truncating draft levels");
@@ -1657,6 +1821,48 @@ try {
   assert(mismatchedDraftFirstNextVisible, "Expected non-final array slot to offer Next Room despite authored index 9");
   assert(mismatchedDraftLastCompleteTitle === "Timeline Complete", `Expected final array slot to show Timeline Complete, got ${mismatchedDraftLastCompleteTitle}`);
   assert(mismatchedDraftLastNextCount === 0, `Expected final array slot not to offer Next Room, got ${mismatchedDraftLastNextCount}`);
+  assert(
+    mismatchedDraftCompletionProgress === null,
+    `Expected final draft completion not to write normal progress, got ${mismatchedDraftCompletionProgress}`
+  );
+  assert(
+    mismatchedDraftCompletionLeaderboard === null,
+    `Expected final draft completion not to write leaderboard, got ${mismatchedDraftCompletionLeaderboard}`
+  );
+  assert(keyboardNavigationFocus === "slider", `Expected ArrowDown to move menu focus to range input, got ${keyboardNavigationFocus}`);
+  assert(keyboardNavigationMoves === 1, `Expected one keyboard navigation move before range test, got ${keyboardNavigationMoves}`);
+  assert(rangeFocusAfterArrow === "slider", `Expected ArrowRight on focused range to keep focus on range, got ${rangeFocusAfterArrow}`);
+  assert(rangeValueAfterArrow !== "5", `Expected ArrowRight on focused range to adjust native value, got ${rangeValueAfterArrow}`);
+  assert(movesAfterRangeArrow === keyboardNavigationMoves, "Expected ArrowRight on focused range not to trigger menu navigation");
+  assert(trappedTabFocus === "first", `Expected trapped Tab from final modal control to wrap to first, got ${trappedTabFocus}`);
+  assert(
+    gamepadHarnessResult.focusAfterHeldAxis === "pad-first",
+    `Expected held gamepad axis not to move focus on menu open, got ${gamepadHarnessResult.focusAfterHeldAxis}`
+  );
+  assert(
+    gamepadHarnessResult.clicksAfterHeldButton === 0,
+    `Expected held gamepad confirm not to activate on menu open, got ${gamepadHarnessResult.clicksAfterHeldButton}`
+  );
+  assert(
+    gamepadHarnessResult.clicksAfterFreshPress === 1,
+    `Expected fresh gamepad confirm to activate once, got ${gamepadHarnessResult.clicksAfterFreshPress}`
+  );
+  assert(leaderboardHarnessResult.entries.length === 1, `Expected one saved leaderboard entry, got ${leaderboardHarnessResult.entries.length}`);
+  assert(
+    leaderboardHarnessResult.entries[0]?.nickname === "Ace",
+    `Expected sanitized leaderboard nickname Ace, got ${leaderboardHarnessResult.entries[0]?.nickname}`
+  );
+  assert(
+    leaderboardHarnessResult.entries[0]?.score === 9000,
+    `Expected campaign summary score 9000 in leaderboard, got ${leaderboardHarnessResult.entries[0]?.score}`
+  );
+  assert(leaderboardHarnessResult.buttonText === "Saved", `Expected saved leaderboard button label, got ${leaderboardHarnessResult.buttonText}`);
+  assert(leaderboardHarnessResult.buttonDisabled, "Expected leaderboard save button to disable after save");
+  assert(leaderboardHarnessResult.listText.includes("Ace"), `Expected saved leaderboard list to include Ace, got ${leaderboardHarnessResult.listText}`);
+  assert(
+    leaderboardHarnessResult.modalText.includes("Campaign Score"),
+    `Expected final completion modal to show campaign summary, got ${leaderboardHarnessResult.modalText}`
+  );
   assert(levelOptions > 0, `Expected at least one editable level, got ${levelOptions}`);
   assert(
     levelOptions === initialExportLevelCount,

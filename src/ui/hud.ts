@@ -45,6 +45,7 @@ export class Hud {
   private toastTimer = 0;
   private callbacks: HudCallbacks;
   private modalNavigation: MenuNavigationBinding | null = null;
+  private inertHudControls: Array<{ element: HTMLElement; tabIndex: string | null }> = [];
 
   constructor(callbacks: HudCallbacks) {
     this.callbacks = callbacks;
@@ -152,6 +153,7 @@ export class Hud {
 
   showPause(levelName: string): void {
     this.destroyModalNavigation();
+    this.setHudControlsInert(true);
     const modal = this.modal();
     const levelSelectButton = this.callbacks.allowLevelSelect ? `<button class="ui-button" data-levels>${icon("levels")} Level Select</button>` : "";
     modal.innerHTML = `
@@ -179,6 +181,7 @@ export class Hud {
 
   hideModal(): void {
     this.destroyModalNavigation();
+    this.setHudControlsInert(false);
     const modal = this.modal();
     modal.classList.remove("show");
     modal.replaceChildren();
@@ -186,6 +189,7 @@ export class Hud {
 
   showComplete(score: LevelScore, isFinal: boolean, totalCores: number, options: CompleteOptions): void {
     this.destroyModalNavigation();
+    this.setHudControlsInert(true);
     const modal = this.modal();
     const finalLeaderboard = isFinal ? this.finalLeaderboardHtml(options) : "";
     const levelSelectButton = this.callbacks.allowLevelSelect
@@ -223,6 +227,7 @@ export class Hud {
 
   showTutorialComplete(score: LevelScore, totalCores: number): void {
     this.destroyModalNavigation();
+    this.setHudControlsInert(true);
     const modal = this.modal();
     modal.innerHTML = `
       <section class="panel complete-panel">
@@ -246,6 +251,7 @@ export class Hud {
 
   showGameOver(levelName: string): void {
     this.destroyModalNavigation();
+    this.setHudControlsInert(true);
     const modal = this.modal();
     const primaryAction = this.callbacks.allowLevelSelect
       ? `<button class="ui-button primary" data-levels>${icon("levels")} Level Select</button>`
@@ -271,6 +277,7 @@ export class Hud {
   destroy(): void {
     window.clearTimeout(this.toastTimer);
     this.destroyModalNavigation();
+    this.setHudControlsInert(false);
     clearUi();
   }
 
@@ -282,6 +289,7 @@ export class Hud {
 
   private showOptions(levelName: string): void {
     this.destroyModalNavigation();
+    this.setHudControlsInert(true);
     const modal = this.modal();
     modal.innerHTML = optionsPanelHtml();
     modal.classList.add("show");
@@ -359,13 +367,32 @@ export class Hud {
     this.destroyModalNavigation();
     this.modalNavigation = bindMenuNavigation(this.modal(), {
       onBack,
-      onNavigate: () => audio.play("select")
+      onNavigate: () => audio.play("select"),
+      trapFocus: true
     });
   }
 
   private destroyModalNavigation(): void {
     this.modalNavigation?.destroy();
     this.modalNavigation = null;
+  }
+
+  private setHudControlsInert(inert: boolean): void {
+    const controls = Array.from(this.root.querySelectorAll<HTMLElement>(".hud-actions button, .touch-controls button"));
+    if (inert) {
+      if (this.inertHudControls.length > 0) return;
+      this.inertHudControls = controls.map((element) => ({
+        element,
+        tabIndex: element.getAttribute("tabindex")
+      }));
+      for (const { element } of this.inertHudControls) element.setAttribute("tabindex", "-1");
+      return;
+    }
+    for (const { element, tabIndex } of this.inertHudControls) {
+      if (tabIndex === null) element.removeAttribute("tabindex");
+      else element.setAttribute("tabindex", tabIndex);
+    }
+    this.inertHudControls = [];
   }
 
   private escapeHtml(value: string): string {
