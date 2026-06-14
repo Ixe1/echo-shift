@@ -64,7 +64,7 @@ export class LevelSelectScene extends Phaser.Scene {
           </div>
           <div class="level-grid">${buttons}</div>
           <div class="button-grid">
-            <button class="ui-button" data-back>${icon("back")} Main Menu</button>
+            <button class="ui-button" data-back>${icon("back")} ${draftPlaytest ? "Draft Menu" : "Main Menu"}</button>
           </div>
         </section>
       </main>

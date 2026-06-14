@@ -33,9 +33,6 @@ const visible = (element: HTMLElement): boolean => {
 const focusableControls = (root: HTMLElement): HTMLElement[] =>
   Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(visible);
 
-const gamepadFocusableControls = (root: HTMLElement): HTMLElement[] =>
-  focusableControls(root).filter((control) => !usesNativeDirectionalKeys(control) || (control instanceof HTMLInputElement && control.type === "range"));
-
 export const focusFirstMenuControl = (root: HTMLElement, preferredSelector?: string): void => {
   const controls = focusableControls(root);
   const preferred = preferredSelector
@@ -185,17 +182,12 @@ export const bindMenuNavigation = (root: HTMLElement, options: MenuNavigationOpt
       const verticalDirection =
         pressed(gamepad, 12) || vertical < -AXIS_THRESHOLD ? "previous" : pressed(gamepad, 13) || vertical > AXIS_THRESHOLD ? "next" : null;
       const rangeInput = activeRangeInput();
-      const activeNativeControl = usesNativeDirectionalKeys(activeElementIn(root));
       const direction =
-        activeNativeControl && !rangeInput
-          ? null
-          : rangeInput
-            ? horizontalDirection
-              ? horizontalDirection === "previous"
-                ? "range-down"
-                : "range-up"
-              : null
-            : verticalDirection || horizontalDirection;
+        rangeInput && horizontalDirection
+          ? horizontalDirection === "previous"
+            ? "range-down"
+            : "range-up"
+          : verticalDirection || (rangeInput ? null : horizontalDirection);
       const button = pressed(gamepad, 0) || pressed(gamepad, 9) ? "confirm" : pressed(gamepad, 1) ? "back" : null;
       if (!gamepadPrimed) {
         heldDirection = direction;
@@ -218,7 +210,7 @@ export const bindMenuNavigation = (root: HTMLElement, options: MenuNavigationOpt
       }
       if (direction && (direction !== heldDirection || now >= nextMoveAt)) {
         if (rangeInput && (direction === "range-down" || direction === "range-up")) adjustRangeInput(rangeInput, direction === "range-down" ? -1 : 1);
-        else navigate(direction === "previous" ? -1 : 1, gamepadFocusableControls(root));
+        else navigate(direction === "previous" ? -1 : 1);
         nextMoveAt = now + (direction === heldDirection ? HELD_REPEAT_MS : INITIAL_REPEAT_MS);
       }
       heldDirection = direction;

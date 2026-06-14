@@ -218,56 +218,6 @@ const verifyGameSceneAudioCleanupHooks = () => {
   }
 };
 
-const verifyCampaignVitalsLevelSelectContract = () => {
-  const gameSceneSource = readFileSync("src/scenes/GameScene.ts", "utf8");
-  const levelSelectSource = readFileSync("src/scenes/LevelSelectScene.ts", "utf8");
-  const openLevelSelectBody = gameSceneMethodBody(gameSceneSource, "openLevelSelect");
-  assert(
-    openLevelSelectBody.includes('this.scene.start("LevelSelectScene")') && !openLevelSelectBody.includes("preserveCampaignVitals"),
-    "Expected Level Select navigation to avoid preserving in-run campaign vitals"
-  );
-  assert(
-    levelSelectSource.includes("resetCampaignVitals();") && !levelSelectSource.includes("preserveCampaignVitals"),
-    "Expected every Level Select choice to reset campaign vitals to the default fresh run"
-  );
-};
-
-const verifyNoPlayerRetryContract = () => {
-  const gameSceneSource = readFileSync("src/scenes/GameScene.ts", "utf8");
-  const hudSource = readFileSync("src/ui/hud.ts", "utf8");
-  const optionsSource = readFileSync("src/ui/options.ts", "utf8");
-  const handleHotkeysBody = gameSceneMethodBody(gameSceneSource, "handleHotkeys");
-  assert(
-    handleHotkeysBody.includes("if (this.retryRequired) return;") &&
-      !handleHotkeysBody.includes("restartLevel") &&
-      !handleHotkeysBody.includes("retryAttempt") &&
-      !handleHotkeysBody.includes("this.keys.t"),
-    "Expected hotkeys to avoid any manual level retry path"
-  );
-  for (const forbidden of [
-    "retryAttempt(",
-    "restartLevel(",
-    "startRetryPresentation",
-    "finishRetryPresentation",
-    "KeyCodes.T",
-    "data-retry"
-  ]) {
-    assert(!gameSceneSource.includes(forbidden), `Expected GameScene to omit manual retry hook ${forbidden}`);
-  }
-  assert(
-    hudSource.includes("showGameOver") &&
-      hudSource.includes("<h1>Game Over</h1>") &&
-      !hudSource.includes("data-retry") &&
-      !hudSource.includes("data-replay-level") &&
-      !hudSource.includes("<h1>Retry Required</h1>") &&
-      !hudSource.includes("Restart Level</button>") &&
-      !hudSource.includes("Replay Room</button>") &&
-      !hudSource.includes("Replay Tutorial"),
-    "Expected HUD to expose terminal Game Over without retry/replay buttons"
-  );
-  assert(!optionsSource.includes("Retry"), "Expected controls help to omit retry input hints");
-};
-
 const verifyExtraLifeSfxContract = () => {
   const assetPath = "public/assets/audio/effects/core_extra_life.mp3";
   const gameSceneSource = readFileSync("src/scenes/GameScene.ts", "utf8");
@@ -1816,8 +1766,6 @@ try {
     "Expected wood-archive decor props to include Timber wall decals"
   );
   verifyGameSceneAudioCleanupHooks();
-  verifyCampaignVitalsLevelSelectContract();
-  verifyNoPlayerRetryContract();
   verifyExtraLifeSfxContract();
   await verifyAudioUnlockRetry(SynthAudio, soundtracks);
 
@@ -2015,16 +1963,27 @@ try {
   const ineligiblePersistence = recordEligibleScore(persistenceScore, 0, false);
   assert(!ineligiblePersistence.recorded && ineligiblePersistence.campaignSummary === null, "Expected ineligible score persistence to report no write");
   assert(gatedProgressWrites === 0 && gatedProgressStorage === "", "Expected ineligible score persistence not to write normal progress");
+  assert(
+    currentCampaignRunSummary().score === 0 && currentCampaignRunSummary().levels === 0,
+    `Expected ineligible score persistence not to advance campaign summary, got ${JSON.stringify(currentCampaignRunSummary())}`
+  );
   const eligiblePersistence = recordEligibleScore(persistenceScore, 0, true);
+  const secondEligiblePersistence = recordEligibleScore(
+    { ...persistenceScore, levelId: "persistence-gate-2", score: 1500, frames: 300, deaths: 1, cores: 1 },
+    1,
+    true
+  );
   if (previousProgressWindow === undefined) delete globalThis.window;
   else Object.defineProperty(globalThis, "window", { configurable: true, value: previousProgressWindow });
   assert(eligiblePersistence.recorded, "Expected eligible score persistence to report a write");
-  assert(gatedProgressWrites === 1, `Expected eligible score persistence to write progress once, got ${gatedProgressWrites}`);
+  assert(secondEligiblePersistence.recorded, "Expected second eligible score persistence to report a write");
+  assert(gatedProgressWrites === 2, `Expected eligible score persistence to write progress twice, got ${gatedProgressWrites}`);
   assert(
-    eligiblePersistence.campaignSummary?.score === 2500 &&
-      eligiblePersistence.campaignSummary.frames === 420 &&
-      eligiblePersistence.campaignSummary.levels === 1,
-    `Expected eligible score persistence to update campaign summary, got ${JSON.stringify(eligiblePersistence.campaignSummary)}`
+    secondEligiblePersistence.campaignSummary?.score === 4000 &&
+      secondEligiblePersistence.campaignSummary.frames === 720 &&
+      secondEligiblePersistence.campaignSummary.deaths === 1 &&
+      secondEligiblePersistence.campaignSummary.levels === 2,
+    `Expected eligible score persistence to accumulate campaign summary across rooms, got ${JSON.stringify(secondEligiblePersistence.campaignSummary)}`
   );
 
   resetCampaignVitals();

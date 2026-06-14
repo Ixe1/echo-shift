@@ -95,9 +95,11 @@ export const optionsPanelHtml = (view: OptionsView = "root"): string => {
 
 export const bindOptionsPanel = (root: HTMLElement, callbacks: OptionsCallbacks): void => {
   const navigate = () => callbacks.onNavigate?.();
+  const focusFirst = () => window.setTimeout(() => root.querySelector<HTMLElement>("button:not([disabled]), input:not([disabled])")?.focus(), 0);
   const show = (view: OptionsView) => {
     root.innerHTML = optionsPanelHtml(view);
     bindOptionsPanel(root, callbacks);
+    focusFirst();
   };
 
   root.querySelector("[data-options-audio]")?.addEventListener("click", () => {

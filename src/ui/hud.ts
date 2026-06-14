@@ -158,6 +158,7 @@ export class Hud {
     this.setHudControlsInert(true);
     const modal = this.modal();
     const levelSelectButton = this.callbacks.allowLevelSelect ? `<button class="ui-button" data-levels>${icon("levels")} Level Select</button>` : "";
+    const menuLabel = this.menuLabel();
     modal.innerHTML = `
       <section class="panel complete-panel">
         <img class="modal-logo" src="/assets/echo-shift-logo.png" alt="Echo Shift" />
@@ -168,7 +169,7 @@ export class Hud {
           <button class="ui-button" data-options>Options</button>
           ${levelSelectButton}
           ${this.callbacks.draftPlaytest ? `<button class="ui-button" data-editor>${icon("levels")} Editor</button>` : ""}
-          <button class="ui-button" data-exit-menu>${icon("back")} Main Menu</button>
+          <button class="ui-button" data-exit-menu>${icon("back")} ${menuLabel}</button>
         </div>
       </section>
     `;
@@ -194,11 +195,12 @@ export class Hud {
     this.setHudControlsInert(true);
     const modal = this.modal();
     const finalLeaderboard = isFinal ? this.finalLeaderboardHtml(options) : "";
+    const menuLabel = this.menuLabel();
     const levelSelectButton = this.callbacks.allowLevelSelect
       ? `<button class="ui-button ${isFinal ? "primary" : ""}" data-levels ${isFinal ? "data-default-focus" : ""}>${icon("levels")} Level Select</button>`
       : "";
     const primaryAction = isFinal
-      ? levelSelectButton || `<button class="ui-button primary" data-exit-menu data-default-focus>${icon("back")} Main Menu</button>`
+      ? levelSelectButton || `<button class="ui-button primary" data-exit-menu data-default-focus>${icon("back")} ${menuLabel}</button>`
       : `<button class="ui-button primary" data-next data-default-focus>${icon("next")} Next Room</button>`;
     modal.innerHTML = `
       <section class="panel complete-panel">
@@ -216,7 +218,7 @@ export class Hud {
         <div class="button-grid">
           ${primaryAction}
           ${this.callbacks.draftPlaytest ? `<button class="ui-button" data-editor>${icon("levels")} Editor</button>` : ""}
-          ${isFinal && !levelSelectButton ? "" : `<button class="ui-button" data-exit-menu>${icon("back")} Main Menu</button>`}
+          ${isFinal && !levelSelectButton ? "" : `<button class="ui-button" data-exit-menu>${icon("back")} ${menuLabel}</button>`}
         </div>
       </section>
     `;
@@ -233,6 +235,7 @@ export class Hud {
     this.destroyModalNavigation();
     this.setHudControlsInert(true);
     const modal = this.modal();
+    const menuLabel = this.menuLabel();
     modal.innerHTML = `
       <section class="panel complete-panel">
         <h1>Tutorial Complete</h1>
@@ -244,7 +247,7 @@ export class Hud {
           <div class="score-cell"><strong>Deaths</strong><span>${score.deaths}</span></div>
         </div>
         <div class="button-grid">
-          <button class="ui-button primary" data-exit-menu data-default-focus>${icon("back")} Main Menu</button>
+          <button class="ui-button primary" data-exit-menu data-default-focus>${icon("back")} ${menuLabel}</button>
         </div>
       </section>
     `;
@@ -257,9 +260,10 @@ export class Hud {
     this.destroyModalNavigation();
     this.setHudControlsInert(true);
     const modal = this.modal();
+    const menuLabel = this.menuLabel();
     const primaryAction = this.callbacks.allowLevelSelect
       ? `<button class="ui-button primary" data-levels data-default-focus>${icon("levels")} Level Select</button>`
-      : `<button class="ui-button primary" data-exit-menu data-default-focus>${icon("back")} Main Menu</button>`;
+      : `<button class="ui-button primary" data-exit-menu data-default-focus>${icon("back")} ${menuLabel}</button>`;
     modal.innerHTML = `
       <section class="panel complete-panel">
         <h1>Game Over</h1>
@@ -267,7 +271,7 @@ export class Hud {
         <div class="button-grid">
           ${primaryAction}
           ${this.callbacks.draftPlaytest ? `<button class="ui-button" data-editor>${icon("levels")} Editor</button>` : ""}
-          ${this.callbacks.allowLevelSelect ? `<button class="ui-button" data-exit-menu>${icon("back")} Main Menu</button>` : ""}
+          ${this.callbacks.allowLevelSelect ? `<button class="ui-button" data-exit-menu>${icon("back")} ${menuLabel}</button>` : ""}
         </div>
       </section>
     `;
@@ -289,6 +293,10 @@ export class Hud {
     this.root.querySelector("[data-rewind]")?.addEventListener("click", this.callbacks.onRewind);
     this.root.querySelector("[data-menu]")?.addEventListener("click", this.callbacks.onPause);
     this.bindTouchControls();
+  }
+
+  private menuLabel(): string {
+    return this.callbacks.draftPlaytest ? "Draft Menu" : "Main Menu";
   }
 
   private showOptions(levelName: string): void {

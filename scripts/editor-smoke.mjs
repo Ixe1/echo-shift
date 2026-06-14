@@ -905,7 +905,7 @@ try {
     const rangeFocusAfterVerticalAxis = document.activeElement?.id;
     rangeBinding.destroy();
 
-    axisX = 1;
+    axisX = 0;
     axisY = 0;
     document.body.innerHTML = `
       <section id="text-root">
@@ -916,6 +916,8 @@ try {
     `;
     const textBinding = bindMenuNavigation(document.getElementById("text-root"), { autoFocus: false });
     document.getElementById("pad-name").focus();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    axisX = 1;
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const textFocusAfterAxis = document.activeElement?.id;
     textBinding.destroy();
@@ -967,6 +969,7 @@ try {
       4,
       {
         scoreEligible: true,
+        scoreRecorded: true,
         campaignSummary: { score: 9000, frames: 2048, deaths: 2, cores: 12, levels: 4 },
         leaderboardEntries: getLocalLeaderboard()
       }
@@ -1016,6 +1019,7 @@ try {
       4,
       {
         scoreEligible: true,
+        scoreRecorded: true,
         campaignSummary: { score: 9000, frames: 2048, deaths: 2, cores: 12, levels: 4 },
         leaderboardEntries: getLocalLeaderboard()
       }
@@ -1029,6 +1033,9 @@ try {
     const failedInputDisabled = failedInput.disabled;
     failedHud.destroy();
     Storage.prototype.setItem = originalSetItem;
+    window.localStorage.setItem("echo-shift-leaderboard-v1", "{broken");
+    const damagedSave = addLocalLeaderboardEntry("Corrupt", { score: 1, frames: 1, deaths: 0, cores: 0, levels: 1 });
+    const damagedStorage = window.localStorage.getItem("echo-shift-leaderboard-v1");
     return {
       entries,
       listText,
@@ -1040,7 +1047,9 @@ try {
       failedEntryStorage,
       failedButtonText,
       failedButtonDisabled,
-      failedInputDisabled
+      failedInputDisabled,
+      damagedSaveOk: damagedSave.ok,
+      damagedStorage
     };
   });
   await leaderboardHarness.close();
@@ -2032,12 +2041,12 @@ try {
     `Expected fresh gamepad axis to adjust focused range, got ${gamepadHarnessResult.rangeAfterFreshAxis}`
   );
   assert(
-    gamepadHarnessResult.rangeFocusAfterVerticalAxis === "pad-slider",
-    `Expected vertical gamepad axis not to move focus away from range, got ${gamepadHarnessResult.rangeFocusAfterVerticalAxis}`
+    gamepadHarnessResult.rangeFocusAfterVerticalAxis === "range-last",
+    `Expected vertical gamepad axis to move focus away from range, got ${gamepadHarnessResult.rangeFocusAfterVerticalAxis}`
   );
   assert(
-    gamepadHarnessResult.textFocusAfterAxis === "pad-name",
-    `Expected gamepad axis not to move focus away from text input, got ${gamepadHarnessResult.textFocusAfterAxis}`
+    gamepadHarnessResult.textFocusAfterAxis === "text-last",
+    `Expected gamepad axis to move focus away from text input, got ${gamepadHarnessResult.textFocusAfterAxis}`
   );
   assert(leaderboardHarnessResult.entries.length === 1, `Expected one saved leaderboard entry, got ${leaderboardHarnessResult.entries.length}`);
   assert(
@@ -2060,6 +2069,8 @@ try {
   assert(leaderboardHarnessResult.failedButtonText === "Try Again", `Expected failed leaderboard save button to offer retry, got ${leaderboardHarnessResult.failedButtonText}`);
   assert(!leaderboardHarnessResult.failedButtonDisabled, "Expected failed leaderboard save button to remain enabled");
   assert(!leaderboardHarnessResult.failedInputDisabled, "Expected failed leaderboard save input to remain enabled");
+  assert(!leaderboardHarnessResult.damagedSaveOk, "Expected malformed leaderboard storage not to be overwritten as a successful save");
+  assert(leaderboardHarnessResult.damagedStorage === "{broken", `Expected malformed leaderboard storage to remain untouched, got ${leaderboardHarnessResult.damagedStorage}`);
   assert(
     leaderboardHarnessResult.modalText.includes("Campaign Score"),
     `Expected final completion modal to show campaign summary, got ${leaderboardHarnessResult.modalText}`

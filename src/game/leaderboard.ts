@@ -58,20 +58,24 @@ const sortEntries = (entries: LeaderboardEntry[]): LeaderboardEntry[] =>
     return b.completedAt.localeCompare(a.completedAt);
   });
 
-export const getLocalLeaderboard = (): LeaderboardEntry[] => {
+const readLocalLeaderboard = (): LeaderboardSaveResult => {
   try {
     const raw = window.localStorage.getItem(KEY);
-    if (!raw) return [];
+    if (!raw) return { ok: true, entries: [] };
     const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return sortEntries(parsed.flatMap((entry) => {
+    if (!Array.isArray(parsed)) {
+      return { ok: false, entries: [], message: "Local leaderboard data is damaged." };
+    }
+    return { ok: true, entries: sortEntries(parsed.flatMap((entry) => {
       const normalized = normalizeEntry(entry);
       return normalized ? [normalized] : [];
-    })).slice(0, MAX_ENTRIES);
+    })).slice(0, MAX_ENTRIES) };
   } catch {
-    return [];
+    return { ok: false, entries: [], message: "Local leaderboard data is damaged." };
   }
 };
+
+export const getLocalLeaderboard = (): LeaderboardEntry[] => readLocalLeaderboard().entries;
 
 const writeLocalLeaderboard = (entries: LeaderboardEntry[]): boolean => {
   try {
@@ -88,7 +92,8 @@ const entryId = (): string => {
 };
 
 export const addLocalLeaderboardEntry = (nickname: string, summary: CampaignRunSummary): LeaderboardSaveResult => {
-  const existing = getLocalLeaderboard();
+  const existing = readLocalLeaderboard();
+  if (!existing.ok) return existing;
   const entry: LeaderboardEntry = {
     id: entryId(),
     nickname: sanitizeLeaderboardNickname(nickname),
@@ -99,11 +104,11 @@ export const addLocalLeaderboardEntry = (nickname: string, summary: CampaignRunS
     levels: summary.levels,
     completedAt: new Date().toISOString()
   };
-  const entries = sortEntries([entry, ...existing]).slice(0, MAX_ENTRIES);
+  const entries = sortEntries([entry, ...existing.entries]).slice(0, MAX_ENTRIES);
   if (!writeLocalLeaderboard(entries)) {
     return {
       ok: false,
-      entries: existing,
+      entries: existing.entries,
       message: "Could not save to local leaderboard."
     };
   }

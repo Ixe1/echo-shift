@@ -1229,6 +1229,7 @@ export class GameScene extends Phaser.Scene {
     this.syncFiniteCampaignLives();
     const scoreEligible = this.scoreEligible && !this.tutorialMode && !isDraftPlaytestActive();
     const persistence = recordEligibleScore(score, this.level.index, scoreEligible);
+    if (scoreEligible && !persistence.recorded) this.scoreEligible = false;
     this.cameras.main.flash(280, 255, 227, 90, false);
     const totalCores = (this.level.cores || []).length;
     if (this.tutorialMode) this.hud.showTutorialComplete(score, totalCores);
