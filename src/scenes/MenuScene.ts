@@ -6,7 +6,7 @@ import { audio } from "../game/audio";
 import { isSecretAccessUnlocked, secretInputFromKeyboardEvent, secretSequence, unlockSecretAccess } from "../game/secretAccess";
 import { resetCampaignVitals } from "../game/session";
 import { soundtrackForLevel } from "../game/soundtracks";
-import { clearUi, icon, uiRoot } from "../ui/dom";
+import { bindImageFallbacks, clearUi, ECHO_SHIFT_LOGO_FALLBACK_SRC, ECHO_SHIFT_LOGO_SRC, icon, uiRoot } from "../ui/dom";
 import { bindMenuNavigation, type MenuNavigationBinding } from "../ui/menuNavigation";
 import { bindOptionsPanel, optionsPanelHtml } from "../ui/options";
 
@@ -53,7 +53,7 @@ export class MenuScene extends Phaser.Scene {
       <main class="screen art-screen menu-screen">
         <div class="menu-shell">
           <section class="brand-block">
-            <img class="brand-logo" src="/assets/echo-shift-logo.webp" alt="Echo Shift" />
+            <img class="brand-logo" src="${ECHO_SHIFT_LOGO_SRC}" data-fallback-src="${ECHO_SHIFT_LOGO_FALLBACK_SRC}" alt="Echo Shift" />
             <p class="tagline">Rewind to leave reliable echoes in place, then cooperate with your anchored selves through ${levels.length} compact time-shift rooms.</p>
           </section>
           <section class="panel menu-panel">
@@ -76,6 +76,7 @@ export class MenuScene extends Phaser.Scene {
         </div>
       </main>
     `;
+    bindImageFallbacks(root);
 
     root.querySelector("[data-play]")?.addEventListener("click", () => {
       audio.play("select");

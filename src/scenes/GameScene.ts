@@ -84,7 +84,7 @@ import type {
   TerrainMaterial
 } from "../game/types";
 import { Hud } from "../ui/hud";
-import { uiRoot } from "../ui/dom";
+import { bindImageFallbacks, ECHO_SHIFT_LOGO_FALLBACK_SRC, ECHO_SHIFT_LOGO_SRC, uiRoot } from "../ui/dom";
 
 type ActiveTerrainDecorDensity = Exclude<SolidDecorDensity, "auto" | "off">;
 
@@ -347,6 +347,11 @@ export class GameScene extends Phaser.Scene {
   private roomLoadingPercent: HTMLElement | null = null;
   private roomLoadingStatus: HTMLElement | null = null;
   private roomLoadingProgress: HTMLElement | null = null;
+  private roomLoadingFailed = false;
+  private awaitingRoomBackgroundFallback = false;
+  private roomBackgroundFallbackLoadId = 0;
+  private roomBackgroundFallbackKey: string | null = null;
+  private roomBackgroundFallbackSrc: string | null = null;
   private lastTutorialHint = "";
   private readonly launchPadActiveUntil = new Map<string, number>();
   private readonly fxBursts: FxBurst[] = [];
@@ -516,6 +521,11 @@ export class GameScene extends Phaser.Scene {
     this.roomLoadingPercent = null;
     this.roomLoadingStatus = null;
     this.roomLoadingProgress = null;
+    this.roomLoadingFailed = false;
+    this.awaitingRoomBackgroundFallback = false;
+    this.roomBackgroundFallbackLoadId = 0;
+    this.roomBackgroundFallbackKey = null;
+    this.roomBackgroundFallbackSrc = null;
     this.lastTutorialHint = "";
     this.launchPadActiveUntil.clear();
     this.fxBursts.length = 0;
@@ -531,14 +541,22 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.showRoomLoadingScreen(background.title);
+    this.roomLoadingFailed = false;
+    this.awaitingRoomBackgroundFallback = false;
+    this.roomBackgroundFallbackKey = background.fallbackSrc ? this.backgroundFallbackTextureKey(background.key) : null;
+    this.roomBackgroundFallbackSrc = background.fallbackSrc || null;
     this.bindRoomLoadingProgress();
     this.load.image(background.key, background.src);
     this.writeBackgroundPreloadDiagnostics(background.key, "queued");
-    this.load.once(Phaser.Loader.Events.COMPLETE, () => this.writeBackgroundPreloadDiagnostics(background.key, "complete"));
   }
 
   create(): void {
     this.syncDraftPlaytestUrl();
+    if (this.deferCreateForRoomFallback()) return;
+    this.createLoadedLevel();
+  }
+
+  private createLoadedLevel(): void {
     const levelMusicKey = this.currentLevelSoundtrackKey();
     audio.playMusic(levelMusicKey);
     const levelMusicWarmup = audio.preloadMusic(levelMusicKey);
@@ -585,6 +603,55 @@ export class GameScene extends Phaser.Scene {
     this.updateHud();
     this.finishRoomLoadingScreen();
     this.startLevelWhenAudioReady(levelMusicKey, levelMusicWarmup, effectWarmup);
+  }
+
+  private deferCreateForRoomFallback(): boolean {
+    const background = backgroundForLevel(this.level, this.levelIndex);
+    if (this.textureKeyForBackground(background)) return false;
+    if (!this.roomBackgroundFallbackKey || !this.roomBackgroundFallbackSrc) return false;
+
+    this.awaitingRoomBackgroundFallback = true;
+    this.roomLoadingFailed = false;
+    const loadId = ++this.roomBackgroundFallbackLoadId;
+    this.roomLoadingStatus?.replaceChildren("Loading fallback room backdrop");
+    this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(`fallback: ${background.key}`);
+    this.roomLoadingProgress?.setAttribute("aria-valuetext", `Loading fallback for ${background.key}`);
+    this.writeBackgroundPreloadDiagnostics(background.key, "fallback");
+    void this.loadFallbackBackgroundImage(this.roomBackgroundFallbackKey, this.roomBackgroundFallbackSrc).then((loaded) => {
+      if (loadId !== this.roomBackgroundFallbackLoadId) return;
+      this.awaitingRoomBackgroundFallback = false;
+      if (!loaded) {
+        this.roomLoadingFailed = true;
+        this.writeBackgroundPreloadDiagnostics(this.roomBackgroundFallbackKey || background.key, "error");
+      }
+      this.handleRoomLoadComplete();
+      this.createLoadedLevel();
+    });
+    const cancelFallback = () => {
+      this.roomBackgroundFallbackLoadId += 1;
+      this.awaitingRoomBackgroundFallback = false;
+    };
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, cancelFallback);
+    this.events.once(Phaser.Scenes.Events.DESTROY, cancelFallback);
+    return true;
+  }
+
+  private loadFallbackBackgroundImage(key: string, src: string): Promise<boolean> {
+    if (this.textures.exists(key)) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const image = new Image();
+      const addTexture = () => {
+        if (this.textures.exists(key)) {
+          resolve(true);
+          return;
+        }
+        resolve(this.textures.addImage(key, image) !== null);
+      };
+      image.onload = addTexture;
+      image.onerror = () => resolve(false);
+      image.src = src;
+      if (image.complete && image.naturalWidth > 0) addTexture();
+    });
   }
 
   private showRoomLoadingScreen(title: string): void {
@@ -645,14 +712,46 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleRoomLoadError(file: Phaser.Loader.File): void {
-    const label = `Could not load ${file.key}`;
+    const failedKey = String(file.key);
+    if (
+      failedKey !== this.roomBackgroundFallbackKey &&
+      this.roomBackgroundFallbackKey &&
+      this.roomBackgroundFallbackSrc &&
+      !this.textures.exists(this.roomBackgroundFallbackKey)
+    ) {
+      this.roomLoadingStatus?.replaceChildren("Loading fallback room backdrop");
+      this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(`fallback: ${failedKey}`);
+      this.roomLoadingProgress?.setAttribute("aria-valuetext", `Loading fallback for ${failedKey}`);
+      this.writeBackgroundPreloadDiagnostics(failedKey, "fallback");
+      return;
+    }
+    this.roomLoadingFailed = true;
+    const label = `Could not load ${failedKey}`;
     this.roomLoadingStatus?.replaceChildren(label);
     this.roomLoadingProgress?.setAttribute("aria-valuetext", label);
-    this.writeBackgroundPreloadDiagnostics(file.key, "error");
+    this.writeBackgroundPreloadDiagnostics(failedKey, "error");
   }
 
   private handleRoomLoadComplete(): void {
     this.handleRoomLoadProgress(1);
+    if (this.roomLoadingFailed) {
+      this.roomLoadingStatus?.replaceChildren("Room assets unavailable");
+      return;
+    }
+    const background = backgroundForLevel(this.level, this.levelIndex);
+    const textureKey = this.textureKeyForBackground(background);
+    if (!textureKey) {
+      if (this.roomBackgroundFallbackKey && this.roomBackgroundFallbackSrc && !this.textures.exists(this.roomBackgroundFallbackKey)) {
+        this.roomLoadingStatus?.replaceChildren("Loading fallback room backdrop");
+        this.writeBackgroundPreloadDiagnostics(background.key, "fallback");
+        return;
+      }
+      this.roomLoadingFailed = true;
+      this.roomLoadingStatus?.replaceChildren("Room assets unavailable");
+      this.writeBackgroundPreloadDiagnostics(background.key, "missing");
+      return;
+    }
+    this.writeBackgroundPreloadDiagnostics(textureKey, "complete");
     this.roomLoadingStatus?.replaceChildren("Room ready");
   }
 
@@ -671,9 +770,14 @@ export class GameScene extends Phaser.Scene {
     this.roomLoadingPercent = null;
     this.roomLoadingStatus = null;
     this.roomLoadingProgress = null;
+    this.roomLoadingFailed = false;
+    this.awaitingRoomBackgroundFallback = false;
+    this.roomBackgroundFallbackKey = null;
+    this.roomBackgroundFallbackSrc = null;
   }
 
   update(_time: number, delta: number): void {
+    if (this.awaitingRoomBackgroundFallback) return;
     const updateStart = performance.now();
     if (this.musicLoadingActive) {
       const updateMs = performance.now() - updateStart;
@@ -874,7 +978,7 @@ export class GameScene extends Phaser.Scene {
     overlay.dataset.levelIntro = "active";
     overlay.innerHTML = `
       <div class="level-intro-track" aria-hidden="true">
-        <img class="level-intro-track-logo" src="/assets/echo-shift-logo.webp" alt="" />
+        <img class="level-intro-track-logo" src="${ECHO_SHIFT_LOGO_SRC}" data-fallback-src="${ECHO_SHIFT_LOGO_FALLBACK_SRC}" alt="" />
       </div>
       <section class="level-intro-card" aria-label="Level start">
         <div class="level-intro-number">${this.tutorialMode ? "T" : this.level.index + 1}</div>
@@ -886,10 +990,11 @@ export class GameScene extends Phaser.Scene {
         <div class="level-intro-ready">Ready</div>
       </section>
       <div class="level-intro-sweep" aria-hidden="true">
-        <img class="level-intro-sweep-logo" src="/assets/echo-shift-logo.webp" alt="" />
+        <img class="level-intro-sweep-logo" src="${ECHO_SHIFT_LOGO_SRC}" data-fallback-src="${ECHO_SHIFT_LOGO_FALLBACK_SRC}" alt="" />
       </div>
     `;
     uiRoot().append(overlay);
+    bindImageFallbacks(overlay);
     this.levelIntroOverlay = overlay;
     this.writeLevelIntroDiagnostics("active");
   }
@@ -1801,7 +1906,8 @@ export class GameScene extends Phaser.Scene {
   private createBackgroundImages(): void {
     const background = backgroundForLevel(this.level, this.levelIndex);
     const bounds = this.level.bounds;
-    if (!this.textures.exists(background.key)) {
+    const textureKey = this.textureKeyForBackground(background);
+    if (!textureKey) {
       this.backgroundTextureFilter = `${background.key}:missing`;
       this.writeBackgroundPreloadDiagnostics(background.key, "missing");
       if (import.meta.env.DEV) {
@@ -1812,14 +1918,14 @@ export class GameScene extends Phaser.Scene {
       }
       return;
     }
-    this.writeBackgroundPreloadDiagnostics(background.key, "complete");
-    const texture = this.textures.get(background.key);
+    this.writeBackgroundPreloadDiagnostics(textureKey, "complete");
+    const texture = this.textures.get(textureKey);
     texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
-    this.backgroundTextureFilter = `${background.key}:${Phaser.Textures.FilterMode.LINEAR}`;
+    this.backgroundTextureFilter = `${textureKey}:${Phaser.Textures.FilterMode.LINEAR}`;
     if (background.renderMode === "fit-level") {
       const scale = Math.max(bounds.w / background.sourceSize.w, bounds.h / background.sourceSize.h, 0.01);
       const image = this.add
-        .image(bounds.x + bounds.w / 2, bounds.y + bounds.h / 2, background.key)
+        .image(bounds.x + bounds.w / 2, bounds.y + bounds.h / 2, textureKey)
         .setOrigin(0.5, 0.5)
         .setDepth(-20)
         .setAlpha(0.78)
@@ -1829,7 +1935,7 @@ export class GameScene extends Phaser.Scene {
       const scale = Math.max(bounds.h / background.sourceSize.h, 0.01);
       const startX = bounds.x - BACKGROUND_DRIFT_PADDING;
       const image = this.add
-        .tileSprite(startX, bounds.y, bounds.w + BACKGROUND_DRIFT_PADDING * 2, bounds.h, background.key)
+        .tileSprite(startX, bounds.y, bounds.w + BACKGROUND_DRIFT_PADDING * 2, bounds.h, textureKey)
         .setOrigin(0, 0)
         .setDepth(-20)
         .setAlpha(0.78)
@@ -1850,6 +1956,17 @@ export class GameScene extends Phaser.Scene {
   private writeBackgroundPreloadDiagnostics(key: string, phase: string): void {
     if (!import.meta.env.DEV || typeof document === "undefined") return;
     document.documentElement.dataset.echoShiftBackgroundPreload = `${key}:${phase}`;
+  }
+
+  private textureKeyForBackground(background: ReturnType<typeof backgroundForLevel>): string | null {
+    if (this.textures.exists(background.key)) return background.key;
+    if (!background.fallbackSrc) return null;
+    const fallbackKey = this.backgroundFallbackTextureKey(background.key);
+    return this.textures.exists(fallbackKey) ? fallbackKey : null;
+  }
+
+  private backgroundFallbackTextureKey(key: string): string {
+    return `${key}:fallback`;
   }
 
   private configureWorldTextureFilters(): void {
@@ -3505,8 +3622,9 @@ export class GameScene extends Phaser.Scene {
   private prewarmLevelTextures(): void {
     const center = { x: this.level.start.x, y: this.level.start.y };
     const background = backgroundForLevel(this.level, this.levelIndex);
+    const backgroundTextureKey = this.textureKeyForBackground(background);
     const targets: Array<{ key: string; frame?: number }> = [
-      { key: background.key },
+      ...(backgroundTextureKey ? [{ key: backgroundTextureKey }] : []),
       { key: OBJECT_ATLAS_KEY, frame: 0 },
       { key: LAUNCH_PAD_KEY, frame: 0 },
       { key: HAZARD_VENT_KEY, frame: 0 },

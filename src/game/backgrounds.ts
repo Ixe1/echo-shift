@@ -6,6 +6,7 @@ export type LevelBackground = {
   key: LevelBackgroundKey;
   title: string;
   src: string;
+  fallbackSrc?: string;
   sourceSize: {
     w: number;
     h: number;
@@ -18,6 +19,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "time-lab-prototype",
     title: "Prototype Time Lab",
     src: "/assets/time-lab-background.webp",
+    fallbackSrc: "/assets/time-lab-background.png",
     sourceSize: { w: 1672, h: 941 },
     renderMode: "repeat-x"
   },
@@ -25,6 +27,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-1-time-lab-no-portals",
     title: "Level 1 Time Lab",
     src: "/assets/backgrounds/level-1-time-lab-no-portals.webp",
+    fallbackSrc: "/assets/backgrounds/level-1-time-lab-no-portals.png",
     sourceSize: { w: 1881, h: 836 },
     renderMode: "repeat-x"
   },
@@ -32,6 +35,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-2-time-lab-no-portals",
     title: "Level 2 Time Lab",
     src: "/assets/backgrounds/level-2-time-lab-no-portals.webp",
+    fallbackSrc: "/assets/backgrounds/level-2-time-lab-no-portals.png",
     sourceSize: { w: 2200, h: 715 },
     renderMode: "repeat-x"
   },
@@ -39,6 +43,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-3-time-lab-no-portals",
     title: "Level 3 Time Lab",
     src: "/assets/backgrounds/level-3-time-lab-no-portals.webp",
+    fallbackSrc: "/assets/backgrounds/level-3-time-lab-no-portals.png",
     sourceSize: { w: 1916, h: 821 },
     renderMode: "repeat-x"
   },
@@ -46,6 +51,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-4-time-lab-no-portals",
     title: "Level 4 Time Lab",
     src: "/assets/backgrounds/level-4-time-lab-no-portals.webp",
+    fallbackSrc: "/assets/backgrounds/level-4-time-lab-no-portals.png",
     sourceSize: { w: 1881, h: 836 },
     renderMode: "repeat-x"
   },
@@ -53,6 +59,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-1-springtide-glassgrove",
     title: "Springtide Glassgrove",
     src: "/assets/backgrounds/level-1-springtide-glassgrove.webp",
+    fallbackSrc: "/assets/backgrounds/level-1-springtide-glassgrove.png",
     sourceSize: { w: 1694, h: 929 },
     renderMode: "repeat-x"
   },
@@ -74,6 +81,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-2-rainhouse-relay",
     title: "Rainhouse Relay",
     src: "/assets/backgrounds/level-2-rainhouse-relay.webp",
+    fallbackSrc: "/assets/backgrounds/level-2-rainhouse-relay.png",
     sourceSize: { w: 1920, h: 819 },
     renderMode: "repeat-x"
   },
@@ -102,6 +110,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-3-cryo-conservatory",
     title: "Cryo Conservatory",
     src: "/assets/backgrounds/level-3-cryo-conservatory.webp",
+    fallbackSrc: "/assets/backgrounds/level-3-cryo-conservatory.png",
     sourceSize: { w: 1920, h: 819 },
     renderMode: "repeat-x"
   },
@@ -123,6 +132,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-4-timber-archive",
     title: "Timber Archive",
     src: "/assets/backgrounds/level-4-timber-archive.webp",
+    fallbackSrc: "/assets/backgrounds/level-4-timber-archive.png",
     sourceSize: { w: 1920, h: 819 },
     renderMode: "repeat-x"
   },
@@ -144,6 +154,7 @@ export const levelBackgrounds: Record<LevelBackgroundKey, LevelBackground> = {
     key: "level-5-sunken-clockwork",
     title: "Sunken Clockwork",
     src: "/assets/backgrounds/level-5-sunken-clockwork.webp",
+    fallbackSrc: "/assets/backgrounds/level-5-sunken-clockwork.png",
     sourceSize: { w: 1921, h: 819 },
     renderMode: "repeat-x"
   },

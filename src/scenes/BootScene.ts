@@ -22,7 +22,7 @@ import {
 import { soundtrackForLevel } from "../game/soundtracks";
 import { allTerrainDecorProps, terrainDecorPropSrc, terrainDecorPropTextureKey } from "../game/terrainDecorProps";
 import { TERRAIN_TILE_KEY, TERRAIN_TILE_SIZE } from "../game/terrainMaterials";
-import { clearUi, icon, uiRoot } from "../ui/dom";
+import { bindImageFallbacks, clearUi, ECHO_SHIFT_LOGO_FALLBACK_SRC, ECHO_SHIFT_LOGO_SRC, icon, uiRoot } from "../ui/dom";
 import { bindMenuNavigation, type MenuNavigationBinding } from "../ui/menuNavigation";
 
 const playtestLevelIndex = (): number => {
@@ -39,12 +39,16 @@ export class BootScene extends Phaser.Scene {
   private loadingPercent: HTMLElement | null = null;
   private loadingStatus: HTMLElement | null = null;
   private loadingProgress: HTMLElement | null = null;
+  private loadingFailed = false;
+  private startupLogoSrc = ECHO_SHIFT_LOGO_SRC;
 
   constructor() {
     super("BootScene");
   }
 
   preload(): void {
+    this.loadingFailed = false;
+    this.startupLogoSrc = ECHO_SHIFT_LOGO_SRC;
     this.showLoadingScreen();
     this.bindLoadingProgress();
     this.load.spritesheet("time-runner", "/assets/sprites/time-runner-sheet.png", {
@@ -115,7 +119,6 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.finishLoadingScreen();
     const particle = this.add.graphics({ x: 0, y: 0 });
     particle.fillStyle(0x43f7ff, 1);
     particle.fillCircle(4, 4, 4);
@@ -125,6 +128,20 @@ export class BootScene extends Phaser.Scene {
     particle.fillCircle(4, 4, 4);
     particle.generateTexture("particle-gold", 8, 8);
     particle.destroy();
+    void this.showAudioGateWhenReady();
+  }
+
+  private async showAudioGateWhenReady(): Promise<void> {
+    this.loadingStatus?.replaceChildren("Preparing start screen");
+    this.loadingProgress?.setAttribute("aria-valuetext", "Preparing start screen");
+    this.writeLoadingDiagnostics("loading", 100, "Preparing start screen");
+    const [logoSrc, artSrc] = await Promise.all([
+      this.resolveDomImage(ECHO_SHIFT_LOGO_SRC, ECHO_SHIFT_LOGO_FALLBACK_SRC),
+      this.resolveDomImage(levelBackgrounds["time-lab-prototype"].src, levelBackgrounds["time-lab-prototype"].fallbackSrc)
+    ]);
+    this.startupLogoSrc = logoSrc;
+    this.setArtScreenImage(artSrc);
+    this.finishLoadingScreen();
     this.showAudioGate();
   }
 
@@ -137,7 +154,7 @@ export class BootScene extends Phaser.Scene {
       <main class="screen art-screen menu-screen">
         <div class="menu-shell">
           <section class="brand-block">
-            <img class="brand-logo" src="/assets/echo-shift-logo.webp" alt="Echo Shift" />
+            <img class="brand-logo" src="${this.startupLogoSrc}" data-fallback-src="${ECHO_SHIFT_LOGO_FALLBACK_SRC}" alt="Echo Shift" />
             <p class="tagline">Time-lab systems armed. Start the session when ready.</p>
           </section>
           <section class="panel menu-panel action-panel" aria-label="Echo Shift start">
@@ -148,6 +165,7 @@ export class BootScene extends Phaser.Scene {
         </div>
       </main>
     `;
+    bindImageFallbacks(root);
 
     const startButton = root.querySelector<HTMLButtonElement>("[data-start-game]");
     let started = false;
@@ -245,6 +263,7 @@ export class BootScene extends Phaser.Scene {
   }
 
   private handleLoadError(file: Phaser.Loader.File): void {
+    this.loadingFailed = true;
     const label = `Could not load ${file.key}`;
     this.loadingStatus?.replaceChildren(label);
     this.loadingProgress?.setAttribute("aria-valuetext", label);
@@ -253,6 +272,11 @@ export class BootScene extends Phaser.Scene {
 
   private handleLoadComplete(): void {
     this.handleLoadProgress(1);
+    if (this.loadingFailed) {
+      this.loadingStatus?.replaceChildren("Some assets failed");
+      this.writeLoadingDiagnostics("error", 100, "Some assets failed");
+      return;
+    }
     this.loadingStatus?.replaceChildren("Preload complete");
     this.writeLoadingDiagnostics("complete", 100, "complete");
   }
@@ -306,6 +330,38 @@ export class BootScene extends Phaser.Scene {
     delete document.documentElement.dataset.echoShiftBootLoading;
     delete document.documentElement.dataset.echoShiftBootLoadProgress;
     delete document.documentElement.dataset.echoShiftBootLoadCurrent;
+  }
+
+  private resolveDomImage(src: string, fallbackSrc?: string): Promise<string> {
+    return this.imageIsReady(src).then((ready) => {
+      if (ready) return src;
+      if (!fallbackSrc) {
+        this.loadingFailed = true;
+        this.writeLoadingDiagnostics("error", 100, `Could not load ${src}`);
+        return src;
+      }
+      return this.imageIsReady(fallbackSrc).then((fallbackReady) => {
+        if (fallbackReady) return fallbackSrc;
+        this.loadingFailed = true;
+        this.writeLoadingDiagnostics("error", 100, `Could not load ${src}`);
+        return src;
+      });
+    });
+  }
+
+  private imageIsReady(src: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      const image = new Image();
+      image.onload = () => resolve(true);
+      image.onerror = () => resolve(false);
+      image.src = src;
+      if (image.complete && image.naturalWidth > 0) resolve(true);
+    });
+  }
+
+  private setArtScreenImage(src: string): void {
+    if (typeof document === "undefined") return;
+    document.documentElement.style.setProperty("--art-screen-image", `url("${src}")`);
   }
 
   private nextScene(): { scene: "MenuScene"; data?: undefined; musicKey: "menu" } | { scene: "GameScene"; data: { levelIndex: number }; musicKey: ReturnType<typeof soundtrackForLevel>["key"] } {

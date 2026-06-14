@@ -111,7 +111,7 @@ button {
   background:
     linear-gradient(90deg, rgba(5, 7, 13, 0.2), rgba(5, 7, 13, 0.72) 54%, rgba(5, 7, 13, 0.36)),
     linear-gradient(180deg, rgba(5, 7, 13, 0.16), rgba(5, 7, 13, 0.84)),
-    url("/assets/time-lab-background.webp") center / cover no-repeat;
+    var(--art-screen-image, url("/assets/time-lab-background.webp")) center / cover no-repeat;
 }
 
 .art-screen::after {

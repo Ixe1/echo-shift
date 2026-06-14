@@ -8,6 +8,22 @@ export const clearUi = (): void => {
   uiRoot().replaceChildren();
 };
 
+export const ECHO_SHIFT_LOGO_SRC = "/assets/echo-shift-logo.webp";
+export const ECHO_SHIFT_LOGO_FALLBACK_SRC = "/assets/echo-shift-logo.png";
+
+export const bindImageFallbacks = (root: ParentNode = uiRoot()): void => {
+  root.querySelectorAll<HTMLImageElement>("img[data-fallback-src]").forEach((image) => {
+    image.addEventListener(
+      "error",
+      () => {
+        const fallbackSrc = image.dataset.fallbackSrc;
+        if (fallbackSrc) image.src = fallbackSrc;
+      },
+      { once: true }
+    );
+  });
+};
+
 export const bindButton = (selector: string, handler: () => void, root: ParentNode = uiRoot()): void => {
   const button = root.querySelector<HTMLButtonElement>(selector);
   if (!button) return;
