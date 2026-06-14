@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
-import { levelBackgrounds, type LevelBackground } from "../game/backgrounds";
+import { levelBackgrounds } from "../game/backgrounds";
 import { soundtrackForLevel } from "../game/soundtracks";
 import {
   bindImageFallbacks,
@@ -46,10 +46,6 @@ export class BootScene extends Phaser.Scene {
     this.startupLogoSrc = ECHO_SHIFT_LOGO_SRC;
     this.showLoadingScreen();
     this.bindLoadingProgress();
-    for (const background of this.startupBackgrounds()) {
-      if (this.textures.exists(background.key)) continue;
-      this.load.image(background.key, background.src);
-    }
   }
 
   create(): void {
@@ -70,8 +66,7 @@ export class BootScene extends Phaser.Scene {
       this.showStartupLoadFailure();
       return;
     }
-    this.loadingStatus?.replaceChildren("Preparing start screen");
-    this.loadingProgress?.setAttribute("aria-valuetext", `${this.currentLoadingPercent()} loaded, Preparing start screen`);
+    this.setStartupPreparationProgress();
     this.writeLoadingDiagnostics("loading", STARTUP_READY_PROGRESS, "Preparing start screen");
     const [logoSrc, artSrc] = await Promise.all([
       this.resolveDomImage(ECHO_SHIFT_LOGO_SRC, ECHO_SHIFT_LOGO_FALLBACK_SRC, "Echo Shift logo unavailable"),
@@ -220,14 +215,6 @@ export class BootScene extends Phaser.Scene {
 
   private handleLoadError(file: Phaser.Loader.File): void {
     const key = String(file.key);
-    if (this.startupBackgroundFallbackSrcFor(key)) {
-      const label = "Loading fallback start art";
-      this.loadingStatus?.replaceChildren("Loading fallback start art");
-      this.loadingScreen?.querySelector<HTMLElement>("[data-loading-file]")?.replaceChildren("Fallback start screen artwork");
-      this.loadingProgress?.setAttribute("aria-valuetext", `${this.currentLoadingPercent()} loaded, ${label}`);
-      this.writeLoadingDiagnostics("fallback", undefined, label);
-      return;
-    }
     const label = "Startup asset could not load";
     this.rememberStartupLoadFailure(label, `${this.loadingDetailFor(key)} unavailable`);
     this.loadingStatus?.replaceChildren(this.startupLoadErrorLabel);
@@ -242,11 +229,7 @@ export class BootScene extends Phaser.Scene {
       this.showStartupLoadFailureActions();
       return;
     }
-    this.loadingBar?.style.setProperty("--load-progress", String(STARTUP_READY_PROGRESS / 100));
-    this.loadingPercent?.replaceChildren(`${STARTUP_READY_PROGRESS}%`);
-    this.loadingProgress?.setAttribute("aria-valuenow", String(STARTUP_READY_PROGRESS));
-    this.loadingProgress?.setAttribute("aria-valuetext", `${STARTUP_READY_PROGRESS}% loaded, Preparing start screen`);
-    this.loadingStatus?.replaceChildren("Preparing start screen");
+    this.setStartupPreparationProgress();
     this.writeLoadingDiagnostics("loading", STARTUP_READY_PROGRESS, "Preparing start screen");
   }
 
@@ -337,18 +320,19 @@ export class BootScene extends Phaser.Scene {
     return this.loadingPercent?.textContent || "0%";
   }
 
+  private setStartupPreparationProgress(): void {
+    this.loadingBar?.style.setProperty("--load-progress", String(STARTUP_READY_PROGRESS / 100));
+    this.loadingPercent?.replaceChildren(`${STARTUP_READY_PROGRESS}%`);
+    this.loadingProgress?.setAttribute("aria-valuenow", String(STARTUP_READY_PROGRESS));
+    this.loadingProgress?.setAttribute("aria-valuetext", `${STARTUP_READY_PROGRESS}% loaded, Preparing start screen`);
+    this.loadingStatus?.replaceChildren("Preparing start screen");
+    this.loadingScreen?.querySelector<HTMLElement>("[data-loading-file]")?.replaceChildren("Start screen artwork");
+  }
+
   private rememberStartupLoadFailure(label: string, detail: string): void {
     this.loadingFailed = true;
     this.startupLoadErrorLabel = label;
     this.startupLoadErrorDetail = detail;
-  }
-
-  private startupBackgrounds(): LevelBackground[] {
-    return [levelBackgrounds["time-lab-prototype"]];
-  }
-
-  private startupBackgroundFallbackSrcFor(key: string): string | undefined {
-    return this.startupBackgrounds().find((background) => background.key === key)?.fallbackSrc;
   }
 
   private writeLoadingDiagnostics(phase: string, percent?: number, current?: string): void {

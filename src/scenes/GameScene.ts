@@ -1135,7 +1135,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private clearOptionalRoomAssetSkips(): void {
-    this.failedOptionalRoomAssets.clear();
+    this.failedOptionalRoomAssets?.clear();
   }
 
   private handleRoomLoadComplete(): void {
