@@ -1051,6 +1051,7 @@ try {
       import("/src/ui/hud.ts"),
       import("/src/game/leaderboard.ts")
     ]);
+    document.body.innerHTML = `<div id="ui-root"></div>`;
     const hud = new Hud({
       onRewind: () => {},
       onPause: () => {},
@@ -1176,6 +1177,10 @@ try {
     const failedToastRole = toast.getAttribute("role");
     const failedToastLive = toast.getAttribute("aria-live");
     const failedToastText = toast.textContent;
+    await new Promise((resolve) => setTimeout(resolve, 1850));
+    const failedToastTextAfterDismiss = toast.textContent;
+    failedButton.click();
+    const failedToastTextAfterRepeat = toast.textContent;
     failedHud.destroy();
     Storage.prototype.setItem = originalSetItem;
     window.localStorage.setItem("echo-shift-leaderboard-v1", "{broken");
@@ -1254,6 +1259,8 @@ try {
       failedToastRole,
       failedToastLive,
       failedToastText,
+      failedToastTextAfterDismiss,
+      failedToastTextAfterRepeat,
       damagedSaveOk: damagedSave.ok,
       damagedStorage,
       mixedDamagedSaveOk: mixedDamagedSave.ok,
@@ -2332,6 +2339,14 @@ try {
   assert(
     leaderboardHarnessResult.failedToastText.includes("Could not save"),
     `Expected leaderboard failure toast to announce save failure, got ${leaderboardHarnessResult.failedToastText}`
+  );
+  assert(
+    leaderboardHarnessResult.failedToastTextAfterDismiss === "",
+    `Expected dismissed leaderboard failure toast to clear live text, got ${leaderboardHarnessResult.failedToastTextAfterDismiss}`
+  );
+  assert(
+    leaderboardHarnessResult.failedToastTextAfterRepeat.includes("Could not save"),
+    `Expected repeated leaderboard failure to rewrite live text, got ${leaderboardHarnessResult.failedToastTextAfterRepeat}`
   );
   assert(!leaderboardHarnessResult.damagedSaveOk, "Expected malformed leaderboard storage not to be overwritten as a successful save");
   assert(leaderboardHarnessResult.damagedStorage === "{broken", `Expected malformed leaderboard storage to remain untouched, got ${leaderboardHarnessResult.damagedStorage}`);

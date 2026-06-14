@@ -121,9 +121,15 @@ export class Hud {
     const toast = this.root.querySelector<HTMLElement>("[data-toast]");
     if (!toast) return;
     window.clearTimeout(this.toastTimer);
+    toast.classList.remove("show");
+    toast.textContent = "";
+    void toast.offsetHeight;
     toast.textContent = message;
     toast.classList.add("show");
-    this.toastTimer = window.setTimeout(() => toast.classList.remove("show"), 1800);
+    this.toastTimer = window.setTimeout(() => {
+      toast.classList.remove("show");
+      toast.textContent = "";
+    }, 1800);
   }
 
   hideToast(): void {
