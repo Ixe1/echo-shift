@@ -365,7 +365,9 @@ export class GameScene extends Phaser.Scene {
   private roomFailureNavigation: MenuNavigationBinding | null = null;
   private roomLoadingFailed = false;
   private awaitingRoomBackgroundFallback = false;
+  private awaitingRoomBossAtlasFallback = false;
   private roomBackgroundFallbackLoadId = 0;
+  private roomBossAtlasFallbackLoadId = 0;
   private roomBackgroundFallbackKey: string | null = null;
   private roomBackgroundFallbackSrc: string | null = null;
   private roomLoadFailedKey: string | null = null;
@@ -543,7 +545,9 @@ export class GameScene extends Phaser.Scene {
     this.roomLoadingProgress = null;
     this.roomLoadingFailed = false;
     this.awaitingRoomBackgroundFallback = false;
+    this.awaitingRoomBossAtlasFallback = false;
     this.roomBackgroundFallbackLoadId = 0;
+    this.roomBossAtlasFallbackLoadId = 0;
     this.roomBackgroundFallbackKey = null;
     this.roomBackgroundFallbackSrc = null;
     this.roomLoadFailedKey = null;
@@ -571,6 +575,7 @@ export class GameScene extends Phaser.Scene {
     this.finishRoomLoadingScreen();
     this.roomLoadingFailed = false;
     this.awaitingRoomBackgroundFallback = false;
+    this.awaitingRoomBossAtlasFallback = false;
     this.roomLoadFailedKey = null;
     this.showRoomLoadingScreen(background.title);
     this.roomBackgroundFallbackKey = fallbackKey;
@@ -681,13 +686,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     for (const boss of this.level.bosses || []) {
-      add({
-        kind: "spritesheet",
-        key: BOSS_ATLAS_KEY,
-        src: "/assets/sprites/boss-atlas.webp",
-        frameWidth: BOSS_ATLAS_FRAME_WIDTH,
-        frameHeight: BOSS_ATLAS_FRAME_HEIGHT
-      });
+      const cleanKey = this.cleanBossTextureKey(boss.kind);
+      if (!cleanKey || this.failedOptionalRoomAssets.has(cleanKey)) {
+        add(this.bossAtlasAsset());
+      }
       add({
         kind: "spritesheet",
         key: POOF_SHEET_KEY,
@@ -732,6 +734,23 @@ export class GameScene extends Phaser.Scene {
     return [...assets.values()];
   }
 
+  private cleanBossTextureKey(kind: BossKind): string | null {
+    if (kind === "storm-relay-warden") return STORM_BOSS_CLEAN_KEY;
+    if (kind === "cryo-conservator") return CRYO_BOSS_CLEAN_KEY;
+    if (kind === "archive-custodian") return ARCHIVE_BOSS_CLEAN_KEY;
+    return null;
+  }
+
+  private bossAtlasAsset(): Extract<LevelAssetQueueItem, { kind: "spritesheet" }> {
+    return {
+      kind: "spritesheet",
+      key: BOSS_ATLAS_KEY,
+      src: "/assets/sprites/boss-atlas.webp",
+      frameWidth: BOSS_ATLAS_FRAME_WIDTH,
+      frameHeight: BOSS_ATLAS_FRAME_HEIGHT
+    };
+  }
+
   private queueLevelAsset(asset: LevelAssetQueueItem): void {
     if (asset.kind === "image") {
       this.load.image(asset.key, asset.src);
@@ -747,7 +766,12 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.syncDraftPlaytestUrl();
+    this.resumeCreateAfterDeferredRoomAssets();
+  }
+
+  private resumeCreateAfterDeferredRoomAssets(): void {
     if (this.deferCreateForRoomFallback()) return;
+    if (this.deferCreateForBossAtlasFallback()) return;
     const background = backgroundForLevel(this.level, this.levelIndex);
     if (this.roomLoadingFailed || !this.textureKeyForBackground(background)) {
       this.markRoomBackgroundUnavailable(
@@ -834,8 +858,7 @@ export class GameScene extends Phaser.Scene {
         this.handleRoomLoadComplete();
         return;
       }
-      this.handleRoomLoadComplete();
-      this.createLoadedLevel();
+      this.resumeCreateAfterDeferredRoomAssets();
     });
     const cancelFallback = () => {
       this.roomBackgroundFallbackLoadId += 1;
@@ -844,6 +867,48 @@ export class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, cancelFallback);
     this.events.once(Phaser.Scenes.Events.DESTROY, cancelFallback);
     return true;
+  }
+
+  private deferCreateForBossAtlasFallback(): boolean {
+    if (!this.roomNeedsBossAtlasFallback()) return false;
+    if (this.textures.exists(BOSS_ATLAS_KEY)) return false;
+    if (this.awaitingRoomBossAtlasFallback) return true;
+
+    this.awaitingRoomBossAtlasFallback = true;
+    this.roomLoadingFailed = false;
+    const loadId = ++this.roomBossAtlasFallbackLoadId;
+    this.roomLoadingStatus?.replaceChildren("Loading fallback boss sprites");
+    this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(`fallback: ${BOSS_ATLAS_KEY}`);
+    this.roomLoadingProgress?.setAttribute("aria-valuetext", `Loading fallback boss sprites`);
+    this.roomLoadingBar?.style.setProperty("--load-progress", String(ROOM_FALLBACK_READY_PROGRESS / 100));
+    this.roomLoadingPercent?.replaceChildren(`${ROOM_FALLBACK_READY_PROGRESS}%`);
+    this.roomLoadingProgress?.setAttribute("aria-valuenow", String(ROOM_FALLBACK_READY_PROGRESS));
+    void this.loadFallbackSpritesheet(this.bossAtlasAsset()).then((loaded) => {
+      if (loadId !== this.roomBossAtlasFallbackLoadId) return;
+      this.awaitingRoomBossAtlasFallback = false;
+      if (!loaded) {
+        this.roomLoadingFailed = true;
+        this.roomLoadFailedKey = BOSS_ATLAS_KEY;
+        this.handleRoomLoadComplete();
+        return;
+      }
+      this.resumeCreateAfterDeferredRoomAssets();
+    });
+    const cancelFallback = () => {
+      this.roomBossAtlasFallbackLoadId += 1;
+      this.awaitingRoomBossAtlasFallback = false;
+    };
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, cancelFallback);
+    this.events.once(Phaser.Scenes.Events.DESTROY, cancelFallback);
+    return true;
+  }
+
+  private roomNeedsBossAtlasFallback(): boolean {
+    for (const boss of this.level.bosses || []) {
+      const cleanKey = this.cleanBossTextureKey(boss.kind);
+      if (!cleanKey || !this.textures.exists(cleanKey)) return true;
+    }
+    return false;
   }
 
   private loadFallbackBackgroundImage(key: string, src: string): Promise<boolean> {
@@ -860,6 +925,31 @@ export class GameScene extends Phaser.Scene {
       image.onload = addTexture;
       image.onerror = () => resolve(false);
       image.src = src;
+      if (image.complete && image.naturalWidth > 0) addTexture();
+    });
+  }
+
+  private loadFallbackSpritesheet(asset: Extract<LevelAssetQueueItem, { kind: "spritesheet" }>): Promise<boolean> {
+    if (this.textures.exists(asset.key)) return Promise.resolve(true);
+    return new Promise((resolve) => {
+      const image = new Image();
+      const addTexture = () => {
+        if (this.textures.exists(asset.key)) {
+          resolve(true);
+          return;
+        }
+        const config: Phaser.Types.Textures.SpriteSheetConfig = {
+          frameWidth: asset.frameWidth,
+          frameHeight: asset.frameHeight
+        };
+        if (asset.margin !== undefined) config.margin = asset.margin;
+        if (asset.spacing !== undefined) config.spacing = asset.spacing;
+        const texture = this.textures.addSpriteSheet(asset.key, image, config);
+        resolve(texture !== null);
+      };
+      image.onload = addTexture;
+      image.onerror = () => resolve(false);
+      image.src = asset.src;
       if (image.complete && image.naturalWidth > 0) addTexture();
     });
   }
@@ -1096,13 +1186,14 @@ export class GameScene extends Phaser.Scene {
     this.roomLoadingProgress = null;
     this.roomLoadingFailed = false;
     this.awaitingRoomBackgroundFallback = false;
+    this.awaitingRoomBossAtlasFallback = false;
     this.roomBackgroundFallbackKey = null;
     this.roomBackgroundFallbackSrc = null;
     this.roomLoadFailedKey = null;
   }
 
   update(_time: number, delta: number): void {
-    if (this.awaitingRoomBackgroundFallback || this.roomLoadingFailed) return;
+    if (this.awaitingRoomBackgroundFallback || this.awaitingRoomBossAtlasFallback || this.roomLoadingFailed) return;
     const updateStart = performance.now();
     if (this.musicLoadingActive) {
       const updateMs = performance.now() - updateStart;
