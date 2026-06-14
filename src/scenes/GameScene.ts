@@ -88,6 +88,7 @@ import type {
   Rect,
   Solid,
   SolidDecorDensity,
+  SpilledCore,
   TerrainMaterial
 } from "../game/types";
 import { Hud } from "../ui/hud";
@@ -192,10 +193,13 @@ type RenderView = {
   activePlates: Set<string>;
   openDoors: Set<string>;
   collectedCores: Set<string>;
+  claimedCores: Set<string>;
+  spilledCores: Map<string, SpilledCore>;
   blockedLasers: Set<string>;
   crates: Map<string, Rect>;
   solids: Solid[];
   terrainRevision: number;
+  coreInvulnerabilityFrames: number;
   killedMonsters: Set<string>;
   bosses: BossSnapshot[];
   exitUnlocked: boolean;
@@ -323,10 +327,13 @@ export class GameScene extends Phaser.Scene {
     activePlates: new Set(),
     openDoors: new Set(),
     collectedCores: new Set(),
+    claimedCores: new Set(),
+    spilledCores: new Map(),
     blockedLasers: new Set(),
     crates: new Map(),
     solids: [],
     terrainRevision: 0,
+    coreInvulnerabilityFrames: 0,
     killedMonsters: new Set(),
     bosses: [],
     exitUnlocked: true,
@@ -1369,7 +1376,6 @@ export class GameScene extends Phaser.Scene {
       score: this.simulation.score,
       lives: this.simulation.livesRemaining(),
       coresCollected: this.simulation.objectState.collectedCores.size,
-      coresTotal: (this.level.cores || []).length,
       rewindDisabled: this.levelRewindDisabled(),
       gameOver: this.retryRequired
     });
@@ -1656,7 +1662,15 @@ export class GameScene extends Phaser.Scene {
       for (const core of events.cores) {
         audio.play(this.corePickupIsLarge(core.id) ? "bigCore" : "core");
       }
-      if (!events.died) this.processCoreLifeAwards(events.cores);
+      const freshCores = events.cores.filter((core) => !core.recovered);
+      if (!events.died && freshCores.length > 0) this.processCoreLifeAwards(freshCores);
+    }
+    if (events.coreSpill) {
+      audio.play("core");
+      const lostCount = events.coreSpill.lostCoreIds.length;
+      const scatteredCount = events.coreSpill.coreIds.length;
+      this.cameras.main.shake(150, 0.004);
+      this.addFxBurst(events.coreSpill.x, events.coreSpill.y, 0xffe35a, `-${scatteredCount + lostCount}`);
     }
     for (let index = 0; index < events.echoLaserVaporized; index += 1) audio.play("echoLaserVaporized");
     for (const cue of events.bossSoundCues) this.playBossSoundCue(cue.cue);
@@ -1973,12 +1987,11 @@ export class GameScene extends Phaser.Scene {
     const persistence = recordEligibleScore(score, this.level.index, scoreEligible);
     if (scoreEligible && !persistence.recorded) this.scoreEligible = false;
     this.cameras.main.flash(280, 255, 227, 90, false);
-    const totalCores = (this.level.cores || []).length;
-    if (this.tutorialMode) this.hud.showTutorialComplete(score, totalCores);
+    if (this.tutorialMode) this.hud.showTutorialComplete(score);
     else {
       const isFinal = this.levelIndex === levels.length - 1;
       const leaderboard = getLocalLeaderboardState();
-      this.hud.showComplete(score, isFinal, totalCores, {
+      this.hud.showComplete(score, isFinal, {
         scoreEligible,
         scoreRecorded: !scoreEligible || persistence.recorded,
         scoreSaveMessage: persistence.message,
@@ -2248,7 +2261,7 @@ export class GameScene extends Phaser.Scene {
     this.drawLaunchPads();
     this.drawTimedSwitches(snapshot.activePlates);
     this.drawEchoSensors(snapshot.activePlates);
-    this.drawCores(snapshot.collectedCores);
+    this.drawCores(snapshot);
     this.drawLasers(snapshot.activePlates, snapshot.blockedLasers);
     this.drawMovingLasers(snapshot.tick, snapshot.activePlates, snapshot.blockedLasers);
     this.drawDrones(snapshot.tick, snapshot.activePlates);
@@ -2256,7 +2269,7 @@ export class GameScene extends Phaser.Scene {
     this.drawBosses(snapshot.bosses);
     if (snapshot.exitUnlocked && this.level.completion !== "boss-defeat") this.drawExit(this.level.exit, snapshot.won);
     this.drawEchoes(snapshot.echoes);
-    this.drawActor(snapshot.player, snapshot.dead ? 0xff4f8b : 0x43f7ff, 1);
+    this.drawActor(snapshot.player, snapshot.dead ? 0xff4f8b : this.playerInvulnerabilityTint(snapshot), this.playerInvulnerabilityAlpha(snapshot, 1));
     this.drawFxBursts();
     if (!this.lowChurnGraphics) this.drawForegroundText(snapshot.tick);
     this.finishObjectAssetSync();
@@ -2277,10 +2290,13 @@ export class GameScene extends Phaser.Scene {
     view.activePlates = simulationSnapshot.activePlates;
     view.openDoors = simulationSnapshot.openDoors;
     view.collectedCores = simulationSnapshot.collectedCores;
+    view.claimedCores = simulationSnapshot.claimedCores;
+    view.spilledCores = simulationSnapshot.spilledCores;
     view.blockedLasers = simulationSnapshot.blockedLasers;
     view.crates = simulationSnapshot.crates;
     view.solids = simulationSnapshot.solids;
     view.terrainRevision = simulationSnapshot.terrainRevision;
+    view.coreInvulnerabilityFrames = simulationSnapshot.coreInvulnerabilityFrames;
     view.killedMonsters = simulationSnapshot.killedMonsters;
     view.bosses = simulationSnapshot.bosses;
     view.exitUnlocked = simulationSnapshot.exitUnlocked;
@@ -3313,14 +3329,21 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private drawCores(collectedCores: Set<string>): void {
+  private drawCores(snapshot: RenderView): void {
     for (const core of this.level.cores || []) {
-      if (collectedCores.has(core.id)) continue;
+      if (snapshot.claimedCores.has(core.id)) continue;
       const center = rectCenter(core);
       const pulse = 1 + Math.sin(this.time.now / 140) * 0.12;
       const large = this.coreIsLarge(core);
       if (!this.textures.exists(large ? CORE_MAJOR_KEY : "time-effects")) {
         this.drawDiamond(center.x, center.y, (large ? 18 : 12) * pulse, large ? 0x43f7ff : 0xffe35a, 0.9, 0xffffff, 0.72);
+      }
+    }
+    if (!this.textures.exists("time-effects")) {
+      for (const core of snapshot.spilledCores.values()) {
+        const center = rectCenter(core);
+        const pulse = 1 + Math.sin((this.time.now + core.x * 11) / 120) * 0.1;
+        this.drawDiamond(center.x, center.y, 10 * pulse, 0xffe35a, 0.84, 0xffffff, 0.66);
       }
     }
   }
@@ -4302,7 +4325,13 @@ export class GameScene extends Phaser.Scene {
 
     const activeIds = this.activeActorSpriteIds;
     activeIds.clear();
-    this.syncActorSprite(snapshot.player, snapshot.dead, 0x43f7ff, 1, snapshot.tick);
+    this.syncActorSprite(
+      snapshot.player,
+      snapshot.dead,
+      snapshot.dead ? 0xff4f8b : this.playerInvulnerabilityTint(snapshot),
+      this.playerInvulnerabilityAlpha(snapshot, 1),
+      snapshot.tick
+    );
     activeIds.add(snapshot.player.id);
 
     for (let index = 0; index < snapshot.echoes.length; index += 1) {
@@ -4334,7 +4363,17 @@ export class GameScene extends Phaser.Scene {
 
     if (actor.kind === "echo") sprite.setTint(tint);
     else if (dead) sprite.setTint(0xff4f8b);
+    else if (tint !== 0x43f7ff) sprite.setTint(tint);
     else sprite.clearTint();
+  }
+
+  private playerInvulnerabilityTint(snapshot: RenderView): number {
+    return snapshot.coreInvulnerabilityFrames > 0 ? 0xffe35a : 0x43f7ff;
+  }
+
+  private playerInvulnerabilityAlpha(snapshot: RenderView, baseAlpha: number): number {
+    if (snapshot.dead || snapshot.coreInvulnerabilityFrames <= 0) return baseAlpha;
+    return Math.floor(snapshot.coreInvulnerabilityFrames / 5) % 2 === 0 ? baseAlpha * 0.42 : baseAlpha;
   }
 
   private actorFrame(actor: ActorBody, dead: boolean, tick: number): number {
@@ -4357,7 +4396,7 @@ export class GameScene extends Phaser.Scene {
     this.coreSpriteFrames = [];
 
     for (const core of this.level.cores || []) {
-      if (snapshot.collectedCores.has(core.id)) continue;
+      if (snapshot.claimedCores.has(core.id)) continue;
       const large = this.coreIsLarge(core);
       const textureKey = large ? CORE_MAJOR_KEY : "time-effects";
       if (!this.textures.exists(textureKey)) continue;
@@ -4376,6 +4415,27 @@ export class GameScene extends Phaser.Scene {
         .setAlpha(large ? 0.98 : 0.94);
       if (this.diagnosticsEnabled) this.coreSpriteFrames.push(`${core.id}:${textureKey}:${frame}:${large ? "large" : "small"}`);
       activeIds.add(core.id);
+    }
+
+    for (const core of snapshot.spilledCores.values()) {
+      const textureKey = "time-effects";
+      if (!this.textures.exists(textureKey)) continue;
+      const frame = snapshot.tick % 32 < 16 ? 0 : 1;
+      const center = rectCenter(core);
+      const spriteId = `spill:${core.id}`;
+      let sprite = this.coreSprites.get(spriteId);
+      if (!sprite) {
+        sprite = this.add.image(0, 0, textureKey, 0).setDepth(12);
+        this.coreSprites.set(spriteId, sprite);
+      }
+      sprite
+        .setVisible(true)
+        .setTexture(textureKey, frame)
+        .setPosition(Math.round(center.x), Math.round(center.y))
+        .setScale(0.3)
+        .setAlpha(0.9);
+      if (this.diagnosticsEnabled) this.coreSpriteFrames.push(`${spriteId}:${textureKey}:${frame}:spill`);
+      activeIds.add(spriteId);
     }
 
     for (const [id, sprite] of this.coreSprites) {
@@ -4419,6 +4479,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawSolidReadabilityOutline(solid: Solid): void {
+    if (solidVisualRoleFor(solid) === "wall") return;
     const segments = this.solidOutlineSegments(solid);
     if (segments.length === 0) return;
     const outlines = this.structureOutlines;

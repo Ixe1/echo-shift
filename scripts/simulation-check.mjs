@@ -219,8 +219,9 @@ const verifyGameSceneAudioCleanupHooks = () => {
   }
   const handleEventsBody = gameSceneMethodBody(source, "handleEvents");
   assert(
-    handleEventsBody.includes("if (!events.died) this.processCoreLifeAwards(events.cores);"),
-    "Expected death-frame core pickups not to be counted toward bonus-life awards"
+    handleEventsBody.includes("const freshCores = events.cores.filter((core) => !core.recovered);") &&
+      handleEventsBody.includes("if (!events.died && freshCores.length > 0) this.processCoreLifeAwards(freshCores);"),
+    "Expected death-frame and recovered core pickups not to be counted toward bonus-life awards"
   );
   assert(
     handleEventsBody.includes("this.resetFiniteCoreBonusProgress();"),
@@ -2250,6 +2251,71 @@ try {
   assert(playerLaserDeathSim.dead, "Active laser overlap should kill the player");
   assert(playerLaserDeathEvent.playerLaserVaporized, "Expected player laser vaporization event for laser death");
 
+  const coreSaveLevel = {
+    ...baseLevel,
+    cores: [
+      { id: "shield-core-a", x: 18, y: 86, w: 18, h: 18 },
+      { id: "shield-core-b", x: 34, y: 86, w: 18, h: 18 },
+      { id: "shield-key", x: 40, y: 86, w: 24, h: 24, size: "large" }
+    ],
+    hazards: [{ id: "shield-spark", x: 18, y: 86, w: 40, h: 34 }]
+  };
+  const coreSaveSim = new RoomSimulation(coreSaveLevel);
+  const coreSaveEvent = coreSaveSim.step(idle);
+  assert(!coreSaveSim.dead && !coreSaveEvent.died, "Core-carrying player should survive non-laser hazard contact");
+  assert(coreSaveEvent.coreSpill?.coreIds.length === 1, `Expected one core to spill from two eligible small cores, got ${JSON.stringify(coreSaveEvent.coreSpill)}`);
+  assert(coreSaveEvent.coreSpill.lostCoreIds.length === 1, `Expected the other eligible core to be lost, got ${JSON.stringify(coreSaveEvent.coreSpill)}`);
+  assert(coreSaveSim.deaths === 0 && coreSaveSim.livesRemaining() === 3, "Saved core hit should not consume lives or count deaths");
+  assert(coreSaveSim.objectState.collectedCores.has("shield-key"), "Large/key core should stay carried during core-save spill");
+  assert(coreSaveSim.objectState.collectedCores.size === 1, `Expected only the large/key core to remain carried, got ${[...coreSaveSim.objectState.collectedCores].join(",")}`);
+  assert(coreSaveSim.objectState.spilledCores.size === 1, "Expected spilled core to become a temporary loose pickup");
+  assert(coreSaveSim.score === 100, `Expected all eligible small-core score to be removed, got ${coreSaveSim.score}`);
+  assert(coreSaveSim.player.vy < 0 && Math.abs(coreSaveSim.player.vx) > 0, "Saved hit should bounce the player away from damage");
+  coreSaveSim.level.hazards = [];
+  Object.assign(coreSaveSim.player, { x: 180, y: 86, vx: 0, vy: 0, onGround: true });
+  runFrames(coreSaveSim, 34, idle);
+  const recoverableCore = [...coreSaveSim.objectState.spilledCores.values()][0];
+  assert(recoverableCore, "Expected spilled core to persist through pickup delay");
+  Object.assign(coreSaveSim.player, { x: recoverableCore.x - 8, y: recoverableCore.y - 16, vx: 0, vy: 0, onGround: false });
+  const recoveryEvent = coreSaveSim.step(idle);
+  assert(recoveryEvent.cores.some((core) => core.id === "shield-core-b" && core.recovered), `Expected spilled core recovery event, got ${JSON.stringify(recoveryEvent.cores)}`);
+  assert(coreSaveSim.objectState.spilledCores.size === 0, "Recovered spilled core should be removed from loose pickups");
+  assert(coreSaveSim.objectState.collectedCores.size === 2, "Recovered spilled core should return to carried cores while the lost core stays gone");
+  assert(coreSaveSim.score === 200, `Recovered spilled core should restore only recoverable score, got ${coreSaveSim.score}`);
+
+  const coreExpireSim = new RoomSimulation({
+    ...baseLevel,
+    cores: [{ id: "expire-core", x: 18, y: 86, w: 18, h: 18 }],
+    hazards: [{ id: "expire-spark", x: 18, y: 86, w: 36, h: 34 }]
+  });
+  const coreExpireSpill = coreExpireSim.step(idle);
+  assert(coreExpireSpill.coreSpill?.coreIds.length === 1 && coreExpireSpill.coreSpill.lostCoreIds.length === 0, `One carried core should scatter as one recoverable core, got ${JSON.stringify(coreExpireSpill.coreSpill)}`);
+  coreExpireSim.level.hazards = [];
+  Object.assign(coreExpireSim.player, { x: 180, y: 86, vx: 0, vy: 0, onGround: true });
+  runFrames(coreExpireSim, 330, idle);
+  assert(coreExpireSim.objectState.spilledCores.size === 0, "Unrecovered spilled core should expire");
+  assert(!coreExpireSim.objectState.collectedCores.has("expire-core"), "Expired spilled core should stay lost from carried cores");
+  assert(coreExpireSim.score === 0, `Expired spilled core should stay removed from score, got ${coreExpireSim.score}`);
+
+  const coreLaserDeathSim = new RoomSimulation({
+    ...baseLevel,
+    cores: [{ id: "laser-shield-core", x: 18, y: 86, w: 18, h: 18 }],
+    hazards: [{ id: "laser-overlap-spark", x: 18, y: 86, w: 30, h: 34 }],
+    lasers: [{ id: "shield-bypass-beam", x: 18, y: 86, w: 30, h: 34, startsOn: true }]
+  });
+  const coreLaserDeathEvent = coreLaserDeathSim.step(idle);
+  assert(coreLaserDeathSim.dead && coreLaserDeathEvent.playerLaserVaporized, "Laser should bypass core-save and kill the player");
+  assert(!coreLaserDeathEvent.coreSpill, "Laser death should not spill cores as a save event");
+
+  const largeOnlyDeathSim = new RoomSimulation({
+    ...baseLevel,
+    cores: [{ id: "required-key-only", x: 18, y: 86, w: 24, h: 24, size: "large" }],
+    hazards: [{ id: "key-spark", x: 18, y: 86, w: 36, h: 34 }]
+  });
+  const largeOnlyDeathEvent = largeOnlyDeathSim.step(idle);
+  assert(largeOnlyDeathSim.dead && largeOnlyDeathEvent.died, "Large/key-only cores should not be spent as core-save buffer");
+  assert(!largeOnlyDeathEvent.coreSpill, "Large/key-only death should not emit a core spill");
+
   const vaporizedEchoInteractionSim = new RoomSimulation({
     ...laserLevel,
     plates: [{ id: "doomed-plate", x: 96, y: 112, w: 36, h: 8, once: true }],
@@ -2723,7 +2789,7 @@ try {
 
   const lifeResetLevel = {
     ...baseLevel,
-    cores: [{ id: "life-reset-core", x: 24, y: 86, w: 28, h: 34 }],
+    cores: [{ id: "life-reset-core", x: 24, y: 86, w: 28, h: 34, size: "large" }],
     hazards: [{ id: "life-reset-loss", x: 90, y: 86, w: 28, h: 34 }]
   };
   const lifeResetSim = new RoomSimulation(lifeResetLevel);
@@ -2778,7 +2844,7 @@ try {
   assert(monsterStompSim.score === 250, `Rewind should preserve current monster score, got ${monsterStompSim.score}`);
 
   const forgivingMonsterStompSim = new RoomSimulation(monsterLevel);
-  Object.assign(forgivingMonsterStompSim.player, { x: 42, y: 69, vx: 0, vy: 0, onGround: false });
+  Object.assign(forgivingMonsterStompSim.player, { x: 42, y: 69, vx: 0, vy: 1, onGround: false });
   const forgivingMonsterStomp = forgivingMonsterStompSim.step(idle);
   assert(
     forgivingMonsterStomp.monsterKills.length === 1 && !forgivingMonsterStompSim.dead,
@@ -2786,7 +2852,7 @@ try {
   );
 
   const edgeOverhangMonsterSim = new RoomSimulation(monsterLevel);
-  Object.assign(edgeOverhangMonsterSim.player, { x: 20, y: 69, vx: 0, vy: 0, onGround: false });
+  Object.assign(edgeOverhangMonsterSim.player, { x: 20, y: 69, vx: 0, vy: 1, onGround: false });
   const edgeOverhangMonster = edgeOverhangMonsterSim.step(idle);
   assert(
     edgeOverhangMonster.monsterKills.length === 1 && !edgeOverhangMonsterSim.dead,
@@ -2797,6 +2863,20 @@ try {
   Object.assign(lowerSideMonsterSim.player, { x: 20, y: 86, vx: 0, vy: 0, onGround: false });
   const lowerSideMonster = lowerSideMonsterSim.step(idle);
   assert(lowerSideMonster.died && lowerSideMonsterSim.dead, "Expected lower side contact to remain lethal when player is not above the monster");
+
+  const invulnerableSideMonsterSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 18, y: 86 },
+    cores: [{ id: "side-hit-core", x: 18, y: 86, w: 18, h: 18 }],
+    monsters: [{ id: "side-hit-monster", kind: "sprout-hopper", x: 40, y: 86, w: 28, h: 34 }]
+  });
+  const invulnerableSideHit = invulnerableSideMonsterSim.step(right);
+  assert(!invulnerableSideMonsterSim.dead && invulnerableSideHit.coreSpill, "Side monster hit with a core should trigger core-save instead of death");
+  runFrames(invulnerableSideMonsterSim, 20, right);
+  assert(
+    !invulnerableSideMonsterSim.killedMonsterIds.has("side-hit-monster"),
+    "Temporary immunity after side monster damage should not let the player destroy the monster by continuing to run"
+  );
 
   const topContactBottomVulnerableSim = new RoomSimulation({
     ...baseLevel,
@@ -4463,7 +4543,7 @@ try {
   const bossCheckpointLevel = {
     ...baseLevel,
     score: { ...baseLevel.score, coreScore: 1000 },
-    cores: [{ id: "pre-boss-core", x: 20, y: 86, w: 18, h: 18 }],
+    cores: [{ id: "pre-boss-core", x: 20, y: 86, w: 18, h: 18, size: "large" }],
     bosses: [{ id: "checkpoint-boss", kind: "clockwork-regent", x: 78, y: 20, w: 190, h: 130, entrySide: "right", weakSpot: "core", introSeconds: 1, health: 2, score: 2000 }]
   };
   const bossCheckpointSim = new RoomSimulation(bossCheckpointLevel);
@@ -4574,6 +4654,32 @@ try {
   assert(fallSim.tick === fallTick, "Out-of-bounds death should not continue ticking");
   assert(fallSim.totalFrames === fallFrames, "Out-of-bounds death should not continue scoring time");
 
+  const fallWithCoreSim = new RoomSimulation({
+    ...fallLevel,
+    cores: [{ id: "fall-core", x: 18, y: 20, w: 18, h: 18 }]
+  });
+  fallWithCoreSim.step(idle);
+  runFrames(fallWithCoreSim, 90, idle);
+  assert(fallWithCoreSim.dead, "Falling out of bounds should bypass core-save and kill the player");
+  assert(fallWithCoreSim.objectState.spilledCores.size === 0, "Out-of-bounds death should not create spilled recovery cores");
+
+  const ledgeForgivenessLevel = {
+    ...baseLevel,
+    start: { x: 20, y: 60 },
+    bounds: { x: 0, y: 0, w: 220, h: 180 },
+    solids: [{ id: "catch-ledge", x: 80, y: 100, w: 96, h: 20 }]
+  };
+  const ledgeCatchSim = new RoomSimulation(ledgeForgivenessLevel);
+  Object.assign(ledgeCatchSim.player, { x: 56, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  ledgeCatchSim.step(right);
+  assert(ledgeCatchSim.player.onGround, `Expected near-miss ledge forgiveness to place player on top, got ${JSON.stringify(ledgeCatchSim.player)}`);
+  assert(ledgeCatchSim.player.y === 66, `Expected ledge forgiveness to snap to ledge top y=66, got ${ledgeCatchSim.player.y}`);
+
+  const ledgeTooLowSim = new RoomSimulation(ledgeForgivenessLevel);
+  Object.assign(ledgeTooLowSim.player, { x: 56, y: 82, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  ledgeTooLowSim.step(right);
+  assert(!ledgeTooLowSim.player.onGround, "Too-low ledge miss should not be auto-climbed");
+
   const deterministicLevel = {
     ...baseLevel,
     platforms: [{ id: "lift-test", x: 108, y: 96, w: 72, h: 14, axis: "y", distance: 24, period: 90 }]
@@ -4648,6 +4754,7 @@ try {
           "core-visual-contract",
           "multi-core-score",
           "echo-core-origin",
+          "core-spill-save",
           "laser-disable-vaporization",
           "entity-toolkit",
           "death-freeze",
@@ -4657,6 +4764,7 @@ try {
           "boss-intro-combat",
           "drone-disable-vaporization",
           "fall-death-freeze",
+          "ledge-forgiveness",
           "deterministic-anchor",
           "audio-unlock-retry",
           "game-scene-audio-cleanup-hooks",

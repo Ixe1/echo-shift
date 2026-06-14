@@ -12,7 +12,8 @@ import type {
   MovingLaser,
   PatrolDrone,
   PressurePlate,
-  Rect
+  Rect,
+  SpilledCore
 } from "./types";
 
 export type ObjectState = {
@@ -21,6 +22,8 @@ export type ObjectState = {
   timedSwitchTimers: Map<string, number>;
   openDoors: Set<string>;
   collectedCores: Set<string>;
+  claimedCores: Set<string>;
+  spilledCores: Map<string, SpilledCore>;
   blockedLasers: Set<string>;
   crates: Map<string, Rect>;
 };
@@ -34,6 +37,8 @@ export const createObjectState = (level?: Level): ObjectState => {
     timedSwitchTimers: new Map(),
     openDoors: collectOpenDoors(level?.doors || [], activePlates, collectedCores, new Set()),
     collectedCores,
+    claimedCores: new Set(),
+    spilledCores: new Map(),
     blockedLasers: new Set(),
     crates: new Map((level?.crates || []).map((crate) => [crate.id, { x: crate.x, y: crate.y, w: crate.w, h: crate.h }]))
   };
@@ -57,10 +62,13 @@ export const updateObjects = (
   }
 
   const collectedCores = new Set(previous.collectedCores);
+  const claimedCores = new Set(previous.claimedCores);
+  const spilledCores = new Map([...previous.spilledCores.entries()].map(([id, core]) => [id, { ...core }]));
   const cores: CorePickupEvent[] = [];
   for (const item of level.cores || []) {
     const collector = actors.find((actor) => actor.alive && rectsOverlap(actor, item));
-    if (!collectedCores.has(item.id) && collector) {
+    if (!claimedCores.has(item.id) && collector) {
+      claimedCores.add(item.id);
       collectedCores.add(item.id);
       cores.push({
         id: item.id,
@@ -68,6 +76,20 @@ export const updateObjects = (
         y: collector.y + collector.h / 2
       });
     }
+  }
+  for (const [id, looseCore] of spilledCores) {
+    if (looseCore.pickupDelayFrames > 0) continue;
+    const collector = actors.find((actor) => actor.alive && rectsOverlap(actor, looseCore));
+    if (!collector) continue;
+    spilledCores.delete(id);
+    claimedCores.add(looseCore.sourceId);
+    collectedCores.add(looseCore.sourceId);
+    cores.push({
+      id: looseCore.sourceId,
+      recovered: true,
+      x: looseCore.x + looseCore.w / 2,
+      y: looseCore.y + looseCore.h / 2
+    });
   }
 
   const openDoors = collectOpenDoors(level.doors || [], activePlates, collectedCores, defeatedBossIds);
@@ -84,6 +106,8 @@ export const updateObjects = (
       timedSwitchTimers,
       openDoors,
       collectedCores,
+      claimedCores,
+      spilledCores,
       blockedLasers,
       crates: previous.crates
     },
@@ -103,10 +127,38 @@ export const actorTouchesHazard = (
   actor: ActorBody,
   objectState: ObjectState,
   tick = 0
-): boolean => {
-  if ((level.hazards || []).some((hazard) => rectsOverlap(actor, hazard))) return true;
-  if ((level.drones || []).some((drone) => droneIsActive(drone, objectState.activePlates) && rectsOverlap(actor, droneRectAt(drone, tick)))) return true;
-  return actorTouchesLaser(level, actor, objectState, tick);
+): boolean => actorHazardContact(level, actor, objectState, tick) !== null;
+
+export type ActorHazardContact = {
+  kind: "hazard" | "drone" | "laser";
+  rect: Rect;
+};
+
+export const actorHazardContact = (
+  level: Level,
+  actor: ActorBody,
+  objectState: ObjectState,
+  tick = 0
+): ActorHazardContact | null => {
+  for (const laser of level.lasers || []) {
+    if (!laserIsActive(laser, objectState.activePlates)) continue;
+    if (!rectsOverlap(actor, laser)) continue;
+    if (!objectState.blockedLasers.has(laser.id)) return { kind: "laser", rect: laser };
+  }
+  for (const laser of level.movingLasers || []) {
+    const rect = movingLaserRectAt(laser, tick);
+    if (!laserIsActive(laser, objectState.activePlates)) continue;
+    if (!rectsOverlap(actor, rect)) continue;
+    if (!objectState.blockedLasers.has(laser.id)) return { kind: "laser", rect };
+  }
+  for (const hazard of level.hazards || []) {
+    if (rectsOverlap(actor, hazard)) return { kind: "hazard", rect: hazard };
+  }
+  for (const drone of level.drones || []) {
+    const rect = droneRectAt(drone, tick);
+    if (droneIsActive(drone, objectState.activePlates) && rectsOverlap(actor, rect)) return { kind: "drone", rect };
+  }
+  return null;
 };
 
 export const actorTouchesLaser = (

@@ -395,7 +395,7 @@ try {
       }
     });
     scene.completeLevel();
-    const options = modalCalls[0]?.[3];
+    const options = modalCalls[0]?.[2];
     const progress = JSON.parse(window.localStorage.getItem("echo-shift-progress-v1") || "null");
     return {
       modalCalls: modalCalls.length,
@@ -1152,7 +1152,7 @@ try {
     const pauseDialog = dialogSnapshot();
     document.querySelector("[data-options]").click();
     const optionsDialog = dialogSnapshot();
-    hud.showTutorialComplete(dialogScore, 0);
+    hud.showTutorialComplete(dialogScore);
     const tutorialDialog = dialogSnapshot();
     hud.showGameOver("Dialog Smoke");
     const gameOverDialog = dialogSnapshot();
@@ -1167,7 +1167,6 @@ try {
         timeBonus: 1200
       },
       true,
-      4,
       {
         scoreEligible: true,
         scoreRecorded: true,
@@ -1225,7 +1224,6 @@ try {
         timeBonus: 1200
       },
       true,
-      4,
       {
         scoreEligible: true,
         scoreRecorded: true,
@@ -1292,7 +1290,6 @@ try {
         timeBonus: 1200
       },
       true,
-      4,
       {
         scoreEligible: true,
         scoreRecorded: true,

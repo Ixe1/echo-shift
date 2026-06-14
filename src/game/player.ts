@@ -1,6 +1,6 @@
 import { clamp, rectsOverlap } from "./geometry";
 import { oscillatingOffsetAt } from "./motion";
-import { solidHasFullCollision, solidHasTopOnlyCollision } from "./solidCollision";
+import { solidHasFullCollision, solidHasGameplayCollision, solidHasTopOnlyCollision } from "./solidCollision";
 import type { ActorBody, Conveyor, InputFrame, MovingPlatform, OneWayPlatform, Rect, Solid } from "./types";
 
 const PLAYER_WIDTH = 24;
@@ -14,6 +14,9 @@ const MAX_FALL = 13.5;
 const JUMP_SPEED = -12.3;
 const COYOTE_FRAMES = 7;
 const JUMP_BUFFER_FRAMES = 7;
+const LEDGE_FORGIVENESS_VERTICAL = 10;
+const LEDGE_FORGIVENESS_HORIZONTAL = 8;
+const LEDGE_FORGIVENESS_MAX_UPWARD_SPEED = -1.2;
 const LAUNCH_CONTROL_ACCEL_SCALE = 0.35;
 const LAUNCH_FLOAT_GRAVITY_SCALE = 0.92;
 const LAUNCH_FLOAT_MAX_FALL_SCALE = 0.88;
@@ -178,8 +181,18 @@ export const moveActor = (
       platformId: platform.platform.id
     }))
   ];
+  const ledgeRects: CollisionRect[] = [
+    ...solids.filter(solidHasGameplayCollision),
+    ...(dynamic.oneWays || []).map((oneWay) => ({ ...oneWay, oneWay: true })),
+    ...platforms.map((platform) => ({
+      ...platform.current,
+      oneWay: true,
+      platformId: platform.platform.id
+    }))
+  ];
   const platformCrateBlockers: Rect[] = platforms.map((platform) => ({ ...platform.current }));
   const crateRects = crateCollisionRects(dynamic.crates);
+  const attemptedVx = actor.vx;
 
   actor.x += actor.vx;
   resolveAxis(
@@ -196,6 +209,16 @@ export const moveActor = (
   const previousY = actor.y;
   actor.y += actor.vy;
   resolveAxis(actor, [...collisionRects, ...oneWayRects, ...crateCollisionRects(dynamic.crates)], "y", bounds, dynamic.crates, previousY, dynamic.actorBlockers);
+  if (!actor.onGround) {
+    tryApplyLedgeForgiveness(
+      actor,
+      ledgeRects,
+      [...collisionRects, ...crateRects],
+      bounds,
+      previousY,
+      attemptedVx
+    );
+  }
 
   applyConveyor(
     actor,
@@ -257,6 +280,54 @@ const resolveAxis = (
         actor.vy = 0;
       }
     }
+  }
+};
+
+const tryApplyLedgeForgiveness = (
+  actor: ActorBody,
+  supports: CollisionRect[],
+  blockers: Rect[],
+  bounds: Rect,
+  previousY: number,
+  attemptedVx: number
+): void => {
+  if (Math.abs(attemptedVx) < 0.05) return;
+  if (actor.vy < LEDGE_FORGIVENESS_MAX_UPWARD_SPEED) return;
+  const previousBottom = previousY + actor.h;
+  const currentBottom = actor.y + actor.h;
+
+  for (const support of supports) {
+    if (currentBottom < support.y - 3 || currentBottom > support.y + LEDGE_FORGIVENESS_VERTICAL) continue;
+    if (previousBottom > support.y + LEDGE_FORGIVENESS_VERTICAL) continue;
+
+    let snapX: number | null = null;
+    if (attemptedVx > 0) {
+      const edge = support.x;
+      const actorRight = actor.x + actor.w;
+      if (actorRight < edge - 0.5 || actorRight > edge + LEDGE_FORGIVENESS_HORIZONTAL) continue;
+      snapX = edge - actor.w + LEDGE_FORGIVENESS_HORIZONTAL;
+    } else {
+      const edge = support.x + support.w;
+      if (actor.x > edge + 0.5 || actor.x < edge - LEDGE_FORGIVENESS_HORIZONTAL) continue;
+      snapX = edge - LEDGE_FORGIVENESS_HORIZONTAL;
+    }
+
+    const standingRect = {
+      x: Math.max(bounds.x, Math.min(snapX, bounds.x + bounds.w - actor.w)),
+      y: support.y - actor.h,
+      w: actor.w,
+      h: actor.h
+    };
+    if (blockers.some((blocker) => rectsOverlap(standingRect, blocker))) continue;
+
+    actor.x = standingRect.x;
+    actor.y = standingRect.y;
+    actor.vy = 0;
+    actor.onGround = true;
+    actor.coyote = COYOTE_FRAMES;
+    actor.launchFloatFrames = 0;
+    actor.standingOn = "platformId" in support && support.platformId ? support.platformId : null;
+    return;
   }
 };
 

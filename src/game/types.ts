@@ -350,6 +350,7 @@ export type LevelScore = {
 
 export type CorePickupEvent = Vec2 & {
   id: string;
+  recovered?: boolean;
 };
 
 export type MonsterKillEvent = Vec2 & {
@@ -375,6 +376,20 @@ export type BossSoundCueEvent = Vec2 & {
   cue: BossSoundCueType;
 };
 
+export type SpilledCore = Rect & {
+  id: string;
+  sourceId: string;
+  vx: number;
+  vy: number;
+  ttlFrames: number;
+  pickupDelayFrames: number;
+};
+
+export type CoreSpillEvent = Vec2 & {
+  coreIds: string[];
+  lostCoreIds: string[];
+};
+
 export type StepEvents = {
   jumped: boolean;
   launched: boolean;
@@ -383,6 +398,7 @@ export type StepEvents = {
   switched: boolean;
   core: CorePickupEvent | null;
   cores: CorePickupEvent[];
+  coreSpill: CoreSpillEvent | null;
   died: boolean;
   playerLaserVaporized: boolean;
   echoLaserVaporized: number;
@@ -407,10 +423,13 @@ export type SimulationSnapshot = {
   activePlates: Set<string>;
   openDoors: Set<string>;
   collectedCores: Set<string>;
+  claimedCores: Set<string>;
+  spilledCores: Map<string, SpilledCore>;
   blockedLasers: Set<string>;
   crates: Map<string, Rect>;
   solids: Solid[];
   terrainRevision: number;
+  coreInvulnerabilityFrames: number;
   killedMonsters: Set<string>;
   bosses: BossSnapshot[];
   exitUnlocked: boolean;

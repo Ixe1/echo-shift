@@ -324,12 +324,8 @@ try {
   assertOutline("short-floor", {
     segments: ["top:410-538", "left:450-480", "right:450-480"]
   });
-  assertOutline("left-wall-upper", {
-    segments: ["top:-20-0", "left:0-260", "right:0-260"]
-  });
-  assertOutline("left-wall-lower", {
-    segments: ["bottom:-20-0", "left:260-540", "right:260-540"]
-  });
+  assertNoOutline("left-wall-upper");
+  assertNoOutline("left-wall-lower");
   assertOutline("block-a", {
     segments: ["top:560-592", "bottom:560-592", "left:420-480"]
   });

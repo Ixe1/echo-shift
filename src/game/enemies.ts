@@ -590,13 +590,13 @@ export const actorKillsMonster = (actor: ActorBody, previousY: number, monster: 
   const bottomZone = monsterBottomVulnerabilityZone(rect);
   const topHit =
     (vulnerability === "top" || vulnerability === "both") &&
-    actor.vy >= -MONSTER_VERTICAL_SPEED_GRACE &&
+    actor.vy > MONSTER_VERTICAL_SPEED_GRACE &&
     rectsOverlap(footSensor, topZone) &&
     previousBottom <= rect.y + MONSTER_STOMP_TOP_GRACE &&
     currentBottom <= rect.y + Math.max(14, rect.h * MONSTER_STOMP_DEPTH_RATIO);
   const bottomHit =
     (vulnerability === "bottom" || vulnerability === "both") &&
-    actor.vy <= MONSTER_VERTICAL_SPEED_GRACE &&
+    actor.vy < -MONSTER_VERTICAL_SPEED_GRACE &&
     rectsOverlap(headSensor, bottomZone) &&
     previousY >= rect.y + rect.h - MONSTER_UNDERSIDE_ENTRY_GRACE &&
     actor.y >= rect.y + rect.h - Math.max(14, rect.h * MONSTER_UNDERSIDE_DEPTH_RATIO);

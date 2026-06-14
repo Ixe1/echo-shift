@@ -30,12 +30,14 @@ import {
   type BossRuntimeState
 } from "./enemies";
 import {
+  actorHazardContact,
   actorTouchesLaser,
   actorTouchesHazard,
   closedDoorRects,
   collectOpenDoors,
   createObjectState,
-  playerTouchesHazard,
+  doorRequiredCoreIds,
+  isMajorCore,
   updateObjects,
   type ObjectState
 } from "./objects";
@@ -48,8 +50,9 @@ import {
   type EchoRecording
 } from "./recording";
 import { finalScoreForLevel, timeBonusForFrames } from "./scoring";
+import { solidHasGameplayCollision } from "./solidCollision";
 import { TERRAIN_TILE_SIZE } from "./terrainMaterials";
-import type { ActorBody, Boss, BossAttackSnapshot, BossSnapshot, InputFrame, Level, Monster, Rect, SimulationSnapshot, Solid, StepEvents } from "./types";
+import type { ActorBody, Boss, BossAttackSnapshot, BossSnapshot, Core, InputFrame, Level, Monster, Rect, SimulationSnapshot, Solid, SpilledCore, StepEvents } from "./types";
 
 const MIN_ECHO_FRAMES = 18;
 const LAUNCH_PAD_FACE_TOLERANCE = 3;
@@ -57,6 +60,15 @@ const LAUNCH_PAD_COOLDOWN_FRAMES = 12;
 const LAUNCH_PAD_CONTROL_LOCK_FRAMES = 10;
 const LAUNCH_PAD_FLOAT_FRAMES = 54;
 const LAUNCH_PAD_SPEED_SCALE = 0.94;
+const CORE_SAVE_INVULNERABILITY_FRAMES = 90;
+const CORE_SPILL_PICKUP_DELAY_FRAMES = 28;
+const CORE_SPILL_TTL_FRAMES = 300;
+const CORE_SPILL_GRAVITY = 0.42;
+const CORE_SPILL_MAX_FALL_SPEED = 7.6;
+const CORE_SPILL_DRAG = 0.982;
+const CORE_SPILL_BOUNCE = 0.56;
+const CORE_SAVE_BOUNCE_SPEED = -8.8;
+const CORE_SAVE_KNOCKBACK_SPEED = 4.2;
 
 type BossCheckpoint = {
   bossId: string;
@@ -78,6 +90,8 @@ type BossCheckpoint = {
   totalFrames: number;
   score: number;
   deaths: number;
+  coreInvulnerabilityFrames: number;
+  coreSpillSerial: number;
 };
 
 const cloneActor = (actor: ActorBody): ActorBody => ({ ...actor });
@@ -88,6 +102,8 @@ const cloneObjectState = (state: ObjectState): ObjectState => ({
   timedSwitchTimers: new Map(state.timedSwitchTimers),
   openDoors: new Set(state.openDoors),
   collectedCores: new Set(state.collectedCores),
+  claimedCores: new Set(state.claimedCores),
+  spilledCores: new Map([...state.spilledCores.entries()].map(([id, core]) => [id, { ...core }])),
   blockedLasers: new Set(state.blockedLasers),
   crates: new Map([...state.crates.entries()].map(([id, rect]) => [id, { ...rect }]))
 });
@@ -163,10 +179,14 @@ export class RoomSimulation {
   private readonly currentAttemptDefeatedBossIds = new Map<string, number>();
   private bossCheckpoint: BossCheckpoint | null = null;
   private readonly initialLives: number | null;
+  private readonly requiredCoreIds: Set<string>;
   private remainingLives: number | null;
+  private coreInvulnerabilityFrames = 0;
+  private coreSpillSerial = 0;
 
   constructor(level: Level, options: RoomSimulationOptions = {}) {
     this.level = level;
+    this.requiredCoreIds = doorRequiredCoreIds(level.doors || []);
     this.initialLives = this.normalizedLives(options.lives === undefined ? level.score.lives : options.lives);
     this.remainingLives = this.initialLives;
     this.player = makeActor("player", "player", level.start);
@@ -183,6 +203,8 @@ export class RoomSimulation {
     this.currentAttemptCollectedCoreIds.clear();
     this.currentAttemptKilledMonsterIds.clear();
     this.currentAttemptDefeatedBossIds.clear();
+    this.coreInvulnerabilityFrames = 0;
+    this.coreSpillSerial = 0;
     this.resetAttempt(false);
   }
 
@@ -216,6 +238,8 @@ export class RoomSimulation {
     this.killedMonsterIds.clear();
     this.resetBossStates();
     this.resetRuntimeTerrain();
+    this.coreInvulnerabilityFrames = 0;
+    this.coreSpillSerial = 0;
     if (!keepRecording) this.currentRecording = [];
   }
 
@@ -270,6 +294,8 @@ export class RoomSimulation {
     this.currentAttemptCollectedCoreIds.clear();
     this.currentAttemptKilledMonsterIds.clear();
     this.currentAttemptDefeatedBossIds.clear();
+    this.coreInvulnerabilityFrames = 0;
+    this.coreSpillSerial = 0;
   }
 
   step(input: InputFrame): StepEvents {
@@ -281,6 +307,7 @@ export class RoomSimulation {
       switched: false,
       core: null,
       cores: [],
+      coreSpill: null,
       died: false,
       playerLaserVaporized: false,
       echoLaserVaporized: 0,
@@ -300,10 +327,12 @@ export class RoomSimulation {
     };
 
     if (this.won || this.dead) return events;
+    this.coreInvulnerabilityFrames = Math.max(0, this.coreInvulnerabilityFrames - 1);
 
     const platforms = platformFramesAt(this.level.platforms, this.tick);
     const doors = closedDoorRects(this.level, this.objectState.openDoors);
     const solids = this.runtimeSolids;
+    this.advanceSpilledCores();
     const baseDynamic = {
       oneWays: this.level.oneWays,
       conveyors: this.level.conveyors,
@@ -359,9 +388,14 @@ export class RoomSimulation {
     if (!this.dead) this.updateBosses(events, previousPlayerY, previousPlayerX);
     if (!this.dead) this.updateMonsters(events, previousPlayerY);
 
-    if (!this.dead && playerTouchesHazard(this.level, this.player, this.objectState, this.tick)) {
-      events.playerLaserVaporized = actorTouchesLaser(this.level, this.player, this.objectState, this.tick);
-      this.markPlayerDead(events);
+    const hazardContact = !this.dead ? actorHazardContact(this.level, this.player, this.objectState, this.tick) : null;
+    if (hazardContact) {
+      if (hazardContact.kind === "laser") {
+        events.playerLaserVaporized = true;
+        this.markPlayerDead(events);
+      } else {
+        this.applyPlayerDamage(events, hazardContact.rect);
+      }
     }
 
     if (!this.dead && !this.player.alive) {
@@ -391,10 +425,13 @@ export class RoomSimulation {
       activePlates: new Set(this.objectState.activePlates),
       openDoors: new Set(this.objectState.openDoors),
       collectedCores: new Set(this.objectState.collectedCores),
+      claimedCores: new Set(this.objectState.claimedCores),
+      spilledCores: new Map([...this.objectState.spilledCores.entries()].map(([id, core]) => [id, { ...core }])),
       blockedLasers: new Set(this.objectState.blockedLasers),
       crates: new Map([...this.objectState.crates.entries()].map(([id, rect]) => [id, { ...rect }])),
       solids: cloneSolids(this.runtimeSolids),
       terrainRevision: this.terrainRevision,
+      coreInvulnerabilityFrames: this.coreInvulnerabilityFrames,
       killedMonsters: new Set(this.killedMonsterIds),
       bosses: this.bossSnapshots(),
       exitUnlocked: this.exitUnlocked(),
@@ -492,7 +529,9 @@ export class RoomSimulation {
       tick: this.tick,
       totalFrames: this.totalFrames,
       score: this.score,
-      deaths: this.deaths
+      deaths: this.deaths,
+      coreInvulnerabilityFrames: this.coreInvulnerabilityFrames,
+      coreSpillSerial: this.coreSpillSerial
     };
     events.bossCheckpointActivated = boss.id;
   }
@@ -555,6 +594,8 @@ export class RoomSimulation {
     for (const key of checkpoint.handledArchiveImpactKeys) this.handledArchiveImpactKeys.add(key);
     this.handledArchiveImpactSoundKeys.clear();
     for (const key of checkpoint.handledArchiveImpactSoundKeys) this.handledArchiveImpactSoundKeys.add(key);
+    this.coreInvulnerabilityFrames = checkpoint.coreInvulnerabilityFrames;
+    this.coreSpillSerial = checkpoint.coreSpillSerial;
   }
 
   private resetRuntimeTerrain(): void {
@@ -662,11 +703,11 @@ export class RoomSimulation {
       if (this.killedMonsterIds.has(monster.id)) continue;
       const rect = monsterRectAt(monster, this.tick);
       if (!rectsOverlap(this.player, rect)) continue;
-      if (actorKillsMonster(this.player, previousPlayerY, monster, rect)) {
+      if (this.coreInvulnerabilityFrames <= 0 && actorKillsMonster(this.player, previousPlayerY, monster, rect)) {
         this.killMonster(monster, rect, events);
         continue;
       }
-      this.markPlayerDead(events);
+      this.applyPlayerDamage(events, rect);
       return;
     }
   }
@@ -769,12 +810,12 @@ export class RoomSimulation {
       const attacks = bossAttackRectsAt(boss, state, this.tick, this.runtimeSolids);
       this.applyArchiveBookErosion(boss, state, attacks, events);
       const floorShocks = bossFloorShockRectsAt(boss, state, this.tick, this.runtimeSolids);
-      if (
-        (bossBodyDamages(state) && rectsOverlap(this.player, body)) ||
-        attacks.some((attack) => rectsOverlap(this.player, attack)) ||
-        floorShocks.some((shock) => rectsOverlap(this.player, shock))
-      ) {
-        this.markPlayerDead(events);
+      const damageSource =
+        bossBodyDamages(state) && rectsOverlap(this.player, body)
+          ? body
+          : attacks.find((attack) => rectsOverlap(this.player, attack)) || floorShocks.find((shock) => rectsOverlap(this.player, shock));
+      if (damageSource) {
+        this.applyPlayerDamage(events, damageSource);
         return;
       }
     }
@@ -848,7 +889,9 @@ export class RoomSimulation {
         terrainRevision: this.terrainRevision,
         handledArchiveImpactKeys: new Set(this.handledArchiveImpactKeys),
         handledArchiveImpactSoundKeys: new Set(this.handledArchiveImpactSoundKeys),
-        score: this.score
+        score: this.score,
+        coreInvulnerabilityFrames: this.coreInvulnerabilityFrames,
+        coreSpillSerial: this.coreSpillSerial
       };
     }
     else this.bossCheckpoint = null;
@@ -914,6 +957,148 @@ export class RoomSimulation {
     events.died = true;
     const remaining = this.livesRemaining();
     events.livesExhausted = remaining !== null && remaining <= 0;
+  }
+
+  private applyPlayerDamage(events: StepEvents, source: Rect): void {
+    if (this.coreInvulnerabilityFrames > 0) return;
+    if (this.trySavePlayerWithCores(events, source)) return;
+    this.markPlayerDead(events);
+  }
+
+  private trySavePlayerWithCores(events: StepEvents, source: Rect): boolean {
+    const spillableCoreIds = [...this.objectState.collectedCores].filter((id) => this.coreCanSpill(id));
+    if (spillableCoreIds.length === 0) return false;
+    const spillCount = Math.max(1, Math.floor(spillableCoreIds.length / 2));
+    const spilledIds = spillableCoreIds.slice(-spillCount);
+    const spilledIdSet = new Set(spilledIds);
+    const lostCoreIds = spillableCoreIds.filter((id) => !spilledIdSet.has(id));
+    const nextCollectedCores = new Set(this.objectState.collectedCores);
+    const nextSpilledCores = new Map([...this.objectState.spilledCores.entries()].map(([id, core]) => [id, { ...core }]));
+    const playerCenter = this.rectCenter(this.player);
+    const sourceCenter = this.rectCenter(source);
+    const sourceDirection = playerCenter.x === sourceCenter.x ? this.player.facing || 1 : Math.sign(playerCenter.x - sourceCenter.x);
+    const knockbackDirection = sourceDirection === 0 ? 1 : sourceDirection;
+
+    for (const sourceId of spillableCoreIds) {
+      nextCollectedCores.delete(sourceId);
+      this.removeCoreScore(sourceId);
+    }
+
+    for (let index = 0; index < spilledIds.length; index += 1) {
+      const sourceId = spilledIds[index];
+      const core = this.coreById(sourceId);
+      const width = Math.max(12, Math.min(24, core?.w || 18));
+      const height = Math.max(12, Math.min(24, core?.h || 18));
+      const scatterSlot = spilledIds.length === 1 ? -knockbackDirection : (index % 2 === 0 ? 1 : -1) * (Math.floor(index / 2) + 1);
+      const scatterMagnitude = Math.abs(scatterSlot);
+      const outward = scatterSlot * (2.3 + Math.min(3, scatterMagnitude) * 0.58) + knockbackDirection * 0.55;
+      const looseId = `${sourceId}:spill:${this.coreSpillSerial}`;
+      this.coreSpillSerial += 1;
+      nextSpilledCores.set(looseId, {
+        id: looseId,
+        sourceId,
+        x: playerCenter.x - width / 2 + scatterSlot * 3,
+        y: playerCenter.y - height / 2 - 8,
+        w: width,
+        h: height,
+        vx: outward,
+        vy: -7.4 - (index % 3) * 0.7 - Math.min(1.2, scatterMagnitude * 0.16),
+        ttlFrames: CORE_SPILL_TTL_FRAMES,
+        pickupDelayFrames: CORE_SPILL_PICKUP_DELAY_FRAMES
+      });
+    }
+
+    this.objectState = {
+      ...this.objectState,
+      collectedCores: nextCollectedCores,
+      spilledCores: nextSpilledCores
+    };
+    this.refreshDoorStateForDefeatedBosses(events);
+    this.player.alive = true;
+    this.player.vx = knockbackDirection * CORE_SAVE_KNOCKBACK_SPEED;
+    this.player.vy = CORE_SAVE_BOUNCE_SPEED;
+    this.player.onGround = false;
+    this.player.coyote = 0;
+    this.player.jumpBuffer = 0;
+    this.player.standingOn = null;
+    this.coreInvulnerabilityFrames = CORE_SAVE_INVULNERABILITY_FRAMES;
+    events.coreSpill = {
+      coreIds: spilledIds,
+      lostCoreIds,
+      x: playerCenter.x,
+      y: playerCenter.y
+    };
+    return true;
+  }
+
+  private coreCanSpill(coreId: string): boolean {
+    const core = this.coreById(coreId);
+    return core ? !isMajorCore(core, this.requiredCoreIds) : false;
+  }
+
+  private coreById(coreId: string): Core | undefined {
+    return (this.level.cores || []).find((core) => core.id === coreId);
+  }
+
+  private rectCenter(rect: Rect): { x: number; y: number } {
+    return {
+      x: rect.x + rect.w / 2,
+      y: rect.y + rect.h / 2
+    };
+  }
+
+  private removeCoreScore(coreId: string): void {
+    if (!this.currentAttemptCollectedCoreIds.delete(coreId)) return;
+    this.score = Math.max(0, this.score - this.level.score.coreScore);
+  }
+
+  private advanceSpilledCores(): void {
+    if (this.objectState.spilledCores.size === 0) return;
+    const nextSpilledCores = new Map<string, SpilledCore>();
+    for (const [id, looseCore] of this.objectState.spilledCores) {
+      if (looseCore.ttlFrames <= 1) continue;
+      const previousY = looseCore.y;
+      const moved: SpilledCore = {
+        ...looseCore,
+        ttlFrames: looseCore.ttlFrames - 1,
+        pickupDelayFrames: Math.max(0, looseCore.pickupDelayFrames - 1),
+        vx: looseCore.vx * CORE_SPILL_DRAG,
+        vy: Math.min(CORE_SPILL_MAX_FALL_SPEED, looseCore.vy + CORE_SPILL_GRAVITY)
+      };
+      moved.x += moved.vx;
+      moved.y += moved.vy;
+      this.resolveSpilledCoreBounds(moved);
+      this.resolveSpilledCoreTerrain(moved, previousY);
+      nextSpilledCores.set(id, moved);
+    }
+    this.objectState = { ...this.objectState, spilledCores: nextSpilledCores };
+  }
+
+  private resolveSpilledCoreBounds(core: SpilledCore): void {
+    const minX = this.level.bounds.x;
+    const maxX = this.level.bounds.x + this.level.bounds.w - core.w;
+    if (core.x < minX) {
+      core.x = minX;
+      core.vx = Math.abs(core.vx) * CORE_SPILL_BOUNCE;
+    } else if (core.x > maxX) {
+      core.x = maxX;
+      core.vx = -Math.abs(core.vx) * CORE_SPILL_BOUNCE;
+    }
+  }
+
+  private resolveSpilledCoreTerrain(core: SpilledCore, previousY: number): void {
+    if (core.vy < 0) return;
+    const previousBottom = previousY + core.h;
+    for (const solid of this.runtimeSolids) {
+      if (!solidHasGameplayCollision(solid)) continue;
+      if (previousBottom > solid.y + 2) continue;
+      if (core.y + core.h < solid.y || core.y > solid.y + solid.h) continue;
+      if (core.x + core.w <= solid.x || core.x >= solid.x + solid.w) continue;
+      core.y = solid.y - core.h;
+      core.vy = Math.abs(core.vy) > 1.2 ? -Math.abs(core.vy) * CORE_SPILL_BOUNCE : 0;
+      core.vx *= 0.82;
+      return;
+    }
   }
 
   private normalizedLives(value: number | null): number | null {

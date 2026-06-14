@@ -29,7 +29,6 @@ type HudState = {
   score: number;
   lives: number | null;
   coresCollected: number;
-  coresTotal: number;
   rewindDisabled: boolean;
   gameOver: boolean;
 };
@@ -105,7 +104,7 @@ export class Hud {
     this.set("[data-level]", state.levelNumber === null ? state.levelName : `${state.levelNumber}. ${state.levelName}`);
     this.set("[data-time]", formatFrames(state.frames));
     this.set("[data-score]", formatScore(state.score));
-    this.set("[data-cores]", `${state.coresCollected}/${state.coresTotal}`);
+    this.set("[data-cores]", `${state.coresCollected}`);
     this.set("[data-lives]", state.lives === null ? "∞" : `${state.lives}`);
     this.setCommandButton(
       "[data-rewind]",
@@ -205,7 +204,7 @@ export class Hud {
     modal.replaceChildren();
   }
 
-  showComplete(score: LevelScore, isFinal: boolean, totalCores: number, options: CompleteOptions): void {
+  showComplete(score: LevelScore, isFinal: boolean, options: CompleteOptions): void {
     this.destroyModalNavigation();
     this.setHudControlsInert(true);
     const modal = this.modal();
@@ -226,7 +225,7 @@ export class Hud {
           <div class="score-cell"><strong>Score</strong><span>${formatScore(score.score)}</span></div>
           <div class="score-cell"><strong>Time</strong><span>${formatFrames(score.frames)}</span></div>
           <div class="score-cell"><strong>Time Bonus</strong><span>${formatScore(score.timeBonus)}</span></div>
-          <div class="score-cell"><strong>Cores</strong><span>${score.cores}/${totalCores}</span></div>
+          <div class="score-cell"><strong>Cores</strong><span>${score.cores}</span></div>
           <div class="score-cell"><strong>Deaths</strong><span>${score.deaths}</span></div>
           <div class="score-cell"><strong>Echoes</strong><span>${score.echoes}</span></div>
         </div>
@@ -247,7 +246,7 @@ export class Hud {
     this.bindModalNavigation(() => this.callbacks.onTitle());
   }
 
-  showTutorialComplete(score: LevelScore, totalCores: number): void {
+  showTutorialComplete(score: LevelScore): void {
     this.destroyModalNavigation();
     this.setHudControlsInert(true);
     const modal = this.modal();
@@ -259,7 +258,7 @@ export class Hud {
         <p>Echo timing confirmed.</p>
         <div class="score-row">
           <div class="score-cell"><strong>Time</strong><span>${formatFrames(score.frames)}</span></div>
-          <div class="score-cell"><strong>Cores</strong><span>${score.cores}/${totalCores}</span></div>
+          <div class="score-cell"><strong>Cores</strong><span>${score.cores}</span></div>
           <div class="score-cell"><strong>Echoes</strong><span>${score.echoes}</span></div>
           <div class="score-cell"><strong>Deaths</strong><span>${score.deaths}</span></div>
         </div>
