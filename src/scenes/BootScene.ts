@@ -3,7 +3,6 @@ import { isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
 import { backgroundForLevel, levelBackgrounds, type LevelBackground } from "../game/backgrounds";
 import { soundtrackForLevel } from "../game/soundtracks";
-import { TERRAIN_TILE_KEY, TERRAIN_TILE_SIZE } from "../game/terrainMaterials";
 import {
   bindImageFallbacks,
   clearUi,
@@ -41,36 +40,6 @@ export class BootScene extends Phaser.Scene {
     this.startupLogoSrc = ECHO_SHIFT_LOGO_SRC;
     this.showLoadingScreen();
     this.bindLoadingProgress();
-    this.load.spritesheet("time-runner", "/assets/sprites/time-runner-sheet.png", {
-      frameWidth: 64,
-      frameHeight: 64
-    });
-    this.load.spritesheet("time-effects", "/assets/sprites/time-effects-sheet.png", {
-      frameWidth: 96,
-      frameHeight: 96
-    });
-    this.load.spritesheet("core-major", "/assets/sprites/core-major-sheet.png", {
-      frameWidth: 128,
-      frameHeight: 128
-    });
-    this.load.spritesheet("object-atlas", "/assets/sprites/object-atlas.png", {
-      frameWidth: 256,
-      frameHeight: 256
-    });
-    this.load.spritesheet("launch-pad", "/assets/sprites/launch-pad-sheet.png", {
-      frameWidth: 256,
-      frameHeight: 192
-    });
-    this.load.spritesheet("hazard-vent", "/assets/sprites/hazard-vent-sheet.png", {
-      frameWidth: 352,
-      frameHeight: 288
-    });
-    this.load.spritesheet(TERRAIN_TILE_KEY, "/assets/sprites/terrain-tiles.png", {
-      frameWidth: TERRAIN_TILE_SIZE,
-      frameHeight: TERRAIN_TILE_SIZE,
-      margin: 1,
-      spacing: 2
-    });
     for (const background of this.startupBackgrounds()) {
       if (this.textures.exists(background.key)) continue;
       this.load.image(background.key, background.src);
@@ -247,25 +216,46 @@ export class BootScene extends Phaser.Scene {
   }
 
   private handleLoadComplete(): void {
-    this.handleLoadProgress(1);
     if (this.loadingFailed) {
-      this.loadingStatus?.replaceChildren("Some assets failed");
-      this.writeLoadingDiagnostics("error", 100, "Some assets failed");
+      this.setStartupLoadingError("Some assets failed", "Choose Retry to reload");
+      this.showStartupLoadFailureActions();
       return;
     }
+    this.handleLoadProgress(1);
     this.loadingStatus?.replaceChildren("Preload complete");
     this.writeLoadingDiagnostics("complete", 100, "complete");
   }
 
   private showStartupLoadFailure(): void {
     const label = "Startup assets unavailable";
+    this.setStartupLoadingError(label, "Choose Retry to reload");
+    this.showStartupLoadFailureActions();
+  }
+
+  private setStartupLoadingError(label: string, fileLabel: string): void {
+    this.loadingScreen?.classList.add("is-error");
     this.loadingBar?.style.setProperty("--load-progress", "1");
-    this.loadingPercent?.replaceChildren("100%");
-    this.loadingProgress?.setAttribute("aria-valuenow", "100");
+    this.loadingPercent?.replaceChildren("Error");
+    this.loadingProgress?.removeAttribute("aria-valuenow");
     this.loadingProgress?.setAttribute("aria-valuetext", label);
     this.loadingStatus?.replaceChildren(label);
-    this.loadingScreen?.querySelector<HTMLElement>("[data-loading-file]")?.replaceChildren("Refresh to retry");
-    this.writeLoadingDiagnostics("error", 100, label);
+    this.loadingScreen?.querySelector<HTMLElement>("[data-loading-file]")?.replaceChildren(fileLabel);
+    this.writeLoadingDiagnostics("error", undefined, label);
+    if (typeof document !== "undefined") delete document.documentElement.dataset.echoShiftBootLoadProgress;
+  }
+
+  private showStartupLoadFailureActions(): void {
+    if (!this.loadingScreen || this.loadingScreen.querySelector("[data-loading-actions]")) return;
+    const panel = this.loadingScreen.querySelector<HTMLElement>(".boot-loading-panel");
+    if (!panel) return;
+    const actions = document.createElement("div");
+    actions.className = "boot-loading-actions";
+    actions.dataset.loadingActions = "true";
+    actions.innerHTML = `<button class="ui-button primary" data-startup-retry>${icon("restart")} Retry</button>`;
+    panel.append(actions);
+    const retry = actions.querySelector<HTMLButtonElement>("[data-startup-retry]");
+    retry?.addEventListener("click", () => window.location.reload());
+    retry?.focus();
   }
 
   private cleanupLoadingListeners(): void {

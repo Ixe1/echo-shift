@@ -264,6 +264,15 @@ button {
   transition: transform 140ms ease;
 }
 
+.boot-loading.is-error .boot-loading-progress {
+  border-color: rgba(255, 79, 139, 0.62);
+}
+
+.boot-loading.is-error .boot-loading-progress span {
+  background: linear-gradient(90deg, rgba(255, 79, 139, 0.9), rgba(255, 227, 90, 0.72));
+  box-shadow: 0 0 18px rgba(255, 79, 139, 0.34);
+}
+
 .boot-loading-meta {
   display: flex;
   justify-content: space-between;
@@ -280,6 +289,16 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.boot-loading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.boot-loading-actions .ui-button {
+  flex: 1 1 150px;
 }
 
 .menu-shell {
