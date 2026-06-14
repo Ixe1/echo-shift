@@ -210,6 +210,10 @@ button {
   line-height: 1.45;
 }
 
+.credits-text.warning {
+  color: #fff8bf;
+}
+
 .button-grid {
   display: grid;
   gap: 10px;

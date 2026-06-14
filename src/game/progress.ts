@@ -11,6 +11,10 @@ type ProgressReadResult =
   | { ok: true; data: ProgressData }
   | { ok: false; data: ProgressData; message: string };
 
+export type ProgressScoreState =
+  | { ok: true; scores: Record<string, LevelScore> }
+  | { ok: false; scores: Record<string, LevelScore>; message: string };
+
 const fallback: ProgressData = {
   unlocked: 1,
   scores: {}
@@ -120,7 +124,13 @@ const writeProgress = (data: ProgressData): boolean => {
 
 export const getUnlockedLevelCount = (): number => readProgress().data.unlocked;
 
-export const getBestScores = (): Record<string, LevelScore> => readProgress().data.scores;
+export const getBestScoreState = (): ProgressScoreState => {
+  const progress = readProgress();
+  if (progress.ok) return { ok: true, scores: progress.data.scores };
+  return { ok: false, scores: progress.data.scores, message: progress.message };
+};
+
+export const getBestScores = (): Record<string, LevelScore> => getBestScoreState().scores;
 
 export const isBetterLevelScore = (score: LevelScore, previous: LevelScore | undefined): boolean => {
   if (!previous) return true;

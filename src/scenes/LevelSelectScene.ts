@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
 import { formatFrames } from "../game/geometry";
-import { getBestScores } from "../game/progress";
+import { getBestScoreState, type ProgressScoreState } from "../game/progress";
 import { formatScore } from "../game/scoring";
 import { isSecretAccessUnlocked } from "../game/secretAccess";
 import { resetCampaignVitals } from "../game/session";
@@ -31,16 +31,19 @@ export class LevelSelectScene extends Phaser.Scene {
     }
     levels.forEach((level, levelPosition) => void audio.preloadMusic(soundtrackForLevel(level, levelPosition).key));
     const unlocked = levels.length;
-    const scores = draftPlaytest ? {} : getBestScores();
+    const scoreState: ProgressScoreState = draftPlaytest ? { ok: true, scores: {} } : getBestScoreState();
+    const progressWarning = scoreState.ok ? "" : `<p class="credits-text warning" data-progress-warning>${scoreState.message}</p>`;
     const buttons = levels
       .map((level, levelPosition) => {
         const locked = levelPosition + 1 > unlocked;
-        const score = scores[level.id];
-        const best = score
-          ? score.legacy
-            ? `Previous clear · ${formatFrames(score.frames)} · ${score.echoes}E`
-            : `${formatScore(score.score)} · ${formatFrames(score.frames)} · ${score.deaths}D`
-          : "No clear";
+        const score = scoreState.scores[level.id];
+        const best = !scoreState.ok
+          ? "Progress unavailable"
+          : score
+            ? score.legacy
+              ? `Previous clear · ${formatFrames(score.frames)} · ${score.echoes}E`
+              : `${formatScore(score.score)} · ${formatFrames(score.frames)} · ${score.deaths}D`
+            : "No clear";
         return `
           <button class="level-button ${locked ? "locked" : ""}" data-level="${levelPosition}" ${locked ? "disabled" : ""}>
             <span class="level-number">${level.index + 1}</span>
@@ -61,6 +64,7 @@ export class LevelSelectScene extends Phaser.Scene {
                 ? "Testing the browser-saved editor draft. Draft clears do not save scores."
                 : "Practice access unlocked for this page. These clears do not save scores."
             }</p>
+            ${progressWarning}
           </div>
           <div class="level-grid">${buttons}</div>
           <div class="button-grid">

@@ -408,6 +408,19 @@ try {
       unlocked: progress?.unlocked
     };
   });
+  await scoreEntryPage.goto(`${url}?editor=0`, { waitUntil: "domcontentloaded" });
+  await startAudioGate(scoreEntryPage);
+  await scoreEntryPage.evaluate(() => {
+    window.localStorage.setItem("echo-shift-progress-v1", "{broken");
+  });
+  await scoreEntryPage.locator("[data-play]").waitFor({ state: "visible" });
+  for (const key of ["ArrowUp", "ArrowUp", "ArrowDown", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowLeft", "ArrowRight", "r"]) {
+    await scoreEntryPage.keyboard.press(key);
+  }
+  await scoreEntryPage.locator("[data-levels]").click();
+  await scoreEntryPage.locator("[data-progress-warning]").waitFor({ state: "visible" });
+  const damagedProgressWarning = await scoreEntryPage.locator("[data-progress-warning]").textContent();
+  const damagedProgressBest = await scoreEntryPage.locator(".level-button[data-level='0'] .level-best").textContent();
   const controlsCopy = await scoreEntryPage.evaluate(async () => {
     const { controlBindings } = await import("/src/ui/options.ts");
     return controlBindings.find((binding) => binding.action === "Pause")?.binding || "";
@@ -2192,6 +2205,10 @@ try {
       campaignFinalIntegrationResult.progressScore === 3456 &&
       campaignFinalIntegrationResult.unlocked === 5,
     `Expected normal campaign final clear to persist score and expose leaderboard options, got ${JSON.stringify(campaignFinalIntegrationResult)}`
+  );
+  assert(
+    damagedProgressWarning?.includes("damaged") && damagedProgressBest?.includes("Progress unavailable") && !damagedProgressBest.includes("No clear"),
+    `Expected damaged progress storage to render as damaged data, got warning=${damagedProgressWarning} best=${damagedProgressBest}`
   );
   assert(controlsCopy.includes("Start/Menu"), `Expected controls copy to document gamepad pause, got ${controlsCopy}`);
   assert(menuEditorUrl.includes("editor=1"), `Expected unlocked editor button to navigate to ?editor=1, got ${menuEditorUrl}`);
