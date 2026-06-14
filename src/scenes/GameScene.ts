@@ -844,8 +844,8 @@ export class GameScene extends Phaser.Scene {
     const loadId = ++this.roomBackgroundFallbackLoadId;
     this.setRoomFallbackPendingProgress(
       "Loading fallback room backdrop",
-      `fallback: ${background.key}`,
-      `Loading fallback for ${background.key}`
+      "Fallback room backdrop",
+      "Loading fallback room backdrop"
     );
     this.writeBackgroundPreloadDiagnostics(background.key, "fallback");
     void this.loadFallbackBackgroundImage(this.roomBackgroundFallbackKey, this.roomBackgroundFallbackSrc).then((loaded) => {
@@ -876,7 +876,7 @@ export class GameScene extends Phaser.Scene {
     this.awaitingRoomBossAtlasFallback = true;
     this.roomLoadingFailed = false;
     const loadId = ++this.roomBossAtlasFallbackLoadId;
-    this.setRoomFallbackPendingProgress("Loading fallback boss sprites", `fallback: ${BOSS_ATLAS_KEY}`, "Loading fallback boss sprites");
+    this.setRoomFallbackPendingProgress("Loading fallback boss sprites", "Fallback boss sprites", "Loading fallback boss sprites");
     void this.loadFallbackSpritesheet(this.bossAtlasAsset()).then((loaded) => {
       if (loadId !== this.roomBossAtlasFallbackLoadId) return;
       this.awaitingRoomBossAtlasFallback = false;
@@ -966,14 +966,14 @@ export class GameScene extends Phaser.Scene {
         <div class="boot-loading-copy">
           <span class="boot-loading-kicker">${this.tutorialMode ? "Training room" : `Room ${String(this.level.index + 1).padStart(2, "0")}`}</span>
           <h1>Loading room</h1>
-          <p data-room-loading-status role="status" aria-live="polite" aria-atomic="true">Preparing ${escapeHtml(title)}</p>
+          <p id="echo-shift-room-loading-status" data-room-loading-status role="status" aria-live="polite" aria-atomic="true">Preparing ${escapeHtml(title)}</p>
         </div>
         <div class="boot-loading-progress" role="progressbar" aria-label="Room loading progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <span data-room-loading-bar></span>
         </div>
         <div class="boot-loading-meta">
           <span data-room-loading-percent>0%</span>
-          <span data-room-loading-file>${escapeHtml(title)}</span>
+          <span id="echo-shift-room-loading-detail" data-room-loading-file>${escapeHtml(title)}</span>
         </div>
       </section>
     `;
@@ -1005,10 +1005,10 @@ export class GameScene extends Phaser.Scene {
 
   private handleRoomFileProgress(file: Phaser.Loader.File): void {
     const key = String(file.key);
-    const label = `Loading ${key}`;
     const status = this.roomLoadingStatusForFile(key);
+    const detail = this.roomLoadingDetailForFile(key);
     this.roomLoadingStatus?.replaceChildren(status);
-    this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(label);
+    this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(detail);
     this.roomLoadingProgress?.setAttribute("aria-valuetext", status);
   }
 
@@ -1023,6 +1023,19 @@ export class GameScene extends Phaser.Scene {
     if (key === TIME_RUNNER_KEY || key === TIME_EFFECTS_KEY) return "Loading rewind sprites";
     if (key === OBJECT_ATLAS_KEY || key === LAUNCH_PAD_KEY || key === HAZARD_VENT_KEY || key === CORE_MAJOR_KEY) return "Loading room objects";
     return "Loading room assets";
+  }
+
+  private roomLoadingDetailForFile(key: string): string {
+    const background = backgroundForLevel(this.level, this.levelIndex);
+    if (key === background.key || key === this.roomBackgroundFallbackKey) return "Room backdrop";
+    if (key.startsWith("terrain-decor-prop:")) return "Terrain decor";
+    if (key === TERRAIN_TILE_KEY) return "Terrain tiles";
+    if (key === BOSS_ATLAS_KEY || this.isCleanBossTextureKey(key) || key === ARCHIVE_BOOK_VOLLEY_KEY) return "Boss sprites";
+    if (key === POOF_SHEET_KEY) return (this.level.bosses || []).length > 0 && (this.level.monsters || []).length === 0 ? "Effects" : "Enemy sprites";
+    if (key === MONSTER_ATLAS_KEY) return "Enemy sprites";
+    if (key === TIME_RUNNER_KEY || key === TIME_EFFECTS_KEY) return "Rewind sprites";
+    if (key === OBJECT_ATLAS_KEY || key === LAUNCH_PAD_KEY || key === HAZARD_VENT_KEY || key === CORE_MAJOR_KEY) return "Room objects";
+    return "Room assets";
   }
 
   private roomLoadProgressCeiling(): number {
@@ -1042,9 +1055,9 @@ export class GameScene extends Phaser.Scene {
     if (this.optionalRoomAssetCanDegrade(failedKey)) {
       if (this.optionalRoomAssetFailureIsSticky(failedKey)) this.failedOptionalRoomAssets.add(failedKey);
       const status = this.optionalRoomAssetStatus(failedKey);
-      const label = `Skipped optional ${failedKey}`;
+      const detail = this.optionalRoomAssetDetail(failedKey);
       this.roomLoadingStatus?.replaceChildren(status);
-      this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(label);
+      this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(detail);
       this.roomLoadingProgress?.setAttribute("aria-valuetext", status);
       return;
     }
@@ -1061,14 +1074,15 @@ export class GameScene extends Phaser.Scene {
       this.roomBackgroundFallbackSrc &&
       !this.textures.exists(this.roomBackgroundFallbackKey)
     ) {
-      this.setRoomFallbackPendingProgress("Loading fallback room backdrop", `fallback: ${failedKey}`, `Loading fallback for ${failedKey}`);
+      this.setRoomFallbackPendingProgress("Loading fallback room backdrop", "Fallback room backdrop", "Loading fallback room backdrop");
       this.writeBackgroundPreloadDiagnostics(failedKey, "fallback");
       return;
     }
     this.roomLoadingFailed = true;
     this.roomLoadFailedKey = failedKey;
-    const label = `Could not load ${failedKey}`;
+    const label = "Room asset could not load";
     this.roomLoadingStatus?.replaceChildren(label);
+    this.roomLoadingOverlay?.querySelector<HTMLElement>("[data-room-loading-file]")?.replaceChildren(this.roomLoadFailureDetail(failedKey));
     this.roomLoadingProgress?.setAttribute("aria-valuetext", label);
     this.writeRoomAssetFailureDiagnostics(failedKey);
   }
@@ -1088,6 +1102,25 @@ export class GameScene extends Phaser.Scene {
     if (key.startsWith("terrain-decor-prop:")) return "Skipping missing terrain decor";
     if (key === ARCHIVE_BOOK_VOLLEY_KEY || key === POOF_SHEET_KEY) return "Skipping missing effects";
     return "Using fallback boss sprites";
+  }
+
+  private optionalRoomAssetDetail(key: string): string {
+    if (key.startsWith("terrain-decor-prop:")) return "Optional terrain decor unavailable";
+    if (key === ARCHIVE_BOOK_VOLLEY_KEY || key === POOF_SHEET_KEY) return "Optional effects unavailable";
+    return "Clean boss sprites unavailable";
+  }
+
+  private roomLoadFailureDetail(key: string): string {
+    const background = backgroundForLevel(this.level, this.levelIndex);
+    if (key === background.key || key === this.roomBackgroundFallbackKey) return "Room backdrop unavailable";
+    if (key === BOSS_ATLAS_KEY || this.isCleanBossTextureKey(key)) return "Boss sprites unavailable";
+    if (key === ARCHIVE_BOOK_VOLLEY_KEY || key === POOF_SHEET_KEY) return "Effects unavailable";
+    if (key.startsWith("terrain-decor-prop:")) return "Terrain decor unavailable";
+    if (key === MONSTER_ATLAS_KEY) return "Enemy sprites unavailable";
+    if (key === TERRAIN_TILE_KEY) return "Terrain tiles unavailable";
+    if (key === TIME_RUNNER_KEY || key === TIME_EFFECTS_KEY) return "Rewind sprites unavailable";
+    if (key === OBJECT_ATLAS_KEY || key === LAUNCH_PAD_KEY || key === HAZARD_VENT_KEY || key === CORE_MAJOR_KEY) return "Room objects unavailable";
+    return "Required room asset unavailable";
   }
 
   private optionalRoomAssetFailureIsSticky(key: string): boolean {
@@ -1124,7 +1157,7 @@ export class GameScene extends Phaser.Scene {
     if (this.roomBossAtlasFallbackPending()) {
       if (textureKey === background.key) this.failedPrimaryBackgroundRetries.delete(background.key);
       this.writeBackgroundPreloadDiagnostics(textureKey, "complete");
-      this.setRoomFallbackPendingProgress("Loading fallback boss sprites", `fallback: ${BOSS_ATLAS_KEY}`, "Loading fallback boss sprites");
+      this.setRoomFallbackPendingProgress("Loading fallback boss sprites", "Fallback boss sprites", "Loading fallback boss sprites");
       return;
     }
     this.setRoomLoadCompleteProgress();
@@ -1156,13 +1189,13 @@ export class GameScene extends Phaser.Scene {
   private showRoomLoadFailure(background: ReturnType<typeof backgroundForLevel>, phase: "missing" | "error", key: string): void {
     this.clearRoomAssetFailureDiagnostics();
     this.markRoomBackgroundUnavailable(background, phase, key);
-    this.setRoomLoadingError("Room assets unavailable", `Could not load ${key}`);
+    this.setRoomLoadingError("Room assets unavailable", this.roomLoadFailureDetail(key));
     this.showRoomLoadFailureActions();
   }
 
   private showRoomAssetLoadFailure(key: string): void {
     this.writeRoomAssetFailureDiagnostics(key);
-    this.setRoomLoadingError("Room assets unavailable", `Could not load ${key}`);
+    this.setRoomLoadingError("Room assets unavailable", this.roomLoadFailureDetail(key));
     this.showRoomLoadFailureActions();
   }
 
@@ -1192,6 +1225,8 @@ export class GameScene extends Phaser.Scene {
     panel.append(actions);
     panel.setAttribute("role", "dialog");
     panel.setAttribute("aria-modal", "true");
+    panel.setAttribute("aria-labelledby", "echo-shift-room-loading-status");
+    panel.setAttribute("aria-describedby", "echo-shift-room-loading-detail");
     const retry = actions.querySelector<HTMLButtonElement>("[data-room-retry]");
     const editor = actions.querySelector<HTMLButtonElement>("[data-room-editor]");
     const menu = actions.querySelector<HTMLButtonElement>("[data-room-menu]");

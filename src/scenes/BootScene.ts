@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
-import { backgroundForLevel, levelBackgrounds, type LevelBackground } from "../game/backgrounds";
+import { levelBackgrounds, type LevelBackground } from "../game/backgrounds";
 import { soundtrackForLevel } from "../game/soundtracks";
 import {
   bindImageFallbacks,
@@ -160,14 +160,14 @@ export class BootScene extends Phaser.Scene {
         <div class="boot-loading-copy">
           <span class="boot-loading-kicker">Time-lab startup</span>
           <h1>Loading assets</h1>
-          <p data-loading-status role="status" aria-live="polite" aria-atomic="true">Preparing preload queue</p>
+          <p id="echo-shift-startup-loading-status" data-loading-status role="status" aria-live="polite" aria-atomic="true">Preparing preload queue</p>
         </div>
         <div class="boot-loading-progress" role="progressbar" aria-label="Asset loading progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
           <span data-loading-bar></span>
         </div>
         <div class="boot-loading-meta">
           <span data-loading-percent>0%</span>
-          <span data-loading-file>Queueing runtime textures</span>
+          <span id="echo-shift-startup-loading-detail" data-loading-file>Queueing runtime textures</span>
         </div>
       </section>
     `;
@@ -199,26 +199,30 @@ export class BootScene extends Phaser.Scene {
   }
 
   private handleFileProgress(file: Phaser.Loader.File): void {
-    const label = this.loadingLabelFor(file.key);
+    const key = String(file.key);
+    const label = this.loadingLabelFor(key);
+    const detail = this.loadingDetailFor(key);
     this.loadingStatus?.replaceChildren(label);
     const fileNode = this.loadingScreen?.querySelector<HTMLElement>("[data-loading-file]");
-    fileNode?.replaceChildren(`${file.type}: ${file.key}`);
-    this.loadingProgress?.setAttribute("aria-valuetext", `${label}: ${file.key}`);
+    fileNode?.replaceChildren(detail);
+    this.loadingProgress?.setAttribute("aria-valuetext", label);
     this.writeLoadingDiagnostics("loading", undefined, label);
   }
 
   private handleLoadError(file: Phaser.Loader.File): void {
     const key = String(file.key);
     if (this.startupBackgroundFallbackSrcFor(key)) {
-      const label = `Loading fallback for ${key}`;
+      const label = "Loading fallback start art";
       this.loadingStatus?.replaceChildren("Loading fallback start art");
+      this.loadingScreen?.querySelector<HTMLElement>("[data-loading-file]")?.replaceChildren("Fallback start screen artwork");
       this.loadingProgress?.setAttribute("aria-valuetext", label);
       this.writeLoadingDiagnostics("fallback", undefined, label);
       return;
     }
     this.loadingFailed = true;
-    const label = `Could not load ${key}`;
+    const label = "Startup asset could not load";
     this.loadingStatus?.replaceChildren(label);
+    this.loadingScreen?.querySelector<HTMLElement>("[data-loading-file]")?.replaceChildren(`${this.loadingDetailFor(key)} unavailable`);
     this.loadingProgress?.setAttribute("aria-valuetext", label);
     this.writeLoadingDiagnostics("error", undefined, label);
   }
@@ -270,6 +274,8 @@ export class BootScene extends Phaser.Scene {
     panel.append(actions);
     panel.setAttribute("role", "dialog");
     panel.setAttribute("aria-modal", "true");
+    panel.setAttribute("aria-labelledby", "echo-shift-startup-loading-status");
+    panel.setAttribute("aria-describedby", "echo-shift-startup-loading-detail");
     const retry = actions.querySelector<HTMLButtonElement>("[data-startup-retry]");
     const editor = actions.querySelector<HTMLButtonElement>("[data-startup-editor]");
     retry?.addEventListener("click", () => window.location.reload());
@@ -311,13 +317,16 @@ export class BootScene extends Phaser.Scene {
     return "Loading runtime textures";
   }
 
+  private loadingDetailFor(key: string): string {
+    if (key === levelBackgrounds["time-lab-prototype"].key) return "Start screen artwork";
+    if (key.startsWith("terrain-decor-prop:")) return "Terrain decor";
+    if (key.includes("boss") || key.includes("monster")) return "Enemy sprites";
+    if (key.includes("time") || key.includes("runner")) return "Rewind sprites";
+    return "Runtime textures";
+  }
+
   private startupBackgrounds(): LevelBackground[] {
-    const backgrounds = [levelBackgrounds["time-lab-prototype"]];
-    if (isDraftPlaytestActive()) {
-      const levelIndex = playtestLevelIndex();
-      backgrounds.push(backgroundForLevel(levels[levelIndex], levelIndex));
-    }
-    return [...new Map(backgrounds.map((background) => [background.key, background])).values()];
+    return [levelBackgrounds["time-lab-prototype"]];
   }
 
   private startupBackgroundFallbackSrcFor(key: string): string | undefined {
