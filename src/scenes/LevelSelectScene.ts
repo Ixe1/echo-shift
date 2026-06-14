@@ -29,7 +29,6 @@ export class LevelSelectScene extends Phaser.Scene {
       this.scene.start("MenuScene");
       return;
     }
-    levels.forEach((level, levelPosition) => void audio.preloadMusic(soundtrackForLevel(level, levelPosition).key));
     const unlocked = levels.length;
     const scoreState: ProgressScoreState = draftPlaytest ? { ok: true, scores: {} } : getBestScoreState();
     const progressWarning = scoreState.ok ? "" : `<p class="credits-text warning" data-progress-warning>${scoreState.message}</p>`;
