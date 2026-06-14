@@ -44,6 +44,11 @@ const finiteLifeCount = (value: unknown, fallback = DEFAULT_GLOBAL_LIVES): numbe
   return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : fallback;
 };
 
+export const resetCampaignCoreBonusProgress = (): void => {
+  campaignVitals.collectedCoreCount = 0;
+  campaignVitals.collectedCoreKeys.clear();
+};
+
 export const resetCampaignVitals = (lives = DEFAULT_GLOBAL_LIVES): void => {
   campaignVitals = {
     lives: finiteLifeCount(lives),

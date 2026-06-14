@@ -216,6 +216,20 @@ const verifyGameSceneAudioCleanupHooks = () => {
       `Expected GameScene ${method} to clear attempt-scoped blocked one-shot samples`
     );
   }
+  const handleEventsBody = gameSceneMethodBody(source, "handleEvents");
+  assert(
+    handleEventsBody.includes("if (!events.died) this.processCoreLifeAwards(events.cores);"),
+    "Expected death-frame core pickups not to be counted toward bonus-life awards"
+  );
+  assert(
+    handleEventsBody.includes("this.resetFiniteCoreBonusProgress();"),
+    "Expected finite core bonus progress to reset when the player dies"
+  );
+  const audioGateBody = gameSceneMethodBody(source, "startLevelWhenAudioReady");
+  assert(audioGateBody.includes("audio.waitForMusicStart"), "Expected level start gate to wait for requested music playback");
+  assert(audioGateBody.includes("effectWarmup"), "Expected level start gate to include SFX warmup");
+  assert(source.includes("this.resetFiniteCoreBonusProgress();\n    this.simulation = new RoomSimulation"), "Expected new level init to reset core bonus progress before play");
+  assert(source.includes("const effectWarmup = audio.preloadEffects();"), "Expected GameScene to warm sampled gameplay SFX before level intro");
 };
 
 const verifyExtraLifeSfxContract = () => {
@@ -564,13 +578,21 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
     deferNextMediaPlayFor = "Main Menu";
     const menuRestartPlayCalls = menu.playCalls;
     audio.playMusic("menu", { restart: true });
+    let menuStartWaitResult;
+    const menuStartWait = audio.waitForMusicStart("menu", Promise.resolve(true)).then((started) => {
+      menuStartWaitResult = started;
+      return started;
+    });
     assert(!menu.playing, "Expected same-key menu restart to pause while replay is pending");
     assert(!audio.isMusicPlaying("menu"), "Expected same-key restart not to report music playing before replay resolves");
     assert(
       !document.documentElement.dataset.echoShiftMusicPlayback,
       `Expected same-key restart to clear music playback diagnostic until replay resolves, got ${document.documentElement.dataset.echoShiftMusicPlayback}`
     );
+    await settlePromises();
+    assert(menuStartWaitResult === undefined, `Expected music-start wait to remain pending before playback resolves, got ${menuStartWaitResult}`);
     resolvePendingMediaPlaysMatching("Main Menu");
+    assert((await menuStartWait) === true, "Expected music-start wait to resolve after requested track starts playing");
     await settlePromises();
     assert(
       menu.playCalls === menuRestartPlayCalls + 1 && menu.playing && audio.isMusicPlaying("menu"),
@@ -1016,6 +1038,21 @@ const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
       mediaElements.length === elementsBeforeUnlock,
       `Expected unlock to avoid preloading every soundtrack, got ${mediaElements.length} elements before level music`
     );
+    const effectsBeforeWarmup = mediaElements.length;
+    const effectWarmup = await audio.preloadEffects(["jump", "core", "death"]);
+    assert(effectWarmup.every(Boolean), `Expected sampled gameplay effects to warm successfully, got ${JSON.stringify(effectWarmup)}`);
+    const warmedEffects = mediaElements.slice(effectsBeforeWarmup);
+    assert(
+      warmedEffects.some((element) => element.src.includes("player_jump")) &&
+        warmedEffects.some((element) => element.src.includes("core_pickup")) &&
+        warmedEffects.some((element) => element.src.includes("player_death")),
+      `Expected jump/core/death samples to be preloaded, got ${warmedEffects.map((element) => element.src).join(", ")}`
+    );
+    assert(warmedEffects.every((element) => element.preload === "auto"), "Expected warmed gameplay samples to use auto preload");
+    const effectsAfterWarmup = mediaElements.length;
+    const repeatedEffectWarmup = await audio.preloadEffects(["jump"]);
+    assert(repeatedEffectWarmup[0] === true, `Expected repeated jump warmup to reuse a ready sample, got ${JSON.stringify(repeatedEffectWarmup)}`);
+    assert(mediaElements.length === effectsAfterWarmup, "Expected repeated effect warmup not to create another media element");
 
     assert(!audio.isMusicReady("boss"), "Expected an untouched looped boss soundtrack not to be Web Audio ready before preload");
     deferNextFetch = true;
@@ -1351,6 +1388,7 @@ try {
     campaignLivesForLevel,
     currentCampaignRunSummary,
     registerCampaignCorePickup,
+    resetCampaignCoreBonusProgress,
     resetCampaignVitals,
     syncCampaignLives
   } = await server.ssrLoadModule("/src/game/session.ts");
@@ -1630,13 +1668,36 @@ try {
   const duplicateAward = registerCampaignCorePickup("bonus-test", `core-${CORES_PER_BONUS_LIFE}`);
   assert(!duplicateAward.counted && duplicateAward.livesAwarded === 0, `Expected duplicate core pickup to be ignored, got ${JSON.stringify(duplicateAward)}`);
   assert(campaignCoreCount() === CORES_PER_BONUS_LIFE, `Expected campaign core count to stop at ${CORES_PER_BONUS_LIFE}, got ${campaignCoreCount()}`);
+  resetCampaignVitals(2);
+  for (let index = 1; index < CORES_PER_BONUS_LIFE; index += 1) registerCampaignCorePickup("death-reset", `core-${index}`);
+  syncCampaignLives(1);
+  resetCampaignCoreBonusProgress();
+  assert(campaignCoreCount() === 0, `Expected death reset to clear bonus core count, got ${campaignCoreCount()}`);
+  const firstPostDeathAward = registerCampaignCorePickup("death-reset", `core-${CORES_PER_BONUS_LIFE}`);
+  assert(
+    firstPostDeathAward.counted && firstPostDeathAward.livesAwarded === 0 && firstPostDeathAward.lives === 1 && firstPostDeathAward.collectedCoreCount === 1,
+    `Expected first post-death core to restart bonus progress without a life award, got ${JSON.stringify(firstPostDeathAward)}`
+  );
+  for (let index = 2; index < CORES_PER_BONUS_LIFE; index += 1) registerCampaignCorePickup("death-reset", `post-death-core-${index}`);
+  const postDeathThresholdAward = registerCampaignCorePickup("death-reset", `post-death-core-${CORES_PER_BONUS_LIFE}`);
+  assert(
+    postDeathThresholdAward.livesAwarded === 1 && postDeathThresholdAward.lives === 2,
+    `Expected a fresh ${CORES_PER_BONUS_LIFE}-core post-death run to award one life, got ${JSON.stringify(postDeathThresholdAward)}`
+  );
+  resetCampaignCoreBonusProgress();
+  const repeatedCoreAfterNewLevel = registerCampaignCorePickup("death-reset", `core-${CORES_PER_BONUS_LIFE}`);
+  assert(
+    repeatedCoreAfterNewLevel.counted && repeatedCoreAfterNewLevel.collectedCoreCount === 1,
+    `Expected new-level core reset to clear counted core ids, got ${JSON.stringify(repeatedCoreAfterNewLevel)}`
+  );
   resetCampaignVitals(1);
   for (let index = 1; index < CORES_PER_BONUS_LIFE; index += 1) registerCampaignCorePickup("same-frame-death", `core-${index}`);
   syncCampaignLives(0);
+  resetCampaignCoreBonusProgress();
   const sameFrameDeathAward = registerCampaignCorePickup("same-frame-death", `core-${CORES_PER_BONUS_LIFE}`);
   assert(
-    sameFrameDeathAward.livesAwarded === 1 && sameFrameDeathAward.lives === 1,
-    `Expected threshold core after same-frame death sync to leave one life, got ${JSON.stringify(sameFrameDeathAward)}`
+    sameFrameDeathAward.livesAwarded === 0 && sameFrameDeathAward.lives === 0 && sameFrameDeathAward.collectedCoreCount === 1,
+    `Expected same-frame death reset to prevent threshold core life award, got ${JSON.stringify(sameFrameDeathAward)}`
   );
   resetCampaignVitals();
   assert(levels[3].id === "relay-key", `Expected Timber Archive to be the final campaign level, got ${levels[3].id}`);

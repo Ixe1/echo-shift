@@ -53,6 +53,11 @@ type LoopedEffectPlayback = {
   fallbackSources: Set<AudioScheduledSourceNode>;
   fallbackNodes: Set<AudioNode>;
 };
+type MusicStartWaiter = {
+  key: SoundtrackKey;
+  resolve: (started: boolean) => void;
+  timeoutId: ReturnType<typeof setTimeout> | null;
+};
 export type AudioMixSettings = {
   masterVolume: number;
   fxVolume: number;
@@ -66,6 +71,8 @@ const effectPath = (file: string): string => `/assets/audio/effects/${file}`;
 const AUDIO_SETTINGS_KEY = "echo-shift-audio-settings-v1";
 const MUSIC_LOOP_LOOKAHEAD_SECONDS = 0.012;
 const MUSIC_LOOP_MIN_SECONDS = 1;
+const EFFECT_PRELOAD_TIMEOUT_MS = 3000;
+const MUSIC_START_TIMEOUT_MS = 1800;
 const DEFAULT_AUDIO_SETTINGS: AudioMixSettings = {
   masterVolume: 1,
   fxVolume: 1,
@@ -90,6 +97,19 @@ const sampledEffects = {
   bossCoreHit: { src: effectPath("boss_core_hit.mp3"), volume: 0.34 },
   bossDefeatDeparture: { src: effectPath("boss_defeat_departure.mp3"), volume: 0.24 }
 } as const satisfies Partial<Record<ToneName, { src: string; volume: number }>>;
+const gameplayEffectPreloads = [
+  "jump",
+  "rewind",
+  "switch",
+  "core",
+  "bigCore",
+  "extraLife",
+  "launch",
+  "death",
+  "playerLaserVaporized",
+  "echoLaserVaporized",
+  "portal"
+] as const satisfies readonly ToneName[];
 type SampledEffect = (typeof sampledEffects)[keyof typeof sampledEffects];
 
 const clampVolume = (value: unknown, fallback: number): number => {
@@ -146,6 +166,8 @@ export class SynthAudio {
   private mediaMusicReadyPromises = new Map<SoundtrackKey, Promise<boolean>>();
   private webMusicBufferCache = new Map<SoundtrackKey, Promise<AudioBuffer>>();
   private webMusicReadyKeys = new Set<SoundtrackKey>();
+  private preloadedEffects = new Map<ToneName, HTMLAudioElement>();
+  private effectPreloadPromises = new Map<ToneName, Promise<boolean>>();
   private activeEffects = new Map<HTMLAudioElement, number>();
   private loopedEffects = new Map<string, LoopedEffectPlayback>();
   private blockedSampleRetries: Array<{ name: ToneName; element: HTMLAudioElement; settings: SampledEffect }> = [];
@@ -157,6 +179,7 @@ export class SynthAudio {
   private effectLoopPlayAttempt = 0;
   private musicPlayAttempt = 0;
   private webMusicPlayAttempt = 0;
+  private musicStartWaiters: MusicStartWaiter[] = [];
   private fadeToken = 0;
   private musicLoopWatchFrame: number | null = null;
   private musicLoopWatchToken = 0;
@@ -387,6 +410,10 @@ export class SynthAudio {
     }
   }
 
+  preloadEffects(names: readonly ToneName[] = gameplayEffectPreloads): Promise<boolean[]> {
+    return Promise.all(names.map((name) => this.preloadEffect(name)));
+  }
+
   preloadMusic(key: SoundtrackKey): Promise<boolean> {
     const loop = musicLoopRegionFor(key);
     if (loop && this.canUseWebMusic()) {
@@ -411,6 +438,28 @@ export class SynthAudio {
     const playing = this.musicTransportIsPlaying(key);
     if (!playing) this.syncMusicPlayback(this.mediaMusicKey === key ? "stopped" : undefined);
     return playing;
+  }
+
+  waitForMusicStart(
+    key: SoundtrackKey,
+    warmup: Promise<boolean> = Promise.resolve(this.isMusicReady(key)),
+    timeoutMs = MUSIC_START_TIMEOUT_MS
+  ): Promise<boolean> {
+    if (this.isMusicPlaying(key)) return Promise.resolve(true);
+    return warmup
+      .catch(() => false)
+      .then(() => {
+        if (this.isMusicPlaying(key)) return true;
+        return new Promise<boolean>((resolve) => {
+          const waiter: MusicStartWaiter = {
+            key,
+            resolve,
+            timeoutId: null
+          };
+          waiter.timeoutId = setTimeout(() => this.finishMusicStartWaiter(waiter, false), Math.max(0, timeoutMs));
+          this.musicStartWaiters.push(waiter);
+        });
+      });
   }
 
   playMusic(key: SoundtrackKey, options: { restart?: boolean; fadeMs?: number } = {}): void {
@@ -512,6 +561,7 @@ export class SynthAudio {
     this.fadeToken += 1;
     this.musicPlayAttempt += 1;
     this.webMusicPlayAttempt += 1;
+    this.clearMusicStartWaiters(false);
     this.musicPaused = false;
     this.stopMusicLoopWatch();
     const currentMediaKey = this.mediaMusicKey;
@@ -541,6 +591,7 @@ export class SynthAudio {
     this.musicPlayAttempt += 1;
     this.webMusicPlayAttempt += 1;
     this.effectLoopPlayAttempt += 1;
+    this.clearMusicStartWaiters(false);
     this.musicPaused = false;
     this.stopMusicLoopWatch();
     this.music = null;
@@ -558,6 +609,9 @@ export class SynthAudio {
     this.blockedSampleRetries = [];
     this.retryingBlockedSamples.clear();
     this.retriedBlockedSamples.clear();
+    for (const element of this.preloadedEffects.values()) this.unloadMusicElement(element);
+    this.preloadedEffects.clear();
+    this.effectPreloadPromises.clear();
     for (const playback of this.loopedEffects.values()) {
       this.stopLoopedEffectFallback(playback);
       this.unloadMusicElement(playback.element);
@@ -718,6 +772,66 @@ export class SynthAudio {
     });
 
     this.mediaMusicReadyPromises.set(key, promise);
+    return promise;
+  }
+
+  private preloadEffect(name: ToneName): Promise<boolean> {
+    const settings = sampledEffects[name as keyof typeof sampledEffects];
+    if (!settings || typeof Audio === "undefined") return Promise.resolve(false);
+    const existing = this.preloadedEffects.get(name);
+    if (existing && this.mediaMusicIsReady(existing)) return Promise.resolve(true);
+    const cached = this.effectPreloadPromises.get(name);
+    if (cached) return cached;
+
+    const element = existing || new Audio(settings.src);
+    element.preload = "auto";
+    element.volume = 0;
+    this.preloadedEffects.set(name, element);
+
+    const promise = new Promise<boolean>((resolve) => {
+      let settled = false;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      const finish = (ready: boolean) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId !== null) clearTimeout(timeoutId);
+        if (typeof element.removeEventListener === "function") {
+          element.removeEventListener("canplay", handleReady);
+          element.removeEventListener("canplaythrough", handleReady);
+          element.removeEventListener("loadeddata", handleReady);
+          element.removeEventListener("error", handleError);
+        }
+        this.effectPreloadPromises.delete(name);
+        if (!ready) this.preloadedEffects.delete(name);
+        resolve(ready);
+      };
+      const handleReady = () => finish(true);
+      const handleError = () => finish(false);
+
+      if (typeof element.addEventListener === "function") {
+        element.addEventListener("canplay", handleReady, { once: true });
+        element.addEventListener("canplaythrough", handleReady, { once: true });
+        element.addEventListener("loadeddata", handleReady, { once: true });
+        element.addEventListener("error", handleError, { once: true });
+      }
+      try {
+        element.load();
+      } catch {
+        finish(false);
+        return;
+      }
+      if (this.mediaMusicIsReady(element)) {
+        finish(true);
+        return;
+      }
+      if (typeof element.addEventListener !== "function") {
+        finish(true);
+        return;
+      }
+      timeoutId = setTimeout(() => finish(this.mediaMusicIsReady(element)), EFFECT_PRELOAD_TIMEOUT_MS);
+    });
+
+    this.effectPreloadPromises.set(name, promise);
     return promise;
   }
 
@@ -1325,6 +1439,7 @@ export class SynthAudio {
     if (import.meta.env.DEV && typeof document !== "undefined") {
       document.documentElement.dataset.echoShiftMusicPlayback = `${key}:${state}`;
     }
+    this.resolveMusicStartWaiters(key);
   }
 
   private musicTransportIsPlaying(key: SoundtrackKey): boolean {
@@ -1343,6 +1458,24 @@ export class SynthAudio {
     if (import.meta.env.DEV && typeof document !== "undefined") {
       delete document.documentElement.dataset.echoShiftMusicPlayback;
     }
+  }
+
+  private resolveMusicStartWaiters(key: SoundtrackKey): void {
+    for (const waiter of [...this.musicStartWaiters]) {
+      if (waiter.key === key) this.finishMusicStartWaiter(waiter, true);
+    }
+  }
+
+  private finishMusicStartWaiter(waiter: MusicStartWaiter, started: boolean): void {
+    const index = this.musicStartWaiters.indexOf(waiter);
+    if (index < 0) return;
+    this.musicStartWaiters.splice(index, 1);
+    if (waiter.timeoutId !== null) clearTimeout(waiter.timeoutId);
+    waiter.resolve(started);
+  }
+
+  private clearMusicStartWaiters(started: boolean): void {
+    for (const waiter of [...this.musicStartWaiters]) this.finishMusicStartWaiter(waiter, started);
   }
 
   private syncMusicPlayback(stoppedAudioState?: string): void {

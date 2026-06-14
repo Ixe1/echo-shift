@@ -39,6 +39,7 @@ import {
   campaignLivesForLevel,
   levelUsesFiniteLives,
   registerCampaignCorePickup,
+  resetCampaignCoreBonusProgress,
   syncCampaignLives
 } from "../game/session";
 import { recordEligibleScore } from "../game/scorePersistence";
@@ -438,6 +439,7 @@ export class GameScene extends Phaser.Scene {
     this.level = this.tutorialMode ? tutorialLevel : getLevel(this.levelIndex);
     this.scoreEligible = data.scoreEligible === true && !this.tutorialMode && !isDraftPlaytestActive();
     if (typeof document !== "undefined") document.documentElement.dataset.echoShiftScoreEligible = this.scoreEligible ? "true" : "false";
+    this.resetFiniteCoreBonusProgress();
     this.simulation = new RoomSimulation(this.level, { lives: campaignLivesForLevel(this.level) });
     this.accumulator = 0;
     this.pausedByHud = false;
@@ -515,9 +517,9 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.syncDraftPlaytestUrl();
     const levelMusicKey = this.currentLevelSoundtrackKey();
-    const levelMusicReady = audio.isMusicReady(levelMusicKey);
     audio.playMusic(levelMusicKey);
     const levelMusicWarmup = audio.preloadMusic(levelMusicKey);
+    const effectWarmup = audio.preloadEffects();
     this.cameras.main.setBounds(this.level.bounds.x, this.level.bounds.y, this.level.bounds.w, this.level.bounds.h);
     this.cameras.main.setBackgroundColor("#05070d");
     this.configureCameraFrame();
@@ -558,7 +560,7 @@ export class GameScene extends Phaser.Scene {
     this.preloadUpcomingSoundtracks();
     this.renderWorld();
     this.updateHud();
-    this.startLevelWhenMusicReady(levelMusicKey, levelMusicReady, levelMusicWarmup);
+    this.startLevelWhenAudioReady(levelMusicKey, levelMusicWarmup, effectWarmup);
   }
 
   update(_time: number, delta: number): void {
@@ -687,17 +689,11 @@ export class GameScene extends Phaser.Scene {
     audio.clearBlockedSamples();
   }
 
-  private startLevelWhenMusicReady(
+  private startLevelWhenAudioReady(
     key: ReturnType<typeof soundtrackForLevel>["key"],
-    ready: boolean,
-    warmup: Promise<boolean>
+    musicWarmup: Promise<boolean>,
+    effectWarmup: Promise<boolean[]>
   ): void {
-    if (ready) {
-      this.startLevelIntro();
-      return;
-    }
-
-    this.hud.hideToast();
     this.musicLoadingActive = true;
     const token = ++this.musicLoadingToken;
     this.writeMusicLoadingDiagnostics("pending");
@@ -705,15 +701,18 @@ export class GameScene extends Phaser.Scene {
       if (this.musicLoadingToken === token && this.musicLoadingActive) this.showMusicLoadingOverlay(key);
     }, MUSIC_LOADING_OVERLAY_DELAY_MS);
 
-    void warmup.finally(() => {
+    const musicStarted = audio.waitForMusicStart(key, musicWarmup);
+    void Promise.all([musicStarted, effectWarmup.catch(() => [])]).then(([started]) => {
       if (this.musicLoadingToken !== token || !this.musicLoadingActive) return;
       this.finishMusicLoading();
+      if (!started) this.hud.toast("Audio still starting. Continuing sync.");
       this.startLevelIntro();
     });
   }
 
   private showMusicLoadingOverlay(key: ReturnType<typeof soundtrackForLevel>["key"]): void {
     if (this.musicLoadingOverlay) return;
+    this.hud.hideToast();
     const overlay = document.createElement("div");
     overlay.className = "music-loading";
     overlay.dataset.musicLoading = key;
@@ -913,14 +912,11 @@ export class GameScene extends Phaser.Scene {
     }
     if (events.landed) audio.play("land");
     if (events.switched) audio.play("switch");
-    const syncDeathBeforeCoreAwards = events.died && events.cores.length > 0;
-    if (syncDeathBeforeCoreAwards) this.syncFiniteCampaignLives();
-
     if (events.cores.length > 0) {
       for (const core of events.cores) {
         audio.play(this.corePickupIsLarge(core.id) ? "bigCore" : "core");
       }
-      this.processCoreLifeAwards(events.cores);
+      if (!events.died) this.processCoreLifeAwards(events.cores);
     }
     for (let index = 0; index < events.echoLaserVaporized; index += 1) audio.play("echoLaserVaporized");
     for (const cue of events.bossSoundCues) this.playBossSoundCue(cue.cue);
@@ -965,7 +961,8 @@ export class GameScene extends Phaser.Scene {
       this.restartLevelMusic();
     }
     if (events.died) {
-      if (!syncDeathBeforeCoreAwards) this.syncFiniteCampaignLives();
+      this.syncFiniteCampaignLives();
+      this.resetFiniteCoreBonusProgress();
       const lives = this.simulation.livesRemaining();
       this.startDeathPresentation(lives !== null && lives <= 0, events.playerLaserVaporized);
     }
@@ -999,6 +996,11 @@ export class GameScene extends Phaser.Scene {
   private syncFiniteCampaignLives(): void {
     if (!levelUsesFiniteLives(this.level)) return;
     syncCampaignLives(this.simulation.livesRemaining());
+  }
+
+  private resetFiniteCoreBonusProgress(): void {
+    if (!levelUsesFiniteLives(this.level)) return;
+    resetCampaignCoreBonusProgress();
   }
 
   private playBossSoundCue(cue: ReturnType<RoomSimulation["step"]>["bossSoundCues"][number]["cue"]): void {
