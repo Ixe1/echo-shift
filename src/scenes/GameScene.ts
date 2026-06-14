@@ -1987,6 +1987,7 @@ export class GameScene extends Phaser.Scene {
       this.openTitle();
       return;
     }
+    this.clearOptionalRoomAssetSkips();
     const next = Math.min(this.levelIndex + 1, levels.length - 1);
     this.scene.start("GameScene", { levelIndex: next, scoreEligible: this.scoreEligible });
   }
@@ -2020,6 +2021,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.stopBossDefeatLoops();
+    this.clearOptionalRoomAssetSkips();
     this.rememberDraftLevel();
     this.scene.start("LevelSelectScene");
   }

@@ -31,6 +31,8 @@ export class BootScene extends Phaser.Scene {
   private loadingStatus: HTMLElement | null = null;
   private loadingProgress: HTMLElement | null = null;
   private loadingFailed = false;
+  private startupLoadErrorLabel = "Startup assets unavailable";
+  private startupLoadErrorDetail = "Choose Retry to reload";
   private startupLogoSrc = ECHO_SHIFT_LOGO_SRC;
 
   constructor() {
@@ -39,6 +41,8 @@ export class BootScene extends Phaser.Scene {
 
   preload(): void {
     this.loadingFailed = false;
+    this.startupLoadErrorLabel = "Startup assets unavailable";
+    this.startupLoadErrorDetail = "Choose Retry to reload";
     this.startupLogoSrc = ECHO_SHIFT_LOGO_SRC;
     this.showLoadingScreen();
     this.bindLoadingProgress();
@@ -67,11 +71,15 @@ export class BootScene extends Phaser.Scene {
       return;
     }
     this.loadingStatus?.replaceChildren("Preparing start screen");
-    this.loadingProgress?.setAttribute("aria-valuetext", "Preparing start screen");
+    this.loadingProgress?.setAttribute("aria-valuetext", `${this.currentLoadingPercent()} loaded, Preparing start screen`);
     this.writeLoadingDiagnostics("loading", STARTUP_READY_PROGRESS, "Preparing start screen");
     const [logoSrc, artSrc] = await Promise.all([
-      this.resolveDomImage(ECHO_SHIFT_LOGO_SRC, ECHO_SHIFT_LOGO_FALLBACK_SRC),
-      this.resolveDomImage(levelBackgrounds["time-lab-prototype"].src, levelBackgrounds["time-lab-prototype"].fallbackSrc)
+      this.resolveDomImage(ECHO_SHIFT_LOGO_SRC, ECHO_SHIFT_LOGO_FALLBACK_SRC, "Echo Shift logo unavailable"),
+      this.resolveDomImage(
+        levelBackgrounds["time-lab-prototype"].src,
+        levelBackgrounds["time-lab-prototype"].fallbackSrc,
+        "Start screen artwork unavailable"
+      )
     ]);
     if (this.loadingFailed) {
       this.showStartupLoadFailure();
@@ -83,7 +91,7 @@ export class BootScene extends Phaser.Scene {
     this.loadingBar?.style.setProperty("--load-progress", "1");
     this.loadingPercent?.replaceChildren("100%");
     this.loadingProgress?.setAttribute("aria-valuenow", "100");
-    this.loadingProgress?.setAttribute("aria-valuetext", "Startup ready");
+    this.loadingProgress?.setAttribute("aria-valuetext", "100% loaded, Startup ready");
     this.loadingStatus?.replaceChildren("Preload complete");
     this.writeLoadingDiagnostics("complete", 100, "complete");
     this.finishLoadingScreen();
@@ -216,35 +224,34 @@ export class BootScene extends Phaser.Scene {
       const label = "Loading fallback start art";
       this.loadingStatus?.replaceChildren("Loading fallback start art");
       this.loadingScreen?.querySelector<HTMLElement>("[data-loading-file]")?.replaceChildren("Fallback start screen artwork");
-      this.loadingProgress?.setAttribute("aria-valuetext", label);
+      this.loadingProgress?.setAttribute("aria-valuetext", `${this.currentLoadingPercent()} loaded, ${label}`);
       this.writeLoadingDiagnostics("fallback", undefined, label);
       return;
     }
-    this.loadingFailed = true;
     const label = "Startup asset could not load";
-    this.loadingStatus?.replaceChildren(label);
-    this.loadingScreen?.querySelector<HTMLElement>("[data-loading-file]")?.replaceChildren(`${this.loadingDetailFor(key)} unavailable`);
-    this.loadingProgress?.setAttribute("aria-valuetext", label);
+    this.rememberStartupLoadFailure(label, `${this.loadingDetailFor(key)} unavailable`);
+    this.loadingStatus?.replaceChildren(this.startupLoadErrorLabel);
+    this.loadingScreen?.querySelector<HTMLElement>("[data-loading-file]")?.replaceChildren(this.startupLoadErrorDetail);
+    this.loadingProgress?.setAttribute("aria-valuetext", this.startupLoadErrorLabel);
     this.writeLoadingDiagnostics("error", undefined, label);
   }
 
   private handleLoadComplete(): void {
     if (this.loadingFailed) {
-      this.setStartupLoadingError("Some assets failed", "Choose Retry to reload");
+      this.setStartupLoadingError(this.startupLoadErrorLabel, this.startupLoadErrorDetail);
       this.showStartupLoadFailureActions();
       return;
     }
     this.loadingBar?.style.setProperty("--load-progress", String(STARTUP_READY_PROGRESS / 100));
     this.loadingPercent?.replaceChildren(`${STARTUP_READY_PROGRESS}%`);
     this.loadingProgress?.setAttribute("aria-valuenow", String(STARTUP_READY_PROGRESS));
-    this.loadingProgress?.setAttribute("aria-valuetext", "Preparing start screen");
+    this.loadingProgress?.setAttribute("aria-valuetext", `${STARTUP_READY_PROGRESS}% loaded, Preparing start screen`);
     this.loadingStatus?.replaceChildren("Preparing start screen");
     this.writeLoadingDiagnostics("loading", STARTUP_READY_PROGRESS, "Preparing start screen");
   }
 
   private showStartupLoadFailure(): void {
-    const label = "Startup assets unavailable";
-    this.setStartupLoadingError(label, "Choose Retry to reload");
+    this.setStartupLoadingError(this.startupLoadErrorLabel, this.startupLoadErrorDetail);
     this.showStartupLoadFailureActions();
   }
 
@@ -330,6 +337,12 @@ export class BootScene extends Phaser.Scene {
     return this.loadingPercent?.textContent || "0%";
   }
 
+  private rememberStartupLoadFailure(label: string, detail: string): void {
+    this.loadingFailed = true;
+    this.startupLoadErrorLabel = label;
+    this.startupLoadErrorDetail = detail;
+  }
+
   private startupBackgrounds(): LevelBackground[] {
     return [levelBackgrounds["time-lab-prototype"]];
   }
@@ -352,17 +365,17 @@ export class BootScene extends Phaser.Scene {
     delete document.documentElement.dataset.echoShiftBootLoadCurrent;
   }
 
-  private resolveDomImage(src: string, fallbackSrc?: string): Promise<string> {
+  private resolveDomImage(src: string, fallbackSrc: string | undefined, failureDetail: string): Promise<string> {
     return this.imageIsReady(src).then((ready) => {
       if (ready) return src;
       if (!fallbackSrc) {
-        this.loadingFailed = true;
+        this.rememberStartupLoadFailure("Startup assets unavailable", failureDetail);
         this.writeLoadingDiagnostics("error", 100, `Could not load ${src}`);
         return src;
       }
       return this.imageIsReady(fallbackSrc).then((fallbackReady) => {
         if (fallbackReady) return fallbackSrc;
-        this.loadingFailed = true;
+        this.rememberStartupLoadFailure("Startup assets unavailable", failureDetail);
         this.writeLoadingDiagnostics("error", 100, `Could not load ${src}`);
         return src;
       });
