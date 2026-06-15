@@ -96,6 +96,10 @@ type BossCheckpoint = {
   protectedCoreSaveIds: Set<string>;
 };
 
+type SnapshotOptions = {
+  cloneTransientCoreState?: boolean;
+};
+
 const cloneActor = (actor: ActorBody): ActorBody => ({ ...actor });
 
 const cloneObjectState = (state: ObjectState): ObjectState => ({
@@ -506,16 +510,21 @@ export class RoomSimulation {
     return events;
   }
 
-  snapshot(): SimulationSnapshot {
+  snapshot(options: SnapshotOptions = {}): SimulationSnapshot {
+    const cloneTransientCoreState = options.cloneTransientCoreState !== false;
     return {
       player: { ...this.player },
       echoes: this.aliveEchoes().map((echo) => ({ ...echo })),
       activePlates: new Set(this.objectState.activePlates),
       openDoors: new Set(this.objectState.openDoors),
       collectedCores: new Set(this.objectState.collectedCores),
-      claimedCores: new Set(this.objectState.claimedCores),
-      coreOffsets: new Map([...this.objectState.coreOffsets.entries()].map(([id, offset]) => [id, { ...offset }])),
-      spilledCores: new Map([...this.objectState.spilledCores.entries()].map(([id, core]) => [id, { ...core }])),
+      claimedCores: cloneTransientCoreState ? new Set(this.objectState.claimedCores) : this.objectState.claimedCores,
+      coreOffsets: cloneTransientCoreState
+        ? new Map([...this.objectState.coreOffsets.entries()].map(([id, offset]) => [id, { ...offset }]))
+        : this.objectState.coreOffsets,
+      spilledCores: cloneTransientCoreState
+        ? new Map([...this.objectState.spilledCores.entries()].map(([id, core]) => [id, { ...core }]))
+        : this.objectState.spilledCores,
       blockedLasers: new Set(this.objectState.blockedLasers),
       crates: new Map([...this.objectState.crates.entries()].map(([id, rect]) => [id, { ...rect }])),
       solids: cloneSolids(this.runtimeSolids),
@@ -1120,7 +1129,7 @@ export class RoomSimulation {
       nextSpilledCores.set(looseId, {
         id: looseId,
         sourceId,
-        x: playerCenter.x - width / 2 + scatterSlot * 3,
+        x: playerCenter.x - width / 2 + scatterSlot * 5,
         y: playerCenter.y - height / 2 - 8,
         w: width,
         h: height,

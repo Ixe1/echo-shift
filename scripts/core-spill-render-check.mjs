@@ -173,9 +173,19 @@ try {
     () => {
       const playerSpriteState = document.documentElement.dataset.echoShiftPlayerSpriteState || "";
       const playerAlpha = Number((playerSpriteState.match(/alpha:([0-9.]+)/) || [])[1] || "1");
+      const spillPositions = (document.documentElement.dataset.echoShiftCoreSpriteFrames || "")
+        .split("|")
+        .filter((frame) => frame.includes(":spill:"))
+        .map((frame) => {
+          const match = frame.match(/:spill:(-?\d+),(-?\d+)$/);
+          return match ? Number(match[1]) : null;
+        })
+        .filter((x) => x !== null);
+      const spillSpread = spillPositions.length > 1 ? Math.max(...spillPositions) - Math.min(...spillPositions) : 0;
       return (
         Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
-        (document.documentElement.dataset.echoShiftCoreSpriteFrames || "").includes("spill:") &&
+        spillPositions.length >= 2 &&
+        spillSpread >= 8 &&
         document.querySelector("[data-cores]")?.textContent?.trim() === "1" &&
         playerSpriteState.includes("visible:1") &&
         playerSpriteState.includes("tint:ffe35a") &&

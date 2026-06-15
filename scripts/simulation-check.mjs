@@ -198,6 +198,7 @@ const gameSceneMethodBody = (source, name) => {
 
 const verifyGameSceneAudioCleanupHooks = () => {
   const source = readFileSync("src/scenes/GameScene.ts", "utf8");
+  const stateSource = readFileSync("src/game/state.ts", "utf8");
   const audioSource = readFileSync("src/game/audio.ts", "utf8");
   const helperBody = gameSceneMethodBody(source, "clearAttemptScopedAudio");
   assert(
@@ -234,6 +235,24 @@ const verifyGameSceneAudioCleanupHooks = () => {
     finishDeathBody.includes("this.simulation.resetLifeAttempt();") &&
       finishDeathBody.includes("this.restoreFiniteCoreBonusProgress();"),
     "Expected finite core bonus progress to restore from checkpoint-carried cores after respawn"
+  );
+  const shutdownBody = gameSceneMethodBody(source, "shutdownScene");
+  const diagnosticsBody = gameSceneMethodBody(source, "clearSceneDiagnostics");
+  assert(shutdownBody.includes("this.clearSceneDiagnostics();"), "Expected GameScene shutdown to clear gameplay diagnostics");
+  for (const key of [
+    "echoShiftCoreSpriteFrames",
+    "echoShiftCoreInvulnerabilityFrames",
+    "echoShiftPlayerSpriteState",
+    "echoShiftBossCheckpoint",
+    "echoShiftDeathPresentation"
+  ]) {
+    assert(source.includes(`"${key}"`), `Expected scene diagnostics cleanup to include ${key}`);
+  }
+  const liveRenderBody = gameSceneMethodBody(source, "liveRenderView");
+  assert(
+    liveRenderBody.includes("simulation.snapshot({ cloneTransientCoreState: false })") &&
+      stateSource.includes("cloneTransientCoreState ? new Set(this.objectState.claimedCores) : this.objectState.claimedCores"),
+    "Expected live rendering to skip transient core-state deep copies while preserving normal snapshot cloning"
   );
   const audioGateBody = gameSceneMethodBody(source, "startLevelWhenAudioReady");
   assert(audioGateBody.includes("audio.waitForMusicStart"), "Expected level start gate to wait for requested music playback");

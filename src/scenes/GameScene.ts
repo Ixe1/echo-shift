@@ -118,6 +118,55 @@ const LAUNCH_PAD_ACTIVE_MS = 360;
 const HAZARD_VENT_KEY = "hazard-vent";
 const HAZARD_VENT_FRAME_WIDTH = 352;
 const HAZARD_VENT_FRAME_HEIGHT = 288;
+const GAME_SCENE_DIAGNOSTIC_KEYS = [
+  "echoShiftScoreEligible",
+  "echoShiftMusicLoading",
+  "echoShiftLevelIntro",
+  "echoShiftDeathPresentation",
+  "echoShiftCameraSample",
+  "echoShiftCameraSnap",
+  "echoShiftCameraWorldView",
+  "echoShiftBackgroundKey",
+  "echoShiftBackgroundRenderMode",
+  "echoShiftBackgroundDetailLayer",
+  "echoShiftBackgroundPieces",
+  "echoShiftBackgroundAmbience",
+  "echoShiftBackgroundPreload",
+  "echoShiftRoomAssetFailure",
+  "echoShiftBackgroundFilter",
+  "echoShiftPerfStats",
+  "echoShiftVisibleEchoTints",
+  "echoShiftDroneStates",
+  "echoShiftObjectAssetCount",
+  "echoShiftSolidAssetFrames",
+  "echoShiftTerrainDecorFrames",
+  "echoShiftTerrainDecorPropFrames",
+  "echoShiftTileAssetPhases",
+  "echoShiftTileAssetOrigins",
+  "echoShiftLaserAssetTransforms",
+  "echoShiftLaserAssetPositions",
+  "echoShiftDoorAssetTransforms",
+  "echoShiftCoreSpriteFrames",
+  "echoShiftCoreInvulnerabilityFrames",
+  "echoShiftPlayerSpriteState",
+  "echoShiftExitUnlocked",
+  "echoShiftBossCheckpoint",
+  "echoShiftPlayerRect",
+  "echoShiftBossWeakSpotRects",
+  "echoShiftEchoSensorAssetFrames",
+  "echoShiftLaunchPadSpriteFrames",
+  "echoShiftHazardVentSpriteFrames",
+  "echoShiftMonsterSpriteFrames",
+  "echoShiftBossSpriteFrames",
+  "echoShiftBossEffectFrames",
+  "echoShiftSolidOutlineRects",
+  "echoShiftObjectAtlasFilter",
+  "echoShiftLaunchPadFilter",
+  "echoShiftMonsterAtlasFilter",
+  "echoShiftBossAtlasFilter",
+  "echoShiftTerrainTileFilter",
+  "echoShiftTerrainDecorPropFilter"
+] as const;
 const HAZARD_VENT_FRAMES = 6;
 const RUN_FRAMES = [1, 2, 3, 4] as const;
 const LEVEL_INTRO_MS = 3000;
@@ -2183,7 +2232,7 @@ export class GameScene extends Phaser.Scene {
     this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.recordCameraDiagnostics, this);
     this.scale.off(Phaser.Scale.Events.RESIZE, this.configureCameraFrame, this);
     window.removeEventListener("keydown", this.handleWindowKeyDown);
-    if (typeof document !== "undefined") delete document.documentElement.dataset.echoShiftScoreEligible;
+    this.clearSceneDiagnostics();
     this.stopBossDefeatLoops();
     this.clearAttemptScopedAudio();
     this.sceneCleanupRegistered = false;
@@ -2250,6 +2299,12 @@ export class GameScene extends Phaser.Scene {
     this.bossMusicKey = null;
   };
 
+  private clearSceneDiagnostics(): void {
+    if (typeof document === "undefined") return;
+    const { dataset } = document.documentElement;
+    for (const key of GAME_SCENE_DIAGNOSTIC_KEYS) delete dataset[key];
+  }
+
   private renderWorld(): void {
     const snapshot = this.liveRenderView();
     if (!this.deathPresentation) {
@@ -2289,7 +2344,7 @@ export class GameScene extends Phaser.Scene {
 
   private liveRenderView(): RenderView {
     const simulation = this.simulation;
-    const simulationSnapshot = simulation.snapshot();
+    const simulationSnapshot = simulation.snapshot({ cloneTransientCoreState: false });
     this.renderEchoes.length = 0;
     for (const echo of simulation.echoes) {
       if (echo.alive) this.renderEchoes.push(echo);
