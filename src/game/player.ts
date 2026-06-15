@@ -288,6 +288,7 @@ const tryApplyLedgeForgiveness = (
 ): void => {
   if (Math.abs(attemptedVx) < 0.05) return;
   if (actor.vy <= 0) return;
+  if (actor.coyote > 0) return;
   const previousBottom = previousY + actor.h;
   const currentBottom = actor.y + actor.h;
 

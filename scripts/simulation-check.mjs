@@ -6653,6 +6653,21 @@ try {
   ledgeTooLowSim.step(right);
   assert(!ledgeTooLowSim.player.onGround, "Too-low ledge miss should not be auto-climbed");
 
+  const oneTileGapLevel = {
+    ...baseLevel,
+    start: { x: 70, y: 66 },
+    bounds: { x: 0, y: 0, w: 224, h: 180 },
+    solids: [
+      { id: "gap-left-floor", x: 0, y: 100, w: 96, h: 40 },
+      { id: "gap-right-floor", x: 128, y: 100, w: 96, h: 40 }
+    ]
+  };
+  const rightGapRunSim = new RoomSimulation(oneTileGapLevel);
+  Object.assign(rightGapRunSim.player, { x: 70, y: 66, vx: 0, vy: 0, onGround: true, coyote: 7 });
+  runFrames(rightGapRunSim, 10, right);
+  assert(!rightGapRunSim.player.onGround, "Running across a one-tile floor gap to the right should not be bridged by ledge forgiveness");
+  assert(rightGapRunSim.player.y > 66, `Expected rightward one-tile gap run to keep falling, got ${JSON.stringify(rightGapRunSim.player)}`);
+
   const ledgeTopOnlySim = new RoomSimulation({
     ...ledgeForgivenessLevel,
     solids: [{ id: "catch-top-only-ledge", x: 80, y: 100, w: 96, h: 20, collision: "top-only" }]
@@ -6804,6 +6819,12 @@ try {
   Object.assign(leftLedgeTooLowSim.player, { x: 112, y: 82, vx: 0, vy: 1, onGround: false, coyote: 0 });
   leftLedgeTooLowSim.step(left);
   assert(!leftLedgeTooLowSim.player.onGround, "Too-low leftward ledge miss should not be auto-climbed");
+
+  const leftGapRunSim = new RoomSimulation(oneTileGapLevel);
+  Object.assign(leftGapRunSim.player, { x: 130, y: 66, vx: 0, vy: 0, onGround: true, coyote: 7 });
+  runFrames(leftGapRunSim, 10, left);
+  assert(!leftGapRunSim.player.onGround, "Running across a one-tile floor gap to the left should not be bridged by ledge forgiveness");
+  assert(leftGapRunSim.player.y > 66, `Expected leftward one-tile gap run to keep falling, got ${JSON.stringify(leftGapRunSim.player)}`);
 
   const leftLedgeTopOnlySim = new RoomSimulation({
     ...leftLedgeForgivenessLevel,
