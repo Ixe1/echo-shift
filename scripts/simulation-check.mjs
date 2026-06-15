@@ -2719,6 +2719,84 @@ try {
     `Loose spilled core embedded in a closing door should be separated out, got ${JSON.stringify(doorEmbeddedLooseCore)}`
   );
 
+  const movingActorClosingSpillSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 39, y: 86 },
+    plates: [{ id: "moving-closing-spill-plate", x: 18, y: 86, w: 24, h: 34 }],
+    doors: [{ id: "moving-closing-spill-door", x: 92, y: 70, w: 10, h: 58, opensWith: ["moving-closing-spill-plate"] }],
+    cores: []
+  });
+  Object.assign(movingActorClosingSpillSim.player, { x: 39, y: 86, vx: 0, vy: 0, onGround: true });
+  movingActorClosingSpillSim.objectState = {
+    ...movingActorClosingSpillSim.objectState,
+    activePlates: new Set(["moving-closing-spill-plate"]),
+    openDoors: new Set(["moving-closing-spill-door"]),
+    spilledCores: new Map([
+      [
+        "manual-moving-closing-door-loose",
+        {
+          id: "manual-moving-closing-door-loose",
+          sourceId: "manual-moving-closing-door-core",
+          x: 70,
+          y: 90,
+          w: 18,
+          h: 18,
+          vx: 5,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 8
+        }
+      ]
+    ])
+  };
+  movingActorClosingSpillSim.step(right);
+  assert(!movingActorClosingSpillSim.objectState.openDoors.has("moving-closing-spill-door"), "Player should have moved off the plate and closed the loose-core door");
+  const movingActorClosedLooseCore = movingActorClosingSpillSim.objectState.spilledCores.get("manual-moving-closing-door-loose");
+  assert(movingActorClosedLooseCore, "Expected moving-controller closing loose core to remain after collision");
+  assert(
+    movingActorClosedLooseCore.x <= 74.1 && movingActorClosedLooseCore.vx < 0,
+    `Loose spilled core should bounce off a door closed by same-frame actor movement, got ${JSON.stringify(movingActorClosedLooseCore)}`
+  );
+
+  const movingActorOpeningSpillSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 42.5, y: 86 },
+    plates: [{ id: "moving-opening-spill-plate", x: 18, y: 86, w: 24, h: 34 }],
+    doors: [{ id: "moving-opening-spill-door", x: 92, y: 70, w: 10, h: 58, opensWith: ["moving-opening-spill-plate"] }],
+    cores: []
+  });
+  Object.assign(movingActorOpeningSpillSim.player, { x: 42.5, y: 86, vx: 0, vy: 0, onGround: true });
+  movingActorOpeningSpillSim.objectState = {
+    ...movingActorOpeningSpillSim.objectState,
+    activePlates: new Set(),
+    openDoors: new Set(),
+    spilledCores: new Map([
+      [
+        "manual-moving-opening-door-loose",
+        {
+          id: "manual-moving-opening-door-loose",
+          sourceId: "manual-moving-opening-door-core",
+          x: 70,
+          y: 90,
+          w: 18,
+          h: 18,
+          vx: 5,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 8
+        }
+      ]
+    ])
+  };
+  movingActorOpeningSpillSim.step(left);
+  assert(movingActorOpeningSpillSim.objectState.openDoors.has("moving-opening-spill-door"), "Player should have moved onto the plate and opened the loose-core door");
+  const movingActorOpenedLooseCore = movingActorOpeningSpillSim.objectState.spilledCores.get("manual-moving-opening-door-loose");
+  assert(movingActorOpenedLooseCore, "Expected moving-controller opening loose core to remain after pass-through");
+  assert(
+    movingActorOpenedLooseCore.x > 74.1 && movingActorOpenedLooseCore.vx > 0,
+    `Loose spilled core should pass through a door opened by same-frame actor movement, got ${JSON.stringify(movingActorOpenedLooseCore)}`
+  );
+
   const echoVaporizedDoorSpillSim = new RoomSimulation({
     ...baseLevel,
     start: { x: 18, y: 20 },

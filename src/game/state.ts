@@ -455,10 +455,6 @@ export class RoomSimulation {
     const platforms = platformFramesAt(this.level.platforms, this.tick);
     const solids = this.runtimeSolids;
     const defeatedBossIds = new Set(this.currentAttemptDefeatedBossIds.keys());
-    if (this.objectState.spilledCores.size > 0) {
-      const spilledCoreDoors = this.spilledCoreDoorRects(defeatedBossIds);
-      this.advanceSpilledCores(this.spilledCoreSupportRects(spilledCoreDoors, platforms), this.spilledCoreBlockerRects(spilledCoreDoors));
-    }
     const doors = closedDoorRects(this.level, this.objectState.openDoors);
     const objectUpdateOptions = this.hasUnclaimedPlacedCores()
       ? {
@@ -510,6 +506,11 @@ export class RoomSimulation {
 
     if (!this.dead && !this.player.alive) {
       this.markPlayerDead(events);
+    }
+
+    if (this.objectState.spilledCores.size > 0) {
+      const spilledCoreDoors = this.spilledCoreDoorRects(defeatedBossIds);
+      this.advanceSpilledCores(this.spilledCoreSupportRects(spilledCoreDoors, platforms), this.spilledCoreBlockerRects(spilledCoreDoors));
     }
 
     const previousObjectState = this.objectState;
