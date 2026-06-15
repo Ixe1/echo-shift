@@ -119,8 +119,10 @@ export class MenuScene extends Phaser.Scene {
       <main class="screen art-screen menu-screen">
         <section class="panel menu-panel">
           <h1>Credits</h1>
-          <p class="credits-text">Designed and built with Codex-assisted development for the Community Dev Challenge.</p>
-          <p class="credits-text">Game design, TypeScript implementation, procedural visual direction, and QA loop produced in this workspace.</p>
+          <p class="credits-text">Echo Shift by Paul Lewis (Ixe1).</p>
+          <p class="credits-text">Built with Codex-assisted development for the Community Dev Challenge.</p>
+          <p class="credits-text">Source code is available for non-commercial use under the PolyForm Noncommercial License 1.0.0. Game assets and creative content are licensed under CC BY-NC 4.0 unless otherwise noted.</p>
+          <p class="credits-text">Non-commercial reuse must credit: Echo Shift by Paul Lewis (Ixe1). Commercial use requires prior written permission.</p>
           <div class="button-grid">
             <button class="ui-button primary" data-back>${icon("back")} Back</button>
           </div>

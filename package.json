@@ -2,6 +2,8 @@
   "name": "echo-shift",
   "version": "0.1.0",
   "private": true,
+  "author": "Paul Lewis (Ixe1)",
+  "license": "SEE LICENSE IN LICENSE.md",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",

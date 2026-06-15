@@ -26,3 +26,7 @@ Run `npm run dev` and open `http://localhost:5173/?editor=1`. The editor loads t
 ## Deploy
 
 The game is fully static after `npm run build`. Deploy the `dist/` directory to itch.io, GitHub Pages, Vercel, Netlify, or any static host. No API keys, `.env` files, or backend services are required.
+
+## License
+
+Echo Shift is by Paul Lewis (Ixe1). Source code is licensed under the PolyForm Noncommercial License 1.0.0. Game assets and creative content are licensed under CC BY-NC 4.0 unless otherwise noted. Commercial use requires prior written permission; non-commercial reuse must credit `Echo Shift by Paul Lewis (Ixe1)`.
