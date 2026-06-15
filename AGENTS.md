@@ -44,6 +44,12 @@ Do not add, maintain, or run route/playthrough QA. Avoid automated tests that dr
 - For visual changes, capture and inspect screenshots at desktop size and, when UI is involved, a narrower/mobile viewport.
 - If a check fails, determine whether it is caused by the current change before labeling it pre-existing. Record known unrelated failures in the handoff or final response.
 
+## Proportional Verification
+
+- Keep verification proportional to user-facing risk. Do not block delivery by inventing brittle browser QA for internal or subpixel state when deterministic simulation, source-contract checks, or existing visual QA already cover the behavior.
+- If a new browser or visual assertion fails because the fixture is unstable or hard to observe after two focused attempts, simplify or remove that assertion, move coverage to deterministic simulation, or report the residual verification gap.
+- Prioritize fixing the concrete user-visible issue over expanding proof for secondary internal behavior. When the user asks to be quick or to hand off, stop at the next clean build/test checkpoint and summarize remaining review status instead of continuing exploratory verification.
+
 ## Gameplay Rules To Preserve
 
 - The game is a puzzle-platformer with rewind echoes. Echoes replay previous attempts and can interact with puzzle objects when the entity rules allow it.

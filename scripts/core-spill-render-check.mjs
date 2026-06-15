@@ -15,6 +15,17 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
+const knownScenarios = new Set(["presentation", "recovered", "bonus", "protected", "cleanup"]);
+const requestedScenarios = (process.env.CORE_SPILL_QA_SCENARIOS || "all")
+  .split(",")
+  .map((scenario) => scenario.trim())
+  .filter(Boolean);
+if (requestedScenarios.length === 0) requestedScenarios.push("all");
+for (const scenario of requestedScenarios) {
+  assert(scenario === "all" || knownScenarios.has(scenario), `Unknown CORE_SPILL_QA_SCENARIOS entry: ${scenario}`);
+}
+const shouldRunScenario = (scenario) => requestedScenarios.includes("all") || requestedScenarios.includes(scenario);
+
 const launchBrowser = async () => {
   const launchOptions = {
     headless: true,
@@ -483,441 +494,466 @@ try {
     });
   };
 
-  await installDraft(level);
-  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
-  await startAudioGate(page);
-  await page.locator("canvas").waitFor({ state: "visible" });
-  await waitForLevelIntro(page, messages);
-  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
-  await page.keyboard.down("ArrowRight");
-  await page.waitForFunction(
-    () => {
-      const playerSpriteState = document.documentElement.dataset.echoShiftPlayerSpriteState || "";
-      const playerAlpha = Number((playerSpriteState.match(/alpha:([0-9.]+)/) || [])[1] || "1");
-      const spillPositions = (document.documentElement.dataset.echoShiftCoreSpriteFrames || "")
-        .split("|")
-        .filter((frame) => frame.includes(":spill:"))
-        .map((frame) => {
-          const match = frame.match(/:spill:(-?\d+),(-?\d+)$/);
-          return match ? Number(match[1]) : null;
-        })
-        .filter((x) => x !== null);
-      const spillSpread = spillPositions.length > 1 ? Math.max(...spillPositions) - Math.min(...spillPositions) : 0;
-      return (
-        Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
-        spillPositions.length >= 2 &&
-        spillSpread >= 8 &&
-        document.querySelector("[data-cores]")?.textContent?.trim() === "1" &&
-        playerSpriteState.includes("visible:1") &&
-        playerSpriteState.includes("tint:ffe35a") &&
-        playerAlpha < 0.95
-      );
-    },
-    null,
-    { timeout: 7000 }
-  );
-  const flickerDiagnostics = await page.evaluate(() => ({
-    invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
-    playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
-  }));
-  const temporalStart = await page.evaluate(() => ({
-    coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
-    playerRect: document.documentElement.dataset.echoShiftPlayerRect || ""
-  }));
-  await page.keyboard.up("ArrowRight");
-  await page.waitForFunction(
-    (initialFrames) => {
-      const frames = document.documentElement.dataset.echoShiftCoreSpriteFrames || "";
-      return frames !== initialFrames && frames.split("|").filter((frame) => frame.includes(":spill:")).length >= 2;
-    },
-    temporalStart.coreFrames,
-    { timeout: 2500 }
-  );
-  const temporalEnd = await page.evaluate(() => ({
-    coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
-    playerRect: document.documentElement.dataset.echoShiftPlayerRect || ""
-  }));
-  const temporalStartSpills = parseSpillFrameMap(temporalStart.coreFrames);
-  const temporalEndSpills = parseSpillFrameMap(temporalEnd.coreFrames);
-  const playerRect = parseRect(temporalStart.playerRect);
-  const playerCenterX = playerRect.x + playerRect.w / 2;
-  const commonSpillIds = [...temporalStartSpills.keys()].filter((id) => temporalEndSpills.has(id));
-  const movingAwayOrBallistic = commonSpillIds.filter((id) => {
-    const start = temporalStartSpills.get(id);
-    const end = temporalEndSpills.get(id);
-    const startDirection = Math.sign(start.x + 9 - playerCenterX);
-    const horizontalAway = startDirection !== 0 && (end.x - start.x) * startDirection >= -0.5;
-    const verticalArc = Math.abs(end.y - start.y) >= 1;
-    return horizontalAway || verticalArc;
-  });
-  assert(commonSpillIds.length >= 2, `Expected temporal spill samples to share multiple sprite ids, got ${JSON.stringify({ temporalStart, temporalEnd })}`);
-  assert(
-    movingAwayOrBallistic.length > 0,
-    `Expected spilled-core sprites to keep ballistic/non-magnetic motion over time, got ${JSON.stringify({ temporalStart, temporalEnd })}`
-  );
-  await freezeAnimationFrames();
+  let screenshot = null;
+  let protectedScreenshot = null;
+  let spillDiagnostics = null;
+  let flickerDiagnostics = null;
+  let screenshotDiagnostics = null;
+  let recoveredFirstSaveDiagnostics = null;
+  let recoveredPickupDiagnostics = null;
+  let recoveredSecondSaveDiagnostics = null;
+  let positiveBonusDiagnostics = null;
+  let postLossDiagnostics = null;
+  let postRecoveryBonusDiagnostics = null;
+  let postRespawnBonusDiagnostics = null;
+  let protectedDiagnostics = null;
+  let protectedScreenshotDiagnostics = null;
 
-  const spillDiagnostics = await page.evaluate(() => ({
-    coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
-    invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
-    cameraWorldView: document.documentElement.dataset.echoShiftCameraWorldView || "",
-    playerRect: document.documentElement.dataset.echoShiftPlayerRect || "",
-    hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
-    toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
-    tutorialHint: document.querySelector("[data-tutorial-hint]")?.textContent?.trim() || "",
-    deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || "",
-    playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || "",
-    canvas: {
-      width: document.querySelector("canvas")?.clientWidth || 0,
-      height: document.querySelector("canvas")?.clientHeight || 0
-    }
-  }));
-
-  assert(spillDiagnostics.coreFrames.includes("spill:"), `Expected spilled core sprites in diagnostics, got ${spillDiagnostics.coreFrames}`);
-  const spillPositions = spillDiagnostics.coreFrames
-    .split("|")
-    .filter((frame) => frame.includes(":spill:"))
-    .map((frame) => {
-      const match = frame.match(/:spill:(-?\d+),(-?\d+)$/);
-      return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+  if (shouldRunScenario("presentation")) {
+    await installDraft(level);
+    await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+    await startAudioGate(page);
+    await page.locator("canvas").waitFor({ state: "visible" });
+    await waitForLevelIntro(page, messages);
+    await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+    await page.keyboard.down("ArrowRight");
+    await page.waitForFunction(
+      () => {
+        const playerSpriteState = document.documentElement.dataset.echoShiftPlayerSpriteState || "";
+        const playerAlpha = Number((playerSpriteState.match(/alpha:([0-9.]+)/) || [])[1] || "1");
+        const spillPositions = (document.documentElement.dataset.echoShiftCoreSpriteFrames || "")
+          .split("|")
+          .filter((frame) => frame.includes(":spill:"))
+          .map((frame) => {
+            const match = frame.match(/:spill:(-?\d+),(-?\d+)$/);
+            return match ? Number(match[1]) : null;
+          })
+          .filter((x) => x !== null);
+        const spillSpread = spillPositions.length > 1 ? Math.max(...spillPositions) - Math.min(...spillPositions) : 0;
+        return (
+          Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
+          spillPositions.length >= 2 &&
+          spillSpread >= 8 &&
+          document.querySelector("[data-cores]")?.textContent?.trim() === "1" &&
+          playerSpriteState.includes("visible:1") &&
+          playerSpriteState.includes("tint:ffe35a") &&
+          playerAlpha < 0.95
+        );
+      },
+      null,
+      { timeout: 7000 }
+    );
+    flickerDiagnostics = await page.evaluate(() => ({
+      invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
+      playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
+    }));
+    const temporalStart = await page.evaluate(() => ({
+      coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+      playerRect: document.documentElement.dataset.echoShiftPlayerRect || ""
+    }));
+    await page.keyboard.up("ArrowRight");
+    await page.waitForFunction(
+      (initialFrames) => {
+        const frames = document.documentElement.dataset.echoShiftCoreSpriteFrames || "";
+        return frames !== initialFrames && frames.split("|").filter((frame) => frame.includes(":spill:")).length >= 2;
+      },
+      temporalStart.coreFrames,
+      { timeout: 2500 }
+    );
+    const temporalEnd = await page.evaluate(() => ({
+      coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+      playerRect: document.documentElement.dataset.echoShiftPlayerRect || ""
+    }));
+    const temporalStartSpills = parseSpillFrameMap(temporalStart.coreFrames);
+    const temporalEndSpills = parseSpillFrameMap(temporalEnd.coreFrames);
+    const playerRect = parseRect(temporalStart.playerRect);
+    const playerCenterX = playerRect.x + playerRect.w / 2;
+    const commonSpillIds = [...temporalStartSpills.keys()].filter((id) => temporalEndSpills.has(id));
+    const movingAwayOrBallistic = commonSpillIds.filter((id) => {
+      const start = temporalStartSpills.get(id);
+      const end = temporalEndSpills.get(id);
+      const startDirection = Math.sign(start.x + 9 - playerCenterX);
+      const horizontalAway = startDirection !== 0 && (end.x - start.x) * startDirection >= -0.5;
+      const verticalArc = Math.abs(end.y - start.y) >= 1;
+      return horizontalAway || verticalArc;
     });
-  assert(
-    spillPositions.length >= 2 && spillPositions.every(Boolean),
-    `Expected spilled core diagnostics to include positions, got ${spillDiagnostics.coreFrames}`
-  );
-  const xs = spillPositions.map((position) => position.x);
-  assert(Math.max(...xs) - Math.min(...xs) >= 8, `Expected spilled core positions to visibly separate, got ${JSON.stringify(spillPositions)}`);
-  assert(spillDiagnostics.invulnerabilityFrames > 0, `Expected active core-save invulnerability, got ${spillDiagnostics.invulnerabilityFrames}`);
-  assert(spillDiagnostics.hudCores === "1", `Expected HUD to show only carried cores immediately after spill, got ${spillDiagnostics.hudCores}`);
-  assert(!spillDiagnostics.hudCores.includes("/"), `HUD should not include map-total core count, got ${spillDiagnostics.hudCores}`);
-  assert(!/scatter|scattered|spill|lost/i.test(spillDiagnostics.toast), `Expected no scattered-core toast, got ${spillDiagnostics.toast}`);
-  assert(!/scatter|scattered|spill|lost/i.test(spillDiagnostics.tutorialHint), `Expected no scattered-core hint, got ${spillDiagnostics.tutorialHint}`);
-  assert(spillDiagnostics.deathPresentation === "idle", `Core-save should not enter death presentation, got ${spillDiagnostics.deathPresentation}`);
-  assert(
-    /visible:1:alpha:0\.[0-9]+:tint:ffe35a/.test(flickerDiagnostics.playerSpriteState),
-    `Expected player sprite flicker/tint during core-save invulnerability, got ${flickerDiagnostics.playerSpriteState}`
-  );
-  assert(
-    spillDiagnostics.playerSpriteState.includes("visible:1") && spillDiagnostics.playerSpriteState.includes("tint:ffe35a"),
-    `Expected frozen spill diagnostics to keep the invulnerability tint, got ${spillDiagnostics.playerSpriteState}`
-  );
-  assert(spillDiagnostics.canvas.width > 0 && spillDiagnostics.canvas.height > 0, `Expected visible canvas, got ${JSON.stringify(spillDiagnostics.canvas)}`);
+    assert(commonSpillIds.length >= 2, `Expected temporal spill samples to share multiple sprite ids, got ${JSON.stringify({ temporalStart, temporalEnd })}`);
+    assert(
+      movingAwayOrBallistic.length > 0,
+      `Expected spilled-core sprites to keep ballistic/non-magnetic motion over time, got ${JSON.stringify({ temporalStart, temporalEnd })}`
+    );
+    await freezeAnimationFrames();
 
-  const screenshot = `${outDir}/core-spill-render-qa.png`;
-  const screenshotBuffer = await page.screenshot({ path: screenshot, fullPage: true });
-  const visibleSpillSamples = samplePngWorldRegions(screenshotBuffer, spillWorldRectsFromFrames(spillDiagnostics.coreFrames), spillDiagnostics.cameraWorldView, "core");
-  const visibleSpillRegions = visibleSpillSamples.samples.filter((sample) => sample.matchingPixels >= 16);
-  assert(
-    visibleSpillSamples.ok && visibleSpillRegions.length >= 2,
-    `Expected spilled core sprites to be visible in rendered canvas pixels, got ${JSON.stringify(visibleSpillSamples)}`
-  );
-  const spillPlayerTintSamples = samplePngWorldRegions(screenshotBuffer, [{ ...parseRect(spillDiagnostics.playerRect), pad: 3 }], spillDiagnostics.cameraWorldView, "playerTint");
-  assert(
-    spillPlayerTintSamples.ok && spillPlayerTintSamples.samples.some((sample) => sample.matchingPixels >= 8),
-    `Expected player invulnerability tint to be visible in rendered canvas pixels, got ${JSON.stringify(spillPlayerTintSamples)}`
-  );
-  spillDiagnostics.visibleSpillSamples = visibleSpillSamples;
-  spillDiagnostics.playerTintSamples = spillPlayerTintSamples;
+    spillDiagnostics = await page.evaluate(() => ({
+      coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+      invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
+      cameraWorldView: document.documentElement.dataset.echoShiftCameraWorldView || "",
+      playerRect: document.documentElement.dataset.echoShiftPlayerRect || "",
+      hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
+      toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
+      tutorialHint: document.querySelector("[data-tutorial-hint]")?.textContent?.trim() || "",
+      deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || "",
+      playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || "",
+      canvas: {
+        width: document.querySelector("canvas")?.clientWidth || 0,
+        height: document.querySelector("canvas")?.clientHeight || 0
+      }
+    }));
 
-  const screenshotDiagnostics = await page.evaluate(() => ({
-    hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
-    coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
-    invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
-    playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
-  }));
-  await page.keyboard.up("ArrowRight");
-  assert(screenshotDiagnostics.hudCores === "1", `Core-spill screenshot should capture asserted HUD state 1, got ${screenshotDiagnostics.hudCores}`);
-  assert(screenshotDiagnostics.coreFrames.includes("spill:"), `Core-spill screenshot should capture visible spill sprite state, got ${screenshotDiagnostics.coreFrames}`);
-  assert(
-    screenshotDiagnostics.coreFrames === spillDiagnostics.coreFrames &&
-      screenshotDiagnostics.playerSpriteState === spillDiagnostics.playerSpriteState &&
-      screenshotDiagnostics.invulnerabilityFrames === spillDiagnostics.invulnerabilityFrames,
-    `Core-spill screenshot diagnostics should be same-frame as asserted diagnostics, got ${JSON.stringify({ before: spillDiagnostics, screenshot: screenshotDiagnostics })}`
-  );
+    assert(spillDiagnostics.coreFrames.includes("spill:"), `Expected spilled core sprites in diagnostics, got ${spillDiagnostics.coreFrames}`);
+    const spillPositions = spillDiagnostics.coreFrames
+      .split("|")
+      .filter((frame) => frame.includes(":spill:"))
+      .map((frame) => {
+        const match = frame.match(/:spill:(-?\d+),(-?\d+)$/);
+        return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+      });
+    assert(
+      spillPositions.length >= 2 && spillPositions.every(Boolean),
+      `Expected spilled core diagnostics to include positions, got ${spillDiagnostics.coreFrames}`
+    );
+    const xs = spillPositions.map((position) => position.x);
+    assert(Math.max(...xs) - Math.min(...xs) >= 8, `Expected spilled core positions to visibly separate, got ${JSON.stringify(spillPositions)}`);
+    assert(spillDiagnostics.invulnerabilityFrames > 0, `Expected active core-save invulnerability, got ${spillDiagnostics.invulnerabilityFrames}`);
+    assert(spillDiagnostics.hudCores === "1", `Expected HUD to show only carried cores immediately after spill, got ${spillDiagnostics.hudCores}`);
+    assert(!spillDiagnostics.hudCores.includes("/"), `HUD should not include map-total core count, got ${spillDiagnostics.hudCores}`);
+    assert(!/scatter|scattered|spill|lost/i.test(spillDiagnostics.toast), `Expected no scattered-core toast, got ${spillDiagnostics.toast}`);
+    assert(!/scatter|scattered|spill|lost/i.test(spillDiagnostics.tutorialHint), `Expected no scattered-core hint, got ${spillDiagnostics.tutorialHint}`);
+    assert(spillDiagnostics.deathPresentation === "idle", `Core-save should not enter death presentation, got ${spillDiagnostics.deathPresentation}`);
+    assert(
+      /visible:1:alpha:0\.[0-9]+:tint:ffe35a/.test(flickerDiagnostics.playerSpriteState),
+      `Expected player sprite flicker/tint during core-save invulnerability, got ${flickerDiagnostics.playerSpriteState}`
+    );
+    assert(
+      spillDiagnostics.playerSpriteState.includes("visible:1") && spillDiagnostics.playerSpriteState.includes("tint:ffe35a"),
+      `Expected frozen spill diagnostics to keep the invulnerability tint, got ${spillDiagnostics.playerSpriteState}`
+    );
+    assert(spillDiagnostics.canvas.width > 0 && spillDiagnostics.canvas.height > 0, `Expected visible canvas, got ${JSON.stringify(spillDiagnostics.canvas)}`);
 
-  await installDraft(recoveredCoreSaveLevel);
-  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
-  await startAudioGate(page);
-  await page.locator("canvas").waitFor({ state: "visible" });
-  await waitForLevelIntro(page, messages);
-  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
-  await page.keyboard.down("ArrowRight");
-  await page.waitForFunction(
-    () =>
-      Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
-      document.querySelector("[data-cores]")?.textContent?.trim() === "0" &&
-      (document.documentElement.dataset.echoShiftCoreSpriteFrames || "").split("|").filter((frame) => frame.includes(":spill:")).length === 1,
-    null,
-    { timeout: 7000 }
-  );
-  const recoveredFirstSaveDiagnostics = await page.evaluate(() => ({
-    hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
-    lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
-    invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
-    spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
-    deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || ""
-  }));
-  await page.keyboard.up("ArrowRight");
-  await page.keyboard.down("ArrowLeft");
-  await page.waitForFunction(
-    () =>
-      document.querySelector("[data-cores]")?.textContent?.trim() === "1" &&
-      (document.documentElement.dataset.echoShiftCoreSpriteFrames || "").split("|").filter((frame) => frame.includes(":spill:")).length === 0,
-    null,
-    { timeout: 9000 }
-  );
-  const recoveredPickupDiagnostics = await page.evaluate(() => ({
-    hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
-    lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
-    spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
-    deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || ""
-  }));
-  await page.keyboard.up("ArrowLeft");
-  await page.keyboard.down("ArrowRight");
-  await page.waitForFunction(
-    () => {
-      const playerSpriteState = document.documentElement.dataset.echoShiftPlayerSpriteState || "";
-      return (
+    screenshot = `${outDir}/core-spill-render-qa.png`;
+    const screenshotBuffer = await page.screenshot({ path: screenshot, fullPage: true });
+    const visibleSpillSamples = samplePngWorldRegions(screenshotBuffer, spillWorldRectsFromFrames(spillDiagnostics.coreFrames), spillDiagnostics.cameraWorldView, "core");
+    const visibleSpillRegions = visibleSpillSamples.samples.filter((sample) => sample.matchingPixels >= 16);
+    assert(
+      visibleSpillSamples.ok && visibleSpillRegions.length >= 2,
+      `Expected spilled core sprites to be visible in rendered canvas pixels, got ${JSON.stringify(visibleSpillSamples)}`
+    );
+    const spillPlayerTintSamples = samplePngWorldRegions(screenshotBuffer, [{ ...parseRect(spillDiagnostics.playerRect), pad: 3 }], spillDiagnostics.cameraWorldView, "playerTint");
+    assert(
+      spillPlayerTintSamples.ok && spillPlayerTintSamples.samples.some((sample) => sample.matchingPixels >= 8),
+      `Expected player invulnerability tint to be visible in rendered canvas pixels, got ${JSON.stringify(spillPlayerTintSamples)}`
+    );
+    spillDiagnostics.visibleSpillSamples = visibleSpillSamples;
+    spillDiagnostics.playerTintSamples = spillPlayerTintSamples;
+
+    screenshotDiagnostics = await page.evaluate(() => ({
+      hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
+      coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+      invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
+      playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
+    }));
+    await page.keyboard.up("ArrowRight");
+    assert(screenshotDiagnostics.hudCores === "1", `Core-spill screenshot should capture asserted HUD state 1, got ${screenshotDiagnostics.hudCores}`);
+    assert(screenshotDiagnostics.coreFrames.includes("spill:"), `Core-spill screenshot should capture visible spill sprite state, got ${screenshotDiagnostics.coreFrames}`);
+    assert(
+      screenshotDiagnostics.coreFrames === spillDiagnostics.coreFrames &&
+        screenshotDiagnostics.playerSpriteState === spillDiagnostics.playerSpriteState &&
+        screenshotDiagnostics.invulnerabilityFrames === spillDiagnostics.invulnerabilityFrames,
+      `Core-spill screenshot diagnostics should be same-frame as asserted diagnostics, got ${JSON.stringify({ before: spillDiagnostics, screenshot: screenshotDiagnostics })}`
+    );
+  }
+
+  if (shouldRunScenario("recovered")) {
+    await installDraft(recoveredCoreSaveLevel);
+    await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+    await startAudioGate(page);
+    await page.locator("canvas").waitFor({ state: "visible" });
+    await waitForLevelIntro(page, messages);
+    await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+    await page.keyboard.down("ArrowRight");
+    await page.waitForFunction(
+      () =>
         Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
         document.querySelector("[data-cores]")?.textContent?.trim() === "0" &&
-        (document.documentElement.dataset.echoShiftCoreSpriteFrames || "").split("|").filter((frame) => frame.includes(":spill:")).length === 0 &&
-        (document.documentElement.dataset.echoShiftDeathPresentation || "") === "idle" &&
-        playerSpriteState.includes("visible:1") &&
-        playerSpriteState.includes("tint:ffe35a")
-      );
-    },
-    null,
-    { timeout: 12000 }
-  );
-  const recoveredSecondSaveDiagnostics = await page.evaluate(() => ({
-    hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
-    lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
-    invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
-    spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
-    deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || "",
-    playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
-  }));
-  await page.keyboard.up("ArrowRight");
-  assert(recoveredFirstSaveDiagnostics.hudCores === "0", `Expected first one-core save to drop carried HUD to 0, got ${JSON.stringify(recoveredFirstSaveDiagnostics)}`);
-  assert(countSpillFrames(recoveredFirstSaveDiagnostics.spillFrames) === 1, `Expected first one-core save to create one recoverable loose core, got ${JSON.stringify(recoveredFirstSaveDiagnostics)}`);
-  assert(recoveredPickupDiagnostics.hudCores === "1", `Expected recovered loose core to return to carried HUD, got ${JSON.stringify(recoveredPickupDiagnostics)}`);
-  assert(countSpillFrames(recoveredPickupDiagnostics.spillFrames) === 0, `Expected recovered loose core to remove the spill sprite, got ${JSON.stringify(recoveredPickupDiagnostics)}`);
-  assert(
-    recoveredSecondSaveDiagnostics.hudCores === "0" &&
-      countSpillFrames(recoveredSecondSaveDiagnostics.spillFrames) === 0 &&
-      recoveredSecondSaveDiagnostics.deathPresentation === "idle",
-    `Expected recovered core to save once without re-scattering or dying, got ${JSON.stringify(recoveredSecondSaveDiagnostics)}`
-  );
-
-  await installDraft(positiveBonusLifeLevel);
-  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
-  await startAudioGate(page);
-  await page.locator("canvas").waitFor({ state: "visible" });
-  await waitForLevelIntro(page, messages);
-  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
-  await page.waitForFunction(
-    () =>
-      document.querySelector("[data-cores]")?.textContent?.trim() === "30" &&
-      document.querySelector("[data-lives]")?.textContent?.trim() === "4" &&
-      /bonus life/i.test(document.querySelector("[data-toast]")?.textContent || ""),
-    null,
-    { timeout: 7000 }
-  );
-  const positiveBonusDiagnostics = await page.evaluate(() => ({
-    hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
-    lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
-    toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
-    deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || ""
-  }));
-  assert(positiveBonusDiagnostics.hudCores === "30", `Expected positive bonus fixture to carry 30 cores, got ${JSON.stringify(positiveBonusDiagnostics)}`);
-  assert(!positiveBonusDiagnostics.hudCores.includes("/"), `Positive bonus HUD should not include map-total count, got ${positiveBonusDiagnostics.hudCores}`);
-  assert(positiveBonusDiagnostics.lives === "4", `Expected positive carried-core threshold to award one bonus life, got ${JSON.stringify(positiveBonusDiagnostics)}`);
-  assert(/bonus life/i.test(positiveBonusDiagnostics.toast), `Expected positive bonus-life toast, got ${positiveBonusDiagnostics.toast}`);
-  assert(positiveBonusDiagnostics.deathPresentation === "idle", `Positive bonus fixture should remain alive, got ${positiveBonusDiagnostics.deathPresentation}`);
-
-  await installDraft(bonusLifeAfterLossLevel);
-  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
-  await startAudioGate(page);
-  await page.locator("canvas").waitFor({ state: "visible" });
-  await waitForLevelIntro(page, messages);
-  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
-  await page.waitForFunction(
-    () => document.querySelector("[data-cores]")?.textContent?.trim() === "29" && document.querySelector("[data-lives]")?.textContent?.trim() === "3",
-    null,
-    { timeout: 7000 }
-  );
-  await page.keyboard.down("ArrowRight");
-  await page.waitForFunction(
-    () =>
-      Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
-      Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0") < 29 &&
-      document.querySelector("[data-lives]")?.textContent?.trim() === "3",
-    null,
-    { timeout: 7000 }
-  );
-  const postLossDiagnostics = await page.evaluate(() => ({
-    hudCores: Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0"),
-    lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
-    toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
-    spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || ""
-  }));
-  await page.keyboard.up("ArrowRight");
-  await page.keyboard.down("ArrowLeft");
-  await page.waitForFunction(
-    ({ postLossCoreCount, postLossSpillCount }) => {
-      const cores = Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0");
-      const currentSpillCount = (document.documentElement.dataset.echoShiftCoreSpriteFrames || "")
-        .split("|")
-        .filter((frame) => frame.includes(":spill:")).length;
-      return (
-        cores > postLossCoreCount &&
-        cores < 30 &&
-        currentSpillCount < postLossSpillCount &&
-        document.querySelector("[data-lives]")?.textContent?.trim() === "3"
-      );
-    },
-    { postLossCoreCount: postLossDiagnostics.hudCores, postLossSpillCount: countSpillFrames(postLossDiagnostics.spillFrames) },
-    { timeout: 15000 }
-  );
-  const postRecoveryBonusDiagnostics = await page.evaluate(() => ({
-    hudCores: Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0"),
-    lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
-    toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
-    spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || ""
-  }));
-  assert(postLossDiagnostics.lives === "3", `Expected no bonus life immediately after core loss below threshold, got ${JSON.stringify(postLossDiagnostics)}`);
-  assert(
-    countSpillFrames(postLossDiagnostics.spillFrames) > countSpillFrames(postRecoveryBonusDiagnostics.spillFrames),
-    `Expected below-threshold recovery to consume a spilled loose core, got ${JSON.stringify({ postLossDiagnostics, postRecoveryBonusDiagnostics })}`
-  );
-  assert(
-    postRecoveryBonusDiagnostics.lives === "3" && postRecoveryBonusDiagnostics.hudCores > postLossDiagnostics.hudCores && postRecoveryBonusDiagnostics.hudCores < 30,
-    `Expected collecting below-threshold cores after a spill not to award a stale bonus life, got ${JSON.stringify({ postLossDiagnostics, postRecoveryBonusDiagnostics })}`
-  );
-  assert(!/bonus life/i.test(postRecoveryBonusDiagnostics.toast), `Expected no stale bonus-life toast below 30 carried cores, got ${postRecoveryBonusDiagnostics.toast}`);
-  await page.keyboard.up("ArrowLeft");
-  await page.keyboard.down("ArrowRight");
-  await page.waitForFunction(
-    () => ["fall", "fade-out", "dead", "respawn"].includes(document.documentElement.dataset.echoShiftDeathPresentation || ""),
-    null,
-    { timeout: 9000 }
-  );
-  await page.keyboard.up("ArrowRight");
-  await page.waitForFunction(
-    () => {
-      const lives = document.querySelector("[data-lives]")?.textContent?.trim();
-      const cores = document.querySelector("[data-cores]")?.textContent?.trim();
-      const phase = document.documentElement.dataset.echoShiftLevelIntro || "";
-      return lives === "2" && cores === "29" && (phase === "exiting" || phase === "idle");
-    },
-    null,
-    { timeout: 12000 }
-  );
-  const postRespawnBonusDiagnostics = await page.evaluate(() => ({
-    hudCores: Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0"),
-    lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
-    toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
-    deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || "",
-    levelIntro: document.documentElement.dataset.echoShiftLevelIntro || ""
-  }));
-  assert(
-    postRespawnBonusDiagnostics.lives === "2" && postRespawnBonusDiagnostics.hudCores === 29,
-    `Expected death/respawn after below-threshold recovery to restore only start cores and spend one life, got ${JSON.stringify(postRespawnBonusDiagnostics)}`
-  );
-  assert(!/bonus life/i.test(postRespawnBonusDiagnostics.toast), `Expected no stale bonus-life toast after death/respawn below 30 carried cores, got ${postRespawnBonusDiagnostics.toast}`);
-
-  await installDraft(protectedLevel);
-  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
-  await startAudioGate(page);
-  await page.locator("canvas").waitFor({ state: "visible" });
-  await waitForLevelIntro(page, messages);
-  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
-  await page.keyboard.down("ArrowRight");
-  await page.waitForFunction(
-    () => {
-      const playerSpriteState = document.documentElement.dataset.echoShiftPlayerSpriteState || "";
-      const playerAlpha = Number((playerSpriteState.match(/alpha:([0-9.]+)/) || [])[1] || "1");
-      return (
-        Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
-        !(document.documentElement.dataset.echoShiftCoreSpriteFrames || "").includes("spill:") &&
-        (document.documentElement.dataset.echoShiftDoorAssetTransforms || "").includes("door:protected-door:9") &&
+        (document.documentElement.dataset.echoShiftCoreSpriteFrames || "").split("|").filter((frame) => frame.includes(":spill:")).length === 1,
+      null,
+      { timeout: 7000 }
+    );
+    recoveredFirstSaveDiagnostics = await page.evaluate(() => ({
+      hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
+      lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
+      invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
+      spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+      deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || ""
+    }));
+    await page.keyboard.up("ArrowRight");
+    await page.keyboard.down("ArrowLeft");
+    await page.waitForFunction(
+      () =>
         document.querySelector("[data-cores]")?.textContent?.trim() === "1" &&
-        playerSpriteState.includes("visible:1") &&
-        playerSpriteState.includes("tint:ffe35a") &&
-        playerAlpha < 0.95
-      );
-    },
-    null,
-    { timeout: 7000 }
-  );
-  await freezeAnimationFrames();
-  const protectedDiagnostics = await page.evaluate(() => ({
-    coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
-    doors: document.documentElement.dataset.echoShiftDoorAssetTransforms || "",
-    invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
-    cameraWorldView: document.documentElement.dataset.echoShiftCameraWorldView || "",
-    playerRect: document.documentElement.dataset.echoShiftPlayerRect || "",
-    hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
-    toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
-    tutorialHint: document.querySelector("[data-tutorial-hint]")?.textContent?.trim() || "",
-    deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || "",
-    playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
-  }));
+        (document.documentElement.dataset.echoShiftCoreSpriteFrames || "").split("|").filter((frame) => frame.includes(":spill:")).length === 0,
+      null,
+      { timeout: 9000 }
+    );
+    recoveredPickupDiagnostics = await page.evaluate(() => ({
+      hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
+      lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
+      spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+      deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || ""
+    }));
+    await page.keyboard.up("ArrowLeft");
+    await page.keyboard.down("ArrowRight");
+    await page.waitForFunction(
+      () => {
+        const playerSpriteState = document.documentElement.dataset.echoShiftPlayerSpriteState || "";
+        return (
+          Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
+          document.querySelector("[data-cores]")?.textContent?.trim() === "0" &&
+          (document.documentElement.dataset.echoShiftCoreSpriteFrames || "").split("|").filter((frame) => frame.includes(":spill:")).length === 0 &&
+          (document.documentElement.dataset.echoShiftDeathPresentation || "") === "idle" &&
+          playerSpriteState.includes("visible:1") &&
+          playerSpriteState.includes("tint:ffe35a")
+        );
+      },
+      null,
+      { timeout: 12000 }
+    );
+    recoveredSecondSaveDiagnostics = await page.evaluate(() => ({
+      hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
+      lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
+      invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
+      spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+      deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || "",
+      playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
+    }));
+    await page.keyboard.up("ArrowRight");
+    assert(recoveredFirstSaveDiagnostics.hudCores === "0", `Expected first one-core save to drop carried HUD to 0, got ${JSON.stringify(recoveredFirstSaveDiagnostics)}`);
+    assert(countSpillFrames(recoveredFirstSaveDiagnostics.spillFrames) === 1, `Expected first one-core save to create one recoverable loose core, got ${JSON.stringify(recoveredFirstSaveDiagnostics)}`);
+    assert(recoveredPickupDiagnostics.hudCores === "1", `Expected recovered loose core to return to carried HUD, got ${JSON.stringify(recoveredPickupDiagnostics)}`);
+    assert(countSpillFrames(recoveredPickupDiagnostics.spillFrames) === 0, `Expected recovered loose core to remove the spill sprite, got ${JSON.stringify(recoveredPickupDiagnostics)}`);
+    assert(
+      recoveredSecondSaveDiagnostics.hudCores === "0" &&
+        countSpillFrames(recoveredSecondSaveDiagnostics.spillFrames) === 0 &&
+        recoveredSecondSaveDiagnostics.deathPresentation === "idle",
+      `Expected recovered core to save once without re-scattering or dying, got ${JSON.stringify(recoveredSecondSaveDiagnostics)}`
+    );
+  }
 
-  assert(!protectedDiagnostics.coreFrames.includes("spill:"), `Protected key-core save should not create spill sprites, got ${protectedDiagnostics.coreFrames}`);
-  assert(protectedDiagnostics.doors.includes("door:protected-door:9"), `Protected key-core should keep required door open, got ${protectedDiagnostics.doors}`);
-  assert(protectedDiagnostics.invulnerabilityFrames > 0, `Expected protected save invulnerability, got ${protectedDiagnostics.invulnerabilityFrames}`);
-  assert(protectedDiagnostics.hudCores === "1", `Protected key-core save should keep carried HUD at 1, got ${protectedDiagnostics.hudCores}`);
-  assert(!protectedDiagnostics.hudCores.includes("/"), `Protected key-core HUD should not include map-total count, got ${protectedDiagnostics.hudCores}`);
-  assert(!/scatter|scattered|spill|lost/i.test(protectedDiagnostics.toast), `Expected no protected-save scatter toast, got ${protectedDiagnostics.toast}`);
-  assert(!/scatter|scattered|spill|lost/i.test(protectedDiagnostics.tutorialHint), `Expected no protected-save scatter hint, got ${protectedDiagnostics.tutorialHint}`);
-  assert(protectedDiagnostics.deathPresentation === "idle", `Protected save should not enter death presentation, got ${protectedDiagnostics.deathPresentation}`);
-  assert(
-    /visible:1:alpha:0\.[0-9]+:tint:ffe35a/.test(protectedDiagnostics.playerSpriteState),
-    `Expected protected-save player sprite flicker/tint during invulnerability, got ${protectedDiagnostics.playerSpriteState}`
-  );
+  if (shouldRunScenario("bonus")) {
+    await installDraft(positiveBonusLifeLevel);
+    await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+    await startAudioGate(page);
+    await page.locator("canvas").waitFor({ state: "visible" });
+    await waitForLevelIntro(page, messages);
+    await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+    await page.waitForFunction(
+      () =>
+        document.querySelector("[data-cores]")?.textContent?.trim() === "30" &&
+        document.querySelector("[data-lives]")?.textContent?.trim() === "4" &&
+        /bonus life/i.test(document.querySelector("[data-toast]")?.textContent || ""),
+      null,
+      { timeout: 7000 }
+    );
+    positiveBonusDiagnostics = await page.evaluate(() => ({
+      hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
+      lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
+      toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
+      deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || ""
+    }));
+    assert(positiveBonusDiagnostics.hudCores === "30", `Expected positive bonus fixture to carry 30 cores, got ${JSON.stringify(positiveBonusDiagnostics)}`);
+    assert(!positiveBonusDiagnostics.hudCores.includes("/"), `Positive bonus HUD should not include map-total count, got ${positiveBonusDiagnostics.hudCores}`);
+    assert(positiveBonusDiagnostics.lives === "4", `Expected positive carried-core threshold to award one bonus life, got ${JSON.stringify(positiveBonusDiagnostics)}`);
+    assert(/bonus life/i.test(positiveBonusDiagnostics.toast), `Expected positive bonus-life toast, got ${positiveBonusDiagnostics.toast}`);
+    assert(positiveBonusDiagnostics.deathPresentation === "idle", `Positive bonus fixture should remain alive, got ${positiveBonusDiagnostics.deathPresentation}`);
 
-  const protectedScreenshot = `${outDir}/protected-core-save-render-qa.png`;
-  const protectedScreenshotBuffer = await page.screenshot({ path: protectedScreenshot, fullPage: true });
-  const protectedPlayerTintSamples = samplePngWorldRegions(protectedScreenshotBuffer, [{ ...parseRect(protectedDiagnostics.playerRect), pad: 3 }], protectedDiagnostics.cameraWorldView, "playerTint");
-  assert(
-    protectedPlayerTintSamples.ok && protectedPlayerTintSamples.samples.some((sample) => sample.matchingPixels >= 8),
-    `Expected protected-save player tint to be visible in rendered canvas pixels, got ${JSON.stringify(protectedPlayerTintSamples)}`
-  );
-  protectedDiagnostics.playerTintSamples = protectedPlayerTintSamples;
+    await installDraft(bonusLifeAfterLossLevel);
+    await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+    await startAudioGate(page);
+    await page.locator("canvas").waitFor({ state: "visible" });
+    await waitForLevelIntro(page, messages);
+    await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+    await page.waitForFunction(
+      () => document.querySelector("[data-cores]")?.textContent?.trim() === "29" && document.querySelector("[data-lives]")?.textContent?.trim() === "3",
+      null,
+      { timeout: 7000 }
+    );
+    await page.keyboard.down("ArrowRight");
+    await page.waitForFunction(
+      () =>
+        Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
+        Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0") < 29 &&
+        document.querySelector("[data-lives]")?.textContent?.trim() === "3",
+      null,
+      { timeout: 7000 }
+    );
+    postLossDiagnostics = await page.evaluate(() => ({
+      hudCores: Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0"),
+      lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
+      toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
+      spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || ""
+    }));
+    await page.keyboard.up("ArrowRight");
+    await page.keyboard.down("ArrowLeft");
+    await page.waitForFunction(
+      ({ postLossCoreCount, postLossSpillCount }) => {
+        const cores = Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0");
+        const currentSpillCount = (document.documentElement.dataset.echoShiftCoreSpriteFrames || "")
+          .split("|")
+          .filter((frame) => frame.includes(":spill:")).length;
+        return (
+          cores > postLossCoreCount &&
+          cores < 30 &&
+          currentSpillCount < postLossSpillCount &&
+          document.querySelector("[data-lives]")?.textContent?.trim() === "3"
+        );
+      },
+      { postLossCoreCount: postLossDiagnostics.hudCores, postLossSpillCount: countSpillFrames(postLossDiagnostics.spillFrames) },
+      { timeout: 15000 }
+    );
+    postRecoveryBonusDiagnostics = await page.evaluate(() => ({
+      hudCores: Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0"),
+      lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
+      toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
+      spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || ""
+    }));
+    assert(postLossDiagnostics.lives === "3", `Expected no bonus life immediately after core loss below threshold, got ${JSON.stringify(postLossDiagnostics)}`);
+    assert(
+      countSpillFrames(postLossDiagnostics.spillFrames) > countSpillFrames(postRecoveryBonusDiagnostics.spillFrames),
+      `Expected below-threshold recovery to consume a spilled loose core, got ${JSON.stringify({ postLossDiagnostics, postRecoveryBonusDiagnostics })}`
+    );
+    assert(
+      postRecoveryBonusDiagnostics.lives === "3" && postRecoveryBonusDiagnostics.hudCores > postLossDiagnostics.hudCores && postRecoveryBonusDiagnostics.hudCores < 30,
+      `Expected collecting below-threshold cores after a spill not to award a stale bonus life, got ${JSON.stringify({ postLossDiagnostics, postRecoveryBonusDiagnostics })}`
+    );
+    assert(!/bonus life/i.test(postRecoveryBonusDiagnostics.toast), `Expected no stale bonus-life toast below 30 carried cores, got ${postRecoveryBonusDiagnostics.toast}`);
+    await page.keyboard.up("ArrowLeft");
+    await page.keyboard.down("ArrowRight");
+    await page.waitForFunction(
+      () => ["fall", "fade-out", "dead", "respawn"].includes(document.documentElement.dataset.echoShiftDeathPresentation || ""),
+      null,
+      { timeout: 9000 }
+    );
+    await page.keyboard.up("ArrowRight");
+    await page.waitForFunction(
+      () => {
+        const lives = document.querySelector("[data-lives]")?.textContent?.trim();
+        const cores = document.querySelector("[data-cores]")?.textContent?.trim();
+        const phase = document.documentElement.dataset.echoShiftLevelIntro || "";
+        return lives === "2" && cores === "29" && (phase === "exiting" || phase === "idle");
+      },
+      null,
+      { timeout: 12000 }
+    );
+    postRespawnBonusDiagnostics = await page.evaluate(() => ({
+      hudCores: Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0"),
+      lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
+      toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
+      deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || "",
+      levelIntro: document.documentElement.dataset.echoShiftLevelIntro || ""
+    }));
+    assert(
+      postRespawnBonusDiagnostics.lives === "2" && postRespawnBonusDiagnostics.hudCores === 29,
+      `Expected death/respawn after below-threshold recovery to restore only start cores and spend one life, got ${JSON.stringify(postRespawnBonusDiagnostics)}`
+    );
+    assert(!/bonus life/i.test(postRespawnBonusDiagnostics.toast), `Expected no stale bonus-life toast after death/respawn below 30 carried cores, got ${postRespawnBonusDiagnostics.toast}`);
+  }
 
-  const protectedScreenshotDiagnostics = await page.evaluate(() => ({
-    hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
-    coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
-    invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
-    playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
-  }));
-  await page.keyboard.up("ArrowRight");
-  assert(protectedScreenshotDiagnostics.hudCores === "1", `Protected-save screenshot should capture asserted HUD state 1, got ${protectedScreenshotDiagnostics.hudCores}`);
-  assert(!protectedScreenshotDiagnostics.coreFrames.includes("spill:"), `Protected-save screenshot should capture no-spill state, got ${protectedScreenshotDiagnostics.coreFrames}`);
-  assert(
-    protectedScreenshotDiagnostics.coreFrames === protectedDiagnostics.coreFrames &&
-      protectedScreenshotDiagnostics.playerSpriteState === protectedDiagnostics.playerSpriteState &&
-      protectedScreenshotDiagnostics.invulnerabilityFrames === protectedDiagnostics.invulnerabilityFrames,
-    `Protected-save screenshot diagnostics should be same-frame as asserted diagnostics, got ${JSON.stringify({ before: protectedDiagnostics, screenshot: protectedScreenshotDiagnostics })}`
-  );
+  if (shouldRunScenario("protected")) {
+    await installDraft(protectedLevel);
+    await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+    await startAudioGate(page);
+    await page.locator("canvas").waitFor({ state: "visible" });
+    await waitForLevelIntro(page, messages);
+    await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+    await page.keyboard.down("ArrowRight");
+    await page.waitForFunction(
+      () => {
+        const playerSpriteState = document.documentElement.dataset.echoShiftPlayerSpriteState || "";
+        const playerAlpha = Number((playerSpriteState.match(/alpha:([0-9.]+)/) || [])[1] || "1");
+        return (
+          Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
+          !(document.documentElement.dataset.echoShiftCoreSpriteFrames || "").includes("spill:") &&
+          (document.documentElement.dataset.echoShiftDoorAssetTransforms || "").includes("door:protected-door:9") &&
+          document.querySelector("[data-cores]")?.textContent?.trim() === "1" &&
+          playerSpriteState.includes("visible:1") &&
+          playerSpriteState.includes("tint:ffe35a") &&
+          playerAlpha < 0.95
+        );
+      },
+      null,
+      { timeout: 7000 }
+    );
+    await freezeAnimationFrames();
+    protectedDiagnostics = await page.evaluate(() => ({
+      coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+      doors: document.documentElement.dataset.echoShiftDoorAssetTransforms || "",
+      invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
+      cameraWorldView: document.documentElement.dataset.echoShiftCameraWorldView || "",
+      playerRect: document.documentElement.dataset.echoShiftPlayerRect || "",
+      hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
+      toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
+      tutorialHint: document.querySelector("[data-tutorial-hint]")?.textContent?.trim() || "",
+      deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || "",
+      playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
+    }));
 
-  await installDraft(protectedLevel);
-  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
-  await startAudioGate(page);
-  await page.locator("canvas").waitFor({ state: "visible" });
-  await waitForLevelIntro(page, messages);
-  await page.locator("[data-menu]").waitFor({ state: "visible", timeout: 7000 });
-  await page.locator("[data-menu]").click();
-  await page.locator("[data-exit-menu]").click({ force: true });
-  await page.locator("[data-play]").waitFor({ state: "visible", timeout: 7000 });
-  const staleSceneDiagnostics = await page.evaluate((keys) => {
-    const { dataset } = document.documentElement;
-    return keys
-      .filter((key) => dataset[key] !== undefined)
-      .map((key) => `${key}:${dataset[key]}`);
-  }, gameSceneDiagnosticKeys);
-  assert(staleSceneDiagnostics.length === 0, `Expected GameScene diagnostics to clear after returning to menu, got ${JSON.stringify(staleSceneDiagnostics)}`);
+    assert(!protectedDiagnostics.coreFrames.includes("spill:"), `Protected key-core save should not create spill sprites, got ${protectedDiagnostics.coreFrames}`);
+    assert(protectedDiagnostics.doors.includes("door:protected-door:9"), `Protected key-core should keep required door open, got ${protectedDiagnostics.doors}`);
+    assert(protectedDiagnostics.invulnerabilityFrames > 0, `Expected protected save invulnerability, got ${protectedDiagnostics.invulnerabilityFrames}`);
+    assert(protectedDiagnostics.hudCores === "1", `Protected key-core save should keep carried HUD at 1, got ${protectedDiagnostics.hudCores}`);
+    assert(!protectedDiagnostics.hudCores.includes("/"), `Protected key-core HUD should not include map-total count, got ${protectedDiagnostics.hudCores}`);
+    assert(!/scatter|scattered|spill|lost/i.test(protectedDiagnostics.toast), `Expected no protected-save scatter toast, got ${protectedDiagnostics.toast}`);
+    assert(!/scatter|scattered|spill|lost/i.test(protectedDiagnostics.tutorialHint), `Expected no protected-save scatter hint, got ${protectedDiagnostics.tutorialHint}`);
+    assert(protectedDiagnostics.deathPresentation === "idle", `Protected save should not enter death presentation, got ${protectedDiagnostics.deathPresentation}`);
+    assert(
+      /visible:1:alpha:0\.[0-9]+:tint:ffe35a/.test(protectedDiagnostics.playerSpriteState),
+      `Expected protected-save player sprite flicker/tint during invulnerability, got ${protectedDiagnostics.playerSpriteState}`
+    );
+
+    protectedScreenshot = `${outDir}/protected-core-save-render-qa.png`;
+    const protectedScreenshotBuffer = await page.screenshot({ path: protectedScreenshot, fullPage: true });
+    const protectedPlayerTintSamples = samplePngWorldRegions(protectedScreenshotBuffer, [{ ...parseRect(protectedDiagnostics.playerRect), pad: 3 }], protectedDiagnostics.cameraWorldView, "playerTint");
+    assert(
+      protectedPlayerTintSamples.ok && protectedPlayerTintSamples.samples.some((sample) => sample.matchingPixels >= 8),
+      `Expected protected-save player tint to be visible in rendered canvas pixels, got ${JSON.stringify(protectedPlayerTintSamples)}`
+    );
+    protectedDiagnostics.playerTintSamples = protectedPlayerTintSamples;
+
+    protectedScreenshotDiagnostics = await page.evaluate(() => ({
+      hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
+      coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+      invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
+      playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
+    }));
+    await page.keyboard.up("ArrowRight");
+    assert(protectedScreenshotDiagnostics.hudCores === "1", `Protected-save screenshot should capture asserted HUD state 1, got ${protectedScreenshotDiagnostics.hudCores}`);
+    assert(!protectedScreenshotDiagnostics.coreFrames.includes("spill:"), `Protected-save screenshot should capture no-spill state, got ${protectedScreenshotDiagnostics.coreFrames}`);
+    assert(
+      protectedScreenshotDiagnostics.coreFrames === protectedDiagnostics.coreFrames &&
+        protectedScreenshotDiagnostics.playerSpriteState === protectedDiagnostics.playerSpriteState &&
+        protectedScreenshotDiagnostics.invulnerabilityFrames === protectedDiagnostics.invulnerabilityFrames,
+      `Protected-save screenshot diagnostics should be same-frame as asserted diagnostics, got ${JSON.stringify({ before: protectedDiagnostics, screenshot: protectedScreenshotDiagnostics })}`
+    );
+  }
+
+  if (shouldRunScenario("cleanup")) {
+    await installDraft(protectedLevel);
+    await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+    await startAudioGate(page);
+    await page.locator("canvas").waitFor({ state: "visible" });
+    await waitForLevelIntro(page, messages);
+    await page.locator("[data-menu]").waitFor({ state: "visible", timeout: 7000 });
+    await page.locator("[data-menu]").click();
+    await page.locator("[data-exit-menu]").click({ force: true });
+    await page.locator("[data-play]").waitFor({ state: "visible", timeout: 7000 });
+    const staleSceneDiagnostics = await page.evaluate((keys) => {
+      const { dataset } = document.documentElement;
+      return keys
+        .filter((key) => dataset[key] !== undefined)
+        .map((key) => `${key}:${dataset[key]}`);
+    }, gameSceneDiagnosticKeys);
+    assert(staleSceneDiagnostics.length === 0, `Expected GameScene diagnostics to clear after returning to menu, got ${JSON.stringify(staleSceneDiagnostics)}`);
+  }
 
   const unexpectedMessages = messages.filter((msg) => !isAllowedBrowserMessage(msg));
   assert(unexpectedMessages.length === 0, `Core spill render console/page messages: ${JSON.stringify(unexpectedMessages)}`);
@@ -926,6 +962,7 @@ try {
     `${outDir}/core-spill-render-qa.json`,
     JSON.stringify(
       {
+        scenarios: requestedScenarios,
         diagnostics: spillDiagnostics,
         flickerDiagnostics,
         screenshotDiagnostics,
@@ -948,6 +985,7 @@ try {
     JSON.stringify(
       {
         ok: true,
+        scenarios: requestedScenarios,
         screenshot,
         protectedScreenshot,
         diagnostics: spillDiagnostics,
