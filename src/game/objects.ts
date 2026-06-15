@@ -1,5 +1,6 @@
 import { rectsOverlap } from "./geometry";
 import { oscillatingOffsetAt } from "./motion";
+import { solidHasFullCollision } from "./solidCollision";
 import type {
   ActorBody,
   CoreMagnetState,
@@ -37,6 +38,10 @@ const CORE_MAGNET_MAX_SPEED = 3.4;
 const CORE_MAGNET_DRAG = 0.88;
 const CORE_MAGNET_REST_EPSILON = 0.08;
 
+type ObjectUpdateOptions = {
+  collectCores?: boolean;
+};
+
 export const createObjectState = (level?: Level): ObjectState => {
   const activePlates = new Set<string>();
   const collectedCores = new Set<string>();
@@ -70,6 +75,76 @@ const coreMagnetTarget = (core: Core, offset: Pick<CoreMagnetState, "x" | "y">, 
   return { dx, dy, distance: Math.hypot(dx, dy) };
 };
 
+const pointInsideRect = (point: { x: number; y: number }, rect: Rect): boolean =>
+  point.x > rect.x && point.x < rect.x + rect.w && point.y > rect.y && point.y < rect.y + rect.h;
+
+const segmentsIntersect = (
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  c: { x: number; y: number },
+  d: { x: number; y: number }
+): boolean => {
+  const cross = (p: { x: number; y: number }, q: { x: number; y: number }, r: { x: number; y: number }) =>
+    (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const onSegment = (p: { x: number; y: number }, q: { x: number; y: number }, r: { x: number; y: number }) =>
+    Math.min(p.x, r.x) <= q.x &&
+    q.x <= Math.max(p.x, r.x) &&
+    Math.min(p.y, r.y) <= q.y &&
+    q.y <= Math.max(p.y, r.y);
+  const c1 = cross(a, b, c);
+  const c2 = cross(a, b, d);
+  const c3 = cross(c, d, a);
+  const c4 = cross(c, d, b);
+  if (c1 === 0 && onSegment(a, c, b)) return true;
+  if (c2 === 0 && onSegment(a, d, b)) return true;
+  if (c3 === 0 && onSegment(c, a, d)) return true;
+  if (c4 === 0 && onSegment(c, b, d)) return true;
+  return (c1 > 0) !== (c2 > 0) && (c3 > 0) !== (c4 > 0);
+};
+
+const segmentIntersectsRect = (from: { x: number; y: number }, to: { x: number; y: number }, rect: Rect): boolean => {
+  if (pointInsideRect(from, rect) || pointInsideRect(to, rect)) return true;
+  const left = rect.x;
+  const right = rect.x + rect.w;
+  const top = rect.y;
+  const bottom = rect.y + rect.h;
+  return (
+    segmentsIntersect(from, to, { x: left, y: top }, { x: right, y: top }) ||
+    segmentsIntersect(from, to, { x: right, y: top }, { x: right, y: bottom }) ||
+    segmentsIntersect(from, to, { x: right, y: bottom }, { x: left, y: bottom }) ||
+    segmentsIntersect(from, to, { x: left, y: bottom }, { x: left, y: top })
+  );
+};
+
+const coreCenter = (core: Core, offset: Pick<CoreMagnetState, "x" | "y"> = { x: 0, y: 0 }): { x: number; y: number } => ({
+  x: core.x + offset.x + core.w / 2,
+  y: core.y + offset.y + core.h / 2
+});
+
+const actorCenter = (actor: ActorBody): { x: number; y: number } => ({
+  x: actor.x + actor.w / 2,
+  y: actor.y + actor.h / 2
+});
+
+const coreMagnetBlocked = (
+  core: Core,
+  fromOffset: Pick<CoreMagnetState, "x" | "y">,
+  toOffset: Pick<CoreMagnetState, "x" | "y">,
+  actor: ActorBody,
+  blockers: Rect[]
+): boolean => {
+  const currentCenter = coreCenter(core, fromOffset);
+  const nextCenter = coreCenter(core, toOffset);
+  const targetCenter = actorCenter(actor);
+  const nextRect = offsetCoreRect(core, toOffset);
+  return blockers.some(
+    (blocker) =>
+      rectsOverlap(nextRect, blocker) ||
+      segmentIntersectsRect(currentCenter, nextCenter, blocker) ||
+      segmentIntersectsRect(currentCenter, targetCenter, blocker)
+  );
+};
+
 const clampCoreMagnetVelocity = (state: CoreMagnetState): void => {
   const speed = Math.hypot(state.vx, state.vy);
   if (speed <= CORE_MAGNET_MAX_SPEED || speed === 0) return;
@@ -81,12 +156,13 @@ const clampCoreMagnetVelocity = (state: CoreMagnetState): void => {
 const advanceCoreMagnetState = (
   core: Core,
   previous: CoreMagnetState | undefined,
-  attractor: ActorBody | undefined
+  attractor: ActorBody | undefined,
+  blockers: Rect[]
 ): CoreMagnetState | null => {
   const next: CoreMagnetState = previous ? { ...previous } : { x: 0, y: 0, vx: 0, vy: 0 };
   if (attractor?.alive) {
     const target = coreMagnetTarget(core, next, attractor);
-    if (target.distance > 0 && target.distance <= CORE_MAGNET_RADIUS) {
+    if (target.distance > 0 && target.distance <= CORE_MAGNET_RADIUS && !coreMagnetBlocked(core, next, next, attractor, blockers)) {
       const pull = CORE_MAGNET_ACCEL * (1 - target.distance / CORE_MAGNET_RADIUS + 0.35);
       next.vx += (target.dx / target.distance) * pull;
       next.vy += (target.dy / target.distance) * pull;
@@ -101,8 +177,12 @@ const advanceCoreMagnetState = (
   next.vx *= CORE_MAGNET_DRAG;
   next.vy *= CORE_MAGNET_DRAG;
   clampCoreMagnetVelocity(next);
+  const beforeMove = { x: next.x, y: next.y };
   next.x += next.vx;
   next.y += next.vy;
+  if (attractor?.alive && coreMagnetBlocked(core, beforeMove, next, attractor, blockers)) {
+    return previous ? { ...previous, vx: 0, vy: 0 } : null;
+  }
   if (
     Math.abs(next.x) < CORE_MAGNET_REST_EPSILON &&
     Math.abs(next.y) < CORE_MAGNET_REST_EPSILON &&
@@ -119,8 +199,10 @@ export const updateObjects = (
   actors: ActorBody[],
   previous: ObjectState,
   tick = 0,
-  defeatedBossIds: ReadonlySet<string> = new Set()
+  defeatedBossIds: ReadonlySet<string> = new Set(),
+  options: ObjectUpdateOptions = {}
 ): { state: ObjectState; switched: boolean; core: CorePickupEvent | null; cores: CorePickupEvent[] } => {
+  const collectCores = options.collectCores !== false;
   const crateRects = [...previous.crates.values()];
   const timedSwitchTimers = updateTimedSwitchTimers(level, actors, crateRects, previous.timedSwitchTimers);
   const activePlates = collectActivePlates(level.plates || [], actors, crateRects, previous.latchedPlates);
@@ -137,36 +219,45 @@ export const updateObjects = (
   const spilledCores = new Map([...previous.spilledCores.entries()].map(([id, core]) => [id, { ...core }]));
   const cores: CorePickupEvent[] = [];
   const playerActor = actors.find((actor) => actor.kind === "player" && actor.alive);
-  for (const item of level.cores || []) {
-    if (claimedCores.has(item.id)) continue;
-    const previousOffset = previous.coreOffsets.get(item.id);
-    const wasCollected = Boolean(playerActor && rectsOverlap(playerActor, offsetCoreRect(item, previousOffset)));
-    const nextOffset = wasCollected ? null : advanceCoreMagnetState(item, previousOffset, playerActor);
-    const collected = wasCollected || Boolean(playerActor && rectsOverlap(playerActor, offsetCoreRect(item, nextOffset || undefined)));
-    if (collected && playerActor) {
-      claimedCores.add(item.id);
-      collectedCores.add(item.id);
-      cores.push({
-        id: item.id,
-        x: playerActor.x + playerActor.w / 2,
-        y: playerActor.y + playerActor.h / 2
-      });
-      continue;
+  if (collectCores) {
+    const magnetBlockers: Rect[] = [
+      ...level.solids.filter(solidHasFullCollision),
+      ...closedDoorRects(level, previous.openDoors),
+      ...crateRects
+    ];
+    for (const item of level.cores || []) {
+      if (claimedCores.has(item.id)) continue;
+      const previousOffset = previous.coreOffsets.get(item.id);
+      const wasCollected = Boolean(playerActor && rectsOverlap(playerActor, offsetCoreRect(item, previousOffset)));
+      const nextOffset = wasCollected ? null : advanceCoreMagnetState(item, previousOffset, playerActor, magnetBlockers);
+      const collected = wasCollected || Boolean(playerActor && rectsOverlap(playerActor, offsetCoreRect(item, nextOffset || undefined)));
+      if (collected && playerActor) {
+        claimedCores.add(item.id);
+        collectedCores.add(item.id);
+        cores.push({
+          id: item.id,
+          x: playerActor.x + playerActor.w / 2,
+          y: playerActor.y + playerActor.h / 2
+        });
+        continue;
+      }
+      if (nextOffset) coreOffsets.set(item.id, nextOffset);
     }
-    if (nextOffset) coreOffsets.set(item.id, nextOffset);
-  }
-  for (const [id, looseCore] of spilledCores) {
-    if (looseCore.pickupDelayFrames > 0) continue;
-    if (!playerActor || !rectsOverlap(playerActor, looseCore)) continue;
-    spilledCores.delete(id);
-    claimedCores.add(looseCore.sourceId);
-    collectedCores.add(looseCore.sourceId);
-    cores.push({
-      id: looseCore.sourceId,
-      recovered: true,
-      x: looseCore.x + looseCore.w / 2,
-      y: looseCore.y + looseCore.h / 2
-    });
+    for (const [id, looseCore] of spilledCores) {
+      if (looseCore.pickupDelayFrames > 0) continue;
+      if (!playerActor || !rectsOverlap(playerActor, looseCore)) continue;
+      spilledCores.delete(id);
+      claimedCores.add(looseCore.sourceId);
+      collectedCores.add(looseCore.sourceId);
+      cores.push({
+        id: looseCore.sourceId,
+        recovered: true,
+        x: looseCore.x + looseCore.w / 2,
+        y: looseCore.y + looseCore.h / 2
+      });
+    }
+  } else {
+    for (const [id, offset] of previous.coreOffsets) coreOffsets.set(id, { ...offset });
   }
 
   const openDoors = collectOpenDoors(level.doors || [], activePlates, collectedCores, defeatedBossIds);

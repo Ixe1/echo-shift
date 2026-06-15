@@ -288,6 +288,21 @@ export class RoomSimulation {
     this.currentRecording = [];
   }
 
+  private clearCheckpointEchoesAndObjectState(): void {
+    this.clearEchoes();
+    const defeatedBossIds = new Set(this.currentAttemptDefeatedBossIds.keys());
+    const baseline: ObjectState = {
+      ...this.objectState,
+      activePlates: new Set(),
+      latchedPlates: new Set(),
+      timedSwitchTimers: new Map(),
+      openDoors: collectOpenDoors(this.level.doors || [], new Set(), this.objectState.collectedCores, defeatedBossIds),
+      blockedLasers: new Set(),
+      coreOffsets: new Map(this.objectState.coreOffsets)
+    };
+    this.objectState = updateObjects(this.level, [this.player], baseline, this.tick, defeatedBossIds, { collectCores: false }).state;
+  }
+
   private playerForRewindTarget(): ActorBody {
     if (this.bossCheckpoint) {
       return {
@@ -303,7 +318,7 @@ export class RoomSimulation {
   resetLifeAttempt(): void {
     if (this.bossCheckpoint) {
       this.restoreBossCheckpoint();
-      this.clearEchoes();
+      this.clearCheckpointEchoesAndObjectState();
       return;
     }
     this.clearEchoes();
@@ -385,6 +400,10 @@ export class RoomSimulation {
       events.landed = moved.landed;
       events.launchPadId = this.applyLaunchPads(this.player, previousPlayerY);
       events.launched = events.launchPadId !== null;
+    }
+
+    if (!this.dead && !this.player.alive) {
+      this.markPlayerDead(events);
     }
 
     const previousObjectState = this.objectState;

@@ -76,6 +76,42 @@ const level = {
   hint: "QA"
 };
 
+const protectedLevel = {
+  id: "protected-core-save-render-qa",
+  index: 0,
+  name: "Protected Core Save Render QA",
+  subtitle: "Key core save presentation",
+  motionModel: "anchored",
+  start: { x: 24, y: 438 },
+  exit: { x: 820, y: 438, w: 28, h: 38 },
+  bounds: { x: 0, y: 0, w: 900, h: 540 },
+  solids: [
+    { id: "floor-a", x: 0, y: 480, w: 900, h: 40, sprite: "floor", tone: "steel" }
+  ],
+  doors: [{ id: "protected-door", x: 260, y: 400, w: 20, h: 80, requiresCore: "protected-large-key" }],
+  plates: [],
+  timedSwitches: [],
+  lasers: [],
+  movingLasers: [],
+  drones: [],
+  cores: [{ id: "protected-large-key", x: 24, y: 438, w: 24, h: 24, size: "large" }],
+  hazards: [{ id: "protected-spark", x: 128, y: 436, w: 62, h: 38 }],
+  crates: [],
+  monsters: [],
+  platforms: [],
+  oneWays: [],
+  conveyors: [],
+  launchPads: [],
+  echoSensors: [],
+  score: {
+    lives: 3,
+    coreScore: 100,
+    timeBonusTargetSeconds: 10,
+    timeBonusPerSecond: 100
+  },
+  hint: "QA"
+};
+
 const launchOptions = {
   headless: true,
   args: ["--no-sandbox", "--disable-dev-shm-usage"]
@@ -93,11 +129,14 @@ try {
   });
   page.on("pageerror", (error) => messages.push({ type: "pageerror", text: error.message }));
 
-  await page.goto(url, { waitUntil: "domcontentloaded" });
-  await page.evaluate((snapshot) => {
-    window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
-  }, { motionModel: "anchored", currentIndex: 0, levels: [level] });
+  const installDraft = async (draftLevel) => {
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.evaluate((snapshot) => {
+      window.localStorage.setItem("echo-shift-level-editor-draft-v1", JSON.stringify(snapshot));
+    }, { motionModel: "anchored", currentIndex: 0, levels: [draftLevel] });
+  };
 
+  await installDraft(level);
   await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
   await startAudioGate(page);
   await page.locator("canvas").waitFor({ state: "visible" });
@@ -136,20 +175,60 @@ try {
   assert(spillDiagnostics.deathPresentation === "idle", `Core-save should not enter death presentation, got ${spillDiagnostics.deathPresentation}`);
   assert(spillDiagnostics.canvas.width > 0 && spillDiagnostics.canvas.height > 0, `Expected visible canvas, got ${JSON.stringify(spillDiagnostics.canvas)}`);
 
-  const unexpectedMessages = messages.filter((msg) => !isAllowedBrowserMessage(msg));
-  assert(unexpectedMessages.length === 0, `Core spill render console/page messages: ${JSON.stringify(unexpectedMessages)}`);
-
   const screenshot = `${outDir}/core-spill-render-qa.png`;
   await page.screenshot({ path: screenshot, fullPage: true });
   const screenshotDiagnostics = await page.evaluate(() => ({
     hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
     coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || ""
   }));
+
+  await installDraft(protectedLevel);
+  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+  await startAudioGate(page);
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await waitForLevelIntro(page);
+  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  await page.keyboard.down("ArrowRight");
+  await page.waitForFunction(
+    () =>
+      Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
+      !(document.documentElement.dataset.echoShiftCoreSpriteFrames || "").includes("spill:") &&
+      (document.documentElement.dataset.echoShiftDoorAssetTransforms || "").includes("door:protected-door:9") &&
+      document.querySelector("[data-cores]")?.textContent?.trim() === "1",
+    null,
+    { timeout: 7000 }
+  );
+  const protectedDiagnostics = await page.evaluate(() => ({
+    coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+    doors: document.documentElement.dataset.echoShiftDoorAssetTransforms || "",
+    invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
+    hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
+    toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
+    tutorialHint: document.querySelector("[data-tutorial-hint]")?.textContent?.trim() || "",
+    deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || ""
+  }));
+  await page.keyboard.up("ArrowRight");
+
+  assert(!protectedDiagnostics.coreFrames.includes("spill:"), `Protected key-core save should not create spill sprites, got ${protectedDiagnostics.coreFrames}`);
+  assert(protectedDiagnostics.doors.includes("door:protected-door:9"), `Protected key-core should keep required door open, got ${protectedDiagnostics.doors}`);
+  assert(protectedDiagnostics.invulnerabilityFrames > 0, `Expected protected save invulnerability, got ${protectedDiagnostics.invulnerabilityFrames}`);
+  assert(protectedDiagnostics.hudCores === "1", `Protected key-core save should keep carried HUD at 1, got ${protectedDiagnostics.hudCores}`);
+  assert(!protectedDiagnostics.hudCores.includes("/"), `Protected key-core HUD should not include map-total count, got ${protectedDiagnostics.hudCores}`);
+  assert(!/scatter|scattered|spill|lost/i.test(protectedDiagnostics.toast), `Expected no protected-save scatter toast, got ${protectedDiagnostics.toast}`);
+  assert(!/scatter|scattered|spill|lost/i.test(protectedDiagnostics.tutorialHint), `Expected no protected-save scatter hint, got ${protectedDiagnostics.tutorialHint}`);
+  assert(protectedDiagnostics.deathPresentation === "idle", `Protected save should not enter death presentation, got ${protectedDiagnostics.deathPresentation}`);
+
+  const protectedScreenshot = `${outDir}/protected-core-save-render-qa.png`;
+  await page.screenshot({ path: protectedScreenshot, fullPage: true });
+
+  const unexpectedMessages = messages.filter((msg) => !isAllowedBrowserMessage(msg));
+  assert(unexpectedMessages.length === 0, `Core spill render console/page messages: ${JSON.stringify(unexpectedMessages)}`);
+
   writeFileSync(
     `${outDir}/core-spill-render-qa.json`,
-    JSON.stringify({ diagnostics: spillDiagnostics, screenshotDiagnostics, messages }, null, 2)
+    JSON.stringify({ diagnostics: spillDiagnostics, screenshotDiagnostics, protectedDiagnostics, messages }, null, 2)
   );
-  console.log(JSON.stringify({ ok: true, screenshot, diagnostics: spillDiagnostics, screenshotDiagnostics }, null, 2));
+  console.log(JSON.stringify({ ok: true, screenshot, protectedScreenshot, diagnostics: spillDiagnostics, screenshotDiagnostics, protectedDiagnostics }, null, 2));
 } finally {
   await browser.close();
 }

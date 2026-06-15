@@ -229,6 +229,12 @@ const verifyGameSceneAudioCleanupHooks = () => {
     handleEventsBody.includes("this.resetFiniteCoreBonusProgress();"),
     "Expected finite core bonus progress to reset when the player dies"
   );
+  const finishDeathBody = gameSceneMethodBody(source, "finishDeathPresentation");
+  assert(
+    finishDeathBody.includes("this.simulation.resetLifeAttempt();") &&
+      finishDeathBody.includes("this.restoreFiniteCoreBonusProgress();"),
+    "Expected finite core bonus progress to restore from checkpoint-carried cores after respawn"
+  );
   const audioGateBody = gameSceneMethodBody(source, "startLevelWhenAudioReady");
   assert(audioGateBody.includes("audio.waitForMusicStart"), "Expected level start gate to wait for requested music playback");
   assert(audioGateBody.includes("effectWarmup"), "Expected level start gate to include SFX warmup");
@@ -1445,6 +1451,7 @@ try {
     campaignLivesForLevel,
     currentCampaignRunSummary,
     registerCampaignCorePickup,
+    restoreCampaignCoreBonusProgress,
     resetCampaignCoreBonusProgress,
     resetCampaignVitals,
     syncCampaignCoreBonusProgress,
@@ -1752,6 +1759,20 @@ try {
   assert(
     secondThresholdProgress.livesAwarded === 1 && secondThresholdProgress.lives === 5,
     `Expected next carried-core threshold to award another life, got ${JSON.stringify(secondThresholdProgress)}`
+  );
+  resetCampaignVitals(3);
+  const checkpointThresholdAward = syncCampaignCoreBonusProgress(CORES_PER_BONUS_LIFE);
+  assert(checkpointThresholdAward.livesAwarded === 1 && checkpointThresholdAward.lives === 4, `Expected checkpoint threshold setup to award once, got ${JSON.stringify(checkpointThresholdAward)}`);
+  resetCampaignCoreBonusProgress();
+  const restoredCheckpointProgress = restoreCampaignCoreBonusProgress(CORES_PER_BONUS_LIFE);
+  assert(
+    restoredCheckpointProgress.livesAwarded === 0 && restoredCheckpointProgress.lives === 4 && campaignCoreCount() === CORES_PER_BONUS_LIFE,
+    `Expected checkpoint restore to sync carried cores without awarding again, got ${JSON.stringify(restoredCheckpointProgress)}`
+  );
+  const duplicateCheckpointProgress = syncCampaignCoreBonusProgress(CORES_PER_BONUS_LIFE + 1);
+  assert(
+    duplicateCheckpointProgress.livesAwarded === 0 && duplicateCheckpointProgress.lives === 4,
+    `Expected post-checkpoint inventory change not to re-award restored threshold, got ${JSON.stringify(duplicateCheckpointProgress)}`
   );
   resetCampaignVitals(2);
   for (let index = 1; index < CORES_PER_BONUS_LIFE; index += 1) registerCampaignCorePickup("death-reset", `core-${index}`);
@@ -2324,6 +2345,55 @@ try {
   coreMagnetSim.step(idle);
   const magnetOffset = coreMagnetSim.snapshot().coreOffsets.get("magnet-core");
   assert(magnetOffset && magnetOffset.x < 0, `Expected nearby placed core to drift toward player, got ${JSON.stringify(magnetOffset)}`);
+
+  const blockedMagnetSim = new RoomSimulation({
+    ...baseLevel,
+    solids: [
+      ...baseLevel.solids,
+      { id: "magnet-wall", x: 52, y: 70, w: 10, h: 58 }
+    ],
+    cores: [{ id: "blocked-magnet-core", x: 72, y: 90, w: 18, h: 18 }]
+  });
+  runFrames(blockedMagnetSim, 20, idle);
+  assert(!blockedMagnetSim.snapshot().coreOffsets.has("blocked-magnet-core"), "Placed core should not magnetize through a solid wall");
+  assert(!blockedMagnetSim.objectState.collectedCores.has("blocked-magnet-core"), "Placed core should not be collected through a solid wall");
+
+  const doorBlockedMagnetSim = new RoomSimulation({
+    ...baseLevel,
+    doors: [{ id: "magnet-door", x: 52, y: 68, w: 10, h: 64, opensWith: ["missing-door-plate"] }],
+    cores: [{ id: "door-blocked-magnet-core", x: 72, y: 90, w: 18, h: 18 }]
+  });
+  runFrames(doorBlockedMagnetSim, 20, idle);
+  assert(!doorBlockedMagnetSim.snapshot().coreOffsets.has("door-blocked-magnet-core"), "Placed core should not magnetize through a closed door");
+  assert(!doorBlockedMagnetSim.objectState.collectedCores.has("door-blocked-magnet-core"), "Placed core should not be collected through a closed door");
+
+  const manyCoreLevel = {
+    ...baseLevel,
+    cores: Array.from({ length: 12 }, (_, index) => ({
+      id: `many-spill-core-${index}`,
+      x: 18 + index * 2,
+      y: 86,
+      w: 18,
+      h: 18
+    })),
+    hazards: [{ id: "many-spill-spark", x: 18, y: 86, w: 64, h: 34 }]
+  };
+  const manyCoreSpillA = new RoomSimulation(manyCoreLevel).step(idle).coreSpill;
+  const manyCoreSpillB = new RoomSimulation(manyCoreLevel).step(idle).coreSpill;
+  assert(manyCoreSpillA && manyCoreSpillB, "Expected many-core fixture to trigger a core spill");
+  assert(
+    manyCoreSpillA.coreIds.length <= 8,
+    `Expected recoverable spill count to stay capped at 8, got ${JSON.stringify(manyCoreSpillA)}`
+  );
+  assert(
+    manyCoreSpillA.coreIds.length + manyCoreSpillA.lostCoreIds.length === 12,
+    `Expected every normal carried core to be dropped or lost, got ${JSON.stringify(manyCoreSpillA)}`
+  );
+  assert(
+    JSON.stringify(manyCoreSpillA.coreIds) === JSON.stringify(manyCoreSpillB.coreIds) &&
+      JSON.stringify(manyCoreSpillA.lostCoreIds) === JSON.stringify(manyCoreSpillB.lostCoreIds),
+    `Expected deterministic recoverable subset for identical spill setup, got ${JSON.stringify(manyCoreSpillA)} vs ${JSON.stringify(manyCoreSpillB)}`
+  );
 
   const coreExpireSim = new RoomSimulation({
     ...baseLevel,
@@ -4731,6 +4801,24 @@ try {
     `Expected boss checkpoint restore to clear temporary core invulnerability, got ${checkpointInvulnerabilitySim.snapshot().coreInvulnerabilityFrames}`
   );
 
+  const checkpointEchoStateSim = new RoomSimulation({
+    ...baseLevel,
+    echoSensors: [{ id: "checkpoint-echo-sensor", x: 96, y: 86, w: 28, h: 34 }],
+    doors: [{ id: "checkpoint-echo-door", x: 150, y: 68, w: 20, h: 52, opensWith: ["checkpoint-echo-sensor"] }],
+    bosses: [{ id: "checkpoint-echo-boss", kind: "clockwork-regent", x: 78, y: 20, w: 190, h: 130, entrySide: "right", weakSpot: "core", introSeconds: 1, health: 2, score: 2000 }]
+  });
+  checkpointEchoStateSim.echoRecordings.push({ id: "checkpoint-held-echo", frames: [], createdAtFrame: 0 });
+  checkpointEchoStateSim.echoes = [makeActor("checkpoint-held-echo", "echo", { x: 96, y: 86 })];
+  Object.assign(checkpointEchoStateSim.player, { x: 76, y: 86, vx: 0, vy: 0, onGround: true });
+  const checkpointEchoActivated = checkpointEchoStateSim.step(idle);
+  assert(checkpointEchoActivated.bossCheckpointActivated === "checkpoint-echo-boss", "Expected echo-state checkpoint fixture to activate boss checkpoint");
+  assert(checkpointEchoStateSim.objectState.activePlates.has("checkpoint-echo-sensor"), "Expected echo sensor to be active before checkpoint reset");
+  assert(checkpointEchoStateSim.objectState.openDoors.has("checkpoint-echo-door"), "Expected echo-driven door to be open before checkpoint reset");
+  checkpointEchoStateSim.resetLifeAttempt();
+  assert(checkpointEchoStateSim.snapshot().echoes.length === 0, "Checkpoint life reset should clear active echoes");
+  assert(!checkpointEchoStateSim.objectState.activePlates.has("checkpoint-echo-sensor"), "Checkpoint life reset should clear echo-driven sensor state");
+  assert(!checkpointEchoStateSim.objectState.openDoors.has("checkpoint-echo-door"), "Checkpoint life reset should close doors opened only by cleared echoes");
+
   const checkpointRewindTarget = { x: bossCheckpointSim.player.x, y: bossCheckpointSim.player.y };
   const checkpointRewindScore = bossCheckpointSim.score;
   const checkpointRewindFrames = bossCheckpointSim.totalFrames;
@@ -4820,6 +4908,17 @@ try {
   runFrames(fallWithCoreSim, 90, idle);
   assert(fallWithCoreSim.dead, "Falling out of bounds should bypass core-save and kill the player");
   assert(fallWithCoreSim.objectState.spilledCores.size === 0, "Out-of-bounds death should not create spilled recovery cores");
+
+  const fallHazardWithCoreSim = new RoomSimulation({
+    ...fallLevel,
+    start: { x: 20, y: 220 },
+    cores: [{ id: "fall-hazard-core", x: 18, y: 220, w: 18, h: 18 }],
+    hazards: [{ id: "fall-overlap-spark", x: 18, y: 220, w: 36, h: 34 }]
+  });
+  const fallHazardWithCore = fallHazardWithCoreSim.step(idle);
+  assert(fallHazardWithCoreSim.dead && fallHazardWithCore.died, "Out-of-bounds death should take priority over overlapping saveable hazards");
+  assert(!fallHazardWithCore.coreSpill, "Out-of-bounds overlap should not create a core-save spill");
+  assert(fallHazardWithCoreSim.objectState.spilledCores.size === 0, "Out-of-bounds overlap should not create spilled recovery cores");
 
   const ledgeForgivenessLevel = {
     ...baseLevel,

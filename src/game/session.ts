@@ -118,6 +118,18 @@ export const syncCampaignCoreBonusProgress = (carriedCoreCount: number): CoreLif
   };
 };
 
+export const restoreCampaignCoreBonusProgress = (carriedCoreCount: number): CoreLifeAward => {
+  const nextCoreCount = finiteLifeCount(carriedCoreCount, 0);
+  campaignVitals.collectedCoreCount = nextCoreCount;
+  campaignVitals.awardedBonusLives = Math.floor(nextCoreCount / CORES_PER_BONUS_LIFE);
+  return {
+    counted: true,
+    livesAwarded: 0,
+    lives: campaignVitals.lives,
+    collectedCoreCount: campaignVitals.collectedCoreCount
+  };
+};
+
 export const campaignCoreCount = (): number => campaignVitals.collectedCoreCount;
 
 export const recordCampaignLevelScore = (score: Pick<CampaignRunSummary, "score" | "frames" | "deaths" | "cores">): CampaignRunSummary => {

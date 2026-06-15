@@ -44,6 +44,7 @@ import { platformRectAt } from "../game/player";
 import {
   campaignLivesForLevel,
   levelUsesFiniteLives,
+  restoreCampaignCoreBonusProgress,
   resetCampaignCoreBonusProgress,
   syncCampaignCoreBonusProgress,
   syncCampaignLives
@@ -1760,6 +1761,11 @@ export class GameScene extends Phaser.Scene {
     resetCampaignCoreBonusProgress();
   }
 
+  private restoreFiniteCoreBonusProgress(): void {
+    if (!levelUsesFiniteLives(this.level)) return;
+    restoreCampaignCoreBonusProgress(this.simulation.snapshot().collectedCores.size);
+  }
+
   private playBossSoundCue(cue: ReturnType<RoomSimulation["step"]>["bossSoundCues"][number]["cue"]): void {
     if (cue === "storm-floor-beam") audio.play("stormFloorBeam");
     else if (cue === "cryo-beam-fire") audio.play("cryoBeamFire");
@@ -1883,6 +1889,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.simulation.resetLifeAttempt();
+    this.restoreFiniteCoreBonusProgress();
     this.accumulator = 0;
     this.pausedByHud = false;
     this.deathPresentation = null;
