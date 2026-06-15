@@ -356,6 +356,24 @@ const verifyExtraLifeSfxContract = () => {
   );
 };
 
+const verifyMonsterFacingRenderContract = () => {
+  const source = readFileSync("src/scenes/GameScene.ts", "utf8");
+  const syncBody = gameSceneMethodBody(source, "syncMonsterSprite");
+  const flipBody = gameSceneMethodBody(source, "monsterSpriteFlipX");
+  assert(
+    syncBody.includes("const facingLeft = this.monsterFacingLeft(monster, rect, tick);") &&
+      syncBody.includes("const flipX = this.monsterSpriteFlipX(kind, facingLeft);") &&
+      syncBody.includes(".setRotation(visual.rotation * (flipX ? -1 : 1))") &&
+      syncBody.includes(".setFlipX(flipX)") &&
+      syncBody.includes(':flip${flipX ? "1" : "0"}:'),
+    "Expected GameScene syncMonsterSprite to drive monster flip, mirrored rotation, and diagnostics from the resolved render flip"
+  );
+  assert(
+    flipBody.includes('if (kind === "copper-leech") return !facingLeft;') && flipBody.includes("return facingLeft;"),
+    "Expected GameScene monsterSpriteFlipX to invert copper leech art while preserving the default monster flip path"
+  );
+};
+
 const verifyAudioUnlockRetry = async (SynthAudio, soundtracks) => {
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
@@ -2053,6 +2071,7 @@ try {
   );
   verifyGameSceneAudioCleanupHooks();
   verifyExtraLifeSfxContract();
+  verifyMonsterFacingRenderContract();
   await verifyAudioUnlockRetry(SynthAudio, soundtracks);
 
   const previousWindow = globalThis.window;
