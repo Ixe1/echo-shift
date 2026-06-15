@@ -18,7 +18,7 @@ Echo Shift is a Phaser 3 + TypeScript + Vite rewind puzzle-platformer. Treat it 
 - `src/editor/`: in-browser level editor at `/?editor=1`.
 - `scripts/`: simulation, editor, and visual QA harnesses.
 - `public/assets/`: static game assets. Sprites live in `public/assets/sprites/`, backgrounds in `public/assets/backgrounds/`, soundtracks in `public/assets/audio/soundtracks/`.
-- `docs/`: durable plans and workflow notes. Important references include `docs/level-editor-plan.md`, `docs/entity-toolkit.md`, `docs/background-art-pipeline.md`, and `docs/boss-design-and-qa.md`.
+- `docs/`: ignored local-only planning notes, concepts, and working material. Do not rely on it for public build or deployment behavior.
 
 ## Commands
 
@@ -79,7 +79,7 @@ Do not add, maintain, or run route/playthrough QA. Avoid automated tests that dr
 - For backgrounds, add files under `public/assets/backgrounds/`, register keys in `src/game/backgrounds.ts`, and assign `backgroundKey` in `src/data/levels.ts`.
 - For soundtracks, keep MP3s under `public/assets/audio/soundtracks/`, register keys in `src/game/soundtracks.ts`, and assign `soundtrackKey` per level.
 - Do not stretch a single 16:9 image across very wide levels unless that is intentional. The current background approach scales to level height and repeats horizontally.
-- When using image generation or Game Studio workflows, keep source/preview concepts in `docs/concepts/` and final runtime assets under `public/assets/`.
+- When using image generation or Game Studio workflows, keep source/preview concepts in ignored local working material and final runtime assets under `public/assets/`.
 
 ## Implementation Notes
 

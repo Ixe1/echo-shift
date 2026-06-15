@@ -9,7 +9,5 @@ npm-debug.log*
 playwright-report/
 test-results/
 
-# Local soundtrack loop audition exports.
-docs/concepts/audio-loop-previews/*
-!docs/concepts/audio-loop-previews/
-!docs/concepts/audio-loop-previews/README.md
+# Local planning notes, concepts, and working material.
+docs/
