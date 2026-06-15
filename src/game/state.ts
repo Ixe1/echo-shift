@@ -444,9 +444,13 @@ export class RoomSimulation {
     this.coreInvulnerabilityFrames = Math.max(0, this.coreInvulnerabilityFrames - 1);
 
     const platforms = platformFramesAt(this.level.platforms, this.tick);
-    const doors = closedDoorRects(this.level, this.objectState.openDoors);
     const solids = this.runtimeSolids;
-    this.advanceSpilledCores(this.spilledCoreSupportRects(doors, platforms), this.spilledCoreBlockerRects(doors));
+    const defeatedBossIds = new Set(this.currentAttemptDefeatedBossIds.keys());
+    if (this.objectState.spilledCores.size > 0) {
+      const spilledCoreDoors = this.spilledCoreDoorRects(defeatedBossIds);
+      this.advanceSpilledCores(this.spilledCoreSupportRects(spilledCoreDoors, platforms), this.spilledCoreBlockerRects(spilledCoreDoors));
+    }
+    const doors = closedDoorRects(this.level, this.objectState.openDoors);
     const coreMagnetBlockers: Rect[] = [
       ...(this.level.oneWays || []),
       ...(this.level.conveyors || []),
@@ -495,7 +499,6 @@ export class RoomSimulation {
     }
 
     const previousObjectState = this.objectState;
-    const defeatedBossIds = new Set(this.currentAttemptDefeatedBossIds.keys());
     let objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick, defeatedBossIds, {
       magnetBlockerSolids: solids,
       magnetBlockers: coreMagnetBlockers
@@ -1306,6 +1309,13 @@ export class RoomSimulation {
       nextSpilledCores.set(id, moved);
     }
     this.objectState = { ...this.objectState, spilledCores: nextSpilledCores };
+  }
+
+  private spilledCoreDoorRects(defeatedBossIds: ReadonlySet<string>): Rect[] {
+    const projected = updateObjects(this.level, [this.player, ...this.aliveEchoes()], this.objectState, this.tick, defeatedBossIds, {
+      collectCores: false
+    }).state;
+    return closedDoorRects(this.level, projected.openDoors);
   }
 
   private spilledCoreSupportRects(doors: Rect[], platforms: Array<{ current: Rect }>): Rect[] {

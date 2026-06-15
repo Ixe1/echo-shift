@@ -273,6 +273,11 @@ const verifyGameSceneAudioCleanupHooks = () => {
       tutorialHintBody.includes("this.simulation.objectState"),
     "Expected tutorial hints to avoid full simulation snapshots while reading player and object state"
   );
+  assert(
+    stateSource.includes("if (this.objectState.spilledCores.size > 0)") &&
+      stateSource.indexOf("if (this.objectState.spilledCores.size > 0)") < stateSource.indexOf("this.advanceSpilledCores("),
+    "Expected simulation step to avoid spilled-core support/blocker geometry when no loose cores exist"
+  );
   const audioGateBody = gameSceneMethodBody(source, "startLevelWhenAudioReady");
   assert(audioGateBody.includes("audio.waitForMusicStart"), "Expected level start gate to wait for requested music playback");
   assert(audioGateBody.includes("effectWarmup"), "Expected level start gate to include SFX warmup");
@@ -2603,6 +2608,41 @@ try {
   doorClosingMagnetSim.step(idle);
   assert(!doorClosingMagnetSim.snapshot().coreOffsets.has("door-closing-blocked-magnet-core"), "Placed core should not magnetize through a door that closes this frame");
   assert(!doorClosingMagnetSim.objectState.collectedCores.has("door-closing-blocked-magnet-core"), "Placed core should not be collected through a door that closes this frame");
+
+  const doorClosingSpillSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 18, y: 20 },
+    doors: [{ id: "closing-spill-door", x: 92, y: 70, w: 10, h: 58, opensWith: ["closing-spill-plate"] }],
+    cores: []
+  });
+  doorClosingSpillSim.objectState = {
+    ...doorClosingSpillSim.objectState,
+    openDoors: new Set(["closing-spill-door"]),
+    spilledCores: new Map([
+      [
+        "manual-closing-door-loose",
+        {
+          id: "manual-closing-door-loose",
+          sourceId: "manual-closing-door-core",
+          x: 70,
+          y: 90,
+          w: 18,
+          h: 18,
+          vx: 5,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 8
+        }
+      ]
+    ])
+  };
+  doorClosingSpillSim.step(idle);
+  const doorBlockedLooseCore = doorClosingSpillSim.objectState.spilledCores.get("manual-closing-door-loose");
+  assert(doorBlockedLooseCore, "Expected loose core to remain after same-frame door-close collision");
+  assert(
+    doorBlockedLooseCore.x <= 74.1 && doorBlockedLooseCore.vx < 0,
+    `Loose spilled core should bounce off a door that closes this frame, got ${JSON.stringify(doorBlockedLooseCore)}`
+  );
 
   const topOnlyBlockedMagnetSim = new RoomSimulation({
     ...baseLevel,
