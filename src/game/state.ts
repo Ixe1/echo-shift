@@ -242,6 +242,7 @@ export class RoomSimulation {
     }
 
     this.teleportPlayerToStart();
+    this.resetRewindCoreSaveState();
     return added;
   }
 
@@ -325,6 +326,15 @@ export class RoomSimulation {
   private clearCoreOffsets(): void {
     if (this.objectState.coreOffsets.size === 0) return;
     this.objectState = { ...this.objectState, coreOffsets: new Map() };
+  }
+
+  private resetRewindCoreSaveState(): void {
+    this.coreInvulnerabilityFrames = 0;
+    this.protectedCoreSaveIds.clear();
+  }
+
+  private hasUnclaimedPlacedCores(): boolean {
+    return (this.level.cores || []).some((core) => !this.objectState.claimedCores.has(core.id));
   }
 
   private clearEchoes(): void {
@@ -451,11 +461,16 @@ export class RoomSimulation {
       this.advanceSpilledCores(this.spilledCoreSupportRects(spilledCoreDoors, platforms), this.spilledCoreBlockerRects(spilledCoreDoors));
     }
     const doors = closedDoorRects(this.level, this.objectState.openDoors);
-    const coreMagnetBlockers: Rect[] = [
-      ...(this.level.oneWays || []),
-      ...(this.level.conveyors || []),
-      ...platforms.map((platform) => ({ ...platform.current }))
-    ];
+    const objectUpdateOptions = this.hasUnclaimedPlacedCores()
+      ? {
+          magnetBlockerSolids: solids,
+          magnetBlockers: [
+            ...(this.level.oneWays || []),
+            ...(this.level.conveyors || []),
+            ...platforms.map((platform) => ({ ...platform.current }))
+          ]
+        }
+      : undefined;
     const baseDynamic = {
       oneWays: this.level.oneWays,
       conveyors: this.level.conveyors,
@@ -499,20 +514,14 @@ export class RoomSimulation {
     }
 
     const previousObjectState = this.objectState;
-    let objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick, defeatedBossIds, {
-      magnetBlockerSolids: solids,
-      magnetBlockers: coreMagnetBlockers
-    });
+    let objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick, defeatedBossIds, objectUpdateOptions);
     this.objectState = objectUpdate.state;
 
     for (;;) {
       const echoVaporization = this.vaporizeHazardousEchoes();
       if (!echoVaporization.vaporized) break;
       events.echoLaserVaporized += echoVaporization.laserVaporized;
-      objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick, defeatedBossIds, {
-        magnetBlockerSolids: solids,
-        magnetBlockers: coreMagnetBlockers
-      });
+      objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick, defeatedBossIds, objectUpdateOptions);
       this.objectState = objectUpdate.state;
     }
 
@@ -787,6 +796,47 @@ export class RoomSimulation {
       this.recoveredSpillCoreIds.add(id);
       this.removeCoreScore(id);
     }
+  }
+
+  private refreshBossCheckpointAfterCoreSave(): void {
+    const checkpoint = this.bossCheckpoint;
+    if (!checkpoint) return;
+    const checkpointKnownCoreIds = new Set([...checkpoint.objectState.claimedCores, ...checkpoint.objectState.collectedCores]);
+    const objectState = cloneCheckpointObjectState(checkpoint.objectState);
+    for (const id of [...objectState.collectedCores]) {
+      if (!this.objectState.collectedCores.has(id)) objectState.collectedCores.delete(id);
+    }
+    objectState.openDoors = collectOpenDoors(
+      this.level.doors || [],
+      objectState.activePlates,
+      objectState.collectedCores,
+      new Set(this.currentAttemptDefeatedBossIds.keys())
+    );
+    objectState.blockedLasers = collectBlockedLasers(
+      [...(this.level.lasers || []), ...(this.level.movingLasers || [])],
+      [...objectState.crates.values()],
+      objectState.activePlates,
+      checkpoint.tick
+    );
+    const currentAttemptCollectedCoreIds = new Set(checkpoint.currentAttemptCollectedCoreIds);
+    for (const id of [...currentAttemptCollectedCoreIds]) {
+      if (!this.currentAttemptCollectedCoreIds.has(id)) currentAttemptCollectedCoreIds.delete(id);
+    }
+    const removedCheckpointCoreScore = (checkpoint.currentAttemptCollectedCoreIds.size - currentAttemptCollectedCoreIds.size) * this.level.score.coreScore;
+    const protectedCoreSaveIds = new Set([...this.protectedCoreSaveIds].filter((id) => checkpointKnownCoreIds.has(id)));
+    const recoveredSpillCoreIds = new Set(checkpoint.recoveredSpillCoreIds);
+    for (const id of this.recoveredSpillCoreIds) {
+      if (checkpointKnownCoreIds.has(id)) recoveredSpillCoreIds.add(id);
+    }
+    this.bossCheckpoint = {
+      ...checkpoint,
+      objectState,
+      currentAttemptCollectedCoreIds,
+      score: Math.max(0, checkpoint.score - removedCheckpointCoreScore),
+      coreSpillSerial: this.coreSpillSerial,
+      protectedCoreSaveIds,
+      recoveredSpillCoreIds
+    };
   }
 
   private resetRuntimeTerrain(): void {
@@ -1221,6 +1271,7 @@ export class RoomSimulation {
       spilledCores: nextSpilledCores
     };
     this.refreshDoorStateForDefeatedBosses(events);
+    this.refreshBossCheckpointAfterCoreSave();
     this.player.alive = true;
     this.player.vx = knockbackDirection * CORE_SAVE_KNOCKBACK_SPEED;
     this.player.vy = CORE_SAVE_BOUNCE_SPEED;
@@ -1306,16 +1357,28 @@ export class RoomSimulation {
       moved.y += moved.vy;
       this.resolveSpilledCoreVertical(moved, previousY, blockers);
       this.resolveSpilledCoreTerrain(moved, previousY, supports);
+      this.resolveSpilledCorePenetration(moved, blockers);
       nextSpilledCores.set(id, moved);
     }
     this.objectState = { ...this.objectState, spilledCores: nextSpilledCores };
   }
 
   private spilledCoreDoorRects(defeatedBossIds: ReadonlySet<string>): Rect[] {
-    const projected = updateObjects(this.level, [this.player, ...this.aliveEchoes()], this.objectState, this.tick, defeatedBossIds, {
+    let actors = [this.player, ...this.aliveEchoes()];
+    let projected = this.projectObjectStateForSpilledCoreDoors(actors, defeatedBossIds);
+    for (;;) {
+      const survivors = actors.filter((actor) => actor.kind !== "echo" || !actor.alive || !actorTouchesHazard(this.level, actor, projected, this.tick));
+      if (survivors.length === actors.length) break;
+      actors = survivors;
+      projected = this.projectObjectStateForSpilledCoreDoors(actors, defeatedBossIds);
+    }
+    return closedDoorRects(this.level, projected.openDoors);
+  }
+
+  private projectObjectStateForSpilledCoreDoors(actors: ActorBody[], defeatedBossIds: ReadonlySet<string>): ObjectState {
+    return updateObjects(this.level, actors, this.objectState, this.tick, defeatedBossIds, {
       collectCores: false
     }).state;
-    return closedDoorRects(this.level, projected.openDoors);
   }
 
   private spilledCoreSupportRects(doors: Rect[], platforms: Array<{ current: Rect }>): Rect[] {
@@ -1396,6 +1459,33 @@ export class RoomSimulation {
       core.y = support.y - core.h;
       core.vy = Math.abs(core.vy) > 1.2 ? -Math.abs(core.vy) * CORE_SPILL_BOUNCE : 0;
       core.vx *= 0.82;
+      return;
+    }
+  }
+
+  private resolveSpilledCorePenetration(core: SpilledCore, blockers: Rect[]): void {
+    for (const blocker of blockers) {
+      if (!rectsOverlap(core, blocker)) continue;
+      const pushLeft = core.x + core.w - blocker.x;
+      const pushRight = blocker.x + blocker.w - core.x;
+      const pushUp = core.y + core.h - blocker.y;
+      const pushDown = blocker.y + blocker.h - core.y;
+      const minPush = Math.min(pushLeft, pushRight, pushUp, pushDown);
+      const shove = 1.2;
+      if (minPush === pushLeft) {
+        core.x = blocker.x - core.w;
+        core.vx = -Math.max(Math.abs(core.vx), shove) * CORE_SPILL_BOUNCE;
+      } else if (minPush === pushRight) {
+        core.x = blocker.x + blocker.w;
+        core.vx = Math.max(Math.abs(core.vx), shove) * CORE_SPILL_BOUNCE;
+      } else if (minPush === pushUp) {
+        core.y = blocker.y - core.h;
+        core.vy = Math.abs(core.vy) > 1.2 ? -Math.abs(core.vy) * CORE_SPILL_BOUNCE : 0;
+        core.vx *= 0.82;
+      } else {
+        core.y = blocker.y + blocker.h;
+        core.vy = Math.max(Math.abs(core.vy), shove) * CORE_SPILL_BOUNCE;
+      }
       return;
     }
   }

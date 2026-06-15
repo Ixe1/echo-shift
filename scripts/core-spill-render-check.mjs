@@ -13,6 +13,21 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
+const parseSpillFrameMap = (frames) => {
+  const map = new Map();
+  for (const frame of frames.split("|")) {
+    const match = frame.match(/^spill:(.*):time-effects:\d+:spill:(-?\d+),(-?\d+)$/);
+    if (!match) continue;
+    map.set(match[1], { x: Number(match[2]), y: Number(match[3]) });
+  }
+  return map;
+};
+
+const parseRect = (value) => {
+  const [x, y, w, h] = value.split(",").map(Number);
+  return { x, y, w, h };
+};
+
 const gameSceneDiagnosticKeys = [
   "echoShiftScoreEligible",
   "echoShiftMusicLoading",
@@ -181,6 +196,45 @@ const protectedLevel = {
   hint: "QA"
 };
 
+const bonusLifeAfterLossLevel = {
+  id: "bonus-life-after-core-loss-render-qa",
+  index: 0,
+  name: "Bonus Life After Core Loss Render QA",
+  subtitle: "Current carried cores drive lives",
+  motionModel: "anchored",
+  start: { x: 24, y: 438 },
+  exit: { x: 820, y: 438, w: 28, h: 38 },
+  bounds: { x: 0, y: 0, w: 900, h: 540 },
+  solids: [
+    { id: "floor-a", x: 0, y: 480, w: 900, h: 40, sprite: "floor", tone: "steel" }
+  ],
+  doors: [],
+  plates: [],
+  timedSwitches: [],
+  lasers: [],
+  movingLasers: [],
+  drones: [],
+  cores: [
+    ...Array.from({ length: 29 }, (_, index) => ({ id: `bonus-before-loss-core-${index}`, x: 24, y: 438, w: 18, h: 18 })),
+    { id: "bonus-after-loss-core", x: 300, y: 438, w: 18, h: 18 }
+  ],
+  hazards: [{ id: "bonus-loss-spark", x: 128, y: 436, w: 62, h: 38 }],
+  crates: [],
+  monsters: [],
+  platforms: [],
+  oneWays: [],
+  conveyors: [],
+  launchPads: [],
+  echoSensors: [],
+  score: {
+    lives: 3,
+    coreScore: 100,
+    timeBonusTargetSeconds: 10,
+    timeBonusPerSecond: 100
+  },
+  hint: "QA"
+};
+
 const launchOptions = {
   headless: true,
   args: ["--no-sandbox", "--disable-dev-shm-usage"]
@@ -245,6 +299,41 @@ try {
     null,
     { timeout: 7000 }
   );
+  const temporalStart = await page.evaluate(() => ({
+    coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+    playerRect: document.documentElement.dataset.echoShiftPlayerRect || ""
+  }));
+  await page.keyboard.up("ArrowRight");
+  await page.waitForFunction(
+    (initialFrames) => {
+      const frames = document.documentElement.dataset.echoShiftCoreSpriteFrames || "";
+      return frames !== initialFrames && frames.split("|").filter((frame) => frame.includes(":spill:")).length >= 2;
+    },
+    temporalStart.coreFrames,
+    { timeout: 2500 }
+  );
+  const temporalEnd = await page.evaluate(() => ({
+    coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+    playerRect: document.documentElement.dataset.echoShiftPlayerRect || ""
+  }));
+  const temporalStartSpills = parseSpillFrameMap(temporalStart.coreFrames);
+  const temporalEndSpills = parseSpillFrameMap(temporalEnd.coreFrames);
+  const playerRect = parseRect(temporalStart.playerRect);
+  const playerCenterX = playerRect.x + playerRect.w / 2;
+  const commonSpillIds = [...temporalStartSpills.keys()].filter((id) => temporalEndSpills.has(id));
+  const movingAwayOrBallistic = commonSpillIds.filter((id) => {
+    const start = temporalStartSpills.get(id);
+    const end = temporalEndSpills.get(id);
+    const startDirection = Math.sign(start.x + 9 - playerCenterX);
+    const horizontalAway = startDirection !== 0 && (end.x - start.x) * startDirection >= -0.5;
+    const verticalArc = Math.abs(end.y - start.y) >= 1;
+    return horizontalAway || verticalArc;
+  });
+  assert(commonSpillIds.length >= 2, `Expected temporal spill samples to share multiple sprite ids, got ${JSON.stringify({ temporalStart, temporalEnd })}`);
+  assert(
+    movingAwayOrBallistic.length > 0,
+    `Expected spilled-core sprites to keep ballistic/non-magnetic motion over time, got ${JSON.stringify({ temporalStart, temporalEnd })}`
+  );
   await freezeAnimationFrames();
 
   const spillDiagnostics = await page.evaluate(() => ({
@@ -304,6 +393,52 @@ try {
       screenshotDiagnostics.invulnerabilityFrames === spillDiagnostics.invulnerabilityFrames,
     `Core-spill screenshot diagnostics should be same-frame as asserted diagnostics, got ${JSON.stringify({ before: spillDiagnostics, screenshot: screenshotDiagnostics })}`
   );
+
+  await installDraft(bonusLifeAfterLossLevel);
+  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+  await startAudioGate(page);
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await waitForLevelIntro(page, messages);
+  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  await page.waitForFunction(
+    () => document.querySelector("[data-cores]")?.textContent?.trim() === "29" && document.querySelector("[data-lives]")?.textContent?.trim() === "3",
+    null,
+    { timeout: 7000 }
+  );
+  await page.keyboard.down("ArrowRight");
+  await page.waitForFunction(
+    () =>
+      Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
+      Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0") < 29 &&
+      document.querySelector("[data-lives]")?.textContent?.trim() === "3",
+    null,
+    { timeout: 7000 }
+  );
+  const postLossDiagnostics = await page.evaluate(() => ({
+    hudCores: Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0"),
+    lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
+    toast: document.querySelector("[data-toast]")?.textContent?.trim() || ""
+  }));
+  await page.waitForFunction(
+    (postLossCoreCount) => {
+      const cores = Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0");
+      return cores > postLossCoreCount && cores < 30 && document.querySelector("[data-lives]")?.textContent?.trim() === "3";
+    },
+    postLossDiagnostics.hudCores,
+    { timeout: 9000 }
+  );
+  const postRecoveryBonusDiagnostics = await page.evaluate(() => ({
+    hudCores: Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0"),
+    lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
+    toast: document.querySelector("[data-toast]")?.textContent?.trim() || ""
+  }));
+  await page.keyboard.up("ArrowRight");
+  assert(postLossDiagnostics.lives === "3", `Expected no bonus life immediately after core loss below threshold, got ${JSON.stringify(postLossDiagnostics)}`);
+  assert(
+    postRecoveryBonusDiagnostics.lives === "3" && postRecoveryBonusDiagnostics.hudCores > postLossDiagnostics.hudCores && postRecoveryBonusDiagnostics.hudCores < 30,
+    `Expected collecting below-threshold cores after a spill not to award a stale bonus life, got ${JSON.stringify({ postLossDiagnostics, postRecoveryBonusDiagnostics })}`
+  );
+  assert(!/bonus life/i.test(postRecoveryBonusDiagnostics.toast), `Expected no stale bonus-life toast below 30 carried cores, got ${postRecoveryBonusDiagnostics.toast}`);
 
   await installDraft(protectedLevel);
   await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });

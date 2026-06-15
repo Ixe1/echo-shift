@@ -199,6 +199,7 @@ const gameSceneMethodBody = (source, name) => {
 const verifyGameSceneAudioCleanupHooks = () => {
   const source = readFileSync("src/scenes/GameScene.ts", "utf8");
   const stateSource = readFileSync("src/game/state.ts", "utf8");
+  const objectsSource = readFileSync("src/game/objects.ts", "utf8");
   const audioSource = readFileSync("src/game/audio.ts", "utf8");
   const helperBody = gameSceneMethodBody(source, "clearAttemptScopedAudio");
   assert(
@@ -277,6 +278,26 @@ const verifyGameSceneAudioCleanupHooks = () => {
     stateSource.includes("if (this.objectState.spilledCores.size > 0)") &&
       stateSource.indexOf("if (this.objectState.spilledCores.size > 0)") < stateSource.indexOf("this.advanceSpilledCores("),
     "Expected simulation step to avoid spilled-core support/blocker geometry when no loose cores exist"
+  );
+  assert(
+    stateSource.includes("this.resetRewindCoreSaveState()") &&
+      stateSource.includes("this.protectedCoreSaveIds.clear()"),
+    "Expected rewind to clear transient core-save invulnerability and protected-core save state"
+  );
+  assert(
+    stateSource.includes("refreshBossCheckpointAfterCoreSave") &&
+      stateSource.includes("cloneCheckpointObjectState(checkpoint.objectState)"),
+    "Expected core saves to refresh active boss checkpoint core state without recapturing transient spill state"
+  );
+  assert(
+    stateSource.includes("const objectUpdateOptions = this.hasUnclaimedPlacedCores()") &&
+      stateSource.includes("magnetBlockerSolids: solids"),
+    "Expected placed-core magnet blocker options to be skipped when no authored core can move"
+  );
+  assert(
+    objectsSource.includes("let magnetBlockers: Rect[] | null = null") &&
+      objectsSource.includes("const unclaimedCores = (level.cores || []).filter"),
+    "Expected object updates to lazily build magnet blockers only for unclaimed authored cores"
   );
   const audioGateBody = gameSceneMethodBody(source, "startLevelWhenAudioReady");
   assert(audioGateBody.includes("audio.waitForMusicStart"), "Expected level start gate to wait for requested music playback");
@@ -2540,6 +2561,30 @@ try {
   assert(fragileRecoveredCoreSim.dead && fragileThirdHit.died, "No-core follow-up hit should kill after fragile recovered core is consumed");
   assert(!fragileThirdHit.coreSpill, `No-core follow-up hit should not create another core save, got ${JSON.stringify(fragileThirdHit.coreSpill)}`);
 
+  const rewindProtectedSaveSim = new RoomSimulation({
+    ...baseLevel,
+    cores: [{ id: "rewind-protected-core", x: 18, y: 86, w: 24, h: 24, size: "large" }],
+    hazards: [{ id: "rewind-protected-spark", x: 18, y: 86, w: 36, h: 34 }]
+  });
+  const rewindProtectedFirstSave = rewindProtectedSaveSim.step(idle);
+  assert(
+    rewindProtectedFirstSave.coreSpill?.protectedCoreIds.includes("rewind-protected-core") &&
+      rewindProtectedSaveSim.snapshot().coreInvulnerabilityFrames > 0 &&
+      !rewindProtectedSaveSim.dead,
+    `Expected protected core to save before rewind, got ${JSON.stringify(rewindProtectedFirstSave.coreSpill)}`
+  );
+  rewindProtectedSaveSim.currentRecording = Array.from({ length: 20 }, () => encodeInputFrame(right));
+  assert(rewindProtectedSaveSim.rewindToEcho(), "Expected protected-save rewind fixture to anchor an echo");
+  assert(
+    rewindProtectedSaveSim.snapshot().coreInvulnerabilityFrames === 0,
+    `Rewind should clear temporary core-save invulnerability, got ${rewindProtectedSaveSim.snapshot().coreInvulnerabilityFrames}`
+  );
+  const rewindProtectedSecondSave = rewindProtectedSaveSim.step(idle);
+  assert(
+    rewindProtectedSecondSave.coreSpill?.protectedCoreIds.includes("rewind-protected-core") && !rewindProtectedSaveSim.dead,
+    `Rewind should start a fresh protected-core save attempt, got ${JSON.stringify(rewindProtectedSecondSave.coreSpill)}`
+  );
+
   const coreMagnetSim = new RoomSimulation({
     ...baseLevel,
     cores: [{ id: "magnet-core", x: 78, y: 90, w: 18, h: 18 }]
@@ -2633,6 +2678,21 @@ try {
           ttlFrames: 120,
           pickupDelayFrames: 8
         }
+      ],
+      [
+        "manual-embedded-door-loose",
+        {
+          id: "manual-embedded-door-loose",
+          sourceId: "manual-embedded-door-core",
+          x: 88,
+          y: 90,
+          w: 18,
+          h: 18,
+          vx: 0,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 8
+        }
       ]
     ])
   };
@@ -2642,6 +2702,54 @@ try {
   assert(
     doorBlockedLooseCore.x <= 74.1 && doorBlockedLooseCore.vx < 0,
     `Loose spilled core should bounce off a door that closes this frame, got ${JSON.stringify(doorBlockedLooseCore)}`
+  );
+  const doorEmbeddedLooseCore = doorClosingSpillSim.objectState.spilledCores.get("manual-embedded-door-loose");
+  assert(doorEmbeddedLooseCore, "Expected embedded loose core to remain after same-frame door-close separation");
+  assert(
+    doorEmbeddedLooseCore.x <= 74.1 || doorEmbeddedLooseCore.x >= 102,
+    `Loose spilled core embedded in a closing door should be separated out, got ${JSON.stringify(doorEmbeddedLooseCore)}`
+  );
+
+  const echoVaporizedDoorSpillSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 18, y: 20 },
+    doors: [{ id: "echo-held-spill-door", x: 92, y: 70, w: 10, h: 58, opensWith: ["echo-held-spill-sensor"] }],
+    echoSensors: [{ id: "echo-held-spill-sensor", x: 18, y: 86, w: 24, h: 34, actors: "echo" }],
+    lasers: [{ id: "echo-held-spill-laser", x: 18, y: 86, w: 24, h: 34 }],
+    cores: []
+  });
+  Object.assign(echoVaporizedDoorSpillSim.player, { x: 18, y: 86, vx: 0, vy: 0, onGround: true });
+  echoVaporizedDoorSpillSim.currentRecording = Array.from({ length: 20 }, () => encodeInputFrame(right));
+  assert(echoVaporizedDoorSpillSim.rewindToEcho(), "Expected echo-held door fixture to anchor an echo");
+  assert(echoVaporizedDoorSpillSim.echoes.length === 1, "Expected one anchored echo before vaporization");
+  echoVaporizedDoorSpillSim.objectState = {
+    ...echoVaporizedDoorSpillSim.objectState,
+    openDoors: new Set(["echo-held-spill-door"]),
+    spilledCores: new Map([
+      [
+        "manual-echo-door-loose",
+        {
+          id: "manual-echo-door-loose",
+          sourceId: "manual-echo-door-core",
+          x: 70,
+          y: 90,
+          w: 18,
+          h: 18,
+          vx: 5,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 8
+        }
+      ]
+    ])
+  };
+  const echoVaporizedDoorStep = echoVaporizedDoorSpillSim.step(idle);
+  assert(echoVaporizedDoorStep.echoLaserVaporized === 1, "Expected echo-held door fixture to vaporize the echo this frame");
+  const echoDoorLooseCore = echoVaporizedDoorSpillSim.objectState.spilledCores.get("manual-echo-door-loose");
+  assert(echoDoorLooseCore, "Expected echo-door loose core to remain after echo-vaporized door collision");
+  assert(
+    echoDoorLooseCore.x <= 74.1 && echoDoorLooseCore.vx < 0,
+    `Loose spilled core should see the post-vaporization closed door state, got ${JSON.stringify(echoDoorLooseCore)}`
   );
 
   const topOnlyBlockedMagnetSim = new RoomSimulation({
@@ -5332,6 +5440,31 @@ try {
   const postCheckpointRetryFatal = postCheckpointProtectedSim.step(idle);
   assert(postCheckpointProtectedSim.dead && postCheckpointRetryFatal.died, "Checkpoint retry should not re-arm a protected key core spent after checkpoint activation");
   assert(!postCheckpointRetryFatal.coreSpill, `Spent protected key core should not create a second save after checkpoint retry, got ${JSON.stringify(postCheckpointRetryFatal.coreSpill)}`);
+
+  const checkpointEntrySpillSim = new RoomSimulation({
+    ...baseLevel,
+    score: { ...baseLevel.score, coreScore: 1000 },
+    start: { x: 76, y: 86 },
+    cores: [{ id: "checkpoint-entry-spill-core", x: 76, y: 86, w: 18, h: 18 }],
+    hazards: [{ id: "checkpoint-entry-spend", x: 76, y: 86, w: 36, h: 34 }],
+    bosses: [{ id: "checkpoint-entry-boss", kind: "clockwork-regent", x: 70, y: 20, w: 190, h: 130, entrySide: "right", weakSpot: "core", introSeconds: 1, health: 2, score: 2000 }]
+  });
+  const checkpointEntrySpend = checkpointEntrySpillSim.step(idle);
+  assert(checkpointEntrySpend.bossCheckpointActivated === "checkpoint-entry-boss", "Expected checkpoint-entry fixture to activate a boss checkpoint");
+  assert(
+    checkpointEntrySpend.coreSpill?.coreIds.includes("checkpoint-entry-spill-core") ||
+      checkpointEntrySpend.coreSpill?.lostCoreIds.includes("checkpoint-entry-spill-core"),
+    `Expected checkpoint-entry frame to spend normal core, got ${JSON.stringify(checkpointEntrySpend.coreSpill)}`
+  );
+  assert(!checkpointEntrySpillSim.objectState.collectedCores.has("checkpoint-entry-spill-core"), "Expected checkpoint-entry normal core to be lost after save");
+  checkpointEntrySpillSim.coreInvulnerabilityFrames = 0;
+  checkpointEntrySpillSim.level.hazards = [{ id: "checkpoint-entry-fatal", x: checkpointEntrySpillSim.player.x, y: checkpointEntrySpillSim.player.y, w: 36, h: 34 }];
+  const checkpointEntryFatal = checkpointEntrySpillSim.step(idle);
+  assert(checkpointEntrySpillSim.dead && checkpointEntryFatal.died, "Expected checkpoint-entry fixture to die after its same-frame spent core is gone");
+  checkpointEntrySpillSim.resetLifeAttempt();
+  assert(!checkpointEntrySpillSim.dead, "Expected checkpoint-entry fixture to respawn from boss checkpoint");
+  assert(!checkpointEntrySpillSim.objectState.collectedCores.has("checkpoint-entry-spill-core"), "Checkpoint retry should not restore a normal core spent on the checkpoint-entry frame");
+  assert(checkpointEntrySpillSim.score === 0, `Checkpoint retry should not restore score for same-frame spent core, got ${checkpointEntrySpillSim.score}`);
 
   const postCheckpointRecollectedKeySim = new RoomSimulation({
     ...baseLevel,

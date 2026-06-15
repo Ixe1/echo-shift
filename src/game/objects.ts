@@ -228,18 +228,24 @@ export const updateObjects = (
   const cores: CorePickupEvent[] = [];
   const playerActor = actors.find((actor) => actor.kind === "player" && actor.alive);
   if (collectCores) {
-    const magnetBlockerSolids = options.magnetBlockerSolids || level.solids;
-    const magnetBlockers: Rect[] = [
-      ...magnetBlockerSolids.filter(solidHasGameplayCollision),
-      ...(options.magnetBlockers || []),
-      ...closedDoorRects(level, currentOpenDoorsForMagnet),
-      ...crateRects
-    ];
-    for (const item of level.cores || []) {
-      if (claimedCores.has(item.id)) continue;
+    let magnetBlockers: Rect[] | null = null;
+    const blockerRects = (): Rect[] => {
+      if (!magnetBlockers) {
+        const magnetBlockerSolids = options.magnetBlockerSolids || level.solids;
+        magnetBlockers = [
+          ...magnetBlockerSolids.filter(solidHasGameplayCollision),
+          ...(options.magnetBlockers || []),
+          ...closedDoorRects(level, currentOpenDoorsForMagnet),
+          ...crateRects
+        ];
+      }
+      return magnetBlockers;
+    };
+    const unclaimedCores = (level.cores || []).filter((item) => !claimedCores.has(item.id));
+    for (const item of unclaimedCores) {
       const previousOffset = previous.coreOffsets.get(item.id);
       const wasCollected = Boolean(playerActor && rectsOverlap(playerActor, offsetCoreRect(item, previousOffset)));
-      const nextOffset = wasCollected ? null : advanceCoreMagnetState(item, previousOffset, playerActor, magnetBlockers);
+      const nextOffset = wasCollected ? null : advanceCoreMagnetState(item, previousOffset, playerActor, blockerRects());
       const collected = wasCollected || Boolean(playerActor && rectsOverlap(playerActor, offsetCoreRect(item, nextOffset || undefined)));
       if (collected && playerActor) {
         claimedCores.add(item.id);
