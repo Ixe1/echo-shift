@@ -2032,18 +2032,25 @@ try {
     backgroundForLevel({ ...levels[1], backgroundKey: undefined }, 1).key === "time-lab-prototype",
     "Expected levels without explicit backgrounds to use prototype fallback"
   );
+  const springtideSprint = levels.find((level) => level.id === "springtide-sprint");
+  const rainhouseRelay = levels.find((level) => level.id === "rainhouse-relay");
+  const cryoGroveCircuit = levels.find((level) => level.id === "cryo-grove-circuit");
+  const timberArchive = levels.find((level) => level.id === "timber-archive");
   assert(
-    levels.some((level) => backgroundAmbienceIsActive(backgroundAmbienceForLevel(level))),
-    "Expected at least one handcrafted level to use active background ambience"
+    springtideSprint && !backgroundAmbienceIsActive(backgroundAmbienceForLevel(springtideSprint)) && backgroundAmbienceForLevel(springtideSprint).preset === "none",
+    "Expected springtide-sprint to use explicit inactive none ambience"
   );
   assert(
-    !backgroundAmbienceIsActive(backgroundAmbienceForLevel({ ...levels[0], backgroundAmbience: undefined })) &&
-      backgroundAmbienceForLevel({ ...levels[0], backgroundAmbience: undefined }).preset === "none",
-    "Expected missing ambience to normalize to inactive none ambience"
+    rainhouseRelay && !backgroundAmbienceIsActive(backgroundAmbienceForLevel(rainhouseRelay)) && backgroundAmbienceForLevel(rainhouseRelay).preset === "none",
+    "Expected rainhouse-relay to normalize missing ambience to inactive none ambience"
   );
   assert(
-    !backgroundAmbienceIsActive(backgroundAmbienceForLevel(levels[0])),
-    "Expected at least one handcrafted level to use inactive background ambience"
+    cryoGroveCircuit && backgroundAmbienceIsActive(backgroundAmbienceForLevel(cryoGroveCircuit)) && backgroundAmbienceForLevel(cryoGroveCircuit).preset === "lab",
+    "Expected cryo-grove-circuit to use active lab ambience"
+  );
+  assert(
+    timberArchive && !backgroundAmbienceIsActive(backgroundAmbienceForLevel(timberArchive)) && backgroundAmbienceForLevel(timberArchive).preset === "none",
+    "Expected timber-archive to use explicit inactive none ambience"
   );
   assert(Boolean(soundtracks.tutorial), "Expected a tutorial soundtrack");
   assert(Boolean(soundtracks.boss), "Expected a boss soundtrack");
