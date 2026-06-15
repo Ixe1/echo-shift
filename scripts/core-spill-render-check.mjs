@@ -147,6 +147,13 @@ try {
     }, { motionModel: "anchored", currentIndex: 0, levels: [draftLevel] });
   };
 
+  const freezeAnimationFrames = async () => {
+    await page.evaluate(() => {
+      const lastAnimationFrameId = window.requestAnimationFrame(() => undefined);
+      for (let id = 1; id <= lastAnimationFrameId; id += 1) window.cancelAnimationFrame(id);
+    });
+  };
+
   await installDraft(level);
   await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
   await startAudioGate(page);
@@ -170,6 +177,7 @@ try {
     null,
     { timeout: 7000 }
   );
+  await freezeAnimationFrames();
 
   const spillDiagnostics = await page.evaluate(() => ({
     coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
@@ -217,11 +225,19 @@ try {
   await page.screenshot({ path: screenshot, fullPage: true });
   const screenshotDiagnostics = await page.evaluate(() => ({
     hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
-    coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || ""
+    coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+    invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
+    playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
   }));
   await page.keyboard.up("ArrowRight");
   assert(screenshotDiagnostics.hudCores === "1", `Core-spill screenshot should capture asserted HUD state 1, got ${screenshotDiagnostics.hudCores}`);
   assert(screenshotDiagnostics.coreFrames.includes("spill:"), `Core-spill screenshot should capture visible spill sprite state, got ${screenshotDiagnostics.coreFrames}`);
+  assert(
+    screenshotDiagnostics.coreFrames === spillDiagnostics.coreFrames &&
+      screenshotDiagnostics.playerSpriteState === spillDiagnostics.playerSpriteState &&
+      screenshotDiagnostics.invulnerabilityFrames === spillDiagnostics.invulnerabilityFrames,
+    `Core-spill screenshot diagnostics should be same-frame as asserted diagnostics, got ${JSON.stringify({ before: spillDiagnostics, screenshot: screenshotDiagnostics })}`
+  );
 
   await installDraft(protectedLevel);
   await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
@@ -247,6 +263,7 @@ try {
     null,
     { timeout: 7000 }
   );
+  await freezeAnimationFrames();
   const protectedDiagnostics = await page.evaluate(() => ({
     coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
     doors: document.documentElement.dataset.echoShiftDoorAssetTransforms || "",
@@ -275,11 +292,19 @@ try {
   await page.screenshot({ path: protectedScreenshot, fullPage: true });
   const protectedScreenshotDiagnostics = await page.evaluate(() => ({
     hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
-    coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || ""
+    coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+    invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
+    playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
   }));
   await page.keyboard.up("ArrowRight");
   assert(protectedScreenshotDiagnostics.hudCores === "1", `Protected-save screenshot should capture asserted HUD state 1, got ${protectedScreenshotDiagnostics.hudCores}`);
   assert(!protectedScreenshotDiagnostics.coreFrames.includes("spill:"), `Protected-save screenshot should capture no-spill state, got ${protectedScreenshotDiagnostics.coreFrames}`);
+  assert(
+    protectedScreenshotDiagnostics.coreFrames === protectedDiagnostics.coreFrames &&
+      protectedScreenshotDiagnostics.playerSpriteState === protectedDiagnostics.playerSpriteState &&
+      protectedScreenshotDiagnostics.invulnerabilityFrames === protectedDiagnostics.invulnerabilityFrames,
+    `Protected-save screenshot diagnostics should be same-frame as asserted diagnostics, got ${JSON.stringify({ before: protectedDiagnostics, screenshot: protectedScreenshotDiagnostics })}`
+  );
 
   const unexpectedMessages = messages.filter((msg) => !isAllowedBrowserMessage(msg));
   assert(unexpectedMessages.length === 0, `Core spill render console/page messages: ${JSON.stringify(unexpectedMessages)}`);

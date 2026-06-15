@@ -441,14 +441,18 @@ export class RoomSimulation {
 
     const previousObjectState = this.objectState;
     const defeatedBossIds = new Set(this.currentAttemptDefeatedBossIds.keys());
-    let objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick, defeatedBossIds);
+    let objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick, defeatedBossIds, {
+      magnetBlockerSolids: solids
+    });
     this.objectState = objectUpdate.state;
 
     for (;;) {
       const echoVaporization = this.vaporizeHazardousEchoes();
       if (!echoVaporization.vaporized) break;
       events.echoLaserVaporized += echoVaporization.laserVaporized;
-      objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick, defeatedBossIds);
+      objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick, defeatedBossIds, {
+        magnetBlockerSolids: solids
+      });
       this.objectState = objectUpdate.state;
     }
 
@@ -456,6 +460,11 @@ export class RoomSimulation {
     events.core = objectUpdate.core;
     events.cores = objectUpdate.cores;
     for (const core of objectUpdate.cores) this.addCoreScore(core.id);
+
+    if (!this.dead && actorTouchesLaser(this.level, this.player, this.objectState, this.tick)) {
+      events.playerLaserVaporized = true;
+      this.markPlayerDead(events);
+    }
 
     if (!this.dead) this.updateBosses(events, previousPlayerY, previousPlayerX);
     if (!this.dead) this.updateMonsters(events, previousPlayerY);
@@ -669,8 +678,10 @@ export class RoomSimulation {
     for (const key of checkpoint.handledArchiveImpactSoundKeys) this.handledArchiveImpactSoundKeys.add(key);
     this.coreInvulnerabilityFrames = 0;
     this.coreSpillSerial = checkpoint.coreSpillSerial;
+    const spentProtectedCoreSaveIds = new Set(this.protectedCoreSaveIds);
     this.protectedCoreSaveIds.clear();
     for (const id of checkpoint.protectedCoreSaveIds) this.protectedCoreSaveIds.add(id);
+    for (const id of spentProtectedCoreSaveIds) this.protectedCoreSaveIds.add(id);
   }
 
   private resetRuntimeTerrain(): void {

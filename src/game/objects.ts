@@ -15,6 +15,7 @@ import type {
   PatrolDrone,
   PressurePlate,
   Rect,
+  Solid,
   SpilledCore
 } from "./types";
 
@@ -40,6 +41,7 @@ const CORE_MAGNET_REST_EPSILON = 0.08;
 
 type ObjectUpdateOptions = {
   collectCores?: boolean;
+  magnetBlockerSolids?: Solid[];
 };
 
 export const createObjectState = (level?: Level): ObjectState => {
@@ -220,8 +222,9 @@ export const updateObjects = (
   const cores: CorePickupEvent[] = [];
   const playerActor = actors.find((actor) => actor.kind === "player" && actor.alive);
   if (collectCores) {
+    const magnetBlockerSolids = options.magnetBlockerSolids || level.solids;
     const magnetBlockers: Rect[] = [
-      ...level.solids.filter(solidHasFullCollision),
+      ...magnetBlockerSolids.filter(solidHasFullCollision),
       ...closedDoorRects(level, previous.openDoors),
       ...crateRects
     ];

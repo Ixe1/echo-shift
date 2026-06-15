@@ -2376,6 +2376,24 @@ try {
   assert(!blockedMagnetSim.snapshot().coreOffsets.has("blocked-magnet-core"), "Placed core should not magnetize through a solid wall");
   assert(!blockedMagnetSim.objectState.collectedCores.has("blocked-magnet-core"), "Placed core should not be collected through a solid wall");
 
+  const runtimeOpenMagnetSim = new RoomSimulation({
+    ...baseLevel,
+    solids: [
+      ...baseLevel.solids,
+      { id: "runtime-eroded-magnet-wall", x: 52, y: 70, w: 10, h: 58 }
+    ],
+    cores: [{ id: "runtime-open-magnet-core", x: 72, y: 90, w: 18, h: 18 }]
+  });
+  runtimeOpenMagnetSim.step(idle);
+  assert(!runtimeOpenMagnetSim.snapshot().coreOffsets.has("runtime-open-magnet-core"), "Static wall should initially block placed-core magnetism");
+  runtimeOpenMagnetSim.runtimeSolids = runtimeOpenMagnetSim.runtimeSolids.filter((solid) => solid.id !== "runtime-eroded-magnet-wall");
+  runtimeOpenMagnetSim.step(idle);
+  const runtimeOpenMagnetOffset = runtimeOpenMagnetSim.snapshot().coreOffsets.get("runtime-open-magnet-core");
+  assert(
+    runtimeOpenMagnetOffset && runtimeOpenMagnetOffset.x < 0,
+    `Placed core should magnetize once runtime terrain opens line of sight, got ${JSON.stringify(runtimeOpenMagnetOffset)}`
+  );
+
   const doorBlockedMagnetSim = new RoomSimulation({
     ...baseLevel,
     doors: [{ id: "magnet-door", x: 52, y: 68, w: 10, h: 64, opensWith: ["missing-door-plate"] }],
@@ -2548,6 +2566,45 @@ try {
   const coreLaserDeathEvent = coreLaserDeathSim.step(idle);
   assert(coreLaserDeathSim.dead && coreLaserDeathEvent.playerLaserVaporized, "Laser should bypass core-save and kill the player");
   assert(!coreLaserDeathEvent.coreSpill, "Laser death should not spill cores as a save event");
+
+  const coreMonsterLaserDeathSim = new RoomSimulation({
+    ...baseLevel,
+    cores: [{ id: "monster-laser-core", x: 18, y: 86, w: 18, h: 18 }]
+  });
+  coreMonsterLaserDeathSim.step(idle);
+  coreMonsterLaserDeathSim.level.monsters = [{ id: "laser-overlap-monster", x: 18, y: 86, w: 30, h: 34 }];
+  coreMonsterLaserDeathSim.level.lasers = [{ id: "monster-overlap-beam", x: 18, y: 86, w: 30, h: 34, startsOn: true }];
+  const monsterLaserDeathEvent = coreMonsterLaserDeathSim.step(idle);
+  assert(coreMonsterLaserDeathSim.dead && monsterLaserDeathEvent.playerLaserVaporized, "Laser should kill before overlapping monster damage can spend cores");
+  assert(!monsterLaserDeathEvent.coreSpill, `Monster+laser instant death should not spill cores, got ${JSON.stringify(monsterLaserDeathEvent.coreSpill)}`);
+  assert(coreMonsterLaserDeathSim.objectState.collectedCores.has("monster-laser-core"), "Monster+laser instant death should not burn carried cores");
+  assert(coreMonsterLaserDeathSim.objectState.spilledCores.size === 0, "Monster+laser instant death should not create loose recovery cores");
+
+  const coreBossLaserDeathSim = new RoomSimulation({
+    ...baseLevel,
+    cores: [{ id: "boss-laser-core", x: 18, y: 86, w: 18, h: 18 }],
+    bosses: [{ id: "laser-overlap-boss", kind: "clockwork-regent", x: 78, y: 20, w: 190, h: 130, entrySide: "right", weakSpot: "core", introSeconds: 1, health: 2, score: 2000 }]
+  });
+  coreBossLaserDeathSim.step(idle);
+  const laserOverlapBossState = coreBossLaserDeathSim.bossStates.get("laser-overlap-boss");
+  assert(laserOverlapBossState, "Expected laser-overlap boss runtime state");
+  laserOverlapBossState.phase = "active";
+  laserOverlapBossState.activeFrames = bossAttackWindupFramesFor(laserOverlapBossState);
+  const laserOverlapBossBody = coreBossLaserDeathSim.bossSnapshots().find((boss) => boss.id === "laser-overlap-boss")?.body;
+  assert(laserOverlapBossBody, "Expected active boss body for laser-overlap test");
+  Object.assign(coreBossLaserDeathSim.player, {
+    x: laserOverlapBossBody.x + laserOverlapBossBody.w / 2 - coreBossLaserDeathSim.player.w / 2,
+    y: laserOverlapBossBody.y + laserOverlapBossBody.h / 2 - coreBossLaserDeathSim.player.h / 2,
+    vx: 0,
+    vy: 0,
+    onGround: false
+  });
+  coreBossLaserDeathSim.level.lasers = [{ id: "boss-overlap-beam", x: 0, y: 0, w: 320, h: 180, startsOn: true }];
+  const bossLaserDeathEvent = coreBossLaserDeathSim.step(idle);
+  assert(coreBossLaserDeathSim.dead && bossLaserDeathEvent.playerLaserVaporized, "Laser should kill before overlapping boss damage can spend cores");
+  assert(!bossLaserDeathEvent.coreSpill, `Boss+laser instant death should not spill cores, got ${JSON.stringify(bossLaserDeathEvent.coreSpill)}`);
+  assert(coreBossLaserDeathSim.objectState.collectedCores.has("boss-laser-core"), "Boss+laser instant death should not burn carried cores");
+  assert(coreBossLaserDeathSim.objectState.spilledCores.size === 0, "Boss+laser instant death should not create loose recovery cores");
 
   const largeOnlySaveSim = new RoomSimulation({
     ...baseLevel,
@@ -4900,6 +4957,36 @@ try {
   assert(bossCheckpointSim.totalFrames === 1, `Expected checkpoint restore to preserve pre-boss frame count, got ${bossCheckpointSim.totalFrames}`);
   assert(bossCheckpointSim.currentRecording.length === 0, "Expected checkpoint restore to start a fresh continuous recording");
 
+  const postCheckpointProtectedLevel = {
+    ...baseLevel,
+    cores: [{ id: "post-checkpoint-key", x: 20, y: 86, w: 24, h: 24, size: "large" }],
+    bosses: [{ id: "post-checkpoint-boss", kind: "clockwork-regent", x: 78, y: 20, w: 190, h: 130, entrySide: "right", weakSpot: "core", introSeconds: 1, health: 2, score: 2000 }]
+  };
+  const postCheckpointProtectedSim = new RoomSimulation(postCheckpointProtectedLevel);
+  postCheckpointProtectedSim.step(idle);
+  assert(postCheckpointProtectedSim.objectState.collectedCores.has("post-checkpoint-key"), "Expected protected key core to be carried before checkpoint");
+  Object.assign(postCheckpointProtectedSim.player, { x: 76, y: 86, vx: 0, vy: 0, onGround: true });
+  const postCheckpointActivated = postCheckpointProtectedSim.step(idle);
+  assert(postCheckpointActivated.bossCheckpointActivated === "post-checkpoint-boss", "Expected post-checkpoint protected-core fixture to activate boss checkpoint");
+  postCheckpointProtectedSim.level.hazards = [{ id: "post-checkpoint-spend", x: postCheckpointProtectedSim.player.x, y: postCheckpointProtectedSim.player.y, w: 36, h: 34 }];
+  const postCheckpointProtectedSave = postCheckpointProtectedSim.step(idle);
+  assert(
+    postCheckpointProtectedSave.coreSpill?.protectedCoreIds.includes("post-checkpoint-key") && !postCheckpointProtectedSim.dead,
+    `Expected protected key core to absorb one post-checkpoint hit, got ${JSON.stringify(postCheckpointProtectedSave.coreSpill)}`
+  );
+  postCheckpointProtectedSim.level.hazards = [];
+  postCheckpointProtectedSim.coreInvulnerabilityFrames = 0;
+  Object.assign(postCheckpointProtectedSim.player, { x: 76, y: 86, vx: 0, vy: 0, onGround: true });
+  postCheckpointProtectedSim.level.hazards = [{ id: "post-checkpoint-fatal", x: postCheckpointProtectedSim.player.x, y: postCheckpointProtectedSim.player.y, w: 36, h: 34 }];
+  const postCheckpointFatal = postCheckpointProtectedSim.step(idle);
+  assert(postCheckpointProtectedSim.dead && postCheckpointFatal.died, "Expected spent protected core to stop protecting before checkpoint retry");
+  postCheckpointProtectedSim.resetLifeAttempt();
+  assert(!postCheckpointProtectedSim.dead, "Expected post-checkpoint protected-core fixture to respawn from checkpoint");
+  postCheckpointProtectedSim.level.hazards = [{ id: "post-checkpoint-retry-fatal", x: postCheckpointProtectedSim.player.x, y: postCheckpointProtectedSim.player.y, w: 36, h: 34 }];
+  const postCheckpointRetryFatal = postCheckpointProtectedSim.step(idle);
+  assert(postCheckpointProtectedSim.dead && postCheckpointRetryFatal.died, "Checkpoint retry should not re-arm a protected key core spent after checkpoint activation");
+  assert(!postCheckpointRetryFatal.coreSpill, `Spent protected key core should not create a second save after checkpoint retry, got ${JSON.stringify(postCheckpointRetryFatal.coreSpill)}`);
+
   const checkpointInvulnerabilitySim = new RoomSimulation({
     ...baseLevel,
     cores: [{ id: "pre-checkpoint-buffer", x: 18, y: 86, w: 18, h: 18 }],
@@ -5130,6 +5217,52 @@ try {
   Object.assign(ledgeRisingSim.player, { x: 56, y: 74, vx: 0, vy: -1, onGround: false, coyote: 0 });
   ledgeRisingSim.step(right);
   assert(!ledgeRisingSim.player.onGround, "Rising ledge miss should not be auto-climbed");
+
+  const leftLedgeForgivenessLevel = {
+    ...ledgeForgivenessLevel,
+    solids: [{ id: "catch-left-ledge", x: 20, y: 100, w: 96, h: 20 }]
+  };
+  const leftLedgeCatchSim = new RoomSimulation(leftLedgeForgivenessLevel);
+  Object.assign(leftLedgeCatchSim.player, { x: 112, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  leftLedgeCatchSim.step(left);
+  assert(leftLedgeCatchSim.player.onGround, `Expected leftward near-miss ledge forgiveness to place player on top, got ${JSON.stringify(leftLedgeCatchSim.player)}`);
+  assert(leftLedgeCatchSim.player.y === 66, `Expected leftward ledge forgiveness to snap to ledge top y=66, got ${leftLedgeCatchSim.player.y}`);
+
+  const leftLedgeTooLowSim = new RoomSimulation(leftLedgeForgivenessLevel);
+  Object.assign(leftLedgeTooLowSim.player, { x: 112, y: 82, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  leftLedgeTooLowSim.step(left);
+  assert(!leftLedgeTooLowSim.player.onGround, "Too-low leftward ledge miss should not be auto-climbed");
+
+  const leftLedgeTopOnlySim = new RoomSimulation({
+    ...leftLedgeForgivenessLevel,
+    solids: [{ id: "catch-left-top-only-ledge", x: 20, y: 100, w: 96, h: 20, collision: "top-only" }]
+  });
+  Object.assign(leftLedgeTopOnlySim.player, { x: 112, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  leftLedgeTopOnlySim.step(left);
+  assert(!leftLedgeTopOnlySim.player.onGround, "Leftward ledge forgiveness should not snap onto top-only solids");
+
+  const leftLedgeOneWaySim = new RoomSimulation({
+    ...leftLedgeForgivenessLevel,
+    solids: [],
+    oneWays: [{ id: "catch-left-one-way-ledge", x: 20, y: 100, w: 96, h: 12 }]
+  });
+  Object.assign(leftLedgeOneWaySim.player, { x: 112, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  leftLedgeOneWaySim.step(left);
+  assert(!leftLedgeOneWaySim.player.onGround, "Leftward ledge forgiveness should not snap onto one-way platforms");
+
+  const leftLedgeMovingPlatformSim = new RoomSimulation({
+    ...leftLedgeForgivenessLevel,
+    solids: [],
+    platforms: [{ id: "catch-left-moving-platform-ledge", x: 20, y: 100, w: 96, h: 12, axis: "x", distance: 20, period: 120 }]
+  });
+  Object.assign(leftLedgeMovingPlatformSim.player, { x: 112, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  leftLedgeMovingPlatformSim.step(left);
+  assert(!leftLedgeMovingPlatformSim.player.onGround, "Leftward ledge forgiveness should not snap onto moving platforms");
+
+  const leftLedgeRisingSim = new RoomSimulation(leftLedgeForgivenessLevel);
+  Object.assign(leftLedgeRisingSim.player, { x: 112, y: 74, vx: 0, vy: -1, onGround: false, coyote: 0 });
+  leftLedgeRisingSim.step(left);
+  assert(!leftLedgeRisingSim.player.onGround, "Rising leftward ledge miss should not be auto-climbed");
 
   const deterministicLevel = {
     ...baseLevel,
