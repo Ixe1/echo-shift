@@ -211,7 +211,7 @@ const bonusLifeAfterLossLevel = {
   doors: [],
   plates: [],
   timedSwitches: [],
-  lasers: [],
+  lasers: [{ id: "bonus-loss-laser", x: 430, y: 420, w: 16, h: 60, startsOn: true }],
   movingLasers: [],
   drones: [],
   cores: [
@@ -299,6 +299,10 @@ try {
     null,
     { timeout: 7000 }
   );
+  const flickerDiagnostics = await page.evaluate(() => ({
+    invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
+    playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
+  }));
   const temporalStart = await page.evaluate(() => ({
     coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
     playerRect: document.documentElement.dataset.echoShiftPlayerRect || ""
@@ -371,8 +375,12 @@ try {
   assert(!/scatter|scattered|spill|lost/i.test(spillDiagnostics.tutorialHint), `Expected no scattered-core hint, got ${spillDiagnostics.tutorialHint}`);
   assert(spillDiagnostics.deathPresentation === "idle", `Core-save should not enter death presentation, got ${spillDiagnostics.deathPresentation}`);
   assert(
-    /visible:1:alpha:0\.[0-9]+:tint:ffe35a/.test(spillDiagnostics.playerSpriteState),
-    `Expected player sprite flicker/tint during core-save invulnerability, got ${spillDiagnostics.playerSpriteState}`
+    /visible:1:alpha:0\.[0-9]+:tint:ffe35a/.test(flickerDiagnostics.playerSpriteState),
+    `Expected player sprite flicker/tint during core-save invulnerability, got ${flickerDiagnostics.playerSpriteState}`
+  );
+  assert(
+    spillDiagnostics.playerSpriteState.includes("visible:1") && spillDiagnostics.playerSpriteState.includes("tint:ffe35a"),
+    `Expected frozen spill diagnostics to keep the invulnerability tint, got ${spillDiagnostics.playerSpriteState}`
   );
   assert(spillDiagnostics.canvas.width > 0 && spillDiagnostics.canvas.height > 0, `Expected visible canvas, got ${JSON.stringify(spillDiagnostics.canvas)}`);
 
@@ -432,13 +440,40 @@ try {
     lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
     toast: document.querySelector("[data-toast]")?.textContent?.trim() || ""
   }));
-  await page.keyboard.up("ArrowRight");
   assert(postLossDiagnostics.lives === "3", `Expected no bonus life immediately after core loss below threshold, got ${JSON.stringify(postLossDiagnostics)}`);
   assert(
     postRecoveryBonusDiagnostics.lives === "3" && postRecoveryBonusDiagnostics.hudCores > postLossDiagnostics.hudCores && postRecoveryBonusDiagnostics.hudCores < 30,
     `Expected collecting below-threshold cores after a spill not to award a stale bonus life, got ${JSON.stringify({ postLossDiagnostics, postRecoveryBonusDiagnostics })}`
   );
   assert(!/bonus life/i.test(postRecoveryBonusDiagnostics.toast), `Expected no stale bonus-life toast below 30 carried cores, got ${postRecoveryBonusDiagnostics.toast}`);
+  await page.waitForFunction(
+    () => ["fall", "fade-out", "dead", "respawn"].includes(document.documentElement.dataset.echoShiftDeathPresentation || ""),
+    null,
+    { timeout: 9000 }
+  );
+  await page.keyboard.up("ArrowRight");
+  await page.waitForFunction(
+    () => {
+      const lives = document.querySelector("[data-lives]")?.textContent?.trim();
+      const cores = document.querySelector("[data-cores]")?.textContent?.trim();
+      const phase = document.documentElement.dataset.echoShiftLevelIntro || "";
+      return lives === "2" && cores === "29" && (phase === "exiting" || phase === "idle");
+    },
+    null,
+    { timeout: 12000 }
+  );
+  const postRespawnBonusDiagnostics = await page.evaluate(() => ({
+    hudCores: Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0"),
+    lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
+    toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
+    deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || "",
+    levelIntro: document.documentElement.dataset.echoShiftLevelIntro || ""
+  }));
+  assert(
+    postRespawnBonusDiagnostics.lives === "2" && postRespawnBonusDiagnostics.hudCores === 29,
+    `Expected death/respawn after below-threshold recovery to restore only start cores and spend one life, got ${JSON.stringify(postRespawnBonusDiagnostics)}`
+  );
+  assert(!/bonus life/i.test(postRespawnBonusDiagnostics.toast), `Expected no stale bonus-life toast after death/respawn below 30 carried cores, got ${postRespawnBonusDiagnostics.toast}`);
 
   await installDraft(protectedLevel);
   await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
@@ -529,9 +564,41 @@ try {
 
   writeFileSync(
     `${outDir}/core-spill-render-qa.json`,
-    JSON.stringify({ diagnostics: spillDiagnostics, screenshotDiagnostics, protectedDiagnostics, protectedScreenshotDiagnostics, messages }, null, 2)
+    JSON.stringify(
+      {
+        diagnostics: spillDiagnostics,
+        flickerDiagnostics,
+        screenshotDiagnostics,
+        postLossDiagnostics,
+        postRecoveryBonusDiagnostics,
+        postRespawnBonusDiagnostics,
+        protectedDiagnostics,
+        protectedScreenshotDiagnostics,
+        messages
+      },
+      null,
+      2
+    )
   );
-  console.log(JSON.stringify({ ok: true, screenshot, protectedScreenshot, diagnostics: spillDiagnostics, screenshotDiagnostics, protectedDiagnostics, protectedScreenshotDiagnostics }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        ok: true,
+        screenshot,
+        protectedScreenshot,
+        diagnostics: spillDiagnostics,
+        flickerDiagnostics,
+        screenshotDiagnostics,
+        postLossDiagnostics,
+        postRecoveryBonusDiagnostics,
+        postRespawnBonusDiagnostics,
+        protectedDiagnostics,
+        protectedScreenshotDiagnostics
+      },
+      null,
+      2
+    )
+  );
 } finally {
   await browser.close();
 }

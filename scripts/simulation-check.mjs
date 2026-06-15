@@ -285,6 +285,13 @@ const verifyGameSceneAudioCleanupHooks = () => {
     "Expected rewind to clear transient core-save invulnerability and protected-core save state"
   );
   assert(
+    stateSource.includes("checkpointPlayerSnapshot") &&
+      stateSource.includes("prevJump: false") &&
+      stateSource.includes("launchControlLock: 0") &&
+      stateSource.includes("launchFloatFrames: 0"),
+    "Expected boss checkpoint player snapshots to clear transient jump and launch state"
+  );
+  assert(
     stateSource.includes("refreshBossCheckpointAfterCoreSave") &&
       stateSource.includes("cloneCheckpointObjectState(checkpoint.objectState)"),
     "Expected core saves to refresh active boss checkpoint core state without recapturing transient spill state"
@@ -1531,6 +1538,7 @@ try {
     terrainDecorPropsForMaterial
   } = await server.ssrLoadModule("/src/game/terrainDecorProps.ts");
   const {
+    actorKillsMonster,
     bossAttackActiveFramesFor,
     bossAttackCycleFramesFor,
     bossAttackWindupFramesFor,
@@ -3667,6 +3675,26 @@ try {
     "Expected slightly late centered top contact to kill stompable monster"
   );
 
+  const topThresholdMonster = monsterLevel.monsters[0];
+  const topThresholdRect = monsterRectAt(topThresholdMonster, 0);
+  const topThresholdActor = (vy) => ({
+    ...makeActor("top-threshold-player", "player", { x: 42, y: 70 }),
+    vy,
+    onGround: false
+  });
+  assert(
+    !actorKillsMonster(topThresholdActor(0.35), 68, topThresholdMonster, topThresholdRect),
+    "Expected top monster contact exactly at vertical speed grace to remain lethal"
+  );
+  assert(
+    !actorKillsMonster(topThresholdActor(0.34), 68, topThresholdMonster, topThresholdRect),
+    "Expected top monster contact below vertical speed grace to remain lethal"
+  );
+  assert(
+    actorKillsMonster(topThresholdActor(0.36), 68, topThresholdMonster, topThresholdRect),
+    "Expected top monster contact above vertical speed grace to kill"
+  );
+
   const edgeOverhangMonsterSim = new RoomSimulation(monsterLevel);
   Object.assign(edgeOverhangMonsterSim.player, { x: 20, y: 69, vx: 0, vy: 1, onGround: false });
   const edgeOverhangMonster = edgeOverhangMonsterSim.step(idle);
@@ -3799,6 +3827,26 @@ try {
   Object.assign(undersideMonsterSim.player, { x: 42, y: 76, vx: 0, vy: -4, onGround: false });
   const undersideKill = undersideMonsterSim.step(idle);
   assert(undersideKill.monsterKills.length === 1, "Expected upward underside hit to kill vulnerable monster");
+
+  const undersideThresholdMonster = { id: "under-threshold-test", kind: "copper-leech", x: 40, y: 50, w: 28, h: 24, score: 200 };
+  const undersideThresholdRect = monsterRectAt(undersideThresholdMonster, 0);
+  const undersideThresholdActor = (vy) => ({
+    ...makeActor("underside-threshold-player", "player", { x: 42, y: 72 }),
+    vy,
+    onGround: false
+  });
+  assert(
+    !actorKillsMonster(undersideThresholdActor(-0.35), 76, undersideThresholdMonster, undersideThresholdRect),
+    "Expected underside monster contact exactly at vertical speed grace to remain lethal"
+  );
+  assert(
+    !actorKillsMonster(undersideThresholdActor(-0.34), 76, undersideThresholdMonster, undersideThresholdRect),
+    "Expected underside monster contact below vertical speed grace to remain lethal"
+  );
+  assert(
+    actorKillsMonster(undersideThresholdActor(-0.36), 76, undersideThresholdMonster, undersideThresholdRect),
+    "Expected underside monster contact above vertical speed grace to kill"
+  );
 
   const undersideOverhangMonsterSim = new RoomSimulation({
     ...baseLevel,
@@ -5333,6 +5381,15 @@ try {
   assert(simultaneousCheckpointSim.bossCheckpointBossId() === "boss-b", "Expected second simultaneous boss to own the active checkpoint");
   runFrames(simultaneousCheckpointSim, 60, idle);
   const simultaneousBossVulnerableB = runBossUntilVulnerable(simultaneousCheckpointSim, "boss-b");
+  Object.assign(simultaneousCheckpointSim.player, {
+    prevJump: true,
+    jumpBuffer: 6,
+    coyote: 7,
+    launchCooldown: 5,
+    launchControlLock: 4,
+    launchFloatFrames: 12,
+    standingOn: "stale-rollover-platform"
+  });
   const simultaneousCheckpointDefeatB = upwardHitBoss(simultaneousCheckpointSim, simultaneousBossVulnerableB);
   assert(simultaneousCheckpointDefeatB.bossDefeated?.id === "boss-b", "Expected checkpoint-owning second boss defeat");
   assert(simultaneousCheckpointSim.bossCheckpointActive(), "Expected checkpoint to remain active while first simultaneous boss is still active");
@@ -5370,6 +5427,21 @@ try {
   );
   assert(simultaneousCheckpointSim.bossStates.get("boss-b")?.phase === "defeated", "Expected checkpoint restore to preserve defeated second boss");
   assert(simultaneousCheckpointSim.objectState.openDoors.has("boss-b-door"), "Expected checkpoint restore to preserve door opened by defeated second boss");
+  assert(
+    simultaneousCheckpointSim.player.vx === 0 &&
+      simultaneousCheckpointSim.player.vy === 0 &&
+      simultaneousCheckpointSim.player.onGround &&
+      simultaneousCheckpointSim.player.coyote === 0 &&
+      simultaneousCheckpointSim.player.jumpBuffer === 0 &&
+      simultaneousCheckpointSim.player.launchCooldown === 0 &&
+      simultaneousCheckpointSim.player.launchControlLock === 0 &&
+      simultaneousCheckpointSim.player.launchFloatFrames === 0 &&
+      simultaneousCheckpointSim.player.prevJump === false &&
+      simultaneousCheckpointSim.player.standingOn === null,
+    `Expected rolled checkpoint restore to clear transient movement/input state, got ${JSON.stringify(simultaneousCheckpointSim.player)}`
+  );
+  const rolledCheckpointJump = simultaneousCheckpointSim.step(jump);
+  assert(rolledCheckpointJump.jumped, "Expected rolled checkpoint restore to allow an immediate fresh jump input");
 
   const bossCheckpointLevel = {
     ...baseLevel,
@@ -5410,6 +5482,50 @@ try {
   assert(bossCheckpointSim.score === 1000, `Expected checkpoint restore to preserve score without a death penalty, got ${bossCheckpointSim.score}`);
   assert(bossCheckpointSim.totalFrames === 1, `Expected checkpoint restore to preserve pre-boss frame count, got ${bossCheckpointSim.totalFrames}`);
   assert(bossCheckpointSim.currentRecording.length === 0, "Expected checkpoint restore to start a fresh continuous recording");
+
+  const checkpointMovementStateSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 76, y: 86 },
+    bosses: [{ id: "checkpoint-movement-boss", kind: "clockwork-regent", x: 70, y: 20, w: 190, h: 130, entrySide: "right", weakSpot: "core", introSeconds: 1, health: 2, score: 2000 }]
+  });
+  Object.assign(checkpointMovementStateSim.player, {
+    x: 76,
+    y: 86,
+    vx: 0,
+    vy: 0,
+    onGround: true,
+    prevJump: true,
+    jumpBuffer: 6,
+    coyote: 7,
+    launchCooldown: 5,
+    launchControlLock: 4,
+    launchFloatFrames: 12,
+    standingOn: "stale-checkpoint-platform"
+  });
+  const movementCheckpoint = checkpointMovementStateSim.step(idle);
+  assert(movementCheckpoint.bossCheckpointActivated === "checkpoint-movement-boss", "Expected movement-state fixture to activate a boss checkpoint");
+  checkpointMovementStateSim.level.hazards = [
+    { id: "checkpoint-movement-fatal", x: checkpointMovementStateSim.player.x, y: checkpointMovementStateSim.player.y, w: 36, h: 34 }
+  ];
+  const movementCheckpointDeath = checkpointMovementStateSim.step(idle);
+  assert(movementCheckpointDeath.died, "Expected movement-state fixture to die after checkpoint activation");
+  checkpointMovementStateSim.resetLifeAttempt();
+  assert(
+    checkpointMovementStateSim.player.vx === 0 &&
+      checkpointMovementStateSim.player.vy === 0 &&
+      checkpointMovementStateSim.player.onGround &&
+      checkpointMovementStateSim.player.coyote === 0 &&
+      checkpointMovementStateSim.player.jumpBuffer === 0 &&
+      checkpointMovementStateSim.player.launchCooldown === 0 &&
+      checkpointMovementStateSim.player.launchControlLock === 0 &&
+      checkpointMovementStateSim.player.launchFloatFrames === 0 &&
+      checkpointMovementStateSim.player.prevJump === false &&
+      checkpointMovementStateSim.player.standingOn === null,
+    `Expected boss checkpoint restore to clear transient movement/input state, got ${JSON.stringify(checkpointMovementStateSim.player)}`
+  );
+  checkpointMovementStateSim.level.hazards = [];
+  const movementCheckpointJump = checkpointMovementStateSim.step(jump);
+  assert(movementCheckpointJump.jumped, "Expected boss checkpoint restore to allow an immediate fresh jump input");
 
   const postCheckpointProtectedLevel = {
     ...baseLevel,
@@ -5806,6 +5922,11 @@ try {
   assert(ledgeCatchSim.player.onGround, `Expected near-miss ledge forgiveness to place player on top, got ${JSON.stringify(ledgeCatchSim.player)}`);
   assert(ledgeCatchSim.player.y === 66, `Expected ledge forgiveness to snap to ledge top y=66, got ${ledgeCatchSim.player.y}`);
 
+  const ledgeTooFarRightSim = new RoomSimulation(ledgeForgivenessLevel);
+  Object.assign(ledgeTooFarRightSim.player, { x: 45, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  ledgeTooFarRightSim.step(right);
+  assert(!ledgeTooFarRightSim.player.onGround, "Rightward ledge miss outside the horizontal forgiveness window should not be auto-climbed");
+
   const ledgeTooLowSim = new RoomSimulation(ledgeForgivenessLevel);
   Object.assign(ledgeTooLowSim.player, { x: 56, y: 82, vx: 0, vy: 1, onGround: false, coyote: 0 });
   ledgeTooLowSim.step(right);
@@ -5868,6 +5989,11 @@ try {
   leftLedgeCatchSim.step(left);
   assert(leftLedgeCatchSim.player.onGround, `Expected leftward near-miss ledge forgiveness to place player on top, got ${JSON.stringify(leftLedgeCatchSim.player)}`);
   assert(leftLedgeCatchSim.player.y === 66, `Expected leftward ledge forgiveness to snap to ledge top y=66, got ${leftLedgeCatchSim.player.y}`);
+
+  const leftLedgeTooFarSim = new RoomSimulation(leftLedgeForgivenessLevel);
+  Object.assign(leftLedgeTooFarSim.player, { x: 130, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  leftLedgeTooFarSim.step(left);
+  assert(!leftLedgeTooFarSim.player.onGround, "Leftward ledge miss outside the horizontal forgiveness window should not be auto-climbed");
 
   const leftLedgeTooLowSim = new RoomSimulation(leftLedgeForgivenessLevel);
   Object.assign(leftLedgeTooLowSim.player, { x: 112, y: 82, vx: 0, vy: 1, onGround: false, coyote: 0 });

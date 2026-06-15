@@ -669,11 +669,30 @@ export class RoomSimulation {
     }
   }
 
+  private checkpointPlayerSnapshot(x: number, y: number): ActorBody {
+    return {
+      ...cloneActor(this.player),
+      x,
+      y,
+      vx: 0,
+      vy: 0,
+      onGround: true,
+      coyote: 0,
+      jumpBuffer: 0,
+      launchCooldown: 0,
+      launchControlLock: 0,
+      launchFloatFrames: 0,
+      prevJump: false,
+      standingOn: null,
+      alive: true
+    };
+  }
+
   private captureBossCheckpoint(boss: Boss, events: StepEvents, playerX: number, playerY: number): void {
     if (this.bossCheckpoint?.bossId === boss.id) return;
     const checkpointX = Number.isFinite(boss.checkpoint?.x) ? Number(boss.checkpoint?.x) : playerX;
     const checkpointY = Number.isFinite(boss.checkpoint?.y) ? Number(boss.checkpoint?.y) : playerY;
-    const checkpointPlayer = { ...cloneActor(this.player), x: checkpointX, y: checkpointY, vx: 0, vy: 0, onGround: true, standingOn: null };
+    const checkpointPlayer = this.checkpointPlayerSnapshot(checkpointX, checkpointY);
     this.bossCheckpoint = {
       bossId: boss.id,
       player: checkpointPlayer,
@@ -705,16 +724,7 @@ export class RoomSimulation {
     const boss = (this.level.bosses || []).find((candidate) => candidate.id === bossId);
     const checkpointX = boss && Number.isFinite(boss.checkpoint?.x) ? Number(boss.checkpoint?.x) : this.player.x;
     const checkpointY = boss && Number.isFinite(boss.checkpoint?.y) ? Number(boss.checkpoint?.y) : this.player.y;
-    return {
-      ...cloneActor(this.player),
-      x: checkpointX,
-      y: checkpointY,
-      vx: 0,
-      vy: 0,
-      onGround: true,
-      standingOn: null,
-      alive: true
-    };
+    return this.checkpointPlayerSnapshot(checkpointX, checkpointY);
   }
 
   private refreshDoorStateForDefeatedBosses(events?: StepEvents): void {
