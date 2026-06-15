@@ -104,7 +104,8 @@ const validationStatusAllowingWarnings = async (page) => {
   if (text.toLowerCase().includes("error")) {
     return "issues";
   }
-  return status === "clean" || status === "issues" ? "clean" : status;
+  const allowedWarningText = "warningFrostcap Echo Rush:boss-1 is outside level bounds.";
+  return status === "clean" || text === allowedWarningText ? "clean" : status;
 };
 
 const worldToScreen = async (page, point) => {
