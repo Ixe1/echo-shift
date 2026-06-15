@@ -1570,7 +1570,6 @@ try {
   const { makeActor } = await server.ssrLoadModule("/src/game/player.ts");
   const { encodeInputFrame } = await server.ssrLoadModule("/src/game/recording.ts");
   const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
-  const { level1SpringtideSprint } = await server.ssrLoadModule("/src/data/level-1-springtide-sprint.ts");
   const { tutorialLevel } = await server.ssrLoadModule("/src/data/tutorialLevel.ts");
   const { createObjectState, doorRequiredCoreIds, isMajorCore, movingLaserRectAt, updateObjects } = await server.ssrLoadModule("/src/game/objects.ts");
   const { EDITOR_DRAFT_STORAGE_KEY, readEditorDraftSnapshot } = await server.ssrLoadModule("/src/data/editorDraft.ts");
@@ -2098,9 +2097,19 @@ try {
     tutorialLevel.solids.find((solid) => solid.id === "crate-marker")?.decorDensity === "off",
     "Expected tutorial crate marker to opt out of inferred wood-archive props"
   );
+  const activeLevel1 = levels[0];
+  const activeLevel1Block11 = activeLevel1?.solids.find((solid) => solid.id === "block-11");
   assert(
-    level1SpringtideSprint.solids.find((solid) => solid.id === "block-11")?.decorDensity === "off",
-    "Expected Level 1 sprint wood marker block to opt out of inferred wood-archive props"
+    activeLevel1?.id === "springtide-sprint",
+    `Expected replacement campaign Level 1 to be springtide-sprint, got ${activeLevel1?.id}`
+  );
+  assert(
+    activeLevel1Block11?.material === "wood-archive",
+    `Expected Level 1 block-11 to use wood-archive, got ${activeLevel1Block11?.material}`
+  );
+  assert(
+    effectiveSolidDecorDensity(activeLevel1Block11 ?? {}, "wood-archive") === "medium",
+    `Expected Level 1 block-11 to use inferred medium wood-archive decor density, got ${activeLevel1Block11?.decorDensity}`
   );
   assert(
     terrainDecorPropsForMaterial("grass-organic").some((prop) => prop.category === "behind-surface-large" && prop.w !== prop.h),
