@@ -2345,7 +2345,7 @@ export class GameScene extends Phaser.Scene {
 
   private liveRenderView(): RenderView {
     const simulation = this.simulation;
-    const simulationSnapshot = simulation.snapshot({ cloneTransientCoreState: false });
+    const simulationSnapshot = simulation.snapshot({ cloneTransientCoreState: false, cloneRuntimeSolids: false });
     this.renderEchoes.length = 0;
     for (const echo of simulation.echoes) {
       if (echo.alive) this.renderEchoes.push(echo);

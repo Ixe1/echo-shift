@@ -99,6 +99,7 @@ type BossCheckpoint = {
 
 type SnapshotOptions = {
   cloneTransientCoreState?: boolean;
+  cloneRuntimeSolids?: boolean;
 };
 
 const cloneActor = (actor: ActorBody): ActorBody => ({ ...actor });
@@ -556,6 +557,7 @@ export class RoomSimulation {
 
   snapshot(options: SnapshotOptions = {}): SimulationSnapshot {
     const cloneTransientCoreState = options.cloneTransientCoreState !== false;
+    const cloneRuntimeSolids = options.cloneRuntimeSolids !== false;
     return {
       player: { ...this.player },
       echoes: this.aliveEchoes().map((echo) => ({ ...echo })),
@@ -571,7 +573,7 @@ export class RoomSimulation {
         : this.objectState.spilledCores,
       blockedLasers: new Set(this.objectState.blockedLasers),
       crates: new Map([...this.objectState.crates.entries()].map(([id, rect]) => [id, { ...rect }])),
-      solids: cloneSolids(this.runtimeSolids),
+      solids: cloneRuntimeSolids ? cloneSolids(this.runtimeSolids) : this.runtimeSolids,
       terrainRevision: this.terrainRevision,
       coreInvulnerabilityFrames: this.coreInvulnerabilityFrames,
       killedMonsters: new Set(this.killedMonsterIds),
@@ -729,6 +731,12 @@ export class RoomSimulation {
     const checkpoint = this.bossCheckpoint;
     if (!checkpoint) return;
     const currentDeaths = this.deaths;
+    const spentRecoveredSpillCoreIds = new Set<string>();
+    for (const id of checkpoint.recoveredSpillCoreIds) {
+      if (checkpoint.objectState.collectedCores.has(id) && !this.objectState.collectedCores.has(id)) {
+        spentRecoveredSpillCoreIds.add(id);
+      }
+    }
     this.tick = checkpoint.tick;
     this.totalFrames = checkpoint.totalFrames;
     this.score = checkpoint.score;
@@ -767,6 +775,11 @@ export class RoomSimulation {
     }
     this.recoveredSpillCoreIds.clear();
     for (const id of checkpoint.recoveredSpillCoreIds) this.recoveredSpillCoreIds.add(id);
+    for (const id of spentRecoveredSpillCoreIds) {
+      this.objectState.collectedCores.delete(id);
+      this.recoveredSpillCoreIds.add(id);
+      this.removeCoreScore(id);
+    }
   }
 
   private resetRuntimeTerrain(): void {

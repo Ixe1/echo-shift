@@ -259,9 +259,10 @@ const verifyGameSceneAudioCleanupHooks = () => {
   }
   const liveRenderBody = gameSceneMethodBody(source, "liveRenderView");
   assert(
-    liveRenderBody.includes("simulation.snapshot({ cloneTransientCoreState: false })") &&
-      stateSource.includes("cloneTransientCoreState ? new Set(this.objectState.claimedCores) : this.objectState.claimedCores"),
-    "Expected live rendering to skip transient core-state deep copies while preserving normal snapshot cloning"
+    liveRenderBody.includes("simulation.snapshot({ cloneTransientCoreState: false, cloneRuntimeSolids: false })") &&
+      stateSource.includes("cloneTransientCoreState ? new Set(this.objectState.claimedCores) : this.objectState.claimedCores") &&
+      stateSource.includes("cloneRuntimeSolids ? cloneSolids(this.runtimeSolids) : this.runtimeSolids"),
+    "Expected live rendering to skip transient core-state and runtime-solid deep copies while preserving normal snapshot cloning"
   );
   assert(stateSource.includes("carriedCoreCount(): number"), "Expected RoomSimulation to expose a cheap carried-core count for GameScene");
   assert(stateSource.includes("recoveredSpillCoreIds"), "Expected recovered spill cores to be tracked so one loose core cannot be recycled indefinitely");
@@ -2401,7 +2402,7 @@ try {
   assert(coreSaveSim.objectState.spilledCores.size === 1, "Expected spilled core to become a temporary loose pickup");
   assert(coreSaveSim.score === 100, `Expected all eligible small-core score to be removed, got ${coreSaveSim.score}`);
   const clonedTransientSnapshot = coreSaveSim.snapshot();
-  const renderTransientSnapshot = coreSaveSim.snapshot({ cloneTransientCoreState: false });
+  const renderTransientSnapshot = coreSaveSim.snapshot({ cloneTransientCoreState: false, cloneRuntimeSolids: false });
   assert(clonedTransientSnapshot.claimedCores !== coreSaveSim.objectState.claimedCores, "Default snapshot should clone claimed core ids");
   clonedTransientSnapshot.claimedCores.add("__default-snapshot-only");
   assert(!coreSaveSim.objectState.claimedCores.has("__default-snapshot-only"), "Mutating default snapshot claimed cores should not affect simulation state");
@@ -2414,6 +2415,14 @@ try {
   const clonedLooseCore = [...clonedTransientSnapshot.spilledCores.values()][0];
   const stateLooseCore = [...coreSaveSim.objectState.spilledCores.values()][0];
   assert(clonedLooseCore && stateLooseCore && clonedLooseCore !== stateLooseCore, "Default snapshot should clone spilled core objects");
+  assert(clonedTransientSnapshot.solids !== coreSaveSim.runtimeSolids, "Default snapshot should clone runtime solids");
+  assert(renderTransientSnapshot.solids === coreSaveSim.runtimeSolids, "Render snapshot should alias runtime solids");
+  const defaultSnapshotSolid = clonedTransientSnapshot.solids[0];
+  const runtimeSolid = coreSaveSim.runtimeSolids[0];
+  assert(defaultSnapshotSolid && runtimeSolid && defaultSnapshotSolid !== runtimeSolid, "Default snapshot should clone individual runtime solids");
+  const runtimeSolidX = runtimeSolid.x;
+  defaultSnapshotSolid.x += 1234;
+  assert(coreSaveSim.runtimeSolids[0].x === runtimeSolidX, "Mutating default snapshot solids should not affect runtime terrain");
   assert(
     coreSaveSim.player.vy < 0 && coreSaveSim.player.vx < 0,
     `Saved hit should bounce the player up and away from the right-side damage source, got vx=${coreSaveSim.player.vx}, vy=${coreSaveSim.player.vy}`
@@ -5359,6 +5368,68 @@ try {
   assert(checkpointSpillStateSim.objectState.spilledCores.size === 1, "Live attempt should keep temporary loose cores until they expire or are picked up");
   checkpointSpillStateSim.resetLifeAttempt();
   assert(checkpointSpillStateSim.objectState.spilledCores.size === 0, "Checkpoint life reset should not restore temporary loose recovery cores");
+
+  const checkpointRecoveredCoreSim = new RoomSimulation({
+    ...baseLevel,
+    score: { ...baseLevel.score, coreScore: 1000 },
+    cores: [{ id: "checkpoint-recovered-core", x: 18, y: 86, w: 18, h: 18 }],
+    hazards: [{ id: "checkpoint-recovered-first-hit", x: 18, y: 86, w: 36, h: 34 }],
+    bosses: [{ id: "checkpoint-recovered-boss", kind: "clockwork-regent", x: 236, y: 20, w: 70, h: 130, entrySide: "right", weakSpot: "core", introSeconds: 1, health: 2, score: 2000 }]
+  });
+  const checkpointRecoveredFirstSave = checkpointRecoveredCoreSim.step(idle);
+  assert(
+    checkpointRecoveredFirstSave.coreSpill?.coreIds.includes("checkpoint-recovered-core") && !checkpointRecoveredCoreSim.dead,
+    `Expected recovered-core checkpoint fixture to create a loose core, got ${JSON.stringify(checkpointRecoveredFirstSave.coreSpill)}`
+  );
+  checkpointRecoveredCoreSim.level.hazards = [];
+  Object.assign(checkpointRecoveredCoreSim.player, { x: 180, y: 86, vx: 0, vy: 0, onGround: true });
+  runFrames(checkpointRecoveredCoreSim, 34, idle);
+  const checkpointRecoveredLooseCore = [...checkpointRecoveredCoreSim.objectState.spilledCores.values()][0];
+  assert(checkpointRecoveredLooseCore, "Expected checkpoint recovered-core loose pickup to persist before recovery");
+  Object.assign(checkpointRecoveredCoreSim.player, {
+    x: checkpointRecoveredLooseCore.x - 8,
+    y: checkpointRecoveredLooseCore.y - 16,
+    vx: 0,
+    vy: 0,
+    onGround: false
+  });
+  const checkpointRecoveredPickup = checkpointRecoveredCoreSim.step(idle);
+  assert(
+    checkpointRecoveredPickup.cores.some((core) => core.id === "checkpoint-recovered-core" && core.recovered),
+    `Expected checkpoint fixture to recover loose core before boss checkpoint, got ${JSON.stringify(checkpointRecoveredPickup.cores)}`
+  );
+  assert(checkpointRecoveredCoreSim.objectState.collectedCores.has("checkpoint-recovered-core"), "Expected recovered core carried before boss checkpoint");
+  assert(checkpointRecoveredCoreSim.score === 1000, `Expected recovered core score before checkpoint, got ${checkpointRecoveredCoreSim.score}`);
+  checkpointRecoveredCoreSim.coreInvulnerabilityFrames = 0;
+  Object.assign(checkpointRecoveredCoreSim.player, { x: 238, y: 86, vx: 0, vy: 0, onGround: true });
+  const checkpointRecoveredActivated = checkpointRecoveredCoreSim.step(idle);
+  assert(checkpointRecoveredActivated.bossCheckpointActivated === "checkpoint-recovered-boss", "Expected recovered-core fixture to activate boss checkpoint");
+  checkpointRecoveredCoreSim.level.hazards = [{ id: "checkpoint-recovered-spend", x: 238, y: 86, w: 36, h: 34 }];
+  const checkpointRecoveredSpend = checkpointRecoveredCoreSim.step(idle);
+  assert(
+    checkpointRecoveredSpend.coreSpill?.coreIds.length === 0 &&
+      checkpointRecoveredSpend.coreSpill.lostCoreIds.includes("checkpoint-recovered-core") &&
+      !checkpointRecoveredCoreSim.dead,
+    `Expected recovered checkpoint core to save once without re-scattering, got ${JSON.stringify(checkpointRecoveredSpend.coreSpill)}`
+  );
+  assert(!checkpointRecoveredCoreSim.objectState.collectedCores.has("checkpoint-recovered-core"), "Spent recovered checkpoint core should be removed from carried cores");
+  assert(checkpointRecoveredCoreSim.score === 0, `Expected spent recovered checkpoint core to remove score, got ${checkpointRecoveredCoreSim.score}`);
+  checkpointRecoveredCoreSim.coreInvulnerabilityFrames = 0;
+  Object.assign(checkpointRecoveredCoreSim.player, { x: 238, y: 86, vx: 0, vy: 0, onGround: true });
+  checkpointRecoveredCoreSim.level.hazards = [{ id: "checkpoint-recovered-fatal", x: 238, y: 86, w: 36, h: 34 }];
+  const checkpointRecoveredFatal = checkpointRecoveredCoreSim.step(idle);
+  assert(checkpointRecoveredCoreSim.dead && checkpointRecoveredFatal.died, "Expected spent recovered checkpoint core to stop protecting before checkpoint retry");
+  checkpointRecoveredCoreSim.resetLifeAttempt();
+  assert(!checkpointRecoveredCoreSim.dead, "Expected recovered-core checkpoint fixture to respawn from checkpoint");
+  assert(!checkpointRecoveredCoreSim.objectState.collectedCores.has("checkpoint-recovered-core"), "Checkpoint retry should not restore a spent recovered loose core");
+  assert(checkpointRecoveredCoreSim.objectState.claimedCores.has("checkpoint-recovered-core"), "Checkpoint retry should not respawn the original spent recovered core pickup");
+  assert(checkpointRecoveredCoreSim.score === 0, `Checkpoint retry should preserve spent recovered-core score loss, got ${checkpointRecoveredCoreSim.score}`);
+  checkpointRecoveredCoreSim.level.hazards = [{ id: "checkpoint-recovered-retry-fatal", x: checkpointRecoveredCoreSim.player.x, y: checkpointRecoveredCoreSim.player.y, w: 36, h: 34 }];
+  const checkpointRecoveredRetryFatal = checkpointRecoveredCoreSim.step(idle);
+  assert(
+    checkpointRecoveredCoreSim.dead && checkpointRecoveredRetryFatal.died && !checkpointRecoveredRetryFatal.coreSpill,
+    `Checkpoint retry should not re-arm a spent recovered loose core, got ${JSON.stringify(checkpointRecoveredRetryFatal.coreSpill)}`
+  );
 
   const checkpointRewindTarget = { x: bossCheckpointSim.player.x, y: bossCheckpointSim.player.y };
   const checkpointRewindScore = bossCheckpointSim.score;
