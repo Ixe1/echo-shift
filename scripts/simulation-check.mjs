@@ -6662,11 +6662,25 @@ try {
       { id: "gap-right-floor", x: 128, y: 100, w: 96, h: 40 }
     ]
   };
+  const oneTileGapFloorTop = oneTileGapLevel.solids[0].y;
+  const oneTileGapMeaningfulFallDepth = 12;
+  const oneTileGapCheckFrames = 15;
   const rightGapRunSim = new RoomSimulation(oneTileGapLevel);
   Object.assign(rightGapRunSim.player, { x: 70, y: 66, vx: 0, vy: 0, onGround: true, coyote: 7 });
-  runFrames(rightGapRunSim, 10, right);
-  assert(!rightGapRunSim.player.onGround, "Running across a one-tile floor gap to the right should not be bridged by ledge forgiveness");
-  assert(rightGapRunSim.player.y > 66, `Expected rightward one-tile gap run to keep falling, got ${JSON.stringify(rightGapRunSim.player)}`);
+  runFrames(rightGapRunSim, oneTileGapCheckFrames, right);
+  const rightGapFarLipX = oneTileGapLevel.solids[1].x - rightGapRunSim.player.w;
+  assert(
+    rightGapRunSim.player.x >= rightGapFarLipX,
+    `Expected rightward one-tile gap regression to reach the far-lip bridge point, got ${JSON.stringify(rightGapRunSim.player)}`
+  );
+  assert(
+    !rightGapRunSim.player.onGround,
+    "Running across a one-tile floor gap to the right should still be airborne after reaching the far-lip bridge point"
+  );
+  assert(
+    rightGapRunSim.player.y + rightGapRunSim.player.h >= oneTileGapFloorTop + oneTileGapMeaningfulFallDepth,
+    `Expected rightward one-tile gap run to fall meaningfully below the floor top, got ${JSON.stringify(rightGapRunSim.player)}`
+  );
 
   const ledgeTopOnlySim = new RoomSimulation({
     ...ledgeForgivenessLevel,
@@ -6822,9 +6836,20 @@ try {
 
   const leftGapRunSim = new RoomSimulation(oneTileGapLevel);
   Object.assign(leftGapRunSim.player, { x: 130, y: 66, vx: 0, vy: 0, onGround: true, coyote: 7 });
-  runFrames(leftGapRunSim, 10, left);
-  assert(!leftGapRunSim.player.onGround, "Running across a one-tile floor gap to the left should not be bridged by ledge forgiveness");
-  assert(leftGapRunSim.player.y > 66, `Expected leftward one-tile gap run to keep falling, got ${JSON.stringify(leftGapRunSim.player)}`);
+  runFrames(leftGapRunSim, oneTileGapCheckFrames, left);
+  const leftGapFarLipX = oneTileGapLevel.solids[0].x + oneTileGapLevel.solids[0].w;
+  assert(
+    leftGapRunSim.player.x <= leftGapFarLipX,
+    `Expected leftward one-tile gap regression to reach the far-lip bridge point, got ${JSON.stringify(leftGapRunSim.player)}`
+  );
+  assert(
+    !leftGapRunSim.player.onGround,
+    "Running across a one-tile floor gap to the left should still be airborne after reaching the far-lip bridge point"
+  );
+  assert(
+    leftGapRunSim.player.y + leftGapRunSim.player.h >= oneTileGapFloorTop + oneTileGapMeaningfulFallDepth,
+    `Expected leftward one-tile gap run to fall meaningfully below the floor top, got ${JSON.stringify(leftGapRunSim.player)}`
+  );
 
   const leftLedgeTopOnlySim = new RoomSimulation({
     ...leftLedgeForgivenessLevel,
