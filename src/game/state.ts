@@ -458,8 +458,8 @@ export class RoomSimulation {
     const doors = closedDoorRects(this.level, this.objectState.openDoors);
     const objectUpdateOptions = this.hasUnclaimedPlacedCores()
       ? {
-          magnetBlockerSolids: solids,
-          magnetBlockers: [
+          magnetBlockerSolids: () => solids,
+          magnetBlockers: () => [
             ...(this.level.oneWays || []),
             ...(this.level.conveyors || []),
             ...platforms.map((platform) => ({ ...platform.current }))

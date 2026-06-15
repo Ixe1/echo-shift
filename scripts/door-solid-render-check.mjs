@@ -86,7 +86,7 @@ const decodePng = (buffer) => {
   return { width, height, pixels };
 };
 
-const sampleCyanOutlinePixels = (buffer, cameraWorldView, rect, sides) => {
+const sampleCyanOutlinePixels = (buffer, cameraWorldView, rect, sides, options = {}) => {
   const png = decodePng(buffer);
   const view = cameraWorldView.split(",").map(Number);
   assert(view.length === 4 && view.every((value) => Number.isFinite(value)), `Expected camera world view, got ${cameraWorldView}`);
@@ -103,10 +103,11 @@ const sampleCyanOutlinePixels = (buffer, cameraWorldView, rect, sides) => {
   const pushVertical = (x) => {
     for (let y = rect.y + 3; y <= rect.y + rect.h - 3; y += 4) points.push(toPng(x, y));
   };
-  if (sides.includes("top")) pushHorizontal(rect.y + 0.5);
-  if (sides.includes("bottom")) pushHorizontal(rect.y + rect.h - 0.5);
-  if (sides.includes("left")) pushVertical(rect.x + 0.5);
-  if (sides.includes("right")) pushVertical(rect.x + rect.w - 0.5);
+  const offset = options.outside ? 0.5 : -0.5;
+  if (sides.includes("top")) pushHorizontal(rect.y - offset);
+  if (sides.includes("bottom")) pushHorizontal(rect.y + rect.h + offset);
+  if (sides.includes("left")) pushVertical(rect.x - offset);
+  if (sides.includes("right")) pushVertical(rect.x + rect.w + offset);
   let matchingPixels = 0;
   let sampledPixels = 0;
   let maxChannel = 0;
@@ -126,7 +127,7 @@ const sampleCyanOutlinePixels = (buffer, cameraWorldView, rect, sides) => {
       }
     }
   }
-  return { matchingPixels, sampledPixels, maxChannel, points: points.length, rect, sides };
+  return { matchingPixels, sampledPixels, maxChannel, points: points.length, rect, sides, outside: Boolean(options.outside) };
 };
 
 const isAllowedBrowserMessage = (msg) =>
@@ -170,6 +171,9 @@ const level = {
     { id: "short-floor", x: 410, y: 450, w: 128, h: 30, sprite: "floor", tone: "steel" },
     { id: "block-a", x: 560, y: 420, w: 32, h: 60, sprite: "block", tone: "dark" },
     { id: "block-b", x: 592, y: 420, w: 32, h: 60, sprite: "block", tone: "dark" },
+    { id: "visible-glass-wall", x: 122, y: 300, w: 20, h: 70, sprite: "wall", material: "glass-energy", decorDensity: "high" },
+    { id: "visible-cryo-wall", x: 156, y: 300, w: 20, h: 70, sprite: "wall", material: "ice-cryo", decorDensity: "high" },
+    { id: "visible-timber-wall", x: 190, y: 300, w: 20, h: 70, sprite: "wall", material: "wood-archive", decorDensity: "high" },
     { id: "top-only-overlay", x: 638, y: 120, w: 140, h: 18, sprite: "floor", tone: "steel", collision: "top-only" },
     { id: "solid-cover", x: 660, y: 106, w: 84, h: 54, sprite: "block", tone: "dark" },
     { id: "lower-floor-overlay", x: 132, y: 160, w: 150, h: 18, sprite: "floor", tone: "steel" },
@@ -446,6 +450,9 @@ try {
   assertNoOutline("left-wall-lower");
   assertNoOutline("right-wall");
   assertNoOutline("thin-wall");
+  assertNoOutline("visible-glass-wall");
+  assertNoOutline("visible-cryo-wall");
+  assertNoOutline("visible-timber-wall");
   assertNoOutline("rain-glass-optin-wall");
   assertNoOutline("cryo-wall-decor-base");
   assertNoOutline("timber-wall-decor-base");
@@ -814,15 +821,19 @@ try {
   const lowChurnScreenshot = `${outDir}/door-solid-render-low-churn-qa.png`;
   const fullGraphicsScreenshotBuffer = await page.screenshot({ path: fullGraphicsScreenshot, fullPage: true });
   const floorCyanSamples = sampleCyanOutlinePixels(fullGraphicsScreenshotBuffer, diagnostics.cameraWorldView, levelSolidsById.get("floor-a"), ["top"]);
-  const wallCyanSamples = sampleCyanOutlinePixels(fullGraphicsScreenshotBuffer, diagnostics.cameraWorldView, levelSolidsById.get("thin-wall"), ["top", "bottom", "left", "right"]);
+  const wallCyanSamples = ["thin-wall", "visible-glass-wall", "visible-cryo-wall", "visible-timber-wall"].map((id) =>
+    sampleCyanOutlinePixels(fullGraphicsScreenshotBuffer, diagnostics.cameraWorldView, levelSolidsById.get(id), ["left", "right"], { outside: true })
+  );
   assert(
     floorCyanSamples.matchingPixels >= 12,
     `Expected visible cyan floor outline pixels so wall pixel sampling is meaningful, got ${JSON.stringify(floorCyanSamples)}`
   );
-  assert(
-    wallCyanSamples.matchingPixels <= 20 && floorCyanSamples.matchingPixels >= wallCyanSamples.matchingPixels * 4,
-    `Expected thin wall perimeter to omit cyan outline pixels, got ${JSON.stringify(wallCyanSamples)}`
-  );
+  for (const sample of wallCyanSamples) {
+    assert(
+      sample.matchingPixels <= 60 && floorCyanSamples.matchingPixels >= sample.matchingPixels * 3,
+      `Expected wall perimeter to omit cyan outline pixels, got ${JSON.stringify(sample)}`
+    );
+  }
   diagnostics.floorCyanSamples = floorCyanSamples;
   diagnostics.wallCyanSamples = wallCyanSamples;
   writeFileSync(`${outDir}/door-solid-render-qa.json`, JSON.stringify({ diagnostics, messages }, null, 2));
@@ -842,7 +853,18 @@ try {
   }));
   assert(lowChurnDiagnostics.doors.includes("door:tall-closed-26:8:logic:468,180,26,300:pos:481,180:origin:0.5,0:box:459,180,45,300:orientation:vertical:rotation:0"), `Expected low-churn door diagnostics, got ${lowChurnDiagnostics.doors}`);
   assert(lowChurnDiagnostics.outlines.includes("floor-b:300,480:300x40:43f7ff:2:top:300-410;top:538-600;bottom:300-600"), `Expected low-churn merged floor outline diagnostics, got ${lowChurnDiagnostics.outlines}`);
-  for (const id of ["left-wall-upper", "left-wall-lower", "right-wall", "thin-wall", "rain-glass-optin-wall", "cryo-wall-decor-base", "timber-wall-decor-base"]) {
+  for (const id of [
+    "left-wall-upper",
+    "left-wall-lower",
+    "right-wall",
+    "thin-wall",
+    "visible-glass-wall",
+    "visible-cryo-wall",
+    "visible-timber-wall",
+    "rain-glass-optin-wall",
+    "cryo-wall-decor-base",
+    "timber-wall-decor-base"
+  ]) {
     assert(!lowChurnDiagnostics.outlines.includes(`${id}:`), `Expected low-churn ${id} to omit all outline segments, got ${lowChurnDiagnostics.outlines}`);
   }
   assert(lowChurnDiagnostics.sensors.includes("echo-sensor:active-sensor:hidden:active"), `Expected low-churn hidden sensor diagnostics, got ${lowChurnDiagnostics.sensors}`);

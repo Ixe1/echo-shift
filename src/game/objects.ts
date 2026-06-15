@@ -41,8 +41,8 @@ const CORE_MAGNET_REST_EPSILON = 0.08;
 
 type ObjectUpdateOptions = {
   collectCores?: boolean;
-  magnetBlockerSolids?: Solid[];
-  magnetBlockers?: Rect[];
+  magnetBlockerSolids?: Solid[] | (() => Solid[]);
+  magnetBlockers?: Rect[] | (() => Rect[]);
 };
 
 export const createObjectState = (level?: Level): ObjectState => {
@@ -215,8 +215,6 @@ export const updateObjects = (
   for (const plate of level.plates || []) {
     if (plate.once && activePlates.has(plate.id)) latchedPlates.add(plate.id);
   }
-  const currentOpenDoorsForMagnet = collectOpenDoors(level.doors || [], activePlates, previous.collectedCores, defeatedBossIds);
-
   const collectedCores = new Set(previous.collectedCores);
   const claimedCores = new Set(previous.claimedCores);
   const coreOffsets = new Map<string, CoreMagnetState>();
@@ -229,12 +227,16 @@ export const updateObjects = (
   const playerActor = actors.find((actor) => actor.kind === "player" && actor.alive);
   if (collectCores) {
     let magnetBlockers: Rect[] | null = null;
+    const resolveMagnetBlockerSolids = (): Solid[] =>
+      typeof options.magnetBlockerSolids === "function" ? options.magnetBlockerSolids() : options.magnetBlockerSolids || level.solids;
+    const resolveMagnetBlockers = (): Rect[] =>
+      typeof options.magnetBlockers === "function" ? options.magnetBlockers() : options.magnetBlockers || [];
     const blockerRects = (): Rect[] => {
       if (!magnetBlockers) {
-        const magnetBlockerSolids = options.magnetBlockerSolids || level.solids;
+        const currentOpenDoorsForMagnet = collectOpenDoors(level.doors || [], activePlates, collectedCores, defeatedBossIds);
         magnetBlockers = [
-          ...magnetBlockerSolids.filter(solidHasGameplayCollision),
-          ...(options.magnetBlockers || []),
+          ...resolveMagnetBlockerSolids().filter(solidHasGameplayCollision),
+          ...resolveMagnetBlockers(),
           ...closedDoorRects(level, currentOpenDoorsForMagnet),
           ...crateRects
         ];
@@ -255,6 +257,7 @@ export const updateObjects = (
       if (collected && playerActor) {
         claimedCores.add(item.id);
         collectedCores.add(item.id);
+        magnetBlockers = null;
         cores.push({
           id: item.id,
           x: playerActor.x + playerActor.w / 2,

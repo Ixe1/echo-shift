@@ -299,15 +299,19 @@ const verifyGameSceneAudioCleanupHooks = () => {
   );
   assert(
     stateSource.includes("const objectUpdateOptions = this.hasUnclaimedPlacedCores()") &&
-      stateSource.includes("magnetBlockerSolids: solids"),
-    "Expected placed-core magnet blocker options to be skipped when no authored core can move"
+      stateSource.includes("magnetBlockerSolids: () => solids") &&
+      stateSource.includes("magnetBlockers: () => ["),
+    "Expected placed-core magnet blocker options to be lazy and skipped when no authored core can move"
   );
   assert(
     objectsSource.includes("let magnetBlockers: Rect[] | null = null") &&
+      objectsSource.includes("const resolveMagnetBlockers = (): Rect[]") &&
       objectsSource.includes("const unclaimedCores = (level.cores || []).filter") &&
+      objectsSource.includes("collectOpenDoors(level.doors || [], activePlates, collectedCores, defeatedBossIds)") &&
       objectsSource.includes("const nearMagnetTarget = Boolean(target && target.distance <= CORE_MAGNET_RADIUS)") &&
+      objectsSource.includes("magnetBlockers = null") &&
       objectsSource.includes("nearMagnetTarget ? blockerRects() : []"),
-    "Expected object updates to lazily build magnet blockers only for nearby unclaimed authored cores"
+    "Expected object updates to lazily build current-frame magnet blockers only for nearby unclaimed authored cores"
   );
   const audioGateBody = gameSceneMethodBody(source, "startLevelWhenAudioReady");
   assert(audioGateBody.includes("audio.waitForMusicStart"), "Expected level start gate to wait for requested music playback");
@@ -2676,6 +2680,25 @@ try {
   doorClosingMagnetSim.step(idle);
   assert(!doorClosingMagnetSim.snapshot().coreOffsets.has("door-closing-blocked-magnet-core"), "Placed core should not magnetize through a door that closes this frame");
   assert(!doorClosingMagnetSim.objectState.collectedCores.has("door-closing-blocked-magnet-core"), "Placed core should not be collected through a door that closes this frame");
+
+  const sameTickCoreDoorMagnetSim = new RoomSimulation({
+    ...baseLevel,
+    doors: [{ id: "same-tick-core-door", x: 52, y: 70, w: 10, h: 58, requiresCore: "same-tick-key-core" }],
+    cores: [
+      { id: "same-tick-key-core", x: 18, y: 86, w: 24, h: 24, size: "large" },
+      { id: "same-tick-magnet-core", x: 72, y: 90, w: 18, h: 18 }
+    ]
+  });
+  sameTickCoreDoorMagnetSim.step(idle);
+  assert(
+    sameTickCoreDoorMagnetSim.objectState.collectedCores.has("same-tick-key-core"),
+    "Expected same-tick key core to be collected before checking later placed-core magnet blockers"
+  );
+  const sameTickMagnetOffset = sameTickCoreDoorMagnetSim.snapshot().coreOffsets.get("same-tick-magnet-core");
+  assert(
+    sameTickMagnetOffset && sameTickMagnetOffset.x < 0,
+    `Same-tick key-core pickup should open the core door before later placed-core magnet checks, got ${JSON.stringify(sameTickMagnetOffset)}`
+  );
 
   const doorClosingSpillSim = new RoomSimulation({
     ...baseLevel,
