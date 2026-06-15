@@ -97,6 +97,9 @@ const editorView = async (page) => {
   return JSON.parse(raw);
 };
 
+const allowedBaselineValidationWarning = "warningFrostcap Echo Rush:boss-1 is outside level bounds.";
+const isCleanOrAllowedBaselineWarning = (status, text) => status === "clean" || text === allowedBaselineValidationWarning;
+
 const validationStatusAllowingWarnings = async (page) => {
   const locator = page.locator("[data-validation]");
   const status = await locator.getAttribute("data-editor-validation");
@@ -104,8 +107,7 @@ const validationStatusAllowingWarnings = async (page) => {
   if (text.toLowerCase().includes("error")) {
     return "issues";
   }
-  const allowedWarningText = "warningFrostcap Echo Rush:boss-1 is outside level bounds.";
-  return status === "clean" || text === allowedWarningText ? "clean" : status;
+  return isCleanOrAllowedBaselineWarning(status, text) ? "clean" : status;
 };
 
 const worldToScreen = async (page, point) => {
@@ -2490,7 +2492,10 @@ try {
     levelOptions === initialExportLevelCount,
     `Expected level selector count to match export JSON level count: ${levelOptions} !== ${initialExportLevelCount}`
   );
-  assert(!initialValidationText?.includes("error"), `Expected no initial validation errors, got ${initialValidation}: ${initialValidationText}`);
+  assert(
+    initialValidation === "issues" && initialValidationText === allowedBaselineValidationWarning,
+    `Expected initial validation to show only the known Frostcap boss warning, got ${initialValidation}: ${initialValidationText}`
+  );
   assert(leftSidebarOverflowY === "auto", `Expected left sidebar to scroll independently, got overflow-y ${leftSidebarOverflowY}`);
   assert(toolbarOverflowY === "auto", `Expected toolbar panel to scroll independently, got overflow-y ${toolbarOverflowY}`);
   assert(inspectorOverflowY === "auto", `Expected right inspector to scroll independently, got overflow-y ${inspectorOverflowY}`);
@@ -2532,8 +2537,9 @@ try {
   assert(activeToolAfterDrop === "select", `Expected drag/drop creation to return toolbar to select mode, got ${activeToolAfterDrop}`);
   assert(!keyboardDeleteExport.includes("smoke-laser-drop"), "Expected keyboard Delete to remove selected smoke-laser-drop");
   assert(
-    !keyboardDeleteValidationText?.toLowerCase().includes("error") && !keyboardDeleteValidationText?.includes("smoke-laser-drop"),
-    `Expected keyboard delete cleanup to avoid smoke-laser-drop validation errors, got ${keyboardDeleteValidation}: ${keyboardDeleteValidationText}`
+    !keyboardDeleteValidationText?.includes("smoke-laser-drop") &&
+      isCleanOrAllowedBaselineWarning(keyboardDeleteValidation, keyboardDeleteValidationText),
+    `Expected keyboard delete cleanup to leave only known baseline warning, got ${keyboardDeleteValidation}: ${keyboardDeleteValidationText}`
   );
   assert(floorPresetId.startsWith("floorpiece-"), `Expected floor preset id to use non-reserved floorpiece stem, got ${floorPresetId}`);
   assert(floorPresetWidth === 320 && floorPresetHeight === 20, `Expected floor preset 320x20, got ${floorPresetWidth}x${floorPresetHeight}`);
@@ -2554,9 +2560,9 @@ try {
     `Expected user-created floor outside bounds to warn, got ${userFloorOutOfBoundsValidation}: ${userFloorOutOfBoundsText}`
   );
   assert(
-    !userFloorCleanupText?.toLowerCase().includes("error") &&
-      !userFloorCleanupText?.includes(userFloorId),
-    `Expected out-of-bounds floor cleanup to remove its object-specific validation warning, got ${userFloorCleanupValidation}: ${userFloorCleanupText}`
+    !userFloorCleanupText?.includes(userFloorId) &&
+      isCleanOrAllowedBaselineWarning(userFloorCleanupValidation, userFloorCleanupText),
+    `Expected out-of-bounds floor cleanup to leave only known baseline warning, got ${userFloorCleanupValidation}: ${userFloorCleanupText}`
   );
   assert(wallPresetId.startsWith("wall-"), `Expected wall preset id to use wall stem, got ${wallPresetId}`);
   assert(wallPresetWidth === 20 && wallPresetHeight === 180, `Expected wall preset 20x180, got ${wallPresetWidth}x${wallPresetHeight}`);
