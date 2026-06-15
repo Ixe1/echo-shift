@@ -447,7 +447,11 @@ export class RoomSimulation {
     const doors = closedDoorRects(this.level, this.objectState.openDoors);
     const solids = this.runtimeSolids;
     this.advanceSpilledCores(this.spilledCoreSupportRects(doors, platforms), this.spilledCoreBlockerRects(doors));
-    const coreMagnetBlockers: Rect[] = [...(this.level.oneWays || []), ...platforms.map((platform) => ({ ...platform.current }))];
+    const coreMagnetBlockers: Rect[] = [
+      ...(this.level.oneWays || []),
+      ...(this.level.conveyors || []),
+      ...platforms.map((platform) => ({ ...platform.current }))
+    ];
     const baseDynamic = {
       oneWays: this.level.oneWays,
       conveyors: this.level.conveyors,

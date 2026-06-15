@@ -215,11 +215,16 @@ export const updateObjects = (
   for (const plate of level.plates || []) {
     if (plate.once && activePlates.has(plate.id)) latchedPlates.add(plate.id);
   }
+  const currentOpenDoorsForMagnet = collectOpenDoors(level.doors || [], activePlates, previous.collectedCores, defeatedBossIds);
 
   const collectedCores = new Set(previous.collectedCores);
   const claimedCores = new Set(previous.claimedCores);
   const coreOffsets = new Map<string, CoreMagnetState>();
-  const spilledCores = new Map([...previous.spilledCores.entries()].map(([id, core]) => [id, { ...core }]));
+  let spilledCores = previous.spilledCores;
+  const removeSpilledCore = (id: string): void => {
+    if (spilledCores === previous.spilledCores) spilledCores = new Map(previous.spilledCores);
+    spilledCores.delete(id);
+  };
   const cores: CorePickupEvent[] = [];
   const playerActor = actors.find((actor) => actor.kind === "player" && actor.alive);
   if (collectCores) {
@@ -227,7 +232,7 @@ export const updateObjects = (
     const magnetBlockers: Rect[] = [
       ...magnetBlockerSolids.filter(solidHasGameplayCollision),
       ...(options.magnetBlockers || []),
-      ...closedDoorRects(level, previous.openDoors),
+      ...closedDoorRects(level, currentOpenDoorsForMagnet),
       ...crateRects
     ];
     for (const item of level.cores || []) {
@@ -251,7 +256,7 @@ export const updateObjects = (
     for (const [id, looseCore] of spilledCores) {
       if (looseCore.pickupDelayFrames > 0) continue;
       if (!playerActor || !rectsOverlap(playerActor, looseCore)) continue;
-      spilledCores.delete(id);
+      removeSpilledCore(id);
       claimedCores.add(looseCore.sourceId);
       collectedCores.add(looseCore.sourceId);
       cores.push({

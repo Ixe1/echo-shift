@@ -2141,12 +2141,14 @@ export class GameScene extends Phaser.Scene {
 
     let message = "";
     if (!this.musicLoadingActive && !this.introActive && !this.completeHandled && !this.retryRequired && !this.deathPresentation) {
-      const snapshot = this.simulation.snapshot();
-      const playerCenterX = snapshot.player.x + snapshot.player.w / 2;
-      if (snapshot.echoes.length === 0) {
+      const playerCenterX = this.simulation.player.x + this.simulation.player.w / 2;
+      const hasEchoes = this.simulation.echoes.some((echo) => echo.alive);
+      const activePlates = this.simulation.objectState.activePlates;
+      const openDoors = this.simulation.objectState.openDoors;
+      if (!hasEchoes) {
         if (playerCenterX < 300) message = "Move with A / D or the arrow keys.";
         else if (playerCenterX < 560) message = "Jump with W, Up, or Space to cross the gap.";
-        else if (playerCenterX < 1220 && !snapshot.activePlates.has("tutorial-plate")) message = "Stand on the plate near the gate.";
+        else if (playerCenterX < 1220 && !activePlates.has("tutorial-plate")) message = "Stand on the plate near the gate.";
         else if (playerCenterX < 1220)
           message = "Press R to leave an echo on the plate and return to the start.";
         else if (playerCenterX < 2050) message = "Push crates onto plates. Crates keep doors open while you move ahead.";
@@ -2157,7 +2159,7 @@ export class GameScene extends Phaser.Scene {
         else if (playerCenterX < 4480) message = "Moving platforms are one-way. Land on top and ride them across gaps.";
         else if (playerCenterX < 5020) message = "Drones are hazards, but plates can power them down. Crates can hold those plates too.";
         else message = "Avoid spark traps and reach the exit portal to finish the tutorial.";
-      } else if (!snapshot.openDoors.has("tutorial-gate")) {
+      } else if (!openDoors.has("tutorial-gate")) {
         message = "Let the echo reach the plate, then start moving when the gate opens.";
       } else if (playerCenterX < 1180) {
         message = "Your echo is holding the plate. Move through the open gate.";

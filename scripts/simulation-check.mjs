@@ -266,6 +266,13 @@ const verifyGameSceneAudioCleanupHooks = () => {
   );
   assert(stateSource.includes("carriedCoreCount(): number"), "Expected RoomSimulation to expose a cheap carried-core count for GameScene");
   assert(stateSource.includes("recoveredSpillCoreIds"), "Expected recovered spill cores to be tracked so one loose core cannot be recycled indefinitely");
+  const tutorialHintBody = gameSceneMethodBody(source, "updateTutorialHint");
+  assert(
+    !tutorialHintBody.includes("simulation.snapshot()") &&
+      tutorialHintBody.includes("this.simulation.player") &&
+      tutorialHintBody.includes("this.simulation.objectState"),
+    "Expected tutorial hints to avoid full simulation snapshots while reading player and object state"
+  );
   const audioGateBody = gameSceneMethodBody(source, "startLevelWhenAudioReady");
   assert(audioGateBody.includes("audio.waitForMusicStart"), "Expected level start gate to wait for requested music playback");
   assert(audioGateBody.includes("effectWarmup"), "Expected level start gate to include SFX warmup");
@@ -1472,7 +1479,7 @@ try {
   const { levels } = await server.ssrLoadModule("/src/data/levels.ts");
   const { level1SpringtideSprint } = await server.ssrLoadModule("/src/data/level-1-springtide-sprint.ts");
   const { tutorialLevel } = await server.ssrLoadModule("/src/data/tutorialLevel.ts");
-  const { doorRequiredCoreIds, isMajorCore, movingLaserRectAt } = await server.ssrLoadModule("/src/game/objects.ts");
+  const { createObjectState, doorRequiredCoreIds, isMajorCore, movingLaserRectAt, updateObjects } = await server.ssrLoadModule("/src/game/objects.ts");
   const { EDITOR_DRAFT_STORAGE_KEY, readEditorDraftSnapshot } = await server.ssrLoadModule("/src/data/editorDraft.ts");
   const { getBestScores, isBetterLevelScore, recordLevelScore } = await server.ssrLoadModule("/src/game/progress.ts");
   const { recordEligibleScore } = await server.ssrLoadModule("/src/game/scorePersistence.ts");
@@ -2427,6 +2434,52 @@ try {
     coreSaveSim.player.vy < 0 && coreSaveSim.player.vx < 0,
     `Saved hit should bounce the player up and away from the right-side damage source, got vx=${coreSaveSim.player.vx}, vy=${coreSaveSim.player.vy}`
   );
+  const noPickupSpillState = createObjectState(baseLevel);
+  const noPickupSpillMap = new Map([
+    [
+      "manual-no-pickup-loose",
+      {
+        id: "manual-no-pickup-loose",
+        sourceId: "manual-no-pickup-core",
+        x: 220,
+        y: 84,
+        w: 18,
+        h: 18,
+        vx: 0,
+        vy: 0,
+        ttlFrames: 120,
+        pickupDelayFrames: 0
+      }
+    ]
+  ]);
+  noPickupSpillState.spilledCores = noPickupSpillMap;
+  const noPickupActor = makeActor("no-pickup-player", "player", { x: 18, y: 86 });
+  const noPickupUpdate = updateObjects(baseLevel, [noPickupActor], noPickupSpillState, 0);
+  assert(noPickupUpdate.state.spilledCores === noPickupSpillMap, "Object update should reuse spilled-core map when no loose core is picked up");
+  const pickupSpillState = createObjectState(baseLevel);
+  const pickupSpillMap = new Map([
+    [
+      "manual-pickup-loose",
+      {
+        id: "manual-pickup-loose",
+        sourceId: "manual-pickup-core",
+        x: 20,
+        y: 86,
+        w: 18,
+        h: 18,
+        vx: 0,
+        vy: 0,
+        ttlFrames: 120,
+        pickupDelayFrames: 0
+      }
+    ]
+  ]);
+  pickupSpillState.spilledCores = pickupSpillMap;
+  const pickupActor = makeActor("pickup-player", "player", { x: 18, y: 86 });
+  const pickupUpdate = updateObjects(baseLevel, [pickupActor], pickupSpillState, 0);
+  assert(pickupUpdate.state.spilledCores !== pickupSpillMap, "Object update should copy spilled-core map before deleting a picked-up loose core");
+  assert(pickupSpillMap.has("manual-pickup-loose"), "Object update should not mutate the previous spilled-core map on pickup");
+  assert(pickupUpdate.state.spilledCores.size === 0, "Picked-up loose core should be removed from the next spilled-core map");
   coreSaveSim.level.hazards = [];
   Object.assign(coreSaveSim.player, { x: 180, y: 86, vx: 0, vy: 0, onGround: true });
   runFrames(coreSaveSim, 34, idle);
@@ -2537,6 +2590,20 @@ try {
   assert(!doorBlockedMagnetSim.snapshot().coreOffsets.has("door-blocked-magnet-core"), "Placed core should not magnetize through a closed door");
   assert(!doorBlockedMagnetSim.objectState.collectedCores.has("door-blocked-magnet-core"), "Placed core should not be collected through a closed door");
 
+  const doorClosingMagnetSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 58, y: 86 },
+    doors: [{ id: "closing-magnet-door", x: 92, y: 70, w: 10, h: 58, opensWith: ["closing-door-plate"] }],
+    cores: [{ id: "door-closing-blocked-magnet-core", x: 112, y: 94, w: 18, h: 18 }]
+  });
+  doorClosingMagnetSim.objectState = {
+    ...doorClosingMagnetSim.objectState,
+    openDoors: new Set(["closing-magnet-door"])
+  };
+  doorClosingMagnetSim.step(idle);
+  assert(!doorClosingMagnetSim.snapshot().coreOffsets.has("door-closing-blocked-magnet-core"), "Placed core should not magnetize through a door that closes this frame");
+  assert(!doorClosingMagnetSim.objectState.collectedCores.has("door-closing-blocked-magnet-core"), "Placed core should not be collected through a door that closes this frame");
+
   const topOnlyBlockedMagnetSim = new RoomSimulation({
     ...baseLevel,
     start: { x: 78, y: 116 },
@@ -2571,6 +2638,18 @@ try {
   platformBlockedMagnetSim.step(idle);
   assert(!platformBlockedMagnetSim.snapshot().coreOffsets.has("platform-blocked-magnet-core"), "Placed core should not magnetize through a moving platform");
   assert(!platformBlockedMagnetSim.objectState.collectedCores.has("platform-blocked-magnet-core"), "Placed core should not be collected through a moving platform");
+
+  const conveyorBlockedMagnetSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 78, y: 116 },
+    bounds: { x: 0, y: 0, w: 240, h: 220 },
+    solids: [],
+    conveyors: [{ id: "conveyor-magnet-blocker", x: 0, y: 100, w: 180, h: 12, direction: 1, speed: 1 }],
+    cores: [{ id: "conveyor-blocked-magnet-core", x: 78, y: 76, w: 18, h: 18 }]
+  });
+  conveyorBlockedMagnetSim.step(idle);
+  assert(!conveyorBlockedMagnetSim.snapshot().coreOffsets.has("conveyor-blocked-magnet-core"), "Placed core should not magnetize through a conveyor");
+  assert(!conveyorBlockedMagnetSim.objectState.collectedCores.has("conveyor-blocked-magnet-core"), "Placed core should not be collected through a conveyor");
 
   const manyCoreLevel = {
     ...baseLevel,
@@ -5511,6 +5590,16 @@ try {
   runFrames(fallSim, 30, right);
   assert(fallSim.tick === fallTick, "Out-of-bounds death should not continue ticking");
   assert(fallSim.totalFrames === fallFrames, "Out-of-bounds death should not continue scoring time");
+
+  const fallBottomEdgeSim = new RoomSimulation(fallLevel);
+  Object.assign(fallBottomEdgeSim.player, {
+    y: fallLevel.bounds.y + fallLevel.bounds.h - fallBottomEdgeSim.player.h + 0.1,
+    vy: 0,
+    onGround: false
+  });
+  const fallBottomEdgeDeath = fallBottomEdgeSim.step(idle);
+  assert(fallBottomEdgeSim.dead && fallBottomEdgeDeath.died, "Falling even partly below the playable area should be instant death");
+  assert(!fallBottomEdgeDeath.coreSpill, `Bottom-edge void death should not create core spill, got ${JSON.stringify(fallBottomEdgeDeath.coreSpill)}`);
 
   const fallWithCoreSim = new RoomSimulation({
     ...fallLevel,

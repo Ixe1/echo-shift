@@ -223,7 +223,7 @@ export const moveActor = (
   );
 
   actor.x = clamp(actor.x, bounds.x, bounds.x + bounds.w - actor.w);
-  if (actor.y > bounds.y + bounds.h) {
+  if (actor.y + actor.h > bounds.y + bounds.h) {
     actor.alive = false;
   }
 
