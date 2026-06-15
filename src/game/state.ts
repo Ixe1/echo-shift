@@ -342,13 +342,14 @@ export class RoomSimulation {
     this.currentRecording = [];
   }
 
-  private triggersWithoutEchoes(includePlayer: boolean): { activePlates: Set<string>; timedSwitchTimers: Map<string, number> } {
+  private triggersForActors(actors: ActorBody[]): { activePlates: Set<string>; timedSwitchTimers: Map<string, number> } {
+    const liveActors = actors.filter((actor) => actor.alive);
+    const actorOverlaps = (rect: Rect): boolean => liveActors.some((actor) => rectsOverlap(actor, rect));
     const activePlates = new Set<string>();
     const crateRects = [...this.objectState.crates.values()];
     const timedSwitchTimers = new Map(this.objectState.timedSwitchTimers);
-    const playerCanTrigger = includePlayer && this.player.alive;
     for (const timedSwitch of this.level.timedSwitches || []) {
-      if ((playerCanTrigger && rectsOverlap(this.player, timedSwitch)) || crateRects.some((crate) => rectsOverlap(crate, timedSwitch))) {
+      if (actorOverlaps(timedSwitch) || crateRects.some((crate) => rectsOverlap(crate, timedSwitch))) {
         timedSwitchTimers.set(timedSwitch.id, Math.max(1, Math.round(timedSwitch.duration)));
       }
     }
@@ -357,22 +358,28 @@ export class RoomSimulation {
       if (remaining > 0) activePlates.add(id);
     }
     for (const plate of this.level.plates || []) {
-      if ((playerCanTrigger && rectsOverlap(this.player, plate)) || crateRects.some((crate) => rectsOverlap(crate, plate))) {
+      if (actorOverlaps(plate) || crateRects.some((crate) => rectsOverlap(crate, plate))) {
         activePlates.add(plate.id);
       }
     }
     for (const sensor of this.level.echoSensors || []) {
       const actorMode = sensor.actors || "echo";
-      if (playerCanTrigger && (actorMode === "player" || actorMode === "both") && rectsOverlap(this.player, sensor)) {
+      if (
+        liveActors.some(
+          (actor) =>
+            (actorMode === "both" || actorMode === actor.kind) &&
+            rectsOverlap(actor, sensor)
+        )
+      ) {
         activePlates.add(sensor.id);
       }
     }
     return { activePlates, timedSwitchTimers };
   }
 
-  private recomputeObjectStateWithoutEchoes(includePlayer: boolean, clearTransientCores: boolean): void {
+  private recomputeObjectStateForActors(actors: ActorBody[], clearTransientCores: boolean): void {
     const defeatedBossIds = new Set(this.currentAttemptDefeatedBossIds.keys());
-    const { activePlates, timedSwitchTimers } = this.triggersWithoutEchoes(includePlayer);
+    const { activePlates, timedSwitchTimers } = this.triggersForActors(actors);
     const latchedPlates = new Set(this.objectState.latchedPlates);
     for (const plate of this.level.plates || []) {
       if (plate.once && activePlates.has(plate.id)) latchedPlates.add(plate.id);
@@ -388,6 +395,10 @@ export class RoomSimulation {
       coreOffsets: clearTransientCores ? new Map() : this.objectState.coreOffsets,
       spilledCores: clearTransientCores ? new Map() : this.objectState.spilledCores
     };
+  }
+
+  private recomputeObjectStateWithoutEchoes(includePlayer: boolean, clearTransientCores: boolean): void {
+    this.recomputeObjectStateForActors(includePlayer && this.player.alive ? [this.player] : [], clearTransientCores);
   }
 
   private clearCheckpointEchoesAndObjectState(): void {
@@ -484,7 +495,7 @@ export class RoomSimulation {
     };
     const dynamicFor = (actor: ActorBody) => ({
       ...baseDynamic,
-      actorBlockers: [this.player, ...this.echoes].filter((other) => other !== actor && other.alive)
+      actorBlockers: [this.player, ...this.echoes].filter((other) => this.actorCanBlockMovementFor(actor, other))
     });
 
     for (let index = 0; index < this.echoes.length; index += 1) {
@@ -519,19 +530,19 @@ export class RoomSimulation {
     }
 
     if (this.objectState.spilledCores.size > 0) {
-      const spilledCoreDoors = this.spilledCoreDoorRects(defeatedBossIds);
+      const spilledCoreDoors = this.spilledCoreDoorRects(defeatedBossIds, previousPlayerY);
       this.advanceSpilledCores(this.spilledCoreSupportRects(spilledCoreDoors, platforms), this.spilledCoreBlockerRects(spilledCoreDoors));
     }
 
     const previousObjectState = this.objectState;
-    let objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick, defeatedBossIds, objectUpdateOptions);
+    let objectUpdate = updateObjects(this.level, this.objectActors(), previousObjectState, this.tick, defeatedBossIds, objectUpdateOptions);
     this.objectState = objectUpdate.state;
 
     for (;;) {
       const echoVaporization = this.vaporizeHazardousEchoes();
       if (!echoVaporization.vaporized) break;
       events.echoLaserVaporized += echoVaporization.laserVaporized;
-      objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick, defeatedBossIds, objectUpdateOptions);
+      objectUpdate = updateObjects(this.level, this.objectActors(), previousObjectState, this.tick, defeatedBossIds, objectUpdateOptions);
       this.objectState = objectUpdate.state;
     }
 
@@ -1223,6 +1234,91 @@ export class RoomSimulation {
     });
   }
 
+  private actorCanBlockMovementFor(actor: ActorBody, other: ActorBody): boolean {
+    if (other === actor || !other.alive) return false;
+    if (other.kind === "echo" && actorTouchesHazard(this.level, other, this.objectState, this.tick)) return false;
+    return true;
+  }
+
+  private objectActors(): ActorBody[] {
+    return [this.player, ...this.echoes].filter((actor) => actor.alive);
+  }
+
+  private hasCoreSaveAvailable(): boolean {
+    return [...this.objectState.collectedCores].some((id) => this.coreCanSpill(id) || this.coreCanProtectOnce(id));
+  }
+
+  private currentDamageWouldKillPlayer(): boolean {
+    return this.coreInvulnerabilityFrames <= 0 && !this.hasCoreSaveAvailable();
+  }
+
+  private playerHazardContactWouldKill(): boolean {
+    const hazardContact = actorHazardContact(this.level, this.player, this.objectState, this.tick);
+    if (!hazardContact) return false;
+    return hazardContact.kind === "laser" || this.currentDamageWouldKillPlayer();
+  }
+
+  private playerMonsterContactWouldKill(previousPlayerY: number): boolean {
+    for (const monster of this.level.monsters || []) {
+      if (this.killedMonsterIds.has(monster.id)) continue;
+      const rect = monsterRectAt(monster, this.tick);
+      if (!rectsOverlap(this.player, rect)) continue;
+      if (actorKillsMonster(this.player, previousPlayerY, monster, rect)) return false;
+      return this.currentDamageWouldKillPlayer();
+    }
+    return false;
+  }
+
+  private playerBossContactWouldKill(previousPlayerY: number): boolean {
+    for (const boss of this.level.bosses || []) {
+      const currentState = this.bossStates.get(boss.id);
+      if (!currentState || currentState.phase === "defeated" || currentState.phase === "departing") continue;
+      const state: BossRuntimeState = {
+        ...currentState,
+        floorIcePatches: currentState.floorIcePatches.map((patch) => ({ ...patch }))
+      };
+
+      if (state.phase === "idle" && rectsOverlap(this.player, boss)) {
+        state.phase = "intro";
+        state.introFrames = 0;
+      }
+
+      if (state.phase === "intro") {
+        state.introFrames += 1;
+        if (state.introFrames >= bossIntroFrames(boss)) {
+          state.phase = "active";
+          state.introFrames = bossIntroFrames(boss);
+          state.activeFrames = 0;
+          settleBossAtIntroEnd(boss, state);
+        }
+      } else if (state.phase === "active") {
+        state.activeFrames += 1;
+        state.invulnerableFrames = Math.max(0, state.invulnerableFrames - 1);
+        advanceBossActiveMotion(boss, state, this.player, this.runtimeSolids);
+      }
+
+      if (state.phase !== "active") continue;
+      const body = bossBodyRectAt(boss, state, this.tick);
+      if (bossTakesHit(this.player, previousPlayerY, boss, body, state)) continue;
+      const attacks = bossAttackRectsAt(boss, state, this.tick, this.runtimeSolids);
+      const floorShocks = bossFloorShockRectsAt(boss, state, this.tick, this.runtimeSolids);
+      const damageSource =
+        bossBodyDamages(state) && rectsOverlap(this.player, body)
+          ? body
+          : attacks.find((attack) => rectsOverlap(this.player, attack)) || floorShocks.find((shock) => rectsOverlap(this.player, shock));
+      if (damageSource) return this.currentDamageWouldKillPlayer();
+    }
+    return false;
+  }
+
+  private playerShouldDriveSpilledCoreDoors(previousPlayerY: number): boolean {
+    if (this.dead || !this.player.alive) return false;
+    if (this.playerHazardContactWouldKill()) return false;
+    if (this.playerMonsterContactWouldKill(previousPlayerY)) return false;
+    if (this.playerBossContactWouldKill(previousPlayerY)) return false;
+    return true;
+  }
+
   private markPlayerDead(events: StepEvents): void {
     this.dead = true;
     this.player.alive = false;
@@ -1231,6 +1327,7 @@ export class RoomSimulation {
     events.died = true;
     const remaining = this.livesRemaining();
     events.livesExhausted = remaining !== null && remaining <= 0;
+    this.recomputeObjectStateForActors(this.aliveEchoes(), false);
   }
 
   private applyPlayerDamage(events: StepEvents, source: Rect): void {
@@ -1383,11 +1480,14 @@ export class RoomSimulation {
     this.objectState = { ...this.objectState, spilledCores: nextSpilledCores };
   }
 
-  private spilledCoreDoorRects(defeatedBossIds: ReadonlySet<string>): Rect[] {
-    let actors = [this.player, ...this.aliveEchoes()];
+  private spilledCoreDoorRects(defeatedBossIds: ReadonlySet<string>, previousPlayerY: number): Rect[] {
+    let actors = [
+      ...(this.playerShouldDriveSpilledCoreDoors(previousPlayerY) ? [this.player] : []),
+      ...this.aliveEchoes()
+    ];
     let projected = this.projectObjectStateForSpilledCoreDoors(actors, defeatedBossIds);
     for (;;) {
-      const survivors = actors.filter((actor) => actor.kind !== "echo" || !actor.alive || !actorTouchesHazard(this.level, actor, projected, this.tick));
+      const survivors = actors.filter((actor) => actor.kind !== "echo" || !actorTouchesHazard(this.level, actor, projected, this.tick));
       if (survivors.length === actors.length) break;
       actors = survivors;
       projected = this.projectObjectStateForSpilledCoreDoors(actors, defeatedBossIds);

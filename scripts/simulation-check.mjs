@@ -2973,6 +2973,94 @@ try {
     `Loose spilled core should pass through a door opened by same-frame actor movement, got ${JSON.stringify(movingActorOpenedLooseCore)}`
   );
 
+  const dyingPlayerClosingSpillSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 18, y: 86 },
+    plates: [{ id: "dying-player-spill-plate", x: 18, y: 86, w: 24, h: 34 }],
+    doors: [{ id: "dying-player-spill-door", x: 92, y: 70, w: 10, h: 58, opensWith: ["dying-player-spill-plate"] }],
+    hazards: [{ id: "dying-player-spill-spark", x: 18, y: 86, w: 24, h: 34 }],
+    cores: []
+  });
+  Object.assign(dyingPlayerClosingSpillSim.player, { x: 18, y: 86, vx: 0, vy: 0, onGround: true });
+  dyingPlayerClosingSpillSim.objectState = {
+    ...dyingPlayerClosingSpillSim.objectState,
+    activePlates: new Set(["dying-player-spill-plate"]),
+    openDoors: new Set(["dying-player-spill-door"]),
+    spilledCores: new Map([
+      [
+        "manual-dying-player-door-loose",
+        {
+          id: "manual-dying-player-door-loose",
+          sourceId: "manual-dying-player-door-core",
+          x: 70,
+          y: 90,
+          w: 18,
+          h: 18,
+          vx: 5,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 8
+        }
+      ]
+    ])
+  };
+  const dyingPlayerClosingStep = dyingPlayerClosingSpillSim.step(idle);
+  assert(dyingPlayerClosingStep.died, "Expected player on fatal plate/hazard fixture to die");
+  assert(
+    !dyingPlayerClosingSpillSim.objectState.openDoors.has("dying-player-spill-door"),
+    "Dying player should not keep a same-frame loose-core door open after death"
+  );
+  const dyingPlayerClosedLooseCore = dyingPlayerClosingSpillSim.objectState.spilledCores.get("manual-dying-player-door-loose");
+  assert(dyingPlayerClosedLooseCore, "Expected dying-player loose core to remain after door collision");
+  assert(
+    dyingPlayerClosedLooseCore.x <= 74.1 && dyingPlayerClosedLooseCore.vx < 0,
+    `Loose spilled core should bounce off a door held only by a dying player, got ${JSON.stringify(dyingPlayerClosedLooseCore)}`
+  );
+
+  const savedPlayerOpeningSpillSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 18, y: 86 },
+    plates: [{ id: "saved-player-spill-plate", x: 18, y: 86, w: 24, h: 34 }],
+    doors: [{ id: "saved-player-spill-door", x: 92, y: 70, w: 10, h: 58, opensWith: ["saved-player-spill-plate"] }],
+    hazards: [{ id: "saved-player-spill-spark", x: 18, y: 86, w: 24, h: 34 }],
+    cores: [{ id: "saved-player-core", x: 220, y: 86, w: 18, h: 18 }]
+  });
+  Object.assign(savedPlayerOpeningSpillSim.player, { x: 18, y: 86, vx: 0, vy: 0, onGround: true });
+  savedPlayerOpeningSpillSim.objectState = {
+    ...savedPlayerOpeningSpillSim.objectState,
+    claimedCores: new Set(["saved-player-core"]),
+    collectedCores: new Set(["saved-player-core"]),
+    spilledCores: new Map([
+      [
+        "manual-saved-player-door-loose",
+        {
+          id: "manual-saved-player-door-loose",
+          sourceId: "manual-saved-player-door-core",
+          x: 70,
+          y: 90,
+          w: 18,
+          h: 18,
+          vx: 5,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 8
+        }
+      ]
+    ])
+  };
+  const savedPlayerOpeningStep = savedPlayerOpeningSpillSim.step(idle);
+  assert(!savedPlayerOpeningStep.died && savedPlayerOpeningStep.coreSpill, "Expected carried core to save the player on the controller");
+  assert(
+    savedPlayerOpeningSpillSim.objectState.openDoors.has("saved-player-spill-door"),
+    "Core-saved player should still drive same-frame loose-core doors"
+  );
+  const savedPlayerOpenedLooseCore = savedPlayerOpeningSpillSim.objectState.spilledCores.get("manual-saved-player-door-loose");
+  assert(savedPlayerOpenedLooseCore, "Expected saved-player loose core to remain after pass-through");
+  assert(
+    savedPlayerOpenedLooseCore.x > 74.1 && savedPlayerOpenedLooseCore.vx > 0,
+    `Loose spilled core should pass through a door held by a core-saved player, got ${JSON.stringify(savedPlayerOpenedLooseCore)}`
+  );
+
   const echoVaporizedDoorSpillSim = new RoomSimulation({
     ...baseLevel,
     start: { x: 18, y: 20 },
@@ -6303,6 +6391,20 @@ try {
   assert(
     ledgeEchoBlockedSim.player.y !== 66,
     `Echo-blocked ledge forgiveness should not snap to the ledge top, got ${JSON.stringify(ledgeEchoBlockedSim.player)}`
+  );
+
+  const ledgeDoomedEchoSim = new RoomSimulation({
+    ...ledgeForgivenessLevel,
+    lasers: [{ id: "ledge-doomed-echo-laser", x: 100, y: 66, w: 8, h: 34, startsOn: true }]
+  });
+  ledgeDoomedEchoSim.echoRecordings.push({ id: "ledge-doomed-echo", frames: [], createdAtFrame: 0 });
+  ledgeDoomedEchoSim.echoes = [makeActor("ledge-doomed-echo", "echo", { x: 80, y: 66 })];
+  Object.assign(ledgeDoomedEchoSim.player, { x: 56, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  const ledgeDoomedEchoStep = ledgeDoomedEchoSim.step(right);
+  assert(ledgeDoomedEchoStep.echoLaserVaporized === 1, "Expected hazard-doomed ledge echo to be vaporized in the same frame");
+  assert(
+    ledgeDoomedEchoSim.player.onGround && ledgeDoomedEchoSim.player.y === 66,
+    `Doomed echo should not block ledge forgiveness before vaporization, got ${JSON.stringify(ledgeDoomedEchoSim.player)}`
   );
 
   const ledgeReplayEchoSim = new RoomSimulation(ledgeForgivenessLevel);
