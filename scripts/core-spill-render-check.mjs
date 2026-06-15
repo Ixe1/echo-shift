@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { inflateSync } from "node:zlib";
 import { chromium } from "playwright";
 
 const url = process.env.PLAYTEST_URL || "http://localhost:5173/";
@@ -32,6 +33,133 @@ const countSpillFrames = (frames) =>
   frames
     .split("|")
     .filter((frame) => frame.includes(":spill:")).length;
+
+const spillWorldRectsFromFrames = (frames) =>
+  frames
+    .split("|")
+    .filter((frame) => frame.includes(":spill:"))
+    .map((frame) => {
+      const match = frame.match(/:spill:(-?\d+),(-?\d+)$/);
+      return match ? { x: Number(match[1]), y: Number(match[2]), w: 18, h: 18 } : null;
+    })
+    .filter(Boolean);
+
+const paethPredictor = (left, up, upLeft) => {
+  const estimate = left + up - upLeft;
+  const leftDistance = Math.abs(estimate - left);
+  const upDistance = Math.abs(estimate - up);
+  const upLeftDistance = Math.abs(estimate - upLeft);
+  if (leftDistance <= upDistance && leftDistance <= upLeftDistance) return left;
+  return upDistance <= upLeftDistance ? up : upLeft;
+};
+
+const decodePng = (buffer) => {
+  const signature = "89504e470d0a1a0a";
+  assert(buffer.subarray(0, 8).toString("hex") === signature, "Expected PNG screenshot buffer");
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  const idatChunks = [];
+  while (offset < buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.subarray(offset + 4, offset + 8).toString("ascii");
+    const data = buffer.subarray(offset + 8, offset + 8 + length);
+    offset += 12 + length;
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colorType = data[9];
+      assert(data[12] === 0, "Interlaced PNG screenshots are not supported by this QA parser");
+    } else if (type === "IDAT") {
+      idatChunks.push(data);
+    } else if (type === "IEND") {
+      break;
+    }
+  }
+  assert(width > 0 && height > 0, "Expected PNG screenshot dimensions");
+  assert(bitDepth === 8 && (colorType === 2 || colorType === 6), `Unsupported PNG format bitDepth=${bitDepth} colorType=${colorType}`);
+  const bytesPerPixel = colorType === 6 ? 4 : 3;
+  const stride = width * bytesPerPixel;
+  const inflated = inflateSync(Buffer.concat(idatChunks));
+  const pixels = Buffer.alloc(width * height * 4);
+  const row = Buffer.alloc(stride);
+  const previousRow = Buffer.alloc(stride);
+  let inputOffset = 0;
+  for (let y = 0; y < height; y += 1) {
+    const filter = inflated[inputOffset];
+    inputOffset += 1;
+    for (let x = 0; x < stride; x += 1) {
+      const raw = inflated[inputOffset];
+      inputOffset += 1;
+      const left = x >= bytesPerPixel ? row[x - bytesPerPixel] : 0;
+      const up = previousRow[x] || 0;
+      const upLeft = x >= bytesPerPixel ? previousRow[x - bytesPerPixel] || 0 : 0;
+      if (filter === 0) row[x] = raw;
+      else if (filter === 1) row[x] = (raw + left) & 255;
+      else if (filter === 2) row[x] = (raw + up) & 255;
+      else if (filter === 3) row[x] = (raw + Math.floor((left + up) / 2)) & 255;
+      else if (filter === 4) row[x] = (raw + paethPredictor(left, up, upLeft)) & 255;
+      else throw new Error(`Unsupported PNG filter ${filter}`);
+    }
+    for (let x = 0; x < width; x += 1) {
+      const source = x * bytesPerPixel;
+      const target = (y * width + x) * 4;
+      pixels[target] = row[source];
+      pixels[target + 1] = row[source + 1];
+      pixels[target + 2] = row[source + 2];
+      pixels[target + 3] = colorType === 6 ? row[source + 3] : 255;
+    }
+    previousRow.set(row);
+  }
+  return { width, height, pixels };
+};
+
+const samplePngWorldRegions = (buffer, regions, cameraWorldView, mode) => {
+  const png = decodePng(buffer);
+  const view = cameraWorldView.split(",").map(Number);
+  if (view.length !== 4 || view.some((value) => !Number.isFinite(value))) {
+    return { ok: false, reason: "missing-camera-world-view", samples: [] };
+  }
+  const [viewX, viewY, viewW, viewH] = view;
+  const matchesMode = (r, g, b, a) => {
+    if (a <= 80) return false;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    if (mode === "playerTint") return r > 130 && g > 95 && b < 170 && r >= b && max - min > 30;
+    return (max > 78 && max - min > 24 && (g > r + 8 || b > r + 8)) || (max > 185 && min > 135);
+  };
+  const samples = regions.map((region) => {
+    const pad = region.pad ?? 8;
+    const x = ((region.x - viewX) / viewW) * png.width;
+    const y = ((region.y - viewY) / viewH) * png.height;
+    const w = (region.w / viewW) * png.width;
+    const h = (region.h / viewH) * png.height;
+    const left = Math.max(0, Math.floor(x - pad));
+    const top = Math.max(0, Math.floor(y - pad));
+    const right = Math.min(png.width, Math.ceil(x + w + pad));
+    const bottom = Math.min(png.height, Math.ceil(y + h + pad));
+    let matchingPixels = 0;
+    let maxChannel = 0;
+    let nonTransparentPixels = 0;
+    for (let sampleY = top; sampleY < bottom; sampleY += 1) {
+      for (let sampleX = left; sampleX < right; sampleX += 1) {
+        const pixelIndex = (sampleY * png.width + sampleX) * 4;
+        const r = png.pixels[pixelIndex];
+        const g = png.pixels[pixelIndex + 1];
+        const b = png.pixels[pixelIndex + 2];
+        const a = png.pixels[pixelIndex + 3];
+        maxChannel = Math.max(maxChannel, r, g, b);
+        if (a > 0) nonTransparentPixels += 1;
+        if (matchesMode(r, g, b, a)) matchingPixels += 1;
+      }
+    }
+    return { region, matchingPixels, sampledPixels: Math.max(0, right - left) * Math.max(0, bottom - top), maxChannel, nonTransparentPixels, pngRect: { left, top, right, bottom } };
+  });
+  return { ok: true, reason: "", samples, cameraWorldView: { x: viewX, y: viewY, w: viewW, h: viewH }, image: { width: png.width, height: png.height } };
+};
 
 const gameSceneDiagnosticKeys = [
   "echoShiftScoreEligible",
@@ -345,6 +473,8 @@ try {
   const spillDiagnostics = await page.evaluate(() => ({
     coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
     invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
+    cameraWorldView: document.documentElement.dataset.echoShiftCameraWorldView || "",
+    playerRect: document.documentElement.dataset.echoShiftPlayerRect || "",
     hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
     toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
     tutorialHint: document.querySelector("[data-tutorial-hint]")?.textContent?.trim() || "",
@@ -387,7 +517,21 @@ try {
   assert(spillDiagnostics.canvas.width > 0 && spillDiagnostics.canvas.height > 0, `Expected visible canvas, got ${JSON.stringify(spillDiagnostics.canvas)}`);
 
   const screenshot = `${outDir}/core-spill-render-qa.png`;
-  await page.screenshot({ path: screenshot, fullPage: true });
+  const screenshotBuffer = await page.screenshot({ path: screenshot, fullPage: true });
+  const visibleSpillSamples = samplePngWorldRegions(screenshotBuffer, spillWorldRectsFromFrames(spillDiagnostics.coreFrames), spillDiagnostics.cameraWorldView, "core");
+  const visibleSpillRegions = visibleSpillSamples.samples.filter((sample) => sample.matchingPixels >= 4);
+  assert(
+    visibleSpillSamples.ok && visibleSpillRegions.length >= 2,
+    `Expected spilled core sprites to be visible in rendered canvas pixels, got ${JSON.stringify(visibleSpillSamples)}`
+  );
+  const spillPlayerTintSamples = samplePngWorldRegions(screenshotBuffer, [{ ...parseRect(spillDiagnostics.playerRect), pad: 3 }], spillDiagnostics.cameraWorldView, "playerTint");
+  assert(
+    spillPlayerTintSamples.ok && spillPlayerTintSamples.samples.some((sample) => sample.matchingPixels >= 8),
+    `Expected player invulnerability tint to be visible in rendered canvas pixels, got ${JSON.stringify(spillPlayerTintSamples)}`
+  );
+  spillDiagnostics.visibleSpillSamples = visibleSpillSamples;
+  spillDiagnostics.playerTintSamples = spillPlayerTintSamples;
+
   const screenshotDiagnostics = await page.evaluate(() => ({
     hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
     coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
@@ -520,6 +664,8 @@ try {
     coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
     doors: document.documentElement.dataset.echoShiftDoorAssetTransforms || "",
     invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
+    cameraWorldView: document.documentElement.dataset.echoShiftCameraWorldView || "",
+    playerRect: document.documentElement.dataset.echoShiftPlayerRect || "",
     hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
     toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
     tutorialHint: document.querySelector("[data-tutorial-hint]")?.textContent?.trim() || "",
@@ -541,7 +687,14 @@ try {
   );
 
   const protectedScreenshot = `${outDir}/protected-core-save-render-qa.png`;
-  await page.screenshot({ path: protectedScreenshot, fullPage: true });
+  const protectedScreenshotBuffer = await page.screenshot({ path: protectedScreenshot, fullPage: true });
+  const protectedPlayerTintSamples = samplePngWorldRegions(protectedScreenshotBuffer, [{ ...parseRect(protectedDiagnostics.playerRect), pad: 3 }], protectedDiagnostics.cameraWorldView, "playerTint");
+  assert(
+    protectedPlayerTintSamples.ok && protectedPlayerTintSamples.samples.some((sample) => sample.matchingPixels >= 8),
+    `Expected protected-save player tint to be visible in rendered canvas pixels, got ${JSON.stringify(protectedPlayerTintSamples)}`
+  );
+  protectedDiagnostics.playerTintSamples = protectedPlayerTintSamples;
+
   const protectedScreenshotDiagnostics = await page.evaluate(() => ({
     hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
     coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",

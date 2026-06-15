@@ -326,7 +326,11 @@ try {
   });
   assertNoOutline("left-wall-upper");
   assertNoOutline("left-wall-lower");
+  assertNoOutline("right-wall");
   assertNoOutline("thin-wall");
+  assertNoOutline("rain-glass-optin-wall");
+  assertNoOutline("cryo-wall-decor-base");
+  assertNoOutline("timber-wall-decor-base");
   assertOutline("block-a", {
     segments: ["top:560-592", "bottom:560-592", "left:420-480"]
   });
