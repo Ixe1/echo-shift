@@ -526,6 +526,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   init(data: GameSceneData): void {
+    this.registerSceneCleanup();
     this.tutorialMode = data.tutorial === true;
     this.levelIndex = this.tutorialMode ? 0 : data.levelIndex || 0;
     this.level = this.tutorialMode ? tutorialLevel : getLevel(this.levelIndex);
@@ -1775,7 +1776,7 @@ export class GameScene extends Phaser.Scene {
       const lives = this.simulation.livesRemaining();
       this.startDeathPresentation(lives !== null && lives <= 0, events.playerLaserVaporized);
     } else if (coreInventoryChanged) {
-      this.processCoreLifeAwards(this.simulation.snapshot().collectedCores.size);
+      this.processCoreLifeAwards(this.simulation.carriedCoreCount());
     }
     if (events.won) {
       if (this.simulation.finalBossDefeatCompletesLevel()) this.queueBossDefeatCompletion();
@@ -1812,7 +1813,7 @@ export class GameScene extends Phaser.Scene {
 
   private restoreFiniteCoreBonusProgress(): void {
     if (!levelUsesFiniteLives(this.level)) return;
-    restoreCampaignCoreBonusProgress(this.simulation.snapshot().collectedCores.size);
+    restoreCampaignCoreBonusProgress(this.simulation.carriedCoreCount());
   }
 
   private playBossSoundCue(cue: ReturnType<RoomSimulation["step"]>["bossSoundCues"][number]["cue"]): void {
@@ -2232,7 +2233,6 @@ export class GameScene extends Phaser.Scene {
     this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.recordCameraDiagnostics, this);
     this.scale.off(Phaser.Scale.Events.RESIZE, this.configureCameraFrame, this);
     window.removeEventListener("keydown", this.handleWindowKeyDown);
-    this.clearSceneDiagnostics();
     this.stopBossDefeatLoops();
     this.clearAttemptScopedAudio();
     this.sceneCleanupRegistered = false;
@@ -2297,6 +2297,7 @@ export class GameScene extends Phaser.Scene {
     this.fxBursts.length = 0;
     this.bossMusicActive = false;
     this.bossMusicKey = null;
+    this.clearSceneDiagnostics();
   };
 
   private clearSceneDiagnostics(): void {

@@ -94,6 +94,7 @@ type BossCheckpoint = {
   deaths: number;
   coreSpillSerial: number;
   protectedCoreSaveIds: Set<string>;
+  recoveredSpillCoreIds: Set<string>;
 };
 
 type SnapshotOptions = {
@@ -197,6 +198,7 @@ export class RoomSimulation {
   private coreInvulnerabilityFrames = 0;
   private coreSpillSerial = 0;
   private readonly protectedCoreSaveIds = new Set<string>();
+  private readonly recoveredSpillCoreIds = new Set<string>();
 
   constructor(level: Level, options: RoomSimulationOptions = {}) {
     this.level = level;
@@ -220,6 +222,7 @@ export class RoomSimulation {
     this.coreInvulnerabilityFrames = 0;
     this.coreSpillSerial = 0;
     this.protectedCoreSaveIds.clear();
+    this.recoveredSpillCoreIds.clear();
     this.resetAttempt(false);
   }
 
@@ -256,6 +259,7 @@ export class RoomSimulation {
     this.coreInvulnerabilityFrames = 0;
     this.coreSpillSerial = 0;
     this.protectedCoreSaveIds.clear();
+    this.recoveredSpillCoreIds.clear();
     if (!keepRecording) this.currentRecording = [];
   }
 
@@ -375,6 +379,7 @@ export class RoomSimulation {
     this.coreInvulnerabilityFrames = 0;
     this.coreSpillSerial = 0;
     this.protectedCoreSaveIds.clear();
+    this.recoveredSpillCoreIds.clear();
   }
 
   step(input: InputFrame): StepEvents {
@@ -470,7 +475,10 @@ export class RoomSimulation {
     events.switched = objectUpdate.switched;
     events.core = objectUpdate.core;
     events.cores = objectUpdate.cores;
-    for (const core of objectUpdate.cores) this.addCoreScore(core.id);
+    for (const core of objectUpdate.cores) {
+      this.addCoreScore(core.id);
+      if (core.recovered) this.recoveredSpillCoreIds.add(core.id);
+    }
 
     if (!this.dead && actorTouchesLaser(this.level, this.player, this.objectState, this.tick)) {
       events.playerLaserVaporized = true;
@@ -547,6 +555,10 @@ export class RoomSimulation {
 
   livesRemaining(): number | null {
     return this.remainingLives;
+  }
+
+  carriedCoreCount(): number {
+    return this.objectState.collectedCores.size;
   }
 
   setLivesRemaining(lives: number | null): void {
@@ -629,7 +641,8 @@ export class RoomSimulation {
       score: this.score,
       deaths: this.deaths,
       coreSpillSerial: this.coreSpillSerial,
-      protectedCoreSaveIds: new Set(this.protectedCoreSaveIds)
+      protectedCoreSaveIds: new Set(this.protectedCoreSaveIds),
+      recoveredSpillCoreIds: new Set(this.recoveredSpillCoreIds)
     };
     events.bossCheckpointActivated = boss.id;
   }
@@ -713,7 +726,11 @@ export class RoomSimulation {
     const spentProtectedCoreSaveIds = new Set(this.protectedCoreSaveIds);
     this.protectedCoreSaveIds.clear();
     for (const id of checkpoint.protectedCoreSaveIds) this.protectedCoreSaveIds.add(id);
-    for (const id of spentProtectedCoreSaveIds) this.protectedCoreSaveIds.add(id);
+    for (const id of spentProtectedCoreSaveIds) {
+      if (checkpoint.objectState.collectedCores.has(id)) this.protectedCoreSaveIds.add(id);
+    }
+    this.recoveredSpillCoreIds.clear();
+    for (const id of checkpoint.recoveredSpillCoreIds) this.recoveredSpillCoreIds.add(id);
   }
 
   private resetRuntimeTerrain(): void {
@@ -1021,7 +1038,8 @@ export class RoomSimulation {
         handledArchiveImpactSoundKeys: new Set(this.handledArchiveImpactSoundKeys),
         score: this.score,
         coreSpillSerial: this.coreSpillSerial,
-        protectedCoreSaveIds: new Set(this.protectedCoreSaveIds)
+        protectedCoreSaveIds: new Set(this.protectedCoreSaveIds),
+        recoveredSpillCoreIds: new Set(this.recoveredSpillCoreIds)
       };
     }
     else this.bossCheckpoint = null;
@@ -1099,7 +1117,8 @@ export class RoomSimulation {
     const spillableCoreIds = [...this.objectState.collectedCores].filter((id) => this.coreCanSpill(id));
     const protectedCoreIds = [...this.objectState.collectedCores].filter((id) => this.coreCanProtectOnce(id));
     if (spillableCoreIds.length === 0 && protectedCoreIds.length === 0) return false;
-    const spilledIds = this.recoverableSpillCoreIds(spillableCoreIds);
+    const recoverableCoreIds = spillableCoreIds.filter((id) => !this.recoveredSpillCoreIds.has(id));
+    const spilledIds = this.recoverableSpillCoreIds(recoverableCoreIds);
     const spilledIdSet = new Set(spilledIds);
     const lostCoreIds = spillableCoreIds.filter((id) => !spilledIdSet.has(id));
     const protectedSaveIds = spillableCoreIds.length === 0 ? protectedCoreIds.slice(0, 1) : [];
@@ -1178,7 +1197,8 @@ export class RoomSimulation {
   private recoverableSpillCoreIds(coreIds: string[]): string[] {
     if (coreIds.length === 0) return [];
     const maxRecoverable = Math.min(CORE_SPILL_MAX_RECOVERABLE, coreIds.length, Math.max(1, Math.ceil(coreIds.length / 2)));
-    const count = 1 + (this.coreSpillHash(coreIds.join("|")) % maxRecoverable);
+    const minRecoverable = coreIds.length >= 4 ? Math.min(2, maxRecoverable) : 1;
+    const count = minRecoverable + (this.coreSpillHash(coreIds.join("|")) % (maxRecoverable - minRecoverable + 1));
     return [...coreIds]
       .sort((left, right) => this.coreSpillHash(left) - this.coreSpillHash(right))
       .slice(0, count);

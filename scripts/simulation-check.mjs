@@ -223,7 +223,7 @@ const verifyGameSceneAudioCleanupHooks = () => {
     handleEventsBody.includes("let coreInventoryChanged = false;") &&
       handleEventsBody.includes("coreInventoryChanged = true;") &&
       handleEventsBody.includes("} else if (coreInventoryChanged)") &&
-      handleEventsBody.includes("this.processCoreLifeAwards(this.simulation.snapshot().collectedCores.size);"),
+      handleEventsBody.includes("this.processCoreLifeAwards(this.simulation.carriedCoreCount());"),
     "Expected bonus-life progress to sync from current carried cores after pickup/spill frames resolve"
   );
   assert(
@@ -238,7 +238,16 @@ const verifyGameSceneAudioCleanupHooks = () => {
   );
   const shutdownBody = gameSceneMethodBody(source, "shutdownScene");
   const diagnosticsBody = gameSceneMethodBody(source, "clearSceneDiagnostics");
+  assert(
+    source.includes("init(data: GameSceneData): void {\n    this.registerSceneCleanup();"),
+    "Expected GameScene to register cleanup during init before early load-exit paths"
+  );
   assert(shutdownBody.includes("this.clearSceneDiagnostics();"), "Expected GameScene shutdown to clear gameplay diagnostics");
+  assert(
+    shutdownBody.lastIndexOf("this.clearSceneDiagnostics();") > shutdownBody.indexOf("this.cancelMusicLoading();") &&
+      shutdownBody.lastIndexOf("this.clearSceneDiagnostics();") > shutdownBody.indexOf("this.finishLevelIntro();"),
+    "Expected GameScene shutdown to clear diagnostics after helpers that can write idle diagnostics"
+  );
   for (const key of [
     "echoShiftCoreSpriteFrames",
     "echoShiftCoreInvulnerabilityFrames",
@@ -254,6 +263,8 @@ const verifyGameSceneAudioCleanupHooks = () => {
       stateSource.includes("cloneTransientCoreState ? new Set(this.objectState.claimedCores) : this.objectState.claimedCores"),
     "Expected live rendering to skip transient core-state deep copies while preserving normal snapshot cloning"
   );
+  assert(stateSource.includes("carriedCoreCount(): number"), "Expected RoomSimulation to expose a cheap carried-core count for GameScene");
+  assert(stateSource.includes("recoveredSpillCoreIds"), "Expected recovered spill cores to be tracked so one loose core cannot be recycled indefinitely");
   const audioGateBody = gameSceneMethodBody(source, "startLevelWhenAudioReady");
   assert(audioGateBody.includes("audio.waitForMusicStart"), "Expected level start gate to wait for requested music playback");
   assert(audioGateBody.includes("effectWarmup"), "Expected level start gate to include SFX warmup");
@@ -1830,6 +1841,20 @@ try {
     repeatedCoreAfterNewLevel.counted && repeatedCoreAfterNewLevel.collectedCoreCount === 1,
     `Expected new-level core reset to clear counted core ids, got ${JSON.stringify(repeatedCoreAfterNewLevel)}`
   );
+  resetCampaignVitals(3);
+  const partialFreshRoomSetup = syncCampaignCoreBonusProgress(12);
+  assert(partialFreshRoomSetup.collectedCoreCount === 12, `Expected fresh-room setup to record partial carried cores, got ${JSON.stringify(partialFreshRoomSetup)}`);
+  resetCampaignCoreBonusProgress();
+  const freshRoomReset = syncCampaignCoreBonusProgress(0);
+  assert(
+    freshRoomReset.livesAwarded === 0 && freshRoomReset.lives === 3 && campaignCoreCount() === 0,
+    `Expected fresh room to reset carried-core bonus progress to the new room inventory, got ${JSON.stringify(freshRoomReset)}`
+  );
+  const freshRoomThreshold = syncCampaignCoreBonusProgress(CORES_PER_BONUS_LIFE);
+  assert(
+    freshRoomThreshold.livesAwarded === 1 && freshRoomThreshold.lives === 4,
+    `Expected fresh room threshold to award from its own carried cores, got ${JSON.stringify(freshRoomThreshold)}`
+  );
   resetCampaignVitals(1);
   for (let index = 1; index < CORES_PER_BONUS_LIFE; index += 1) registerCampaignCorePickup("same-frame-death", `core-${index}`);
   syncCampaignLives(0);
@@ -2356,6 +2381,20 @@ try {
   assert(coreSaveSim.objectState.collectedCores.size === 1, `Expected only the large/key core to remain carried, got ${[...coreSaveSim.objectState.collectedCores].join(",")}`);
   assert(coreSaveSim.objectState.spilledCores.size === 1, "Expected spilled core to become a temporary loose pickup");
   assert(coreSaveSim.score === 100, `Expected all eligible small-core score to be removed, got ${coreSaveSim.score}`);
+  const clonedTransientSnapshot = coreSaveSim.snapshot();
+  const renderTransientSnapshot = coreSaveSim.snapshot({ cloneTransientCoreState: false });
+  assert(clonedTransientSnapshot.claimedCores !== coreSaveSim.objectState.claimedCores, "Default snapshot should clone claimed core ids");
+  clonedTransientSnapshot.claimedCores.add("__default-snapshot-only");
+  assert(!coreSaveSim.objectState.claimedCores.has("__default-snapshot-only"), "Mutating default snapshot claimed cores should not affect simulation state");
+  assert(renderTransientSnapshot.claimedCores === coreSaveSim.objectState.claimedCores, "Render snapshot should alias claimed core ids");
+  renderTransientSnapshot.claimedCores.add("__render-snapshot-alias");
+  assert(coreSaveSim.objectState.claimedCores.has("__render-snapshot-alias"), "Render snapshot claimed cores should be a live transient reference");
+  coreSaveSim.objectState.claimedCores.delete("__render-snapshot-alias");
+  assert(clonedTransientSnapshot.spilledCores !== coreSaveSim.objectState.spilledCores, "Default snapshot should clone spilled core map");
+  assert(renderTransientSnapshot.spilledCores === coreSaveSim.objectState.spilledCores, "Render snapshot should alias spilled core map");
+  const clonedLooseCore = [...clonedTransientSnapshot.spilledCores.values()][0];
+  const stateLooseCore = [...coreSaveSim.objectState.spilledCores.values()][0];
+  assert(clonedLooseCore && stateLooseCore && clonedLooseCore !== stateLooseCore, "Default snapshot should clone spilled core objects");
   assert(
     coreSaveSim.player.vy < 0 && coreSaveSim.player.vx < 0,
     `Saved hit should bounce the player up and away from the right-side damage source, got vx=${coreSaveSim.player.vx}, vy=${coreSaveSim.player.vy}`
@@ -2375,6 +2414,46 @@ try {
   assert(coreSaveSim.objectState.collectedCores.size === 2, "Recovered spilled core should return to carried cores while the lost core stays gone");
   assert(coreSaveSim.score === 200, `Recovered spilled core should restore only recoverable score, got ${coreSaveSim.score}`);
 
+  const fragileRecoveredCoreSim = new RoomSimulation({
+    ...baseLevel,
+    cores: [{ id: "fragile-recovered-core", x: 18, y: 86, w: 18, h: 18 }],
+    hazards: [{ id: "fragile-first-hit", x: 18, y: 86, w: 36, h: 34 }]
+  });
+  const fragileFirstHit = fragileRecoveredCoreSim.step(idle);
+  assert(
+    !fragileRecoveredCoreSim.dead && fragileFirstHit.coreSpill?.coreIds.includes("fragile-recovered-core"),
+    `Expected first fragile-core hit to save and scatter the core, got ${JSON.stringify(fragileFirstHit.coreSpill)}`
+  );
+  fragileRecoveredCoreSim.level.hazards = [];
+  Object.assign(fragileRecoveredCoreSim.player, { x: 180, y: 86, vx: 0, vy: 0, onGround: true });
+  runFrames(fragileRecoveredCoreSim, 34, idle);
+  const fragileLooseCore = [...fragileRecoveredCoreSim.objectState.spilledCores.values()][0];
+  assert(fragileLooseCore, "Expected fragile-core loose pickup to persist before recovery");
+  Object.assign(fragileRecoveredCoreSim.player, { x: fragileLooseCore.x - 8, y: fragileLooseCore.y - 16, vx: 0, vy: 0, onGround: false });
+  const fragileRecovery = fragileRecoveredCoreSim.step(idle);
+  assert(
+    fragileRecovery.cores.some((core) => core.id === "fragile-recovered-core" && core.recovered),
+    `Expected fragile core to be recoverable once, got ${JSON.stringify(fragileRecovery.cores)}`
+  );
+  fragileRecoveredCoreSim.coreInvulnerabilityFrames = 0;
+  Object.assign(fragileRecoveredCoreSim.player, { x: 18, y: 86, vx: 0, vy: 0, onGround: true });
+  fragileRecoveredCoreSim.level.hazards = [{ id: "fragile-second-hit", x: 18, y: 86, w: 36, h: 34 }];
+  const fragileSecondHit = fragileRecoveredCoreSim.step(idle);
+  assert(
+    !fragileRecoveredCoreSim.dead &&
+      fragileSecondHit.coreSpill?.coreIds.length === 0 &&
+      fragileSecondHit.coreSpill.lostCoreIds.includes("fragile-recovered-core"),
+    `Expected recovered fragile core to save once more without re-scattering, got ${JSON.stringify(fragileSecondHit.coreSpill)}`
+  );
+  assert(fragileRecoveredCoreSim.objectState.spilledCores.size === 0, "Recovered fragile core should not create a second loose pickup loop");
+  assert(fragileRecoveredCoreSim.objectState.collectedCores.size === 0, "Recovered fragile core should be consumed by its second save");
+  fragileRecoveredCoreSim.coreInvulnerabilityFrames = 0;
+  Object.assign(fragileRecoveredCoreSim.player, { x: 18, y: 86, vx: 0, vy: 0, onGround: true });
+  fragileRecoveredCoreSim.level.hazards = [{ id: "fragile-third-hit", x: 18, y: 86, w: 36, h: 34 }];
+  const fragileThirdHit = fragileRecoveredCoreSim.step(idle);
+  assert(fragileRecoveredCoreSim.dead && fragileThirdHit.died, "No-core follow-up hit should kill after fragile recovered core is consumed");
+  assert(!fragileThirdHit.coreSpill, `No-core follow-up hit should not create another core save, got ${JSON.stringify(fragileThirdHit.coreSpill)}`);
+
   const coreMagnetSim = new RoomSimulation({
     ...baseLevel,
     cores: [{ id: "magnet-core", x: 78, y: 90, w: 18, h: 18 }]
@@ -2382,6 +2461,14 @@ try {
   coreMagnetSim.step(idle);
   const magnetOffset = coreMagnetSim.snapshot().coreOffsets.get("magnet-core");
   assert(magnetOffset && magnetOffset.x < 0, `Expected nearby placed core to drift toward player, got ${JSON.stringify(magnetOffset)}`);
+  const clonedMagnetSnapshot = coreMagnetSim.snapshot();
+  const renderMagnetSnapshot = coreMagnetSim.snapshot({ cloneTransientCoreState: false });
+  assert(clonedMagnetSnapshot.coreOffsets !== coreMagnetSim.objectState.coreOffsets, "Default snapshot should clone core magnet offsets");
+  assert(renderMagnetSnapshot.coreOffsets === coreMagnetSim.objectState.coreOffsets, "Render snapshot should alias core magnet offsets");
+  assert(
+    clonedMagnetSnapshot.coreOffsets.get("magnet-core") !== coreMagnetSim.objectState.coreOffsets.get("magnet-core"),
+    "Default snapshot should clone individual core magnet offset objects"
+  );
 
   const blockedMagnetSim = new RoomSimulation({
     ...baseLevel,
@@ -2439,6 +2526,10 @@ try {
   assert(
     manyCoreSpillA.coreIds.length <= 8,
     `Expected recoverable spill count to stay capped at 8, got ${JSON.stringify(manyCoreSpillA)}`
+  );
+  assert(
+    manyCoreSpillA.coreIds.length >= 2,
+    `Expected a larger carried-core stash to scatter multiple recoverable cores, got ${JSON.stringify(manyCoreSpillA)}`
   );
   assert(
     manyCoreSpillA.coreIds.length + manyCoreSpillA.lostCoreIds.length === 12,
@@ -2611,7 +2702,7 @@ try {
   const postSaveVoidSpillCount = postSaveVoidDeathSim.objectState.spilledCores.size;
   Object.assign(postSaveVoidDeathSim.player, {
     x: 20,
-    y: postSaveVoidDeathSim.level.bounds.y + postSaveVoidDeathSim.level.bounds.h + 125,
+    y: postSaveVoidDeathSim.level.bounds.y + postSaveVoidDeathSim.level.bounds.h + 1,
     vx: 0,
     vy: 0,
     onGround: false,
@@ -5060,6 +5151,43 @@ try {
   assert(postCheckpointProtectedSim.dead && postCheckpointRetryFatal.died, "Checkpoint retry should not re-arm a protected key core spent after checkpoint activation");
   assert(!postCheckpointRetryFatal.coreSpill, `Spent protected key core should not create a second save after checkpoint retry, got ${JSON.stringify(postCheckpointRetryFatal.coreSpill)}`);
 
+  const postCheckpointRecollectedKeySim = new RoomSimulation({
+    ...baseLevel,
+    cores: [{ id: "post-checkpoint-new-key", x: 132, y: 86, w: 24, h: 24, size: "large" }],
+    bosses: [{ id: "post-checkpoint-recollect-boss", kind: "clockwork-regent", x: 78, y: 20, w: 190, h: 130, entrySide: "right", weakSpot: "core", introSeconds: 1, health: 2, score: 2000 }]
+  });
+  Object.assign(postCheckpointRecollectedKeySim.player, { x: 76, y: 86, vx: 0, vy: 0, onGround: true });
+  const recollectCheckpointActivated = postCheckpointRecollectedKeySim.step(idle);
+  assert(recollectCheckpointActivated.bossCheckpointActivated === "post-checkpoint-recollect-boss", "Expected post-checkpoint recollect fixture to activate boss checkpoint before key pickup");
+  Object.assign(postCheckpointRecollectedKeySim.player, { x: 132, y: 86, vx: 0, vy: 0, onGround: true });
+  postCheckpointRecollectedKeySim.step(idle);
+  assert(postCheckpointRecollectedKeySim.objectState.collectedCores.has("post-checkpoint-new-key"), "Expected key collected after checkpoint activation");
+  postCheckpointRecollectedKeySim.level.hazards = [{ id: "post-checkpoint-new-key-spend", x: 132, y: 86, w: 36, h: 34 }];
+  const postCheckpointNewKeySave = postCheckpointRecollectedKeySim.step(idle);
+  assert(
+    postCheckpointNewKeySave.coreSpill?.protectedCoreIds.includes("post-checkpoint-new-key") && !postCheckpointRecollectedKeySim.dead,
+    `Expected post-checkpoint collected key to protect once, got ${JSON.stringify(postCheckpointNewKeySave.coreSpill)}`
+  );
+  postCheckpointRecollectedKeySim.coreInvulnerabilityFrames = 0;
+  Object.assign(postCheckpointRecollectedKeySim.player, { x: 132, y: 86, vx: 0, vy: 0, onGround: true });
+  const postCheckpointNewKeyFatal = postCheckpointRecollectedKeySim.step(idle);
+  assert(postCheckpointRecollectedKeySim.dead && postCheckpointNewKeyFatal.died, "Expected spent post-checkpoint collected key to stop protecting before checkpoint retry");
+  postCheckpointRecollectedKeySim.resetLifeAttempt();
+  postCheckpointRecollectedKeySim.level.hazards = [];
+  assert(
+    !postCheckpointRecollectedKeySim.objectState.collectedCores.has("post-checkpoint-new-key"),
+    "Checkpoint retry should rewind away a key collected after checkpoint activation"
+  );
+  Object.assign(postCheckpointRecollectedKeySim.player, { x: 132, y: 86, vx: 0, vy: 0, onGround: true });
+  postCheckpointRecollectedKeySim.step(idle);
+  assert(postCheckpointRecollectedKeySim.objectState.collectedCores.has("post-checkpoint-new-key"), "Expected post-checkpoint key to be recollectable after checkpoint retry");
+  postCheckpointRecollectedKeySim.level.hazards = [{ id: "post-checkpoint-new-key-retry-save", x: 132, y: 86, w: 36, h: 34 }];
+  const postCheckpointNewKeyRetrySave = postCheckpointRecollectedKeySim.step(idle);
+  assert(
+    postCheckpointNewKeyRetrySave.coreSpill?.protectedCoreIds.includes("post-checkpoint-new-key") && !postCheckpointRecollectedKeySim.dead,
+    `Expected recollected post-checkpoint key to protect once after retry, got ${JSON.stringify(postCheckpointNewKeyRetrySave.coreSpill)}`
+  );
+
   const checkpointInvulnerabilitySim = new RoomSimulation({
     ...baseLevel,
     cores: [{ id: "pre-checkpoint-buffer", x: 18, y: 86, w: 18, h: 18 }],
@@ -5302,7 +5430,8 @@ try {
   });
   Object.assign(ledgeTopOnlySim.player, { x: 56, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
   ledgeTopOnlySim.step(right);
-  assert(!ledgeTopOnlySim.player.onGround, "Ledge forgiveness should not snap onto top-only solids");
+  assert(ledgeTopOnlySim.player.onGround, "Ledge forgiveness should catch descending near-misses on top-only solids");
+  assert(ledgeTopOnlySim.player.y === 66, `Expected top-only ledge forgiveness to snap to y=66, got ${ledgeTopOnlySim.player.y}`);
 
   const ledgeOneWaySim = new RoomSimulation({
     ...ledgeForgivenessLevel,
@@ -5311,7 +5440,8 @@ try {
   });
   Object.assign(ledgeOneWaySim.player, { x: 56, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
   ledgeOneWaySim.step(right);
-  assert(!ledgeOneWaySim.player.onGround, "Ledge forgiveness should not snap onto one-way platforms");
+  assert(ledgeOneWaySim.player.onGround, "Ledge forgiveness should catch descending near-misses on one-way platforms");
+  assert(ledgeOneWaySim.player.y === 66, `Expected one-way ledge forgiveness to snap to y=66, got ${ledgeOneWaySim.player.y}`);
 
   const ledgeMovingPlatformSim = new RoomSimulation({
     ...ledgeForgivenessLevel,
@@ -5320,7 +5450,11 @@ try {
   });
   Object.assign(ledgeMovingPlatformSim.player, { x: 56, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
   ledgeMovingPlatformSim.step(right);
-  assert(!ledgeMovingPlatformSim.player.onGround, "Ledge forgiveness should not snap onto moving platforms");
+  assert(ledgeMovingPlatformSim.player.onGround, "Ledge forgiveness should catch descending near-misses on moving platforms");
+  assert(
+    ledgeMovingPlatformSim.player.standingOn === "catch-moving-platform-ledge",
+    `Expected ledge forgiveness to set moving-platform standing target, got ${ledgeMovingPlatformSim.player.standingOn}`
+  );
 
   const ledgeRisingSim = new RoomSimulation(ledgeForgivenessLevel);
   Object.assign(ledgeRisingSim.player, { x: 56, y: 74, vx: 0, vy: -1, onGround: false, coyote: 0 });
@@ -5348,7 +5482,8 @@ try {
   });
   Object.assign(leftLedgeTopOnlySim.player, { x: 112, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
   leftLedgeTopOnlySim.step(left);
-  assert(!leftLedgeTopOnlySim.player.onGround, "Leftward ledge forgiveness should not snap onto top-only solids");
+  assert(leftLedgeTopOnlySim.player.onGround, "Leftward ledge forgiveness should catch descending near-misses on top-only solids");
+  assert(leftLedgeTopOnlySim.player.y === 66, `Expected leftward top-only ledge forgiveness to snap to y=66, got ${leftLedgeTopOnlySim.player.y}`);
 
   const leftLedgeOneWaySim = new RoomSimulation({
     ...leftLedgeForgivenessLevel,
@@ -5357,7 +5492,8 @@ try {
   });
   Object.assign(leftLedgeOneWaySim.player, { x: 112, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
   leftLedgeOneWaySim.step(left);
-  assert(!leftLedgeOneWaySim.player.onGround, "Leftward ledge forgiveness should not snap onto one-way platforms");
+  assert(leftLedgeOneWaySim.player.onGround, "Leftward ledge forgiveness should catch descending near-misses on one-way platforms");
+  assert(leftLedgeOneWaySim.player.y === 66, `Expected leftward one-way ledge forgiveness to snap to y=66, got ${leftLedgeOneWaySim.player.y}`);
 
   const leftLedgeMovingPlatformSim = new RoomSimulation({
     ...leftLedgeForgivenessLevel,
@@ -5366,7 +5502,11 @@ try {
   });
   Object.assign(leftLedgeMovingPlatformSim.player, { x: 112, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
   leftLedgeMovingPlatformSim.step(left);
-  assert(!leftLedgeMovingPlatformSim.player.onGround, "Leftward ledge forgiveness should not snap onto moving platforms");
+  assert(leftLedgeMovingPlatformSim.player.onGround, "Leftward ledge forgiveness should catch descending near-misses on moving platforms");
+  assert(
+    leftLedgeMovingPlatformSim.player.standingOn === "catch-left-moving-platform-ledge",
+    `Expected leftward ledge forgiveness to set moving-platform standing target, got ${leftLedgeMovingPlatformSim.player.standingOn}`
+  );
 
   const leftLedgeRisingSim = new RoomSimulation(leftLedgeForgivenessLevel);
   Object.assign(leftLedgeRisingSim.player, { x: 112, y: 74, vx: 0, vy: -1, onGround: false, coyote: 0 });

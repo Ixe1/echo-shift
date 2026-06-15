@@ -181,7 +181,7 @@ export const moveActor = (
       platformId: platform.platform.id
     }))
   ];
-  const ledgeRects: CollisionRect[] = fullSolidRects;
+  const ledgeRects: CollisionRect[] = [...fullSolidRects, ...oneWayRects];
   const platformCrateBlockers: Rect[] = platforms.map((platform) => ({ ...platform.current }));
   const crateRects = crateCollisionRects(dynamic.crates);
   const attemptedVx = actor.vx;
@@ -223,7 +223,7 @@ export const moveActor = (
   );
 
   actor.x = clamp(actor.x, bounds.x, bounds.x + bounds.w - actor.w);
-  if (actor.y > bounds.y + bounds.h + 120) {
+  if (actor.y > bounds.y + bounds.h) {
     actor.alive = false;
   }
 

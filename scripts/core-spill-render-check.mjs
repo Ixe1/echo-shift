@@ -13,6 +13,56 @@ const assert = (condition, message) => {
   if (!condition) throw new Error(message);
 };
 
+const gameSceneDiagnosticKeys = [
+  "echoShiftScoreEligible",
+  "echoShiftMusicLoading",
+  "echoShiftLevelIntro",
+  "echoShiftDeathPresentation",
+  "echoShiftCameraSample",
+  "echoShiftCameraSnap",
+  "echoShiftCameraWorldView",
+  "echoShiftBackgroundKey",
+  "echoShiftBackgroundRenderMode",
+  "echoShiftBackgroundDetailLayer",
+  "echoShiftBackgroundPieces",
+  "echoShiftBackgroundAmbience",
+  "echoShiftBackgroundPreload",
+  "echoShiftRoomAssetFailure",
+  "echoShiftBackgroundFilter",
+  "echoShiftPerfStats",
+  "echoShiftVisibleEchoTints",
+  "echoShiftDroneStates",
+  "echoShiftObjectAssetCount",
+  "echoShiftSolidAssetFrames",
+  "echoShiftTerrainDecorFrames",
+  "echoShiftTerrainDecorPropFrames",
+  "echoShiftTileAssetPhases",
+  "echoShiftTileAssetOrigins",
+  "echoShiftLaserAssetTransforms",
+  "echoShiftLaserAssetPositions",
+  "echoShiftDoorAssetTransforms",
+  "echoShiftCoreSpriteFrames",
+  "echoShiftCoreInvulnerabilityFrames",
+  "echoShiftPlayerSpriteState",
+  "echoShiftExitUnlocked",
+  "echoShiftBossCheckpoint",
+  "echoShiftPlayerRect",
+  "echoShiftBossWeakSpotRects",
+  "echoShiftEchoSensorAssetFrames",
+  "echoShiftLaunchPadSpriteFrames",
+  "echoShiftHazardVentSpriteFrames",
+  "echoShiftMonsterSpriteFrames",
+  "echoShiftBossSpriteFrames",
+  "echoShiftBossEffectFrames",
+  "echoShiftSolidOutlineRects",
+  "echoShiftObjectAtlasFilter",
+  "echoShiftLaunchPadFilter",
+  "echoShiftMonsterAtlasFilter",
+  "echoShiftBossAtlasFilter",
+  "echoShiftTerrainTileFilter",
+  "echoShiftTerrainDecorPropFilter"
+];
+
 const isAllowedBrowserMessage = (msg) =>
   msg.type === "warning" &&
   msg.text.includes("GL Driver Message") &&
@@ -321,6 +371,23 @@ try {
       protectedScreenshotDiagnostics.invulnerabilityFrames === protectedDiagnostics.invulnerabilityFrames,
     `Protected-save screenshot diagnostics should be same-frame as asserted diagnostics, got ${JSON.stringify({ before: protectedDiagnostics, screenshot: protectedScreenshotDiagnostics })}`
   );
+
+  await installDraft(protectedLevel);
+  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+  await startAudioGate(page);
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await waitForLevelIntro(page, messages);
+  await page.locator("[data-menu]").waitFor({ state: "visible", timeout: 7000 });
+  await page.locator("[data-menu]").click();
+  await page.locator("[data-exit-menu]").click({ force: true });
+  await page.locator("[data-play]").waitFor({ state: "visible", timeout: 7000 });
+  const staleSceneDiagnostics = await page.evaluate((keys) => {
+    const { dataset } = document.documentElement;
+    return keys
+      .filter((key) => dataset[key] !== undefined)
+      .map((key) => `${key}:${dataset[key]}`);
+  }, gameSceneDiagnosticKeys);
+  assert(staleSceneDiagnostics.length === 0, `Expected GameScene diagnostics to clear after returning to menu, got ${JSON.stringify(staleSceneDiagnostics)}`);
 
   const unexpectedMessages = messages.filter((msg) => !isAllowedBrowserMessage(msg));
   assert(unexpectedMessages.length === 0, `Core spill render console/page messages: ${JSON.stringify(unexpectedMessages)}`);
