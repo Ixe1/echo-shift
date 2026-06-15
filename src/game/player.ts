@@ -201,7 +201,7 @@ export const moveActor = (
   const previousY = actor.y;
   actor.y += actor.vy;
   resolveAxis(actor, [...collisionRects, ...oneWayRects, ...crateRects], "y", bounds, dynamic.crates, previousY, dynamic.actorBlockers);
-  if (!actor.onGround) {
+  if (!actor.onGround && Math.abs(attemptedVx) >= 0.05 && actor.vy > 0) {
     tryApplyLedgeForgiveness(
       actor,
       ledgeRects,

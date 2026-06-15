@@ -264,24 +264,53 @@ export class RoomSimulation {
   }
 
   private echoAnchorFromPlayer(id: string): ActorBody {
-    return {
-      ...cloneActor(this.player),
-      id,
-      kind: "echo",
-      alive: true
-    };
+    return this.stationaryEchoActor(id, this.player);
   }
 
   private echoActorForRecording(recording: EchoRecording): ActorBody {
     if (recording.anchor) {
-      return {
-        ...cloneActor(recording.anchor),
-        id: recording.id,
-        kind: "echo",
-        alive: true
-      };
+      return this.stationaryEchoActor(recording.id, recording.anchor);
     }
     return makeActor(recording.id, "echo", this.level.start);
+  }
+
+  private stationaryEchoActor(id: string, source: ActorBody): ActorBody {
+    return {
+      ...cloneActor(source),
+      id,
+      kind: "echo",
+      vx: 0,
+      vy: 0,
+      onGround: false,
+      coyote: 0,
+      jumpBuffer: 0,
+      launchCooldown: 0,
+      launchControlLock: 0,
+      launchFloatFrames: 0,
+      prevJump: false,
+      standingOn: null,
+      alive: true
+    };
+  }
+
+  private syncAnchoredEcho(echo: ActorBody, anchor: ActorBody): void {
+    const alive = echo.alive;
+    echo.x = anchor.x;
+    echo.y = anchor.y;
+    echo.w = anchor.w;
+    echo.h = anchor.h;
+    echo.vx = 0;
+    echo.vy = 0;
+    echo.onGround = false;
+    echo.coyote = 0;
+    echo.jumpBuffer = 0;
+    echo.launchCooldown = 0;
+    echo.launchControlLock = 0;
+    echo.launchFloatFrames = 0;
+    echo.prevJump = false;
+    echo.facing = anchor.facing;
+    echo.standingOn = null;
+    echo.alive = alive;
   }
 
   private teleportPlayerToStart(): void {
@@ -417,6 +446,7 @@ export class RoomSimulation {
     const doors = closedDoorRects(this.level, this.objectState.openDoors);
     const solids = this.runtimeSolids;
     this.advanceSpilledCores(this.spilledCoreSupportRects(doors, platforms), this.spilledCoreBlockerRects(doors));
+    const coreMagnetBlockers: Rect[] = [...(this.level.oneWays || []), ...platforms.map((platform) => ({ ...platform.current }))];
     const baseDynamic = {
       oneWays: this.level.oneWays,
       conveyors: this.level.conveyors,
@@ -432,6 +462,10 @@ export class RoomSimulation {
       const echo = this.echoes[index];
       if (!echo.alive) continue;
       const recording = this.echoRecordings[index];
+      if (recording.anchor) {
+        this.syncAnchoredEcho(echo, recording.anchor);
+        continue;
+      }
       const echoInput = inputFrameAt(recording.frames, this.tick);
       const previousY = echo.y;
       moveActor(echo, echoInput, solids, doors, platforms, this.level.bounds, dynamicFor(echo));
@@ -458,7 +492,8 @@ export class RoomSimulation {
     const previousObjectState = this.objectState;
     const defeatedBossIds = new Set(this.currentAttemptDefeatedBossIds.keys());
     let objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick, defeatedBossIds, {
-      magnetBlockerSolids: solids
+      magnetBlockerSolids: solids,
+      magnetBlockers: coreMagnetBlockers
     });
     this.objectState = objectUpdate.state;
 
@@ -467,7 +502,8 @@ export class RoomSimulation {
       if (!echoVaporization.vaporized) break;
       events.echoLaserVaporized += echoVaporization.laserVaporized;
       objectUpdate = updateObjects(this.level, [this.player, ...this.aliveEchoes()], previousObjectState, this.tick, defeatedBossIds, {
-        magnetBlockerSolids: solids
+        magnetBlockerSolids: solids,
+        magnetBlockers: coreMagnetBlockers
       });
       this.objectState = objectUpdate.state;
     }

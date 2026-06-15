@@ -1,6 +1,6 @@
 import { rectsOverlap } from "./geometry";
 import { oscillatingOffsetAt } from "./motion";
-import { solidHasFullCollision } from "./solidCollision";
+import { solidHasGameplayCollision } from "./solidCollision";
 import type {
   ActorBody,
   CoreMagnetState,
@@ -42,6 +42,7 @@ const CORE_MAGNET_REST_EPSILON = 0.08;
 type ObjectUpdateOptions = {
   collectCores?: boolean;
   magnetBlockerSolids?: Solid[];
+  magnetBlockers?: Rect[];
 };
 
 export const createObjectState = (level?: Level): ObjectState => {
@@ -224,7 +225,8 @@ export const updateObjects = (
   if (collectCores) {
     const magnetBlockerSolids = options.magnetBlockerSolids || level.solids;
     const magnetBlockers: Rect[] = [
-      ...magnetBlockerSolids.filter(solidHasFullCollision),
+      ...magnetBlockerSolids.filter(solidHasGameplayCollision),
+      ...(options.magnetBlockers || []),
       ...closedDoorRects(level, previous.openDoors),
       ...crateRects
     ];

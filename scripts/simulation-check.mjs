@@ -2339,6 +2339,25 @@ try {
   assert(!echoCoreSim.objectState.claimedCores.has("core-echo"), "Echo-overlapped core should remain available for the player");
   assert(echoCoreSim.score === 0, `Echo-overlapped core should not add score, got ${echoCoreSim.score}`);
 
+  const movingPlatformAnchorSim = new RoomSimulation({
+    ...baseLevel,
+    platforms: [{ id: "anchor-lift", x: 80, y: 100, w: 80, h: 12, axis: "x", distance: 80, period: 60 }]
+  });
+  runFrames(movingPlatformAnchorSim, 20, right);
+  Object.assign(movingPlatformAnchorSim.player, { x: 88, y: 66, vx: 3, vy: 6, onGround: true, standingOn: "anchor-lift" });
+  assert(movingPlatformAnchorSim.rewindToEcho(), "Expected moving-platform anchor setup to become an echo");
+  const movingPlatformAnchor = { x: movingPlatformAnchorSim.echoes[0].x, y: movingPlatformAnchorSim.echoes[0].y };
+  runFrames(movingPlatformAnchorSim, 40, idle);
+  const movingPlatformEcho = movingPlatformAnchorSim.echoes[0];
+  assert(
+    Math.abs(movingPlatformEcho.x - movingPlatformAnchor.x) < 0.01 && Math.abs(movingPlatformEcho.y - movingPlatformAnchor.y) < 0.01,
+    `Anchored echoes should stay fixed even if created with velocity/on a moving platform, got ${JSON.stringify(movingPlatformEcho)}`
+  );
+  assert(
+    movingPlatformEcho.vx === 0 && movingPlatformEcho.vy === 0 && movingPlatformEcho.standingOn === null,
+    `Anchored echoes should not preserve player motion/platform state, got ${JSON.stringify(movingPlatformEcho)}`
+  );
+
   const laserLevel = {
     ...baseLevel,
     lasers: [{ id: "beam-a", x: 82, y: 88, w: 70, h: 28, startsOn: true }]
@@ -2508,6 +2527,41 @@ try {
   runFrames(doorBlockedMagnetSim, 20, idle);
   assert(!doorBlockedMagnetSim.snapshot().coreOffsets.has("door-blocked-magnet-core"), "Placed core should not magnetize through a closed door");
   assert(!doorBlockedMagnetSim.objectState.collectedCores.has("door-blocked-magnet-core"), "Placed core should not be collected through a closed door");
+
+  const topOnlyBlockedMagnetSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 78, y: 116 },
+    bounds: { x: 0, y: 0, w: 240, h: 220 },
+    solids: [{ id: "top-only-magnet-blocker", x: 0, y: 100, w: 180, h: 12, collision: "top-only" }],
+    cores: [{ id: "top-only-blocked-magnet-core", x: 78, y: 76, w: 18, h: 18 }]
+  });
+  topOnlyBlockedMagnetSim.step(idle);
+  assert(!topOnlyBlockedMagnetSim.snapshot().coreOffsets.has("top-only-blocked-magnet-core"), "Placed core should not magnetize through a top-only solid");
+  assert(!topOnlyBlockedMagnetSim.objectState.collectedCores.has("top-only-blocked-magnet-core"), "Placed core should not be collected through a top-only solid");
+
+  const oneWayBlockedMagnetSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 78, y: 116 },
+    bounds: { x: 0, y: 0, w: 240, h: 220 },
+    solids: [],
+    oneWays: [{ id: "one-way-magnet-blocker", x: 0, y: 100, w: 180, h: 12 }],
+    cores: [{ id: "one-way-blocked-magnet-core", x: 78, y: 76, w: 18, h: 18 }]
+  });
+  oneWayBlockedMagnetSim.step(idle);
+  assert(!oneWayBlockedMagnetSim.snapshot().coreOffsets.has("one-way-blocked-magnet-core"), "Placed core should not magnetize through a one-way platform");
+  assert(!oneWayBlockedMagnetSim.objectState.collectedCores.has("one-way-blocked-magnet-core"), "Placed core should not be collected through a one-way platform");
+
+  const platformBlockedMagnetSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 78, y: 116 },
+    bounds: { x: 0, y: 0, w: 240, h: 220 },
+    solids: [],
+    platforms: [{ id: "platform-magnet-blocker", x: 0, y: 100, w: 180, h: 12, axis: "x", distance: 60, period: 120 }],
+    cores: [{ id: "platform-blocked-magnet-core", x: 78, y: 76, w: 18, h: 18 }]
+  });
+  platformBlockedMagnetSim.step(idle);
+  assert(!platformBlockedMagnetSim.snapshot().coreOffsets.has("platform-blocked-magnet-core"), "Placed core should not magnetize through a moving platform");
+  assert(!platformBlockedMagnetSim.objectState.collectedCores.has("platform-blocked-magnet-core"), "Placed core should not be collected through a moving platform");
 
   const manyCoreLevel = {
     ...baseLevel,
@@ -5567,17 +5621,18 @@ try {
     `Echo anchor diverged: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`
   );
   assert(
-    echo.vx === 1.75 &&
-      echo.vy === -4.5 &&
+    echo.vx === 0 &&
+      echo.vy === 0 &&
       !echo.onGround &&
-      echo.coyote === 3 &&
-      echo.jumpBuffer === 2 &&
-      echo.launchCooldown === 5 &&
-      echo.launchControlLock === 6 &&
-      echo.launchFloatFrames === 7 &&
-      echo.prevJump &&
+      echo.coyote === 0 &&
+      echo.jumpBuffer === 0 &&
+      echo.launchCooldown === 0 &&
+      echo.launchControlLock === 0 &&
+      echo.launchFloatFrames === 0 &&
+      !echo.prevJump &&
+      echo.standingOn === null &&
       echo.facing === -1,
-    `Echo anchor should preserve current player motion state, got ${JSON.stringify(echo)}`
+    `Echo anchor should preserve position/facing but clear player motion state, got ${JSON.stringify(echo)}`
   );
   assert(replay.player.x === deterministicLevel.start.x && replay.player.y === deterministicLevel.start.y, "Rewind should teleport the player to start after anchoring echo");
 
