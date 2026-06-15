@@ -41,6 +41,7 @@ const CORE_MAGNET_REST_EPSILON = 0.08;
 
 type ObjectUpdateOptions = {
   collectCores?: boolean;
+  advanceCoreMagnet?: boolean;
   magnetBlockerSolids?: Solid[] | (() => Solid[]);
   magnetBlockers?: Rect[] | (() => Rect[]);
 };
@@ -244,25 +245,33 @@ export const updateObjects = (
       return magnetBlockers;
     };
     const unclaimedCores = (level.cores || []).filter((item) => !claimedCores.has(item.id));
+    const collectPlacedCore = (item: Core): void => {
+      if (!playerActor || claimedCores.has(item.id)) return;
+      claimedCores.add(item.id);
+      collectedCores.add(item.id);
+      magnetBlockers = null;
+      cores.push({
+        id: item.id,
+        x: playerActor.x + playerActor.w / 2,
+        y: playerActor.y + playerActor.h / 2
+      });
+    };
     for (const item of unclaimedCores) {
       const previousOffset = previous.coreOffsets.get(item.id);
       const wasCollected = Boolean(playerActor && rectsOverlap(playerActor, offsetCoreRect(item, previousOffset)));
+      if (wasCollected) collectPlacedCore(item);
+    }
+    for (const item of unclaimedCores) {
+      if (claimedCores.has(item.id)) continue;
+      const previousOffset = previous.coreOffsets.get(item.id);
       const target = playerActor?.alive ? coreMagnetTarget(item, previousOffset || { x: 0, y: 0 }, playerActor) : null;
       const nearMagnetTarget = Boolean(target && target.distance <= CORE_MAGNET_RADIUS);
-      const shouldAdvanceMagnet = Boolean(previousOffset) || nearMagnetTarget;
-      const nextOffset = wasCollected || !shouldAdvanceMagnet
+      const shouldAdvanceMagnet = options.advanceCoreMagnet !== false && (Boolean(previousOffset) || nearMagnetTarget);
+      const nextOffset = !shouldAdvanceMagnet
         ? null
         : advanceCoreMagnetState(item, previousOffset, playerActor, nearMagnetTarget ? blockerRects() : []);
-      const collected = wasCollected || Boolean(playerActor && rectsOverlap(playerActor, offsetCoreRect(item, nextOffset || undefined)));
-      if (collected && playerActor) {
-        claimedCores.add(item.id);
-        collectedCores.add(item.id);
-        magnetBlockers = null;
-        cores.push({
-          id: item.id,
-          x: playerActor.x + playerActor.w / 2,
-          y: playerActor.y + playerActor.h / 2
-        });
+      if (playerActor && rectsOverlap(playerActor, offsetCoreRect(item, nextOffset || undefined))) {
+        collectPlacedCore(item);
         continue;
       }
       if (nextOffset) coreOffsets.set(item.id, nextOffset);

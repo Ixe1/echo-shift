@@ -365,6 +365,81 @@ const bonusLifeAfterLossLevel = {
   hint: "QA"
 };
 
+const recoveredCoreSaveLevel = {
+  id: "recovered-core-save-render-qa",
+  index: 0,
+  name: "Recovered Core Save Render QA",
+  subtitle: "Recovered cores save once without re-spill",
+  motionModel: "anchored",
+  start: { x: 100, y: 438 },
+  exit: { x: 820, y: 438, w: 28, h: 38 },
+  bounds: { x: 0, y: 0, w: 900, h: 540 },
+  solids: [
+    { id: "floor-a", x: 0, y: 480, w: 900, h: 40, sprite: "floor", tone: "steel" }
+  ],
+  doors: [],
+  plates: [],
+  timedSwitches: [],
+  lasers: [],
+  movingLasers: [],
+  drones: [],
+  cores: [{ id: "recovered-once-core", x: 100, y: 438, w: 18, h: 18 }],
+  hazards: [
+    { id: "recovered-first-spark", x: 72, y: 436, w: 62, h: 38 },
+    { id: "recovered-second-spark", x: 240, y: 436, w: 640, h: 38 }
+  ],
+  crates: [],
+  monsters: [],
+  platforms: [],
+  oneWays: [],
+  conveyors: [],
+  launchPads: [],
+  echoSensors: [],
+  score: {
+    lives: 3,
+    coreScore: 100,
+    timeBonusTargetSeconds: 10,
+    timeBonusPerSecond: 100
+  },
+  hint: "QA"
+};
+
+const positiveBonusLifeLevel = {
+  id: "positive-bonus-life-render-qa",
+  index: 0,
+  name: "Positive Bonus Life Render QA",
+  subtitle: "Current carried cores award lives",
+  motionModel: "anchored",
+  start: { x: 24, y: 438 },
+  exit: { x: 820, y: 438, w: 28, h: 38 },
+  bounds: { x: 0, y: 0, w: 900, h: 540 },
+  solids: [
+    { id: "floor-a", x: 0, y: 480, w: 900, h: 40, sprite: "floor", tone: "steel" }
+  ],
+  doors: [],
+  plates: [],
+  timedSwitches: [],
+  lasers: [],
+  movingLasers: [],
+  drones: [],
+  cores: Array.from({ length: 30 }, (_, index) => ({ id: `positive-bonus-core-${index}`, x: 24, y: 438, w: 18, h: 18 })),
+  hazards: [],
+  crates: [],
+  monsters: [],
+  platforms: [],
+  oneWays: [],
+  conveyors: [],
+  launchPads: [],
+  echoSensors: [],
+  score: {
+    lives: 3,
+    coreScore: 100,
+    timeBonusTargetSeconds: 10,
+    timeBonusPerSecond: 100
+  },
+  hint: "QA"
+};
+
 const launchOptions = {
   headless: true,
   args: ["--no-sandbox", "--disable-dev-shm-usage"]
@@ -547,6 +622,106 @@ try {
       screenshotDiagnostics.invulnerabilityFrames === spillDiagnostics.invulnerabilityFrames,
     `Core-spill screenshot diagnostics should be same-frame as asserted diagnostics, got ${JSON.stringify({ before: spillDiagnostics, screenshot: screenshotDiagnostics })}`
   );
+
+  await installDraft(recoveredCoreSaveLevel);
+  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+  await startAudioGate(page);
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await waitForLevelIntro(page, messages);
+  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  await page.keyboard.down("ArrowRight");
+  await page.waitForFunction(
+    () =>
+      Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
+      document.querySelector("[data-cores]")?.textContent?.trim() === "0" &&
+      (document.documentElement.dataset.echoShiftCoreSpriteFrames || "").split("|").filter((frame) => frame.includes(":spill:")).length === 1,
+    null,
+    { timeout: 7000 }
+  );
+  const recoveredFirstSaveDiagnostics = await page.evaluate(() => ({
+    hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
+    lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
+    invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
+    spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+    deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || ""
+  }));
+  await page.keyboard.up("ArrowRight");
+  await page.keyboard.down("ArrowLeft");
+  await page.waitForFunction(
+    () =>
+      document.querySelector("[data-cores]")?.textContent?.trim() === "1" &&
+      (document.documentElement.dataset.echoShiftCoreSpriteFrames || "").split("|").filter((frame) => frame.includes(":spill:")).length === 0,
+    null,
+    { timeout: 9000 }
+  );
+  const recoveredPickupDiagnostics = await page.evaluate(() => ({
+    hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
+    lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
+    spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+    deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || ""
+  }));
+  await page.keyboard.up("ArrowLeft");
+  await page.keyboard.down("ArrowRight");
+  await page.waitForFunction(
+    () => {
+      const playerSpriteState = document.documentElement.dataset.echoShiftPlayerSpriteState || "";
+      return (
+        Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
+        document.querySelector("[data-cores]")?.textContent?.trim() === "0" &&
+        (document.documentElement.dataset.echoShiftCoreSpriteFrames || "").split("|").filter((frame) => frame.includes(":spill:")).length === 0 &&
+        (document.documentElement.dataset.echoShiftDeathPresentation || "") === "idle" &&
+        playerSpriteState.includes("visible:1") &&
+        playerSpriteState.includes("tint:ffe35a")
+      );
+    },
+    null,
+    { timeout: 12000 }
+  );
+  const recoveredSecondSaveDiagnostics = await page.evaluate(() => ({
+    hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
+    lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
+    invulnerabilityFrames: Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0"),
+    spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || "",
+    deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || "",
+    playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
+  }));
+  await page.keyboard.up("ArrowRight");
+  assert(recoveredFirstSaveDiagnostics.hudCores === "0", `Expected first one-core save to drop carried HUD to 0, got ${JSON.stringify(recoveredFirstSaveDiagnostics)}`);
+  assert(countSpillFrames(recoveredFirstSaveDiagnostics.spillFrames) === 1, `Expected first one-core save to create one recoverable loose core, got ${JSON.stringify(recoveredFirstSaveDiagnostics)}`);
+  assert(recoveredPickupDiagnostics.hudCores === "1", `Expected recovered loose core to return to carried HUD, got ${JSON.stringify(recoveredPickupDiagnostics)}`);
+  assert(countSpillFrames(recoveredPickupDiagnostics.spillFrames) === 0, `Expected recovered loose core to remove the spill sprite, got ${JSON.stringify(recoveredPickupDiagnostics)}`);
+  assert(
+    recoveredSecondSaveDiagnostics.hudCores === "0" &&
+      countSpillFrames(recoveredSecondSaveDiagnostics.spillFrames) === 0 &&
+      recoveredSecondSaveDiagnostics.deathPresentation === "idle",
+    `Expected recovered core to save once without re-scattering or dying, got ${JSON.stringify(recoveredSecondSaveDiagnostics)}`
+  );
+
+  await installDraft(positiveBonusLifeLevel);
+  await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
+  await startAudioGate(page);
+  await page.locator("canvas").waitFor({ state: "visible" });
+  await waitForLevelIntro(page, messages);
+  await page.locator("canvas").click({ position: { x: 480, y: 280 } });
+  await page.waitForFunction(
+    () =>
+      document.querySelector("[data-cores]")?.textContent?.trim() === "30" &&
+      document.querySelector("[data-lives]")?.textContent?.trim() === "4" &&
+      /bonus life/i.test(document.querySelector("[data-toast]")?.textContent || ""),
+    null,
+    { timeout: 7000 }
+  );
+  const positiveBonusDiagnostics = await page.evaluate(() => ({
+    hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
+    lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
+    toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
+    deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || ""
+  }));
+  assert(positiveBonusDiagnostics.hudCores === "30", `Expected positive bonus fixture to carry 30 cores, got ${JSON.stringify(positiveBonusDiagnostics)}`);
+  assert(!positiveBonusDiagnostics.hudCores.includes("/"), `Positive bonus HUD should not include map-total count, got ${positiveBonusDiagnostics.hudCores}`);
+  assert(positiveBonusDiagnostics.lives === "4", `Expected positive carried-core threshold to award one bonus life, got ${JSON.stringify(positiveBonusDiagnostics)}`);
+  assert(/bonus life/i.test(positiveBonusDiagnostics.toast), `Expected positive bonus-life toast, got ${positiveBonusDiagnostics.toast}`);
+  assert(positiveBonusDiagnostics.deathPresentation === "idle", `Positive bonus fixture should remain alive, got ${positiveBonusDiagnostics.deathPresentation}`);
 
   await installDraft(bonusLifeAfterLossLevel);
   await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
@@ -738,6 +913,10 @@ try {
         diagnostics: spillDiagnostics,
         flickerDiagnostics,
         screenshotDiagnostics,
+        recoveredFirstSaveDiagnostics,
+        recoveredPickupDiagnostics,
+        recoveredSecondSaveDiagnostics,
+        positiveBonusDiagnostics,
         postLossDiagnostics,
         postRecoveryBonusDiagnostics,
         postRespawnBonusDiagnostics,
@@ -758,6 +937,10 @@ try {
         diagnostics: spillDiagnostics,
         flickerDiagnostics,
         screenshotDiagnostics,
+        recoveredFirstSaveDiagnostics,
+        recoveredPickupDiagnostics,
+        recoveredSecondSaveDiagnostics,
+        positiveBonusDiagnostics,
         postLossDiagnostics,
         postRecoveryBonusDiagnostics,
         postRespawnBonusDiagnostics,

@@ -1898,6 +1898,8 @@ export class GameScene extends Phaser.Scene {
       livesExhausted,
       fadeStarted: false
     };
+    this.simulation.clearEchoesForDeathPresentation();
+    this.echoTrails.clear();
     this.playerCastUntil = 0;
     this.virtualInput = { left: false, right: false, jump: false };
     if (!livesExhausted) {

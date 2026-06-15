@@ -342,12 +342,13 @@ export class RoomSimulation {
     this.currentRecording = [];
   }
 
-  private checkpointTriggersWithoutEchoes(): { activePlates: Set<string>; timedSwitchTimers: Map<string, number> } {
+  private triggersWithoutEchoes(includePlayer: boolean): { activePlates: Set<string>; timedSwitchTimers: Map<string, number> } {
     const activePlates = new Set<string>();
     const crateRects = [...this.objectState.crates.values()];
     const timedSwitchTimers = new Map(this.objectState.timedSwitchTimers);
+    const playerCanTrigger = includePlayer && this.player.alive;
     for (const timedSwitch of this.level.timedSwitches || []) {
-      if (rectsOverlap(this.player, timedSwitch) || crateRects.some((crate) => rectsOverlap(crate, timedSwitch))) {
+      if ((playerCanTrigger && rectsOverlap(this.player, timedSwitch)) || crateRects.some((crate) => rectsOverlap(crate, timedSwitch))) {
         timedSwitchTimers.set(timedSwitch.id, Math.max(1, Math.round(timedSwitch.duration)));
       }
     }
@@ -356,23 +357,22 @@ export class RoomSimulation {
       if (remaining > 0) activePlates.add(id);
     }
     for (const plate of this.level.plates || []) {
-      if (rectsOverlap(this.player, plate) || crateRects.some((crate) => rectsOverlap(crate, plate))) {
+      if ((playerCanTrigger && rectsOverlap(this.player, plate)) || crateRects.some((crate) => rectsOverlap(crate, plate))) {
         activePlates.add(plate.id);
       }
     }
     for (const sensor of this.level.echoSensors || []) {
       const actorMode = sensor.actors || "echo";
-      if ((actorMode === "player" || actorMode === "both") && rectsOverlap(this.player, sensor)) {
+      if (playerCanTrigger && (actorMode === "player" || actorMode === "both") && rectsOverlap(this.player, sensor)) {
         activePlates.add(sensor.id);
       }
     }
     return { activePlates, timedSwitchTimers };
   }
 
-  private clearCheckpointEchoesAndObjectState(): void {
-    this.clearEchoes();
+  private recomputeObjectStateWithoutEchoes(includePlayer: boolean, clearTransientCores: boolean): void {
     const defeatedBossIds = new Set(this.currentAttemptDefeatedBossIds.keys());
-    const { activePlates, timedSwitchTimers } = this.checkpointTriggersWithoutEchoes();
+    const { activePlates, timedSwitchTimers } = this.triggersWithoutEchoes(includePlayer);
     const latchedPlates = new Set(this.objectState.latchedPlates);
     for (const plate of this.level.plates || []) {
       if (plate.once && activePlates.has(plate.id)) latchedPlates.add(plate.id);
@@ -385,9 +385,19 @@ export class RoomSimulation {
       timedSwitchTimers,
       openDoors: collectOpenDoors(this.level.doors || [], activePlates, this.objectState.collectedCores, defeatedBossIds),
       blockedLasers: collectBlockedLasers([...(this.level.lasers || []), ...(this.level.movingLasers || [])], crateRects, activePlates, this.tick),
-      coreOffsets: new Map(),
-      spilledCores: new Map()
+      coreOffsets: clearTransientCores ? new Map() : this.objectState.coreOffsets,
+      spilledCores: clearTransientCores ? new Map() : this.objectState.spilledCores
     };
+  }
+
+  private clearCheckpointEchoesAndObjectState(): void {
+    this.clearEchoes();
+    this.recomputeObjectStateWithoutEchoes(true, true);
+  }
+
+  clearEchoesForDeathPresentation(): void {
+    this.clearEchoes();
+    this.recomputeObjectStateWithoutEchoes(false, false);
   }
 
   private playerForRewindTarget(): ActorBody {
@@ -1386,7 +1396,9 @@ export class RoomSimulation {
   }
 
   private projectObjectStateForSpilledCoreDoors(actors: ActorBody[], defeatedBossIds: ReadonlySet<string>): ObjectState {
-    return updateObjects(this.level, actors, { ...this.objectState, spilledCores: new Map() }, this.tick, defeatedBossIds).state;
+    return updateObjects(this.level, actors, { ...this.objectState, spilledCores: new Map() }, this.tick, defeatedBossIds, {
+      advanceCoreMagnet: false
+    }).state;
   }
 
   private spilledCoreSupportRects(doors: Rect[], platforms: Array<{ current: Rect }>): Rect[] {

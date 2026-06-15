@@ -231,6 +231,12 @@ const verifyGameSceneAudioCleanupHooks = () => {
     handleEventsBody.includes("this.resetFiniteCoreBonusProgress(true);"),
     "Expected finite core bonus progress to reset when the player dies"
   );
+  const startDeathBody = gameSceneMethodBody(source, "startDeathPresentation");
+  assert(
+    startDeathBody.includes("this.simulation.clearEchoesForDeathPresentation();") &&
+      startDeathBody.indexOf("this.simulation.clearEchoesForDeathPresentation();") > startDeathBody.indexOf("this.deathPresentation = {"),
+    "Expected GameScene to clear echoes and echo-driven state immediately after capturing the death presentation actor"
+  );
   const finishDeathBody = gameSceneMethodBody(source, "finishDeathPresentation");
   assert(
     finishDeathBody.includes("this.simulation.resetLifeAttempt();") &&
@@ -2744,6 +2750,24 @@ try {
     sameTickMagnetOffset && sameTickMagnetOffset.x < 0,
     `Same-tick key-core pickup should open the core door before later placed-core magnet checks, got ${JSON.stringify(sameTickMagnetOffset)}`
   );
+  const reversedSameTickCoreDoorMagnetSim = new RoomSimulation({
+    ...baseLevel,
+    doors: [{ id: "reversed-same-tick-core-door", x: 52, y: 70, w: 10, h: 58, requiresCore: "reversed-same-tick-key-core" }],
+    cores: [
+      { id: "reversed-same-tick-magnet-core", x: 72, y: 90, w: 18, h: 18 },
+      { id: "reversed-same-tick-key-core", x: 18, y: 86, w: 24, h: 24, size: "large" }
+    ]
+  });
+  reversedSameTickCoreDoorMagnetSim.step(idle);
+  assert(
+    reversedSameTickCoreDoorMagnetSim.objectState.collectedCores.has("reversed-same-tick-key-core"),
+    "Expected reversed same-tick key core to be collected before checking placed-core magnet blockers"
+  );
+  const reversedSameTickMagnetOffset = reversedSameTickCoreDoorMagnetSim.snapshot().coreOffsets.get("reversed-same-tick-magnet-core");
+  assert(
+    reversedSameTickMagnetOffset && reversedSameTickMagnetOffset.x < 0,
+    `Same-tick key-core pickup should open the core door regardless of level.cores ordering, got ${JSON.stringify(reversedSameTickMagnetOffset)}`
+  );
 
   const sameTickRequiredSpillSim = new RoomSimulation({
     ...baseLevel,
@@ -2780,6 +2804,39 @@ try {
   assert(
     sameTickRequiredLooseCore.x > 40 && sameTickRequiredLooseCore.vx > 0,
     `Loose spilled core should pass through a required-core door opened by same-frame key pickup, got ${JSON.stringify(sameTickRequiredLooseCore)}`
+  );
+
+  const magnetOnlyRequiredSpillSim = new RoomSimulation({
+    ...baseLevel,
+    doors: [{ id: "magnet-only-spill-core-door", x: 52, y: 70, w: 10, h: 58, requiresCore: "magnet-only-spill-key" }],
+    cores: [{ id: "magnet-only-spill-key", x: 44.2, y: 86, w: 24, h: 24, size: "large" }]
+  });
+  magnetOnlyRequiredSpillSim.objectState = {
+    ...magnetOnlyRequiredSpillSim.objectState,
+    spilledCores: new Map([
+      [
+        "manual-magnet-only-required-loose",
+        {
+          id: "manual-magnet-only-required-loose",
+          sourceId: "manual-magnet-only-required-core",
+          x: 34,
+          y: 90,
+          w: 18,
+          h: 18,
+          vx: 20,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 8
+        }
+      ]
+    ])
+  };
+  magnetOnlyRequiredSpillSim.step(idle);
+  const magnetOnlyRequiredLooseCore = magnetOnlyRequiredSpillSim.objectState.spilledCores.get("manual-magnet-only-required-loose");
+  assert(magnetOnlyRequiredLooseCore, "Expected magnet-only required-door loose core to remain after collision");
+  assert(
+    magnetOnlyRequiredLooseCore.x <= 34.1 && magnetOnlyRequiredLooseCore.vx < 0,
+    `Loose spilled core should not use a magnet-only future key pickup to pass through a currently closed door, got ${JSON.stringify(magnetOnlyRequiredLooseCore)}`
   );
 
   const doorClosingSpillSim = new RoomSimulation({
@@ -3829,6 +3886,26 @@ try {
   assert(echoResetDeath.died, "Expected echo reset fixture to die before life reset");
   echoDeathResetSim.resetLifeAttempt();
   assert(echoDeathResetSim.echoRecordings.length === 0 && echoDeathResetSim.echoes.length === 0, "Life reset after death should clear stored echoes");
+
+  const deathPresentationEchoSim = new RoomSimulation({
+    ...baseLevel,
+    echoSensors: [{ id: "death-presentation-echo-sensor", x: 96, y: 86, w: 28, h: 34 }],
+    doors: [{ id: "death-presentation-echo-door", x: 150, y: 68, w: 20, h: 52, opensWith: ["death-presentation-echo-sensor"] }],
+    hazards: [{ id: "death-presentation-loss", x: 18, y: 86, w: 28, h: 34 }]
+  });
+  deathPresentationEchoSim.echoRecordings.push({ id: "death-presentation-echo", frames: [], createdAtFrame: 0 });
+  deathPresentationEchoSim.echoes = [makeActor("death-presentation-echo", "echo", { x: 96, y: 86 })];
+  const deathPresentationEchoDeath = deathPresentationEchoSim.step(idle);
+  assert(deathPresentationEchoDeath.died, "Expected death-presentation echo fixture to die");
+  assert(deathPresentationEchoSim.dead && !deathPresentationEchoSim.player.alive, "Expected death-presentation echo fixture to remain dead before respawn");
+  assert(deathPresentationEchoSim.objectState.activePlates.has("death-presentation-echo-sensor"), "Expected echo-driven sensor active before death-presentation cleanup");
+  assert(deathPresentationEchoSim.objectState.openDoors.has("death-presentation-echo-door"), "Expected echo-driven door open before death-presentation cleanup");
+  deathPresentationEchoSim.clearEchoesForDeathPresentation();
+  assert(deathPresentationEchoSim.dead && !deathPresentationEchoSim.player.alive, "Death-presentation echo cleanup should not respawn the player");
+  assert(deathPresentationEchoSim.snapshot().echoes.length === 0, "Death-presentation echo cleanup should clear active echoes immediately");
+  assert(deathPresentationEchoSim.echoRecordings.length === 0, "Death-presentation echo cleanup should clear stored echo recordings immediately");
+  assert(!deathPresentationEchoSim.objectState.activePlates.has("death-presentation-echo-sensor"), "Death-presentation echo cleanup should clear echo-driven sensor state immediately");
+  assert(!deathPresentationEchoSim.objectState.openDoors.has("death-presentation-echo-door"), "Death-presentation echo cleanup should close doors opened only by cleared echoes immediately");
 
   const exhaustedLivesSim = new RoomSimulation(deathLevel, { lives: 2 });
   const firstDeath = exhaustedLivesSim.step(idle);
