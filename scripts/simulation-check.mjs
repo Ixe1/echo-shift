@@ -5461,6 +5461,17 @@ try {
   ledgeRisingSim.step(right);
   assert(!ledgeRisingSim.player.onGround, "Rising ledge miss should not be auto-climbed");
 
+  const ledgeEchoBlockedSim = new RoomSimulation(ledgeForgivenessLevel);
+  ledgeEchoBlockedSim.echoRecordings.push({ id: "ledge-echo-blocker", frames: [], createdAtFrame: 0 });
+  ledgeEchoBlockedSim.echoes = [makeActor("ledge-echo-blocker", "echo", { x: 80, y: 66 })];
+  Object.assign(ledgeEchoBlockedSim.player, { x: 56, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  ledgeEchoBlockedSim.step(right);
+  assert(!ledgeEchoBlockedSim.player.onGround, "Ledge forgiveness should not snap the player into a stationary echo on the landing lip");
+  assert(
+    ledgeEchoBlockedSim.player.y !== 66,
+    `Echo-blocked ledge forgiveness should not snap to the ledge top, got ${JSON.stringify(ledgeEchoBlockedSim.player)}`
+  );
+
   const leftLedgeForgivenessLevel = {
     ...ledgeForgivenessLevel,
     solids: [{ id: "catch-left-ledge", x: 20, y: 100, w: 96, h: 20 }]

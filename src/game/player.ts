@@ -205,7 +205,7 @@ export const moveActor = (
     tryApplyLedgeForgiveness(
       actor,
       ledgeRects,
-      [...collisionRects, ...crateRects],
+      [...collisionRects, ...crateRects, ...(dynamic.actorBlockers || [])],
       bounds,
       previousY,
       attemptedVx
