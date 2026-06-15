@@ -272,6 +272,11 @@ const verifyGameSceneAudioCleanupHooks = () => {
     "Expected live rendering to skip transient core-state and runtime-solid deep copies while preserving normal snapshot cloning"
   );
   assert(stateSource.includes("carriedCoreCount(): number"), "Expected RoomSimulation to expose a cheap carried-core count for GameScene");
+  assert(
+    stateSource.includes("const spilledCoreDoors = (this.level.doors || []).length > 0 ? this.spilledCoreDoorRects") &&
+      stateSource.includes("this.restoreBossCheckpoint(false);"),
+    "Expected spill-door projection to skip doorless rooms and boss checkpoint retry to avoid restoring immediately cleared echoes"
+  );
   assert(stateSource.includes("recoveredSpillCoreIds"), "Expected recovered spill cores to be tracked so one loose core cannot be recycled indefinitely");
   const tutorialHintBody = gameSceneMethodBody(source, "updateTutorialHint");
   assert(
@@ -2529,7 +2534,7 @@ try {
   assert(pickupUpdate.state.spilledCores.size === 0, "Picked-up loose core should be removed from the next spilled-core map");
   coreSaveSim.level.hazards = [];
   Object.assign(coreSaveSim.player, { x: 180, y: 86, vx: 0, vy: 0, onGround: true });
-  runFrames(coreSaveSim, 34, idle);
+  runFrames(coreSaveSim, 62, idle);
   const recoverableCore = [...coreSaveSim.objectState.spilledCores.values()][0];
   assert(recoverableCore, "Expected spilled core to persist through pickup delay");
   Object.assign(coreSaveSim.player, { x: recoverableCore.x - 8, y: recoverableCore.y - 16, vx: 0, vy: 0, onGround: false });
@@ -2554,7 +2559,7 @@ try {
   );
   fragileRecoveredCoreSim.level.hazards = [];
   Object.assign(fragileRecoveredCoreSim.player, { x: 180, y: 86, vx: 0, vy: 0, onGround: true });
-  runFrames(fragileRecoveredCoreSim, 34, idle);
+  runFrames(fragileRecoveredCoreSim, 62, idle);
   const fragileLooseCore = [...fragileRecoveredCoreSim.objectState.spilledCores.values()][0];
   assert(fragileLooseCore, "Expected fragile-core loose pickup to persist before recovery");
   Object.assign(fragileRecoveredCoreSim.player, { x: fragileLooseCore.x - 8, y: fragileLooseCore.y - 16, vx: 0, vy: 0, onGround: false });
@@ -2581,6 +2586,91 @@ try {
   const fragileThirdHit = fragileRecoveredCoreSim.step(idle);
   assert(fragileRecoveredCoreSim.dead && fragileThirdHit.died, "No-core follow-up hit should kill after fragile recovered core is consumed");
   assert(!fragileThirdHit.coreSpill, `No-core follow-up hit should not create another core save, got ${JSON.stringify(fragileThirdHit.coreSpill)}`);
+
+  const archiveRecoveredCoreLevel = {
+    ...baseLevel,
+    id: "archive-recovered-core-save",
+    bounds: { x: 0, y: 0, w: 860, h: 340 },
+    start: { x: 220, y: 226 },
+    exit: { x: 760, y: 242, w: 32, h: 38 },
+    solids: [
+      { id: "floor", x: 0, y: 280, w: 860, h: 60 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 340 },
+      { id: "right-wall", x: 860, y: 0, w: 20, h: 340 }
+    ],
+    cores: [{ id: "archive-recovered-core", x: 220, y: 226, w: 18, h: 18 }],
+    hazards: [{ id: "archive-recovered-first-hit", x: 220, y: 226, w: 36, h: 34 }],
+    bosses: [
+      {
+        id: "archive-recovered-boss",
+        kind: "archive-custodian",
+        x: 80,
+        y: 90,
+        w: 360,
+        h: 160,
+        entrySide: "center",
+        introSeconds: 1,
+        health: 2,
+        score: 1600,
+        checkpoint: { x: 220, y: 226 }
+      }
+    ]
+  };
+  const archiveRecoveredCoreSim = new RoomSimulation(archiveRecoveredCoreLevel);
+  const archiveRecoveredFirstHit = archiveRecoveredCoreSim.step(idle);
+  assert(
+    archiveRecoveredFirstHit.coreSpill?.coreIds.includes("archive-recovered-core") && !archiveRecoveredCoreSim.dead,
+    `Expected archive recovered-core fixture to spill the first carried core, got ${JSON.stringify(archiveRecoveredFirstHit.coreSpill)}`
+  );
+  archiveRecoveredCoreSim.level.hazards = [];
+  Object.assign(archiveRecoveredCoreSim.player, { x: 180, y: 226, vx: 0, vy: 0, onGround: true });
+  runFrames(archiveRecoveredCoreSim, 62, idle);
+  const archiveRecoveredLooseCore = [...archiveRecoveredCoreSim.objectState.spilledCores.values()][0];
+  assert(archiveRecoveredLooseCore, "Expected archive recovered-core loose pickup to persist before recovery");
+  Object.assign(archiveRecoveredCoreSim.player, {
+    x: archiveRecoveredLooseCore.x - 8,
+    y: archiveRecoveredLooseCore.y - 16,
+    vx: 0,
+    vy: 0,
+    onGround: false
+  });
+  const archiveRecoveredPickup = archiveRecoveredCoreSim.step(idle);
+  assert(
+    archiveRecoveredPickup.cores.some((core) => core.id === "archive-recovered-core" && core.recovered),
+    `Expected archive fixture to recover its loose core before boss damage, got ${JSON.stringify(archiveRecoveredPickup.cores)}`
+  );
+  archiveRecoveredCoreSim.coreInvulnerabilityFrames = 0;
+  Object.assign(archiveRecoveredCoreSim.player, {
+    x: archiveRecoveredCoreLevel.start.x,
+    y: 280 - archiveRecoveredCoreSim.player.h,
+    vx: 0,
+    vy: 0,
+    onGround: true
+  });
+  archiveRecoveredCoreSim.step(idle);
+  assert(
+    archiveRecoveredCoreSim.bossCheckpointActive() && archiveRecoveredCoreSim.bossCheckpointBossId() === "archive-recovered-boss",
+    "Expected archive recovered-core fixture to have an active boss checkpoint"
+  );
+  runFrames(archiveRecoveredCoreSim, 60, idle);
+  const archiveRecoveredImpactSnapshot = runBossUntilAttack(archiveRecoveredCoreSim, "archive-recovered-boss");
+  const archiveRecoveredImpact = archiveRecoveredImpactSnapshot.attacks.find((attack) => attack.attackPhase === "impact") || archiveRecoveredImpactSnapshot.attacks[0];
+  assert(archiveRecoveredImpact, `Expected archive recovered-core fixture to expose a book impact, got ${JSON.stringify(archiveRecoveredImpactSnapshot.attacks)}`);
+  Object.assign(archiveRecoveredCoreSim.player, {
+    x: archiveRecoveredImpact.x + archiveRecoveredImpact.w / 2 - archiveRecoveredCoreSim.player.w / 2,
+    y: archiveRecoveredImpact.y + archiveRecoveredImpact.h - archiveRecoveredCoreSim.player.h,
+    vx: 0,
+    vy: 0,
+    onGround: true
+  });
+  const archiveRecoveredBossSave = archiveRecoveredCoreSim.step(idle);
+  assert(
+    !archiveRecoveredCoreSim.dead &&
+      archiveRecoveredBossSave.coreSpill?.coreIds.length === 0 &&
+      archiveRecoveredBossSave.coreSpill.lostCoreIds.includes("archive-recovered-core") &&
+      archiveRecoveredCoreSim.objectState.spilledCores.size === 0,
+    `Expected a recovered core to save one archive boss hit without re-scattering, got ${JSON.stringify(archiveRecoveredBossSave.coreSpill)}`
+  );
 
   const rewindProtectedSaveSim = new RoomSimulation({
     ...baseLevel,
@@ -3151,6 +3241,118 @@ try {
     `Loose spilled core should pass through a door held by a same-frame trigger-safe player, got ${JSON.stringify(triggerSafePlayerOpenedLooseCore)}`
   );
 
+  const recoveredLooseKeyDoorSpillSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 18, y: 86 },
+    doors: [{ id: "recovered-loose-key-door", x: 52, y: 70, w: 10, h: 58, requiresCore: "recovered-loose-key" }],
+    cores: []
+  });
+  Object.assign(recoveredLooseKeyDoorSpillSim.player, { x: 18, y: 86, vx: 0, vy: 0, onGround: true });
+  recoveredLooseKeyDoorSpillSim.objectState = {
+    ...recoveredLooseKeyDoorSpillSim.objectState,
+    spilledCores: new Map([
+      [
+        "manual-recovered-loose-key",
+        {
+          id: "manual-recovered-loose-key",
+          sourceId: "recovered-loose-key",
+          x: 18,
+          y: 86,
+          w: 18,
+          h: 18,
+          vx: 0,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 0
+        }
+      ],
+      [
+        "manual-recovered-key-door-loose",
+        {
+          id: "manual-recovered-key-door-loose",
+          sourceId: "manual-recovered-key-door-core",
+          x: 34,
+          y: 90,
+          w: 18,
+          h: 18,
+          vx: 20,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 8
+        }
+      ]
+    ])
+  };
+  recoveredLooseKeyDoorSpillSim.step(idle);
+  assert(
+    recoveredLooseKeyDoorSpillSim.objectState.collectedCores.has("recovered-loose-key"),
+    "Expected same-frame loose key recovery to be collected"
+  );
+  const recoveredLooseKeyDoorCore = recoveredLooseKeyDoorSpillSim.objectState.spilledCores.get("manual-recovered-key-door-loose");
+  assert(recoveredLooseKeyDoorCore, "Expected recovered-key required-door loose core to remain after pass-through");
+  assert(
+    recoveredLooseKeyDoorCore.x > 40 && recoveredLooseKeyDoorCore.vx > 0,
+    `Loose spilled core should pass through a required door opened by same-frame loose-key recovery, got ${JSON.stringify(recoveredLooseKeyDoorCore)}`
+  );
+
+  const recoveredLooseSaveDoorSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 18, y: 86 },
+    plates: [{ id: "recovered-loose-save-plate", x: 18, y: 86, w: 24, h: 34 }],
+    doors: [{ id: "recovered-loose-save-door", x: 92, y: 70, w: 10, h: 58, opensWith: ["recovered-loose-save-plate"] }],
+    hazards: [{ id: "recovered-loose-save-spark", x: 18, y: 86, w: 24, h: 34 }],
+    cores: [{ id: "recovered-loose-save-core", x: 220, y: 86, w: 18, h: 18 }]
+  });
+  Object.assign(recoveredLooseSaveDoorSim.player, { x: 18, y: 86, vx: 0, vy: 0, onGround: true });
+  recoveredLooseSaveDoorSim.objectState = {
+    ...recoveredLooseSaveDoorSim.objectState,
+    claimedCores: new Set(["recovered-loose-save-core"]),
+    spilledCores: new Map([
+      [
+        "manual-recovered-loose-save",
+        {
+          id: "manual-recovered-loose-save",
+          sourceId: "recovered-loose-save-core",
+          x: 18,
+          y: 86,
+          w: 18,
+          h: 18,
+          vx: 0,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 0
+        }
+      ],
+      [
+        "manual-recovered-save-door-loose",
+        {
+          id: "manual-recovered-save-door-loose",
+          sourceId: "manual-recovered-save-door-core",
+          x: 70,
+          y: 90,
+          w: 18,
+          h: 18,
+          vx: 5,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 8
+        }
+      ]
+    ])
+  };
+  const recoveredLooseSaveDoorStep = recoveredLooseSaveDoorSim.step(idle);
+  assert(!recoveredLooseSaveDoorStep.died && recoveredLooseSaveDoorStep.coreSpill, "Expected same-frame loose recovery to save the player");
+  assert(
+    recoveredLooseSaveDoorSim.objectState.openDoors.has("recovered-loose-save-door"),
+    "Same-frame loose-recovered save should let the player drive loose-core doors"
+  );
+  const recoveredLooseSaveDoorCore = recoveredLooseSaveDoorSim.objectState.spilledCores.get("manual-recovered-save-door-loose");
+  assert(recoveredLooseSaveDoorCore, "Expected recovered-save loose door core to remain after pass-through");
+  assert(
+    recoveredLooseSaveDoorCore.x > 74.1 && recoveredLooseSaveDoorCore.vx > 0,
+    `Loose spilled core should pass through a door held by a same-frame loose-recovered save, got ${JSON.stringify(recoveredLooseSaveDoorCore)}`
+  );
+
   const echoVaporizedDoorSpillSim = new RoomSimulation({
     ...baseLevel,
     start: { x: 18, y: 20 },
@@ -3290,7 +3492,7 @@ try {
     ...baseLevel,
     bounds: { x: 0, y: 0, w: 240, h: 210 },
     solids: [{ id: "player-safe-floor", x: 146, y: 120, w: 80, h: 20 }],
-    oneWays: [{ id: "loose-core-catcher", x: 0, y: 132, w: 120, h: 12 }],
+    oneWays: [{ id: "loose-core-catcher", x: 0, y: 132, w: 180, h: 12 }],
     cores: [{ id: "one-way-spill-core", x: 18, y: 86, w: 18, h: 18 }],
     hazards: [{ id: "one-way-spill-spark", x: 18, y: 86, w: 36, h: 34 }]
   });
@@ -6253,7 +6455,7 @@ try {
   );
   checkpointRecoveredCoreSim.level.hazards = [];
   Object.assign(checkpointRecoveredCoreSim.player, { x: 180, y: 86, vx: 0, vy: 0, onGround: true });
-  runFrames(checkpointRecoveredCoreSim, 34, idle);
+  runFrames(checkpointRecoveredCoreSim, 62, idle);
   const checkpointRecoveredLooseCore = [...checkpointRecoveredCoreSim.objectState.spilledCores.values()][0];
   assert(checkpointRecoveredLooseCore, "Expected checkpoint recovered-core loose pickup to persist before recovery");
   Object.assign(checkpointRecoveredCoreSim.player, {
@@ -6552,6 +6754,23 @@ try {
   assert(
     ledgeSwitchableEchoSim.player.y !== 66,
     `Switchable-laser echo should block ledge forgiveness while alive, got ${JSON.stringify(ledgeSwitchableEchoSim.player)}`
+  );
+
+  const sideSwitchableEchoSim = new RoomSimulation({
+    ...ledgeForgivenessLevel,
+    solids: [{ id: "switchable-echo-floor", x: 0, y: 120, w: 200, h: 20 }],
+    plates: [{ id: "side-switchable-echo-plate", x: 52, y: 86, w: 40, h: 34 }],
+    lasers: [{ id: "side-switchable-echo-laser", x: 80, y: 86, w: 24, h: 34, startsOn: true, disabledBy: ["side-switchable-echo-plate"] }]
+  });
+  sideSwitchableEchoSim.echoRecordings.push({ id: "side-switchable-echo", frames: [], createdAtFrame: 0 });
+  sideSwitchableEchoSim.echoes = [makeActor("side-switchable-echo", "echo", { x: 80, y: 86 })];
+  Object.assign(sideSwitchableEchoSim.player, { x: 54, y: 86, vx: 3, vy: 0, onGround: true, coyote: 7 });
+  const sideSwitchableEchoStep = sideSwitchableEchoSim.step(right);
+  assert(sideSwitchableEchoStep.echoLaserVaporized === 0, "Expected side switchable-laser echo to survive after plate disables the beam");
+  assert(sideSwitchableEchoSim.snapshot().echoes.length === 1, "Expected side switchable-laser echo to remain alive");
+  assert(
+    sideSwitchableEchoSim.player.x <= 56.01,
+    `Live switchable-laser echo should block normal horizontal movement, got ${JSON.stringify(sideSwitchableEchoSim.player)}`
   );
 
   const ledgeReplayEchoSim = new RoomSimulation(ledgeForgivenessLevel);

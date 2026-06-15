@@ -231,13 +231,6 @@ type ObjectAsset = Phaser.GameObjects.TileSprite | Phaser.GameObjects.Image;
 type BackgroundImageAsset =
   | { renderMode: "repeat-x"; image: Phaser.GameObjects.TileSprite }
   | { renderMode: "fit-level"; image: Phaser.GameObjects.Image };
-type SolidOutlineSide = "top" | "bottom" | "left" | "right";
-type SolidOutlineSegment = {
-  side: SolidOutlineSide;
-  from: number;
-  to: number;
-};
-
 type RenderView = {
   player: ActorBody;
   echoes: ActorBody[];
@@ -4592,76 +4585,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawSolidReadabilityOutline(solid: Solid): void {
-    if (solidVisualRoleFor(solid) === "wall") return;
-    const segments = this.solidOutlineSegments(solid);
-    if (segments.length === 0) return;
-    const outlines = this.structureOutlines;
-    outlines.lineStyle(1, 0x43f7ff, terrainMaterialForSolid(solid) === "glass-energy" ? 0.52 : 0.4);
-    for (const segment of segments) {
-      this.drawSolidOutlineSegment(solid, segment);
-    }
-    outlines.lineStyle(1, 0x9cfbff, 0.2);
-    for (const segment of segments) {
-      if (segment.side !== "top" || segment.to - segment.from <= 4) continue;
-      outlines.lineBetween(segment.from + 2, solid.y + 3, segment.to - 2, solid.y + 3);
-    }
-    if (this.diagnosticsEnabled) {
-      const sides = segments.map((segment) => `${segment.side}:${Math.round(segment.from)}-${Math.round(segment.to)}`).join(";");
-      this.staticSolidOutlineRects.push(`${solid.id}:${Math.round(solid.x)},${Math.round(solid.y)}:${Math.round(solid.w)}x${Math.round(solid.h)}:43f7ff:${Math.round(outlines.depth)}:${sides}`);
-    }
-  }
-
-  private solidOutlineSegments(solid: Solid): SolidOutlineSegment[] {
-    const width = Math.max(0, solid.w);
-    const height = Math.max(0, solid.h);
-    if (width <= 0 || height <= 0) return [];
-    const frame = this.solidFrame(solid);
-    const material = terrainMaterialForSolid(solid);
-    const segments: Record<SolidOutlineSide, Array<{ from: number; to: number }>> = {
-      top: [{ from: solid.x, to: solid.x + solid.w }],
-      bottom: [{ from: solid.x, to: solid.x + solid.w }],
-      left: [{ from: solid.y, to: solid.y + solid.h }],
-      right: [{ from: solid.y, to: solid.y + solid.h }]
-    };
-
-    for (const neighbor of this.renderSolids) {
-      if (neighbor === solid || this.solidFrame(neighbor) !== frame || terrainMaterialForSolid(neighbor) !== material) continue;
-      const horizontalOverlap = this.overlapSpan(solid.x, solid.x + solid.w, neighbor.x, neighbor.x + neighbor.w);
-      const verticalOverlap = this.overlapSpan(solid.y, solid.y + solid.h, neighbor.y, neighbor.y + neighbor.h);
-      if (horizontalOverlap && this.sameCoordinate(neighbor.y + neighbor.h, solid.y)) {
-        segments.top = this.subtractSolidOutlineSpan(segments.top, horizontalOverlap.from, horizontalOverlap.to);
-      }
-      if (horizontalOverlap && this.sameCoordinate(neighbor.y, solid.y + solid.h)) {
-        segments.bottom = this.subtractSolidOutlineSpan(segments.bottom, horizontalOverlap.from, horizontalOverlap.to);
-      }
-      if (verticalOverlap && this.sameCoordinate(neighbor.x + neighbor.w, solid.x)) {
-        segments.left = this.subtractSolidOutlineSpan(segments.left, verticalOverlap.from, verticalOverlap.to);
-      }
-      if (verticalOverlap && this.sameCoordinate(neighbor.x, solid.x + solid.w)) {
-        segments.right = this.subtractSolidOutlineSpan(segments.right, verticalOverlap.from, verticalOverlap.to);
-      }
-    }
-
-    return (["top", "bottom", "left", "right"] as SolidOutlineSide[]).flatMap((side) =>
-      segments[side].map((segment) => ({ side, ...segment }))
-    );
-  }
-
-  private drawSolidOutlineSegment(solid: Solid, segment: SolidOutlineSegment): void {
-    const outlines = this.structureOutlines;
-    if (segment.side === "top") {
-      outlines.lineBetween(segment.from + 0.5, solid.y + 0.5, segment.to - 0.5, solid.y + 0.5);
-      return;
-    }
-    if (segment.side === "bottom") {
-      outlines.lineBetween(segment.from + 0.5, solid.y + solid.h - 0.5, segment.to - 0.5, solid.y + solid.h - 0.5);
-      return;
-    }
-    if (segment.side === "left") {
-      outlines.lineBetween(solid.x + 0.5, segment.from + 0.5, solid.x + 0.5, segment.to - 0.5);
-      return;
-    }
-    outlines.lineBetween(solid.x + solid.w - 0.5, segment.from + 0.5, solid.x + solid.w - 0.5, segment.to - 0.5);
+    void solid;
+    return;
   }
 
   private overlapSpan(aFrom: number, aTo: number, bFrom: number, bTo: number): { from: number; to: number } | null {

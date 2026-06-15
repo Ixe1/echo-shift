@@ -66,7 +66,7 @@ const LAUNCH_PAD_CONTROL_LOCK_FRAMES = 10;
 const LAUNCH_PAD_FLOAT_FRAMES = 54;
 const LAUNCH_PAD_SPEED_SCALE = 0.94;
 const CORE_SAVE_INVULNERABILITY_FRAMES = 90;
-const CORE_SPILL_PICKUP_DELAY_FRAMES = 28;
+const CORE_SPILL_PICKUP_DELAY_FRAMES = 54;
 const CORE_SPILL_TTL_FRAMES = 300;
 const CORE_SPILL_GRAVITY = 0.42;
 const CORE_SPILL_MAX_FALL_SPEED = 7.6;
@@ -435,7 +435,7 @@ export class RoomSimulation {
 
   resetLifeAttempt(): void {
     if (this.bossCheckpoint) {
-      this.restoreBossCheckpoint();
+      this.restoreBossCheckpoint(false);
       this.clearCheckpointEchoesAndObjectState();
       return;
     }
@@ -541,7 +541,7 @@ export class RoomSimulation {
     }
 
     if (this.objectState.spilledCores.size > 0) {
-      const spilledCoreDoors = this.spilledCoreDoorRects(defeatedBossIds, previousPlayerY);
+      const spilledCoreDoors = (this.level.doors || []).length > 0 ? this.spilledCoreDoorRects(defeatedBossIds, previousPlayerY) : [];
       this.advanceSpilledCores(this.spilledCoreSupportRects(spilledCoreDoors, platforms), this.spilledCoreBlockerRects(spilledCoreDoors));
     }
 
@@ -788,7 +788,7 @@ export class RoomSimulation {
     return states;
   }
 
-  private restoreBossCheckpoint(): void {
+  private restoreBossCheckpoint(restoreEchoState = true): void {
     const checkpoint = this.bossCheckpoint;
     if (!checkpoint) return;
     const currentDeaths = this.deaths;
@@ -805,9 +805,9 @@ export class RoomSimulation {
     this.dead = false;
     this.won = false;
     this.player = { ...cloneActor(checkpoint.player), alive: true };
-    this.echoes = checkpoint.echoes.map((echo) => ({ ...cloneActor(echo), alive: echo.alive }));
+    this.echoes = restoreEchoState ? checkpoint.echoes.map((echo) => ({ ...cloneActor(echo), alive: echo.alive })) : [];
     this.echoRecordings.length = 0;
-    this.echoRecordings.push(...cloneEchoRecordings(checkpoint.echoRecordings));
+    if (restoreEchoState) this.echoRecordings.push(...cloneEchoRecordings(checkpoint.echoRecordings));
     this.currentRecording = [];
     this.objectState = cloneObjectState(checkpoint.objectState);
     this.killedMonsterIds.clear();
@@ -1432,7 +1432,7 @@ export class RoomSimulation {
       nextSpilledCores.set(looseId, {
         id: looseId,
         sourceId,
-        x: playerCenter.x - width / 2 + scatterSlot * 5,
+        x: playerCenter.x - width / 2 + scatterSlot * 14,
         y: playerCenter.y - height / 2 - 8,
         w: width,
         h: height,
@@ -1491,7 +1491,7 @@ export class RoomSimulation {
 
   private coreSpillHash(value: string): number {
     let hash = 2166136261;
-    const seed = `${this.tick}:${Math.round(this.player.x)},${Math.round(this.player.y)}:${this.coreSpillSerial}:${value}`;
+    const seed = `${this.level.id}:${value}`;
     for (let index = 0; index < seed.length; index += 1) {
       hash ^= seed.charCodeAt(index);
       hash = Math.imul(hash, 16777619);
@@ -1557,9 +1557,28 @@ export class RoomSimulation {
   }
 
   private projectObjectStateForSpilledCoreDoors(actors: ActorBody[], defeatedBossIds: ReadonlySet<string>): ObjectState {
-    return updateObjects(this.level, actors, { ...this.objectState, spilledCores: new Map() }, this.tick, defeatedBossIds, {
+    const projected = updateObjects(this.level, actors, { ...this.objectState, spilledCores: new Map() }, this.tick, defeatedBossIds, {
       advanceCoreMagnet: false
     }).state;
+    const playerActor = actors.find((actor) => actor.kind === "player" && actor.alive);
+    if (!playerActor) return projected;
+
+    const collectedCores = new Set(projected.collectedCores);
+    const claimedCores = new Set(projected.claimedCores);
+    let recovered = false;
+    for (const looseCore of this.objectState.spilledCores.values()) {
+      if (looseCore.pickupDelayFrames > 0 || !rectsOverlap(playerActor, looseCore)) continue;
+      claimedCores.add(looseCore.sourceId);
+      collectedCores.add(looseCore.sourceId);
+      recovered = true;
+    }
+    if (!recovered) return projected;
+    return {
+      ...projected,
+      collectedCores,
+      claimedCores,
+      openDoors: collectOpenDoors(this.level.doors || [], projected.activePlates, collectedCores, defeatedBossIds)
+    };
   }
 
   private spilledCoreSupportRects(doors: Rect[], platforms: Array<{ current: Rect }>): Rect[] {

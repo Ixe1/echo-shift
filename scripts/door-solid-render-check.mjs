@@ -5,13 +5,32 @@ import { chromium } from "playwright";
 const url = process.env.PLAYTEST_URL || "http://localhost:5173/";
 const outDir = process.env.PLAYTEST_OUT || "/tmp/echo-shift-door-solid-qa";
 const browserPath =
-  process.env.CHROME_PATH ||
-  (existsSync("/usr/bin/google-chrome") ? "/usr/bin/google-chrome" : undefined);
+  process.env.PLAYWRIGHT_BUNDLED_CHROMIUM === "1"
+    ? undefined
+    : process.env.CHROME_PATH || (existsSync("/usr/bin/google-chrome") ? "/usr/bin/google-chrome" : undefined);
 
 mkdirSync(outDir, { recursive: true });
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
+};
+
+const launchBrowser = async () => {
+  const launchOptions = {
+    headless: true,
+    args: ["--no-sandbox", "--disable-dev-shm-usage"]
+  };
+  if (browserPath) launchOptions.executablePath = browserPath;
+  try {
+    return await chromium.launch(launchOptions);
+  } catch (error) {
+    if (!browserPath || process.env.CHROME_PATH) throw error;
+    console.warn(`System Chrome failed to launch, retrying bundled Chromium: ${error.message}`);
+    return chromium.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-dev-shm-usage"]
+    });
+  }
 };
 
 const paethPredictor = (left, up, upLeft) => {
@@ -151,6 +170,25 @@ const sampleCyanOutlinePixels = (buffer, cameraWorldView, rect, sides, options =
     if (pointMatched) sideStats.hitPoints += 1;
   }
   return { matchingPixels, sampledPixels, maxChannel, points: points.length, rect, sides, outside: Boolean(options.outside), sampleRadius, perSide };
+};
+
+const assertNoCyanOutlineSamples = (label, samples) => {
+  for (const sample of samples) {
+    assert(
+      sample.sampleRadius === 0,
+      `Expected ${label} outline sampling to use exact perimeter pixels, got ${JSON.stringify(sample)}`
+    );
+    assert(
+      sample.matchingPixels <= 12,
+      `Expected ${label} perimeter to omit cyan outline pixels, got ${JSON.stringify(sample)}`
+    );
+    for (const [side, sideSample] of Object.entries(sample.perSide)) {
+      assert(
+        sideSample.matchingPixels <= 8,
+        `Expected ${label} ${side} edge to omit a cyan outline stripe, got ${JSON.stringify(sample)}`
+      );
+    }
+  }
 };
 
 const assertCyanOutlineSamples = (label, floorSample, wallSamples) => {
@@ -301,14 +339,7 @@ const level = {
   hint: "QA"
 };
 
-const launchOptions = {
-  headless: true,
-  args: ["--no-sandbox", "--disable-dev-shm-usage"]
-};
-
-if (browserPath) launchOptions.executablePath = browserPath;
-
-const browser = await chromium.launch(launchOptions);
+const browser = await launchBrowser();
 
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
@@ -484,18 +515,10 @@ try {
   assert(topOnlyOverlay.depth > solidCover.depth, `Expected top-only terrain to render above overlapping solid terrain, got ${JSON.stringify({ topOnlyOverlay, solidCover })}`);
   assert(lowerFloorOverlay.depth > upperFloorCover.depth, `Expected lower floor terrain to render above taller overlapping floor terrain, got ${JSON.stringify({ lowerFloorOverlay, upperFloorCover })}`);
   assert(lowerSolidFloor.depth > upperTopOnlyCover.depth, `Expected lower solid floor to render above higher top-only floor terrain, got ${JSON.stringify({ lowerSolidFloor, upperTopOnlyCover })}`);
-  assertOutline("floor-a", {
-    segments: ["top:0-300", "bottom:0-300", "left:480-520"]
-  });
-  assertOutline("floor-b", {
-    segments: ["top:300-410", "top:538-600", "bottom:300-600"]
-  });
-  assertOutline("floor-c", {
-    segments: ["top:600-900", "bottom:600-900", "right:480-520"]
-  });
-  assertOutline("short-floor", {
-    segments: ["top:410-538", "left:450-480", "right:450-480"]
-  });
+  assertNoOutline("floor-a");
+  assertNoOutline("floor-b");
+  assertNoOutline("floor-c");
+  assertNoOutline("short-floor");
   assertNoOutline("left-wall-upper");
   assertNoOutline("left-wall-lower");
   assertNoOutline("right-wall");
@@ -506,12 +529,8 @@ try {
   assertNoOutline("rain-glass-optin-wall");
   assertNoOutline("cryo-wall-decor-base");
   assertNoOutline("timber-wall-decor-base");
-  assertOutline("block-a", {
-    segments: ["top:560-592", "bottom:560-592", "left:420-480"]
-  });
-  assertOutline("block-b", {
-    segments: ["top:592-624", "bottom:592-624", "right:420-480"]
-  });
+  assertNoOutline("block-a");
+  assertNoOutline("block-b");
   assertNoOutline("enclosed-center");
   assert(diagnostics.sensors.includes("echo-sensor:active-sensor:hidden:active"), `Expected active echo sensor to be hidden and active, got ${diagnostics.sensors}`);
   assert(diagnostics.sensors.includes("echo-sensor:inactive-sensor:hidden:inactive"), `Expected inactive echo sensor to be hidden and inactive, got ${diagnostics.sensors}`);
@@ -870,13 +889,11 @@ try {
   const fullGraphicsScreenshot = `${outDir}/door-solid-render-qa.png`;
   const lowChurnScreenshot = `${outDir}/door-solid-render-low-churn-qa.png`;
   const fullGraphicsScreenshotBuffer = await page.screenshot({ path: fullGraphicsScreenshot, fullPage: true });
-  const floorCyanSamples = sampleCyanOutlinePixels(fullGraphicsScreenshotBuffer, diagnostics.cameraWorldView, levelSolidsById.get("floor-a"), ["top"]);
-  const wallCyanSamples = ["thin-wall", "visible-glass-wall", "visible-cryo-wall", "visible-timber-wall"].map((id) =>
+  const solidCyanSamples = ["floor-a", "block-a", "block-b", "thin-wall", "visible-glass-wall", "visible-cryo-wall", "visible-timber-wall"].map((id) =>
     sampleCyanOutlinePixels(fullGraphicsScreenshotBuffer, diagnostics.cameraWorldView, levelSolidsById.get(id), ["left", "right"], { outside: true, sampleRadius: 0 })
   );
-  assertCyanOutlineSamples("full-graphics", floorCyanSamples, wallCyanSamples);
-  diagnostics.floorCyanSamples = floorCyanSamples;
-  diagnostics.wallCyanSamples = wallCyanSamples;
+  assertNoCyanOutlineSamples("full-graphics solids", solidCyanSamples);
+  diagnostics.solidCyanSamples = solidCyanSamples;
   writeFileSync(`${outDir}/door-solid-render-qa.json`, JSON.stringify({ diagnostics, messages }, null, 2));
 
   const lowChurnMessageStart = messages.length;
@@ -894,8 +911,14 @@ try {
     cameraWorldView: document.documentElement.dataset.echoShiftCameraWorldView || ""
   }));
   assert(lowChurnDiagnostics.doors.includes("door:tall-closed-26:8:logic:468,180,26,300:pos:481,180:origin:0.5,0:box:459,180,45,300:orientation:vertical:rotation:0"), `Expected low-churn door diagnostics, got ${lowChurnDiagnostics.doors}`);
-  assert(lowChurnDiagnostics.outlines.includes("floor-b:300,480:300x40:43f7ff:2:top:300-410;top:538-600;bottom:300-600"), `Expected low-churn merged floor outline diagnostics, got ${lowChurnDiagnostics.outlines}`);
+  assert(lowChurnDiagnostics.outlines === "", `Expected low-churn solids to omit cyan outline diagnostics, got ${lowChurnDiagnostics.outlines}`);
   for (const id of [
+    "floor-a",
+    "floor-b",
+    "floor-c",
+    "short-floor",
+    "block-a",
+    "block-b",
     "left-wall-upper",
     "left-wall-lower",
     "right-wall",
@@ -913,13 +936,11 @@ try {
   assert(lowChurnDiagnostics.hazards.includes("hazard-vent:qa-vent:0:"), `Expected low-churn hazard vent diagnostics, got ${lowChurnDiagnostics.hazards}`);
   assert(!lowChurnDiagnostics.sensors.includes(":9:"), `Low-churn hidden echo sensor diagnostics should not use door-open frame 9, got ${lowChurnDiagnostics.sensors}`);
   const lowChurnScreenshotBuffer = await page.screenshot({ path: lowChurnScreenshot, fullPage: true });
-  const lowChurnFloorCyanSamples = sampleCyanOutlinePixels(lowChurnScreenshotBuffer, lowChurnDiagnostics.cameraWorldView, levelSolidsById.get("floor-b"), ["top"]);
-  const lowChurnWallCyanSamples = ["thin-wall", "visible-glass-wall", "visible-cryo-wall", "visible-timber-wall"].map((id) =>
+  const lowChurnSolidCyanSamples = ["floor-b", "block-a", "block-b", "thin-wall", "visible-glass-wall", "visible-cryo-wall", "visible-timber-wall"].map((id) =>
     sampleCyanOutlinePixels(lowChurnScreenshotBuffer, lowChurnDiagnostics.cameraWorldView, levelSolidsById.get(id), ["left", "right"], { outside: true, sampleRadius: 0 })
   );
-  assertCyanOutlineSamples("low-churn", lowChurnFloorCyanSamples, lowChurnWallCyanSamples);
-  lowChurnDiagnostics.floorCyanSamples = lowChurnFloorCyanSamples;
-  lowChurnDiagnostics.wallCyanSamples = lowChurnWallCyanSamples;
+  assertNoCyanOutlineSamples("low-churn solids", lowChurnSolidCyanSamples);
+  lowChurnDiagnostics.solidCyanSamples = lowChurnSolidCyanSamples;
   assertNoUnexpectedBrowserMessages("Low-churn render", lowChurnMessageStart);
 
   console.log(JSON.stringify({ ok: true, screenshot: fullGraphicsScreenshot, lowChurnScreenshot, diagnostics, lowChurnDiagnostics }, null, 2));

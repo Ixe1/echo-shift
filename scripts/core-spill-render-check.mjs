@@ -5,13 +5,32 @@ import { chromium } from "playwright";
 const url = process.env.PLAYTEST_URL || "http://localhost:5173/";
 const outDir = process.env.PLAYTEST_OUT || "/tmp/echo-shift-core-spill-qa";
 const browserPath =
-  process.env.CHROME_PATH ||
-  (existsSync("/usr/bin/google-chrome") ? "/usr/bin/google-chrome" : undefined);
+  process.env.PLAYWRIGHT_BUNDLED_CHROMIUM === "1"
+    ? undefined
+    : process.env.CHROME_PATH || (existsSync("/usr/bin/google-chrome") ? "/usr/bin/google-chrome" : undefined);
 
 mkdirSync(outDir, { recursive: true });
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
+};
+
+const launchBrowser = async () => {
+  const launchOptions = {
+    headless: true,
+    args: ["--no-sandbox", "--disable-dev-shm-usage"]
+  };
+  if (browserPath) launchOptions.executablePath = browserPath;
+  try {
+    return await chromium.launch(launchOptions);
+  } catch (error) {
+    if (!browserPath || process.env.CHROME_PATH) throw error;
+    console.warn(`System Chrome failed to launch, retrying bundled Chromium: ${error.message}`);
+    return chromium.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-dev-shm-usage"]
+    });
+  }
 };
 
 const parseSpillFrameMap = (frames) => {
@@ -440,14 +459,7 @@ const positiveBonusLifeLevel = {
   hint: "QA"
 };
 
-const launchOptions = {
-  headless: true,
-  args: ["--no-sandbox", "--disable-dev-shm-usage"]
-};
-
-if (browserPath) launchOptions.executablePath = browserPath;
-
-const browser = await chromium.launch(launchOptions);
+const browser = await launchBrowser();
 
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 });
@@ -749,6 +761,8 @@ try {
     toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
     spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || ""
   }));
+  await page.keyboard.up("ArrowRight");
+  await page.keyboard.down("ArrowLeft");
   await page.waitForFunction(
     ({ postLossCoreCount, postLossSpillCount }) => {
       const cores = Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0");
@@ -763,7 +777,7 @@ try {
       );
     },
     { postLossCoreCount: postLossDiagnostics.hudCores, postLossSpillCount: countSpillFrames(postLossDiagnostics.spillFrames) },
-    { timeout: 9000 }
+    { timeout: 15000 }
   );
   const postRecoveryBonusDiagnostics = await page.evaluate(() => ({
     hudCores: Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0"),
@@ -781,6 +795,8 @@ try {
     `Expected collecting below-threshold cores after a spill not to award a stale bonus life, got ${JSON.stringify({ postLossDiagnostics, postRecoveryBonusDiagnostics })}`
   );
   assert(!/bonus life/i.test(postRecoveryBonusDiagnostics.toast), `Expected no stale bonus-life toast below 30 carried cores, got ${postRecoveryBonusDiagnostics.toast}`);
+  await page.keyboard.up("ArrowLeft");
+  await page.keyboard.down("ArrowRight");
   await page.waitForFunction(
     () => ["fall", "fade-out", "dead", "respawn"].includes(document.documentElement.dataset.echoShiftDeathPresentation || ""),
     null,

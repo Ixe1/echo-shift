@@ -243,7 +243,8 @@ const resolveAxis = (
   actorBlockers: Rect[] = [],
   crateBlockers: Rect[] = []
 ): void => {
-  for (const solid of solids) {
+  const blockingRects: CollisionRect[] = actorBlockers.map((blocker) => ({ ...blocker }));
+  for (const solid of [...solids, ...blockingRects]) {
     if (solid.oneWay && axis === "x") continue;
     if (solid.oneWay && (actor.vy <= 0 || previousY + actor.h > solid.y + 3)) continue;
     if (!rectsOverlap(actor, solid)) continue;
