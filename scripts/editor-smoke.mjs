@@ -1389,11 +1389,11 @@ try {
   const rewindDisabledExport = metadataExport.rewindDisabled;
 
   const levelIdField = page.locator("[data-level-field='id']");
-  await levelIdField.fill("first-afterimage");
+  await levelIdField.fill("rainhouse-relay");
   await dispatchChange(levelIdField);
   const duplicateLevelValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   const duplicateLevelText = await page.locator("[data-validation]").textContent();
-  await levelIdField.fill("portal-primer");
+  await levelIdField.fill("springtide-sprint");
   await dispatchChange(levelIdField);
   const restoredLevelValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
 
@@ -2054,16 +2054,16 @@ try {
   const timberCompletionValue = await page.locator("[data-level-field='completion']").inputValue();
   const timberInitialExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[3];
   await openTab(page, "objects");
-  await page.locator("[data-object-list] [data-id='archive-boss-floor']").click();
+  await page.locator("[data-object-list] [data-id='floorpiece-14']").click();
   const timberErosionTriggerValue = await page.locator("[data-object-field='erodesWith']").inputValue();
   const timberErosionTilesValue = await page.locator("[data-object-field='erosionTiles']").inputValue();
-  await page.locator("[data-object-field='erosionTiles']").selectOption("1");
-  const timberErosionTilesOneExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[3].solids.find(
-    (solid) => solid.id === "archive-boss-floor"
-  );
   await page.locator("[data-object-field='erosionTiles']").selectOption("2");
+  const timberErosionTilesTwoExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[3].solids.find(
+    (solid) => solid.id === "floorpiece-14"
+  );
+  await page.locator("[data-object-field='erosionTiles']").selectOption("1");
   const timberErosionRestoredExport = JSON.parse(await page.locator("[data-export-json]").inputValue())[3].solids.find(
-    (solid) => solid.id === "archive-boss-floor"
+    (solid) => solid.id === "floorpiece-14"
   );
   const timberErosionValidation = await page.locator("[data-validation]").getAttribute("data-editor-validation");
   await page.locator("[data-level-select]").selectOption("0");
@@ -2741,7 +2741,7 @@ try {
   );
   assert(duplicateLevelValidation === "issues", "Expected duplicate level id to fail validation");
   assert(
-    duplicateLevelText?.includes("Duplicate level id first-afterimage"),
+    duplicateLevelText?.includes("Duplicate level id rainhouse-relay"),
     `Expected duplicate level id validation text, got ${duplicateLevelText}`
   );
   assert(restoredLevelValidation === "clean", `Expected clean validation after restoring level id, got ${restoredLevelValidation}`);
@@ -2859,16 +2859,16 @@ try {
   assert(timberCompletionValue === "boss-defeat", `Expected Timber Archive completion mode boss-defeat, got ${timberCompletionValue}`);
   assert(timberInitialExport.completion === "boss-defeat", `Expected Timber Archive export to preserve boss-defeat completion, got ${timberInitialExport.completion}`);
   assert(
-    timberErosionTriggerValue === "archive-book" && timberErosionTilesValue === "2",
-    `Expected archive-boss-floor inspector erosion fields archive-book/2, got ${timberErosionTriggerValue}/${timberErosionTilesValue}`
+    timberErosionTriggerValue === "archive-book" && timberErosionTilesValue === "1",
+    `Expected floorpiece-14 inspector erosion fields archive-book/1, got ${timberErosionTriggerValue}/${timberErosionTilesValue}`
   );
   assert(
-    timberErosionTilesOneExport?.erodesWith === "archive-book" && timberErosionTilesOneExport?.erosionTiles === 1,
-    `Expected erosion tile select to serialize 1, got ${JSON.stringify(timberErosionTilesOneExport)}`
+    timberErosionTilesTwoExport?.erodesWith === "archive-book" && timberErosionTilesTwoExport?.erosionTiles === 2,
+    `Expected erosion tile select to serialize 2, got ${JSON.stringify(timberErosionTilesTwoExport)}`
   );
   assert(
-    timberErosionRestoredExport?.erodesWith === "archive-book" && timberErosionRestoredExport?.erosionTiles === 2,
-    `Expected restored erosion tile select to serialize 2, got ${JSON.stringify(timberErosionRestoredExport)}`
+    timberErosionRestoredExport?.erodesWith === "archive-book" && timberErosionRestoredExport?.erosionTiles === 1,
+    `Expected restored erosion tile select to serialize 1, got ${JSON.stringify(timberErosionRestoredExport)}`
   );
   assert(timberErosionValidation === "clean", `Expected clean validation for Timber Archive erosion controls, got ${timberErosionValidation}`);
   assert(fallbackImportHazardIds.length === 2, `Expected two fallback-imported hazards, got ${fallbackImportHazardIds.join(", ")}`);

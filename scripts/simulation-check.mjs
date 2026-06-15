@@ -1969,14 +1969,14 @@ try {
     `Expected same-frame death reset to prevent threshold core life award, got ${JSON.stringify(sameFrameDeathAward)}`
   );
   resetCampaignVitals();
-  assert(levels[3].id === "relay-key", `Expected Timber Archive to be the final campaign level, got ${levels[3].id}`);
+  assert(levels[3].id === "timber-archive", `Expected Timber Archive to be the final campaign level, got ${levels[3].id}`);
   assert(levels[3].completion === "boss-defeat", "Expected Timber Archive to complete on boss defeat");
   assert(
     (levels[3].bosses || []).some((boss) => boss.kind === "archive-custodian" && boss.soundtrackKey === "final-boss"),
     "Expected final Timber Archive level to include an Archive Custodian using final boss music"
   );
   assert(
-    levels[3].solids.some((solid) => solid.id === "archive-boss-floor" && solid.erodesWith === "archive-book" && solid.erosionTiles === 2),
+    levels[3].solids.some((solid) => solid.id === "floorpiece-14" && solid.erodesWith === "archive-book" && solid.erosionTiles === 1),
     "Expected Timber Archive boss floor to be archive-book erodible"
   );
   assert(levels.some((level) => (level.plates || []).length > 0), "Expected at least one pressure-plate level");
@@ -1991,9 +1991,9 @@ try {
       (level) =>
         level.score?.lives === 3 &&
         level.score.coreScore === 100 &&
-        level.score.timeBonusPerSecond === 100 &&
+        level.score.timeBonusPerSecond === 1 &&
         Number.isInteger(level.score.timeBonusTargetSeconds) &&
-        level.score.timeBonusTargetSeconds > 0
+        level.score.timeBonusTargetSeconds === 900
     ),
     "Expected every handcrafted level to use score/time/lives settings"
   );
@@ -2033,17 +2033,25 @@ try {
     "Expected levels without explicit backgrounds to use prototype fallback"
   );
   assert(
-    levels.every((level) => backgroundAmbienceIsActive(backgroundAmbienceForLevel(level))),
-    "Expected every handcrafted level to use active background ambience"
+    levels.some((level) => backgroundAmbienceIsActive(backgroundAmbienceForLevel(level))),
+    "Expected at least one handcrafted level to use active background ambience"
   );
-  assert(backgroundAmbienceForLevel({ ...levels[0], backgroundAmbience: undefined }).preset === "none", "Expected missing ambience to normalize to none");
+  assert(
+    !backgroundAmbienceIsActive(backgroundAmbienceForLevel({ ...levels[0], backgroundAmbience: undefined })) &&
+      backgroundAmbienceForLevel({ ...levels[0], backgroundAmbience: undefined }).preset === "none",
+    "Expected missing ambience to normalize to inactive none ambience"
+  );
+  assert(
+    !backgroundAmbienceIsActive(backgroundAmbienceForLevel(levels[0])),
+    "Expected at least one handcrafted level to use inactive background ambience"
+  );
   assert(Boolean(soundtracks.tutorial), "Expected a tutorial soundtrack");
   assert(Boolean(soundtracks.boss), "Expected a boss soundtrack");
   assert(tutorialLevel.soundtrackKey === "tutorial", `Expected tutorial to use tutorial music, got ${tutorialLevel.soundtrackKey}`);
   assert(tutorialLevel.score.lives === null, `Expected tutorial to use unlimited lives, got ${tutorialLevel.score.lives}`);
   assert(soundtrackForLevel(tutorialLevel).key === "tutorial", "Expected tutorial soundtrack key to resolve");
   assert(soundtrackForLevel({ ...levels[0], soundtrackKey: "tutorial" }).key === "tutorial", "Expected explicit tutorial soundtrack key to override index fallback");
-  assert(soundtrackForLevel(levels[3], 3).key === "level-4", "Expected Level 4 to use Level 4 music");
+  assert(soundtrackForLevel(levels[3], 3).key === "level-5", "Expected Timber Archive to use explicit level-5 music");
   assert(soundtrackForLevel({ ...levels[3], soundtrackKey: undefined }, 5).key === "level-1", "Expected missing retired level-6 slot to use safe fallback");
   assert(soundtrackForLevel({ ...levels[3], soundtrackKey: "missing-track" }, 5).key === "level-1", "Expected unknown soundtrack key to use safe fallback");
   assert(soundtrackForLevel({ ...levels[3], soundtrackKey: "menu" }, 5).key === "level-1", "Expected menu soundtrack key to be ignored for levels");
