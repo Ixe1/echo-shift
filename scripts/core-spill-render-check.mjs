@@ -377,7 +377,7 @@ const bonusLifeAfterLossLevel = {
   lasers: [{ id: "bonus-loss-laser", x: 430, y: 420, w: 16, h: 60, startsOn: true }],
   movingLasers: [],
   drones: [],
-  cores: Array.from({ length: 29 }, (_, index) => ({ id: `bonus-before-loss-core-${index}`, x: 24, y: 438, w: 18, h: 18 })),
+  cores: Array.from({ length: 49 }, (_, index) => ({ id: `bonus-before-loss-core-${index}`, x: 24, y: 438, w: 18, h: 18 })),
   hazards: [{ id: "bonus-loss-spark", x: 128, y: 436, w: 62, h: 38 }],
   crates: [],
   monsters: [],
@@ -452,7 +452,7 @@ const positiveBonusLifeLevel = {
   lasers: [],
   movingLasers: [],
   drones: [],
-  cores: Array.from({ length: 30 }, (_, index) => ({ id: `positive-bonus-core-${index}`, x: 24, y: 438, w: 18, h: 18 })),
+  cores: Array.from({ length: 50 }, (_, index) => ({ id: `positive-bonus-core-${index}`, x: 24, y: 438, w: 18, h: 18 })),
   hazards: [],
   crates: [],
   monsters: [],
@@ -748,7 +748,7 @@ try {
     await page.locator("canvas").click({ position: { x: 480, y: 280 } });
     await page.waitForFunction(
       () =>
-        document.querySelector("[data-cores]")?.textContent?.trim() === "30" &&
+        document.querySelector("[data-cores]")?.textContent?.trim() === "50" &&
         document.querySelector("[data-lives]")?.textContent?.trim() === "4" &&
         /bonus life/i.test(document.querySelector("[data-toast]")?.textContent || ""),
       null,
@@ -760,7 +760,7 @@ try {
       toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
       deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || ""
     }));
-    assert(positiveBonusDiagnostics.hudCores === "30", `Expected positive bonus fixture to carry 30 cores, got ${JSON.stringify(positiveBonusDiagnostics)}`);
+    assert(positiveBonusDiagnostics.hudCores === "50", `Expected positive bonus fixture to carry 50 cores, got ${JSON.stringify(positiveBonusDiagnostics)}`);
     assert(!positiveBonusDiagnostics.hudCores.includes("/"), `Positive bonus HUD should not include map-total count, got ${positiveBonusDiagnostics.hudCores}`);
     assert(positiveBonusDiagnostics.lives === "4", `Expected positive carried-core threshold to award one bonus life, got ${JSON.stringify(positiveBonusDiagnostics)}`);
     assert(/bonus life/i.test(positiveBonusDiagnostics.toast), `Expected positive bonus-life toast, got ${positiveBonusDiagnostics.toast}`);
@@ -773,7 +773,7 @@ try {
     await waitForLevelIntro(page, messages);
     await page.locator("canvas").click({ position: { x: 480, y: 280 } });
     await page.waitForFunction(
-      () => document.querySelector("[data-cores]")?.textContent?.trim() === "29" && document.querySelector("[data-lives]")?.textContent?.trim() === "3",
+      () => document.querySelector("[data-cores]")?.textContent?.trim() === "49" && document.querySelector("[data-lives]")?.textContent?.trim() === "3",
       null,
       { timeout: 7000 }
     );
@@ -781,7 +781,7 @@ try {
     await page.waitForFunction(
       () =>
         Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
-        Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0") < 29 &&
+        Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0") < 49 &&
         document.querySelector("[data-lives]")?.textContent?.trim() === "3",
       null,
       { timeout: 7000 }
@@ -802,7 +802,7 @@ try {
           .filter((frame) => frame.includes(":spill:")).length;
         return (
           cores > postLossCoreCount &&
-          cores < 30 &&
+          cores < 50 &&
           currentSpillCount < postLossSpillCount &&
           document.querySelector("[data-lives]")?.textContent?.trim() === "3"
         );
@@ -822,10 +822,10 @@ try {
       `Expected below-threshold recovery to consume a spilled loose core, got ${JSON.stringify({ postLossDiagnostics, postRecoveryBonusDiagnostics })}`
     );
     assert(
-      postRecoveryBonusDiagnostics.lives === "3" && postRecoveryBonusDiagnostics.hudCores > postLossDiagnostics.hudCores && postRecoveryBonusDiagnostics.hudCores < 30,
+      postRecoveryBonusDiagnostics.lives === "3" && postRecoveryBonusDiagnostics.hudCores > postLossDiagnostics.hudCores && postRecoveryBonusDiagnostics.hudCores < 50,
       `Expected collecting below-threshold cores after a spill not to award a stale bonus life, got ${JSON.stringify({ postLossDiagnostics, postRecoveryBonusDiagnostics })}`
     );
-    assert(!/bonus life/i.test(postRecoveryBonusDiagnostics.toast), `Expected no stale bonus-life toast below 30 carried cores, got ${postRecoveryBonusDiagnostics.toast}`);
+    assert(!/bonus life/i.test(postRecoveryBonusDiagnostics.toast), `Expected no stale bonus-life toast below 50 carried cores, got ${postRecoveryBonusDiagnostics.toast}`);
     await page.keyboard.up("ArrowLeft");
     await page.keyboard.down("ArrowRight");
     await page.waitForFunction(
@@ -839,7 +839,7 @@ try {
         const lives = document.querySelector("[data-lives]")?.textContent?.trim();
         const cores = document.querySelector("[data-cores]")?.textContent?.trim();
         const phase = document.documentElement.dataset.echoShiftLevelIntro || "";
-        return lives === "2" && cores === "29" && (phase === "exiting" || phase === "idle");
+        return lives === "2" && cores === "49" && (phase === "exiting" || phase === "idle");
       },
       null,
       { timeout: 12000 }
@@ -852,10 +852,10 @@ try {
       levelIntro: document.documentElement.dataset.echoShiftLevelIntro || ""
     }));
     assert(
-      postRespawnBonusDiagnostics.lives === "2" && postRespawnBonusDiagnostics.hudCores === 29,
+      postRespawnBonusDiagnostics.lives === "2" && postRespawnBonusDiagnostics.hudCores === 49,
       `Expected death/respawn after below-threshold recovery to restore only start cores and spend one life, got ${JSON.stringify(postRespawnBonusDiagnostics)}`
     );
-    assert(!/bonus life/i.test(postRespawnBonusDiagnostics.toast), `Expected no stale bonus-life toast after death/respawn below 30 carried cores, got ${postRespawnBonusDiagnostics.toast}`);
+    assert(!/bonus life/i.test(postRespawnBonusDiagnostics.toast), `Expected no stale bonus-life toast after death/respawn below 50 carried cores, got ${postRespawnBonusDiagnostics.toast}`);
   }
 
   if (shouldRunScenario("protected")) {

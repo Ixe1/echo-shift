@@ -1,7 +1,7 @@
 import type { Level } from "./types";
 
 export const DEFAULT_GLOBAL_LIVES = 3;
-export const CORES_PER_BONUS_LIFE = 30;
+export const CORES_PER_BONUS_LIFE = 50;
 
 type CampaignVitals = {
   lives: number;
