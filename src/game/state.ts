@@ -1386,9 +1386,7 @@ export class RoomSimulation {
   }
 
   private projectObjectStateForSpilledCoreDoors(actors: ActorBody[], defeatedBossIds: ReadonlySet<string>): ObjectState {
-    return updateObjects(this.level, actors, this.objectState, this.tick, defeatedBossIds, {
-      collectCores: false
-    }).state;
+    return updateObjects(this.level, actors, { ...this.objectState, spilledCores: new Map() }, this.tick, defeatedBossIds).state;
   }
 
   private spilledCoreSupportRects(doors: Rect[], platforms: Array<{ current: Rect }>): Rect[] {

@@ -97,24 +97,40 @@ const sampleCyanOutlinePixels = (buffer, cameraWorldView, rect, sides, options =
   });
   const isCyanOutlinePixel = (r, g, b, a) => a > 80 && r <= 145 && g >= 95 && b >= 110 && g > r + 32 && b > r + 38;
   const points = [];
-  const pushHorizontal = (y) => {
-    for (let x = rect.x + 3; x <= rect.x + rect.w - 3; x += 4) points.push(toPng(x, y));
+  const pushHorizontal = (side, y) => {
+    for (let x = rect.x + 3; x <= rect.x + rect.w - 3; x += 4) points.push({ ...toPng(x, y), side });
   };
-  const pushVertical = (x) => {
-    for (let y = rect.y + 3; y <= rect.y + rect.h - 3; y += 4) points.push(toPng(x, y));
+  const pushVertical = (side, x) => {
+    for (let y = rect.y + 3; y <= rect.y + rect.h - 3; y += 4) points.push({ ...toPng(x, y), side });
   };
   const offset = options.outside ? 0.5 : -0.5;
-  if (sides.includes("top")) pushHorizontal(rect.y - offset);
-  if (sides.includes("bottom")) pushHorizontal(rect.y + rect.h + offset);
-  if (sides.includes("left")) pushVertical(rect.x - offset);
-  if (sides.includes("right")) pushVertical(rect.x + rect.w + offset);
+  if (sides.includes("top")) pushHorizontal("top", rect.y - offset);
+  if (sides.includes("bottom")) pushHorizontal("bottom", rect.y + rect.h + offset);
+  if (sides.includes("left")) pushVertical("left", rect.x - offset);
+  if (sides.includes("right")) pushVertical("right", rect.x + rect.w + offset);
   let matchingPixels = 0;
   let sampledPixels = 0;
   let maxChannel = 0;
+  const sampleRadius = Number.isFinite(options.sampleRadius) ? Math.max(0, Math.floor(options.sampleRadius)) : 1;
+  const perSide = Object.fromEntries(
+    sides.map((side) => [
+      side,
+      {
+        matchingPixels: 0,
+        sampledPixels: 0,
+        maxChannel: 0,
+        points: 0,
+        hitPoints: 0
+      }
+    ])
+  );
   for (const point of points) {
-    for (let y = point.y - 1; y <= point.y + 1; y += 1) {
+    const sideStats = perSide[point.side];
+    sideStats.points += 1;
+    let pointMatched = false;
+    for (let y = point.y - sampleRadius; y <= point.y + sampleRadius; y += 1) {
       if (y < 0 || y >= png.height) continue;
-      for (let x = point.x - 1; x <= point.x + 1; x += 1) {
+      for (let x = point.x - sampleRadius; x <= point.x + sampleRadius; x += 1) {
         if (x < 0 || x >= png.width) continue;
         const pixelIndex = (y * png.width + x) * 4;
         const r = png.pixels[pixelIndex];
@@ -123,11 +139,45 @@ const sampleCyanOutlinePixels = (buffer, cameraWorldView, rect, sides, options =
         const a = png.pixels[pixelIndex + 3];
         sampledPixels += 1;
         maxChannel = Math.max(maxChannel, r, g, b);
-        if (isCyanOutlinePixel(r, g, b, a)) matchingPixels += 1;
+        sideStats.sampledPixels += 1;
+        sideStats.maxChannel = Math.max(sideStats.maxChannel, r, g, b);
+        if (isCyanOutlinePixel(r, g, b, a)) {
+          matchingPixels += 1;
+          sideStats.matchingPixels += 1;
+          pointMatched = true;
+        }
       }
     }
+    if (pointMatched) sideStats.hitPoints += 1;
   }
-  return { matchingPixels, sampledPixels, maxChannel, points: points.length, rect, sides, outside: Boolean(options.outside) };
+  return { matchingPixels, sampledPixels, maxChannel, points: points.length, rect, sides, outside: Boolean(options.outside), sampleRadius, perSide };
+};
+
+const assertCyanOutlineSamples = (label, floorSample, wallSamples) => {
+  assert(
+    floorSample.matchingPixels >= 12,
+    `Expected visible cyan floor outline pixels for ${label} so wall pixel sampling is meaningful, got ${JSON.stringify(floorSample)}`
+  );
+  for (const sample of wallSamples) {
+    assert(
+      sample.sampleRadius === 0,
+      `Expected ${label} wall outline sampling to use exact perimeter pixels, got ${JSON.stringify(sample)}`
+    );
+    assert(
+      sample.matchingPixels <= 12,
+      `Expected ${label} wall perimeter to omit cyan outline pixels, got ${JSON.stringify(sample)}`
+    );
+    for (const [side, sideSample] of Object.entries(sample.perSide)) {
+      assert(
+        sideSample.matchingPixels <= 8,
+        `Expected ${label} wall ${side} edge to omit a cyan outline stripe, got ${JSON.stringify(sample)}`
+      );
+    }
+    assert(
+      floorSample.matchingPixels >= sample.matchingPixels * 6,
+      `Expected ${label} floor outline proof to strongly exceed any wall-edge cyan pixels, got floor ${JSON.stringify(floorSample)} wall ${JSON.stringify(sample)}`
+    );
+  }
 };
 
 const isAllowedBrowserMessage = (msg) =>
@@ -822,18 +872,9 @@ try {
   const fullGraphicsScreenshotBuffer = await page.screenshot({ path: fullGraphicsScreenshot, fullPage: true });
   const floorCyanSamples = sampleCyanOutlinePixels(fullGraphicsScreenshotBuffer, diagnostics.cameraWorldView, levelSolidsById.get("floor-a"), ["top"]);
   const wallCyanSamples = ["thin-wall", "visible-glass-wall", "visible-cryo-wall", "visible-timber-wall"].map((id) =>
-    sampleCyanOutlinePixels(fullGraphicsScreenshotBuffer, diagnostics.cameraWorldView, levelSolidsById.get(id), ["left", "right"], { outside: true })
+    sampleCyanOutlinePixels(fullGraphicsScreenshotBuffer, diagnostics.cameraWorldView, levelSolidsById.get(id), ["left", "right"], { outside: true, sampleRadius: 0 })
   );
-  assert(
-    floorCyanSamples.matchingPixels >= 12,
-    `Expected visible cyan floor outline pixels so wall pixel sampling is meaningful, got ${JSON.stringify(floorCyanSamples)}`
-  );
-  for (const sample of wallCyanSamples) {
-    assert(
-      sample.matchingPixels <= 60 && floorCyanSamples.matchingPixels >= sample.matchingPixels * 3,
-      `Expected wall perimeter to omit cyan outline pixels, got ${JSON.stringify(sample)}`
-    );
-  }
+  assertCyanOutlineSamples("full-graphics", floorCyanSamples, wallCyanSamples);
   diagnostics.floorCyanSamples = floorCyanSamples;
   diagnostics.wallCyanSamples = wallCyanSamples;
   writeFileSync(`${outDir}/door-solid-render-qa.json`, JSON.stringify({ diagnostics, messages }, null, 2));
@@ -849,7 +890,8 @@ try {
     doors: document.documentElement.dataset.echoShiftDoorAssetTransforms || "",
     outlines: document.documentElement.dataset.echoShiftSolidOutlineRects || "",
     sensors: document.documentElement.dataset.echoShiftEchoSensorAssetFrames || "",
-    hazards: document.documentElement.dataset.echoShiftHazardVentSpriteFrames || ""
+    hazards: document.documentElement.dataset.echoShiftHazardVentSpriteFrames || "",
+    cameraWorldView: document.documentElement.dataset.echoShiftCameraWorldView || ""
   }));
   assert(lowChurnDiagnostics.doors.includes("door:tall-closed-26:8:logic:468,180,26,300:pos:481,180:origin:0.5,0:box:459,180,45,300:orientation:vertical:rotation:0"), `Expected low-churn door diagnostics, got ${lowChurnDiagnostics.doors}`);
   assert(lowChurnDiagnostics.outlines.includes("floor-b:300,480:300x40:43f7ff:2:top:300-410;top:538-600;bottom:300-600"), `Expected low-churn merged floor outline diagnostics, got ${lowChurnDiagnostics.outlines}`);
@@ -870,10 +912,17 @@ try {
   assert(lowChurnDiagnostics.sensors.includes("echo-sensor:active-sensor:hidden:active"), `Expected low-churn hidden sensor diagnostics, got ${lowChurnDiagnostics.sensors}`);
   assert(lowChurnDiagnostics.hazards.includes("hazard-vent:qa-vent:0:"), `Expected low-churn hazard vent diagnostics, got ${lowChurnDiagnostics.hazards}`);
   assert(!lowChurnDiagnostics.sensors.includes(":9:"), `Low-churn hidden echo sensor diagnostics should not use door-open frame 9, got ${lowChurnDiagnostics.sensors}`);
-  await page.screenshot({ path: lowChurnScreenshot, fullPage: true });
+  const lowChurnScreenshotBuffer = await page.screenshot({ path: lowChurnScreenshot, fullPage: true });
+  const lowChurnFloorCyanSamples = sampleCyanOutlinePixels(lowChurnScreenshotBuffer, lowChurnDiagnostics.cameraWorldView, levelSolidsById.get("floor-b"), ["top"]);
+  const lowChurnWallCyanSamples = ["thin-wall", "visible-glass-wall", "visible-cryo-wall", "visible-timber-wall"].map((id) =>
+    sampleCyanOutlinePixels(lowChurnScreenshotBuffer, lowChurnDiagnostics.cameraWorldView, levelSolidsById.get(id), ["left", "right"], { outside: true, sampleRadius: 0 })
+  );
+  assertCyanOutlineSamples("low-churn", lowChurnFloorCyanSamples, lowChurnWallCyanSamples);
+  lowChurnDiagnostics.floorCyanSamples = lowChurnFloorCyanSamples;
+  lowChurnDiagnostics.wallCyanSamples = lowChurnWallCyanSamples;
   assertNoUnexpectedBrowserMessages("Low-churn render", lowChurnMessageStart);
 
-  console.log(JSON.stringify({ ok: true, screenshot: fullGraphicsScreenshot, lowChurnScreenshot, diagnostics }, null, 2));
+  console.log(JSON.stringify({ ok: true, screenshot: fullGraphicsScreenshot, lowChurnScreenshot, diagnostics, lowChurnDiagnostics }, null, 2));
 } finally {
   await browser.close();
 }

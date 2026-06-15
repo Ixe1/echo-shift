@@ -2619,6 +2619,42 @@ try {
   });
   farMagnetSim.step(idle);
   assert(!farMagnetSim.snapshot().coreOffsets.has("far-magnet-core"), "Placed cores outside magnet radius should not create per-frame magnet offsets");
+
+  const lazyMagnetActor = makeActor("lazy-magnet-player", "player", { x: 18, y: 86 });
+  const lazyMagnetOptions = (calls) => ({
+    magnetBlockerSolids: () => {
+      calls.solids += 1;
+      return baseLevel.solids;
+    },
+    magnetBlockers: () => {
+      calls.dynamic += 1;
+      return [];
+    }
+  });
+  const noCoreLazyCalls = { solids: 0, dynamic: 0 };
+  updateObjects({ ...baseLevel, cores: [] }, [lazyMagnetActor], createObjectState({ ...baseLevel, cores: [] }), 0, new Set(), lazyMagnetOptions(noCoreLazyCalls));
+  assert(noCoreLazyCalls.solids === 0 && noCoreLazyCalls.dynamic === 0, `Expected no lazy magnet blockers without authored cores, got ${JSON.stringify(noCoreLazyCalls)}`);
+  const farCoreLazyCalls = { solids: 0, dynamic: 0 };
+  const farLazyLevel = {
+    ...baseLevel,
+    bounds: { x: 0, y: 0, w: 520, h: 180 },
+    solids: [
+      { id: "floor", x: 0, y: 120, w: 520, h: 40 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 180 },
+      { id: "right-wall", x: 520, y: 0, w: 20, h: 180 }
+    ],
+    cores: [{ id: "far-lazy-core", x: 430, y: 90, w: 18, h: 18 }]
+  };
+  updateObjects(farLazyLevel, [lazyMagnetActor], createObjectState(farLazyLevel), 0, new Set(), lazyMagnetOptions(farCoreLazyCalls));
+  assert(farCoreLazyCalls.solids === 0 && farCoreLazyCalls.dynamic === 0, `Expected no lazy magnet blockers for far cores, got ${JSON.stringify(farCoreLazyCalls)}`);
+  const nearCoreLazyCalls = { solids: 0, dynamic: 0 };
+  const nearLazyLevel = {
+    ...baseLevel,
+    cores: [{ id: "near-lazy-core", x: 78, y: 90, w: 18, h: 18 }]
+  };
+  updateObjects(nearLazyLevel, [lazyMagnetActor], createObjectState(nearLazyLevel), 0, new Set(), lazyMagnetOptions(nearCoreLazyCalls));
+  assert(nearCoreLazyCalls.solids > 0 && nearCoreLazyCalls.dynamic > 0, `Expected lazy magnet blockers only when a core is near enough to move, got ${JSON.stringify(nearCoreLazyCalls)}`);
+
   const clonedMagnetSnapshot = coreMagnetSim.snapshot();
   const renderMagnetSnapshot = coreMagnetSim.snapshot({ cloneTransientCoreState: false });
   assert(clonedMagnetSnapshot.coreOffsets !== coreMagnetSim.objectState.coreOffsets, "Default snapshot should clone core magnet offsets");
@@ -2667,6 +2703,15 @@ try {
   assert(!doorBlockedMagnetSim.snapshot().coreOffsets.has("door-blocked-magnet-core"), "Placed core should not magnetize through a closed door");
   assert(!doorBlockedMagnetSim.objectState.collectedCores.has("door-blocked-magnet-core"), "Placed core should not be collected through a closed door");
 
+  const requiredDoorBlockedMagnetSim = new RoomSimulation({
+    ...baseLevel,
+    doors: [{ id: "required-magnet-door", x: 52, y: 68, w: 10, h: 64, requiresCore: "missing-required-core" }],
+    cores: [{ id: "required-door-blocked-magnet-core", x: 72, y: 90, w: 18, h: 18 }]
+  });
+  runFrames(requiredDoorBlockedMagnetSim, 20, idle);
+  assert(!requiredDoorBlockedMagnetSim.snapshot().coreOffsets.has("required-door-blocked-magnet-core"), "Placed core should not magnetize through a closed required-core door");
+  assert(!requiredDoorBlockedMagnetSim.objectState.collectedCores.has("required-door-blocked-magnet-core"), "Placed core should not be collected through a closed required-core door");
+
   const doorClosingMagnetSim = new RoomSimulation({
     ...baseLevel,
     start: { x: 58, y: 86 },
@@ -2698,6 +2743,43 @@ try {
   assert(
     sameTickMagnetOffset && sameTickMagnetOffset.x < 0,
     `Same-tick key-core pickup should open the core door before later placed-core magnet checks, got ${JSON.stringify(sameTickMagnetOffset)}`
+  );
+
+  const sameTickRequiredSpillSim = new RoomSimulation({
+    ...baseLevel,
+    doors: [{ id: "same-tick-spill-core-door", x: 52, y: 70, w: 10, h: 58, requiresCore: "same-tick-spill-key" }],
+    cores: [{ id: "same-tick-spill-key", x: 18, y: 86, w: 24, h: 24, size: "large" }]
+  });
+  sameTickRequiredSpillSim.objectState = {
+    ...sameTickRequiredSpillSim.objectState,
+    spilledCores: new Map([
+      [
+        "manual-same-tick-required-loose",
+        {
+          id: "manual-same-tick-required-loose",
+          sourceId: "manual-same-tick-required-core",
+          x: 34,
+          y: 90,
+          w: 18,
+          h: 18,
+          vx: 20,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 8
+        }
+      ]
+    ])
+  };
+  sameTickRequiredSpillSim.step(idle);
+  assert(
+    sameTickRequiredSpillSim.objectState.collectedCores.has("same-tick-spill-key"),
+    "Expected same-tick key pickup to open the required-core door before loose-core collision"
+  );
+  const sameTickRequiredLooseCore = sameTickRequiredSpillSim.objectState.spilledCores.get("manual-same-tick-required-loose");
+  assert(sameTickRequiredLooseCore, "Expected same-tick required-door loose core to remain after pass-through");
+  assert(
+    sameTickRequiredLooseCore.x > 40 && sameTickRequiredLooseCore.vx > 0,
+    `Loose spilled core should pass through a required-core door opened by same-frame key pickup, got ${JSON.stringify(sameTickRequiredLooseCore)}`
   );
 
   const doorClosingSpillSim = new RoomSimulation({
