@@ -3683,16 +3683,19 @@ try {
     onGround: false
   });
   assert(
-    !actorKillsMonster(topThresholdActor(0.35), 68, topThresholdMonster, topThresholdRect),
-    "Expected top monster contact exactly at vertical speed grace to remain lethal"
+    !actorKillsMonster(topThresholdActor(0), 68, topThresholdMonster, topThresholdRect),
+    "Expected top monster contact with no vertical direction to remain lethal"
   );
   assert(
-    !actorKillsMonster(topThresholdActor(0.34), 68, topThresholdMonster, topThresholdRect),
-    "Expected top monster contact below vertical speed grace to remain lethal"
+    actorKillsMonster(topThresholdActor(0.01), 68, topThresholdMonster, topThresholdRect),
+    "Expected shallow descending top monster contact to kill"
   );
+  const shallowApexTopMonsterSim = new RoomSimulation(monsterLevel);
+  Object.assign(shallowApexTopMonsterSim.player, { x: 42, y: 69, vx: 0, vy: -0.71, onGround: false });
+  const shallowApexTopMonster = shallowApexTopMonsterSim.step(idle);
   assert(
-    actorKillsMonster(topThresholdActor(0.36), 68, topThresholdMonster, topThresholdRect),
-    "Expected top monster contact above vertical speed grace to kill"
+    shallowApexTopMonster.monsterKills.length === 1 && !shallowApexTopMonsterSim.dead,
+    "Expected first shallow descending frame after apex to kill from above"
   );
 
   const edgeOverhangMonsterSim = new RoomSimulation(monsterLevel);
@@ -3836,16 +3839,22 @@ try {
     onGround: false
   });
   assert(
-    !actorKillsMonster(undersideThresholdActor(-0.35), 76, undersideThresholdMonster, undersideThresholdRect),
-    "Expected underside monster contact exactly at vertical speed grace to remain lethal"
+    !actorKillsMonster(undersideThresholdActor(0), 76, undersideThresholdMonster, undersideThresholdRect),
+    "Expected underside monster contact with no vertical direction to remain lethal"
   );
   assert(
-    !actorKillsMonster(undersideThresholdActor(-0.34), 76, undersideThresholdMonster, undersideThresholdRect),
-    "Expected underside monster contact below vertical speed grace to remain lethal"
+    actorKillsMonster(undersideThresholdActor(-0.01), 76, undersideThresholdMonster, undersideThresholdRect),
+    "Expected shallow rising underside monster contact to kill"
   );
+  const shallowApexUndersideMonsterSim = new RoomSimulation({
+    ...baseLevel,
+    monsters: [{ id: "under-shallow-apex-test", kind: "copper-leech", x: 40, y: 50, w: 28, h: 24, score: 200 }]
+  });
+  Object.assign(shallowApexUndersideMonsterSim.player, { x: 42, y: 74, vx: 0, vy: -0.73, onGround: false });
+  const shallowApexUnderside = shallowApexUndersideMonsterSim.step(idle);
   assert(
-    actorKillsMonster(undersideThresholdActor(-0.36), 76, undersideThresholdMonster, undersideThresholdRect),
-    "Expected underside monster contact above vertical speed grace to kill"
+    shallowApexUnderside.monsterKills.length === 1 && !shallowApexUndersideMonsterSim.dead,
+    "Expected first shallow rising frame near apex to kill from below"
   );
 
   const undersideOverhangMonsterSim = new RoomSimulation({
@@ -5962,6 +5971,30 @@ try {
   assert(
     ledgeMovingPlatformSim.player.standingOn === "catch-moving-platform-ledge",
     `Expected ledge forgiveness to set moving-platform standing target, got ${ledgeMovingPlatformSim.player.standingOn}`
+  );
+
+  const ledgeBlockedByOverheadOneWaySim = new RoomSimulation({
+    ...ledgeForgivenessLevel,
+    oneWays: [{ id: "overhead-one-way-blocker", x: 64, y: 70, w: 28, h: 12 }]
+  });
+  Object.assign(ledgeBlockedByOverheadOneWaySim.player, { x: 56, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  ledgeBlockedByOverheadOneWaySim.step(right);
+  assert(!ledgeBlockedByOverheadOneWaySim.player.onGround, "Ledge forgiveness should not snap into an overhead one-way support");
+  assert(
+    ledgeBlockedByOverheadOneWaySim.player.y !== 66,
+    `Overhead one-way blocker should prevent ledge snap, got ${JSON.stringify(ledgeBlockedByOverheadOneWaySim.player)}`
+  );
+
+  const ledgeBlockedByOverheadPlatformSim = new RoomSimulation({
+    ...ledgeForgivenessLevel,
+    platforms: [{ id: "overhead-platform-blocker", x: 64, y: 70, w: 28, h: 12, axis: "x", distance: 0, period: 120 }]
+  });
+  Object.assign(ledgeBlockedByOverheadPlatformSim.player, { x: 56, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  ledgeBlockedByOverheadPlatformSim.step(right);
+  assert(!ledgeBlockedByOverheadPlatformSim.player.onGround, "Ledge forgiveness should not snap into an overhead moving platform");
+  assert(
+    ledgeBlockedByOverheadPlatformSim.player.y !== 66,
+    `Overhead moving-platform blocker should prevent ledge snap, got ${JSON.stringify(ledgeBlockedByOverheadPlatformSim.player)}`
   );
 
   const ledgeRisingSim = new RoomSimulation(ledgeForgivenessLevel);

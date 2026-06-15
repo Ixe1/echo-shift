@@ -28,6 +28,11 @@ const parseRect = (value) => {
   return { x, y, w, h };
 };
 
+const countSpillFrames = (frames) =>
+  frames
+    .split("|")
+    .filter((frame) => frame.includes(":spill:")).length;
+
 const gameSceneDiagnosticKeys = [
   "echoShiftScoreEligible",
   "echoShiftMusicLoading",
@@ -214,10 +219,7 @@ const bonusLifeAfterLossLevel = {
   lasers: [{ id: "bonus-loss-laser", x: 430, y: 420, w: 16, h: 60, startsOn: true }],
   movingLasers: [],
   drones: [],
-  cores: [
-    ...Array.from({ length: 29 }, (_, index) => ({ id: `bonus-before-loss-core-${index}`, x: 24, y: 438, w: 18, h: 18 })),
-    { id: "bonus-after-loss-core", x: 300, y: 438, w: 18, h: 18 }
-  ],
+  cores: Array.from({ length: 29 }, (_, index) => ({ id: `bonus-before-loss-core-${index}`, x: 24, y: 438, w: 18, h: 18 })),
   hazards: [{ id: "bonus-loss-spark", x: 128, y: 436, w: 62, h: 38 }],
   crates: [],
   monsters: [],
@@ -425,22 +427,36 @@ try {
   const postLossDiagnostics = await page.evaluate(() => ({
     hudCores: Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0"),
     lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
-    toast: document.querySelector("[data-toast]")?.textContent?.trim() || ""
+    toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
+    spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || ""
   }));
   await page.waitForFunction(
-    (postLossCoreCount) => {
+    ({ postLossCoreCount, postLossSpillCount }) => {
       const cores = Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0");
-      return cores > postLossCoreCount && cores < 30 && document.querySelector("[data-lives]")?.textContent?.trim() === "3";
+      const currentSpillCount = (document.documentElement.dataset.echoShiftCoreSpriteFrames || "")
+        .split("|")
+        .filter((frame) => frame.includes(":spill:")).length;
+      return (
+        cores > postLossCoreCount &&
+        cores < 30 &&
+        currentSpillCount < postLossSpillCount &&
+        document.querySelector("[data-lives]")?.textContent?.trim() === "3"
+      );
     },
-    postLossDiagnostics.hudCores,
+    { postLossCoreCount: postLossDiagnostics.hudCores, postLossSpillCount: countSpillFrames(postLossDiagnostics.spillFrames) },
     { timeout: 9000 }
   );
   const postRecoveryBonusDiagnostics = await page.evaluate(() => ({
     hudCores: Number(document.querySelector("[data-cores]")?.textContent?.trim() || "0"),
     lives: document.querySelector("[data-lives]")?.textContent?.trim() || "",
-    toast: document.querySelector("[data-toast]")?.textContent?.trim() || ""
+    toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
+    spillFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || ""
   }));
   assert(postLossDiagnostics.lives === "3", `Expected no bonus life immediately after core loss below threshold, got ${JSON.stringify(postLossDiagnostics)}`);
+  assert(
+    countSpillFrames(postLossDiagnostics.spillFrames) > countSpillFrames(postRecoveryBonusDiagnostics.spillFrames),
+    `Expected below-threshold recovery to consume a spilled loose core, got ${JSON.stringify({ postLossDiagnostics, postRecoveryBonusDiagnostics })}`
+  );
   assert(
     postRecoveryBonusDiagnostics.lives === "3" && postRecoveryBonusDiagnostics.hudCores > postLossDiagnostics.hudCores && postRecoveryBonusDiagnostics.hudCores < 30,
     `Expected collecting below-threshold cores after a spill not to award a stale bonus life, got ${JSON.stringify({ postLossDiagnostics, postRecoveryBonusDiagnostics })}`
