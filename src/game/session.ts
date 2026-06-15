@@ -46,10 +46,10 @@ const finiteLifeCount = (value: unknown, fallback = DEFAULT_GLOBAL_LIVES): numbe
   return Number.isFinite(numeric) ? Math.max(0, Math.round(numeric)) : fallback;
 };
 
-export const resetCampaignCoreBonusProgress = (): void => {
+export const resetCampaignCoreBonusProgress = (options: { preserveAwarded?: boolean } = {}): void => {
   campaignVitals.collectedCoreCount = 0;
   campaignVitals.collectedCoreKeys.clear();
-  campaignVitals.awardedBonusLives = 0;
+  if (!options.preserveAwarded) campaignVitals.awardedBonusLives = 0;
 };
 
 export const resetCampaignVitals = (lives = DEFAULT_GLOBAL_LIVES): void => {
@@ -121,7 +121,10 @@ export const syncCampaignCoreBonusProgress = (carriedCoreCount: number): CoreLif
 export const restoreCampaignCoreBonusProgress = (carriedCoreCount: number): CoreLifeAward => {
   const nextCoreCount = finiteLifeCount(carriedCoreCount, 0);
   campaignVitals.collectedCoreCount = nextCoreCount;
-  campaignVitals.awardedBonusLives = Math.floor(nextCoreCount / CORES_PER_BONUS_LIFE);
+  campaignVitals.awardedBonusLives = Math.max(
+    campaignVitals.awardedBonusLives,
+    Math.floor(nextCoreCount / CORES_PER_BONUS_LIFE)
+  );
   return {
     counted: true,
     livesAwarded: 0,

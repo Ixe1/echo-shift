@@ -23,15 +23,26 @@ const startAudioGate = async (page) => {
   await page.locator("[data-start-game]").click();
 };
 
-const waitForLevelIntro = async (page) => {
-  await page.waitForFunction(
-    () => {
-      const phase = document.documentElement.dataset.echoShiftLevelIntro;
-      return phase === "exiting" || phase === "idle";
-    },
-    null,
-    { timeout: 12000 }
-  );
+const waitForLevelIntro = async (page, messages) => {
+  try {
+    await page.waitForFunction(
+      () => {
+        const phase = document.documentElement.dataset.echoShiftLevelIntro;
+        return phase === "exiting" || phase === "idle";
+      },
+      null,
+      { timeout: 12000 }
+    );
+  } catch (error) {
+    const diagnostics = await page.evaluate(() => ({
+      phase: document.documentElement.dataset.echoShiftLevelIntro || "",
+      boot: document.documentElement.dataset.echoShiftBootLoading || "",
+      music: document.documentElement.dataset.echoShiftMusicLoading || "",
+      startGateVisible: Boolean(document.querySelector("[data-start-game]")),
+      bodyText: document.body.textContent?.slice(0, 240) || ""
+    }));
+    throw new Error(`Timed out waiting for level intro: ${JSON.stringify(diagnostics)}; messages=${JSON.stringify(messages)}; ${error.message}`);
+  }
 };
 
 const level = {
@@ -140,7 +151,7 @@ try {
   await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
   await startAudioGate(page);
   await page.locator("canvas").waitFor({ state: "visible" });
-  await waitForLevelIntro(page);
+  await waitForLevelIntro(page, messages);
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await page.keyboard.down("ArrowRight");
   await page.waitForFunction(
@@ -173,9 +184,23 @@ try {
       height: document.querySelector("canvas")?.clientHeight || 0
     }
   }));
-  await page.keyboard.up("ArrowRight");
 
   assert(spillDiagnostics.coreFrames.includes("spill:"), `Expected spilled core sprites in diagnostics, got ${spillDiagnostics.coreFrames}`);
+  const spillPositions = spillDiagnostics.coreFrames
+    .split("|")
+    .filter((frame) => frame.includes(":spill:"))
+    .map((frame) => {
+      const match = frame.match(/:spill:(-?\d+),(-?\d+)$/);
+      return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+    });
+  assert(
+    spillPositions.length > 0 && spillPositions.every(Boolean),
+    `Expected spilled core diagnostics to include positions, got ${spillDiagnostics.coreFrames}`
+  );
+  if (spillPositions.length > 1) {
+    const xs = spillPositions.map((position) => position.x);
+    assert(Math.max(...xs) - Math.min(...xs) >= 8, `Expected spilled core positions to visibly separate, got ${JSON.stringify(spillPositions)}`);
+  }
   assert(spillDiagnostics.invulnerabilityFrames > 0, `Expected active core-save invulnerability, got ${spillDiagnostics.invulnerabilityFrames}`);
   assert(spillDiagnostics.hudCores === "1", `Expected HUD to show only carried cores immediately after spill, got ${spillDiagnostics.hudCores}`);
   assert(!spillDiagnostics.hudCores.includes("/"), `HUD should not include map-total core count, got ${spillDiagnostics.hudCores}`);
@@ -194,12 +219,15 @@ try {
     hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
     coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || ""
   }));
+  await page.keyboard.up("ArrowRight");
+  assert(screenshotDiagnostics.hudCores === "1", `Core-spill screenshot should capture asserted HUD state 1, got ${screenshotDiagnostics.hudCores}`);
+  assert(screenshotDiagnostics.coreFrames.includes("spill:"), `Core-spill screenshot should capture visible spill sprite state, got ${screenshotDiagnostics.coreFrames}`);
 
   await installDraft(protectedLevel);
   await page.goto(`${url}?playtestDraft=1&level=0&diagnostics=1&fullGraphics=1`, { waitUntil: "networkidle" });
   await startAudioGate(page);
   await page.locator("canvas").waitFor({ state: "visible" });
-  await waitForLevelIntro(page);
+  await waitForLevelIntro(page, messages);
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await page.keyboard.down("ArrowRight");
   await page.waitForFunction(
@@ -229,7 +257,6 @@ try {
     deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || "",
     playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
   }));
-  await page.keyboard.up("ArrowRight");
 
   assert(!protectedDiagnostics.coreFrames.includes("spill:"), `Protected key-core save should not create spill sprites, got ${protectedDiagnostics.coreFrames}`);
   assert(protectedDiagnostics.doors.includes("door:protected-door:9"), `Protected key-core should keep required door open, got ${protectedDiagnostics.doors}`);
@@ -246,15 +273,22 @@ try {
 
   const protectedScreenshot = `${outDir}/protected-core-save-render-qa.png`;
   await page.screenshot({ path: protectedScreenshot, fullPage: true });
+  const protectedScreenshotDiagnostics = await page.evaluate(() => ({
+    hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
+    coreFrames: document.documentElement.dataset.echoShiftCoreSpriteFrames || ""
+  }));
+  await page.keyboard.up("ArrowRight");
+  assert(protectedScreenshotDiagnostics.hudCores === "1", `Protected-save screenshot should capture asserted HUD state 1, got ${protectedScreenshotDiagnostics.hudCores}`);
+  assert(!protectedScreenshotDiagnostics.coreFrames.includes("spill:"), `Protected-save screenshot should capture no-spill state, got ${protectedScreenshotDiagnostics.coreFrames}`);
 
   const unexpectedMessages = messages.filter((msg) => !isAllowedBrowserMessage(msg));
   assert(unexpectedMessages.length === 0, `Core spill render console/page messages: ${JSON.stringify(unexpectedMessages)}`);
 
   writeFileSync(
     `${outDir}/core-spill-render-qa.json`,
-    JSON.stringify({ diagnostics: spillDiagnostics, screenshotDiagnostics, protectedDiagnostics, messages }, null, 2)
+    JSON.stringify({ diagnostics: spillDiagnostics, screenshotDiagnostics, protectedDiagnostics, protectedScreenshotDiagnostics, messages }, null, 2)
   );
-  console.log(JSON.stringify({ ok: true, screenshot, protectedScreenshot, diagnostics: spillDiagnostics, screenshotDiagnostics, protectedDiagnostics }, null, 2));
+  console.log(JSON.stringify({ ok: true, screenshot, protectedScreenshot, diagnostics: spillDiagnostics, screenshotDiagnostics, protectedDiagnostics, protectedScreenshotDiagnostics }, null, 2));
 } finally {
   await browser.close();
 }

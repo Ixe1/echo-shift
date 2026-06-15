@@ -51,7 +51,7 @@ import {
   type EchoRecording
 } from "./recording";
 import { finalScoreForLevel, timeBonusForFrames } from "./scoring";
-import { solidHasGameplayCollision } from "./solidCollision";
+import { solidHasFullCollision, solidHasGameplayCollision } from "./solidCollision";
 import { TERRAIN_TILE_SIZE } from "./terrainMaterials";
 import type { ActorBody, Boss, BossAttackSnapshot, BossSnapshot, Core, InputFrame, Level, Monster, Rect, SimulationSnapshot, Solid, SpilledCore, StepEvents } from "./types";
 
@@ -113,6 +113,7 @@ const cloneObjectState = (state: ObjectState): ObjectState => ({
 
 const cloneCheckpointObjectState = (state: ObjectState): ObjectState => ({
   ...cloneObjectState(state),
+  coreOffsets: new Map(),
   spilledCores: new Map()
 });
 
@@ -330,7 +331,7 @@ export class RoomSimulation {
       latchedPlates,
       openDoors: collectOpenDoors(this.level.doors || [], activePlates, this.objectState.collectedCores, defeatedBossIds),
       blockedLasers: collectBlockedLasers([...(this.level.lasers || []), ...(this.level.movingLasers || [])], crateRects, activePlates, this.tick),
-      coreOffsets: new Map([...this.objectState.coreOffsets.entries()].map(([id, offset]) => [id, { ...offset }])),
+      coreOffsets: new Map(),
       spilledCores: new Map()
     };
   }
@@ -399,7 +400,7 @@ export class RoomSimulation {
     const platforms = platformFramesAt(this.level.platforms, this.tick);
     const doors = closedDoorRects(this.level, this.objectState.openDoors);
     const solids = this.runtimeSolids;
-    this.advanceSpilledCores(this.spilledCoreSupportRects(doors, platforms));
+    this.advanceSpilledCores(this.spilledCoreSupportRects(doors, platforms), this.spilledCoreBlockerRects(doors));
     const baseDynamic = {
       oneWays: this.level.oneWays,
       conveyors: this.level.conveyors,
@@ -1154,11 +1155,12 @@ export class RoomSimulation {
     this.score = Math.max(0, this.score - this.level.score.coreScore);
   }
 
-  private advanceSpilledCores(supports: Rect[]): void {
+  private advanceSpilledCores(supports: Rect[], blockers: Rect[]): void {
     if (this.objectState.spilledCores.size === 0) return;
     const nextSpilledCores = new Map<string, SpilledCore>();
     for (const [id, looseCore] of this.objectState.spilledCores) {
       if (looseCore.ttlFrames <= 1) continue;
+      const previousX = looseCore.x;
       const previousY = looseCore.y;
       const moved: SpilledCore = {
         ...looseCore,
@@ -1168,8 +1170,10 @@ export class RoomSimulation {
         vy: Math.min(CORE_SPILL_MAX_FALL_SPEED, looseCore.vy + CORE_SPILL_GRAVITY)
       };
       moved.x += moved.vx;
-      moved.y += moved.vy;
       this.resolveSpilledCoreBounds(moved);
+      this.resolveSpilledCoreHorizontal(moved, previousX, blockers);
+      moved.y += moved.vy;
+      this.resolveSpilledCoreVertical(moved, previousY, blockers);
       this.resolveSpilledCoreTerrain(moved, previousY, supports);
       nextSpilledCores.set(id, moved);
     }
@@ -1187,6 +1191,14 @@ export class RoomSimulation {
     ];
   }
 
+  private spilledCoreBlockerRects(doors: Rect[]): Rect[] {
+    return [
+      ...this.runtimeSolids.filter(solidHasFullCollision),
+      ...doors,
+      ...this.objectState.crates.values()
+    ];
+  }
+
   private resolveSpilledCoreBounds(core: SpilledCore): void {
     const minX = this.level.bounds.x;
     const maxX = this.level.bounds.x + this.level.bounds.w - core.w;
@@ -1196,6 +1208,43 @@ export class RoomSimulation {
     } else if (core.x > maxX) {
       core.x = maxX;
       core.vx = -Math.abs(core.vx) * CORE_SPILL_BOUNCE;
+    }
+  }
+
+  private resolveSpilledCoreHorizontal(core: SpilledCore, previousX: number, blockers: Rect[]): void {
+    if (Math.abs(core.vx) < 0.01) return;
+    for (const blocker of blockers) {
+      if (!rectsOverlap(core, blocker)) continue;
+      const previousRight = previousX + core.w;
+      if (core.vx > 0 && previousRight <= blocker.x + 1) {
+        core.x = blocker.x - core.w;
+        core.vx = -Math.abs(core.vx) * CORE_SPILL_BOUNCE;
+        return;
+      }
+      if (core.vx < 0 && previousX >= blocker.x + blocker.w - 1) {
+        core.x = blocker.x + blocker.w;
+        core.vx = Math.abs(core.vx) * CORE_SPILL_BOUNCE;
+        return;
+      }
+    }
+  }
+
+  private resolveSpilledCoreVertical(core: SpilledCore, previousY: number, blockers: Rect[]): void {
+    if (Math.abs(core.vy) < 0.01) return;
+    for (const blocker of blockers) {
+      if (!rectsOverlap(core, blocker)) continue;
+      const previousBottom = previousY + core.h;
+      if (core.vy < 0 && previousY >= blocker.y + blocker.h - 1) {
+        core.y = blocker.y + blocker.h;
+        core.vy = Math.abs(core.vy) * CORE_SPILL_BOUNCE;
+        return;
+      }
+      if (core.vy > 0 && previousBottom <= blocker.y + 2) {
+        core.y = blocker.y - core.h;
+        core.vy = Math.abs(core.vy) > 1.2 ? -Math.abs(core.vy) * CORE_SPILL_BOUNCE : 0;
+        core.vx *= 0.82;
+        return;
+      }
     }
   }
 

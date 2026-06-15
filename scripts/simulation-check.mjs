@@ -1774,6 +1774,21 @@ try {
     duplicateCheckpointProgress.livesAwarded === 0 && duplicateCheckpointProgress.lives === 4,
     `Expected post-checkpoint inventory change not to re-award restored threshold, got ${JSON.stringify(duplicateCheckpointProgress)}`
   );
+  resetCampaignVitals(3);
+  const earnedBeforeLowCoreCheckpoint = syncCampaignCoreBonusProgress(CORES_PER_BONUS_LIFE);
+  assert(earnedBeforeLowCoreCheckpoint.livesAwarded === 1 && earnedBeforeLowCoreCheckpoint.lives === 4, `Expected pre-checkpoint threshold to award once, got ${JSON.stringify(earnedBeforeLowCoreCheckpoint)}`);
+  syncCampaignCoreBonusProgress(10);
+  resetCampaignCoreBonusProgress({ preserveAwarded: true });
+  const restoredLowCoreCheckpoint = restoreCampaignCoreBonusProgress(10);
+  assert(
+    restoredLowCoreCheckpoint.livesAwarded === 0 && restoredLowCoreCheckpoint.lives === 4 && campaignCoreCount() === 10,
+    `Expected low-core checkpoint restore to keep lives and carried count without award, got ${JSON.stringify(restoredLowCoreCheckpoint)}`
+  );
+  const duplicateAfterLowCoreCheckpoint = syncCampaignCoreBonusProgress(CORES_PER_BONUS_LIFE);
+  assert(
+    duplicateAfterLowCoreCheckpoint.livesAwarded === 0 && duplicateAfterLowCoreCheckpoint.lives === 4,
+    `Expected low-core checkpoint restore to preserve prior threshold memory, got ${JSON.stringify(duplicateAfterLowCoreCheckpoint)}`
+  );
   resetCampaignVitals(2);
   for (let index = 1; index < CORES_PER_BONUS_LIFE; index += 1) registerCampaignCorePickup("death-reset", `core-${index}`);
   syncCampaignLives(1);
@@ -2432,6 +2447,98 @@ try {
     `Expected spilled core to settle on one-way platform, got ${JSON.stringify(oneWayLooseCore)}`
   );
 
+  const spilledCoreNoMagnetSim = new RoomSimulation({
+    ...baseLevel,
+    cores: []
+  });
+  spilledCoreNoMagnetSim.objectState = {
+    ...spilledCoreNoMagnetSim.objectState,
+    spilledCores: new Map([
+      [
+        "manual-loose-core",
+        {
+          id: "manual-loose-core",
+          sourceId: "manual-core",
+          x: 78,
+          y: 86,
+          w: 18,
+          h: 18,
+          vx: 0,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 20
+        }
+      ]
+    ])
+  };
+  Object.assign(spilledCoreNoMagnetSim.player, { x: 20, y: 86, vx: 0, vy: 0, onGround: true });
+  runFrames(spilledCoreNoMagnetSim, 8, idle);
+  const nonMagneticLooseCore = spilledCoreNoMagnetSim.objectState.spilledCores.get("manual-loose-core");
+  assert(nonMagneticLooseCore, "Expected manually seeded loose core to remain before pickup delay ends");
+  assert(
+    Math.abs(nonMagneticLooseCore.x - 78) < 0.01,
+    `Spilled loose core should not magnetize horizontally toward nearby player, got ${JSON.stringify(nonMagneticLooseCore)}`
+  );
+
+  const spilledCoreBlockerSim = new RoomSimulation({
+    ...baseLevel,
+    cores: [],
+    solids: [
+      ...baseLevel.solids,
+      { id: "spill-side-wall", x: 70, y: 60, w: 12, h: 70 },
+      { id: "spill-ceiling", x: 96, y: 70, w: 80, h: 10 }
+    ]
+  });
+  spilledCoreBlockerSim.objectState = {
+    ...spilledCoreBlockerSim.objectState,
+    spilledCores: new Map([
+      [
+        "side-loose-core",
+        {
+          id: "side-loose-core",
+          sourceId: "side-core",
+          x: 48,
+          y: 86,
+          w: 18,
+          h: 18,
+          vx: 8,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 20
+        }
+      ],
+      [
+        "ceiling-loose-core",
+        {
+          id: "ceiling-loose-core",
+          sourceId: "ceiling-core",
+          x: 112,
+          y: 90,
+          w: 18,
+          h: 18,
+          vx: 0,
+          vy: -14,
+          ttlFrames: 120,
+          pickupDelayFrames: 20
+        }
+      ]
+    ])
+  };
+  Object.assign(spilledCoreBlockerSim.player, { x: 240, y: 86, vx: 0, vy: 0, onGround: true });
+  spilledCoreBlockerSim.step(idle);
+  const sideBlockedLooseCore = spilledCoreBlockerSim.objectState.spilledCores.get("side-loose-core");
+  const ceilingBlockedLooseCore = spilledCoreBlockerSim.objectState.spilledCores.get("ceiling-loose-core");
+  assert(sideBlockedLooseCore, "Expected side-blocked loose core to remain active");
+  assert(ceilingBlockedLooseCore, "Expected ceiling-blocked loose core to remain active");
+  assert(
+    sideBlockedLooseCore.x + sideBlockedLooseCore.w <= 70.5 && sideBlockedLooseCore.vx < 0,
+    `Expected spilled core to bounce off side wall, got ${JSON.stringify(sideBlockedLooseCore)}`
+  );
+  assert(
+    ceilingBlockedLooseCore.y >= 80 && ceilingBlockedLooseCore.vy > 0,
+    `Expected spilled core to bounce down from ceiling, got ${JSON.stringify(ceilingBlockedLooseCore)}`
+  );
+
   const coreLaserDeathSim = new RoomSimulation({
     ...baseLevel,
     cores: [{ id: "laser-shield-core", x: 18, y: 86, w: 18, h: 18 }],
@@ -2463,6 +2570,13 @@ try {
   largeOnlySaveSim.level.hazards = [{ id: "key-spark-second", x: largeOnlySaveSim.player.x, y: largeOnlySaveSim.player.y, w: 36, h: 34 }];
   const largeOnlySecondHit = largeOnlySaveSim.step(idle);
   assert(largeOnlySaveSim.dead && largeOnlySecondHit.died, "Protected large/key core should not provide indefinite repeated saves");
+  largeOnlySaveSim.level.hazards = [{ id: "key-spark-retry", x: 18, y: 86, w: 36, h: 34 }];
+  largeOnlySaveSim.resetLifeAttempt();
+  const largeOnlyRetrySave = largeOnlySaveSim.step(idle);
+  assert(
+    !largeOnlySaveSim.dead && largeOnlyRetrySave.coreSpill?.protectedCoreIds.includes("required-key-only"),
+    `Protected large/key core should reset its one save after a normal retry, got ${JSON.stringify(largeOnlyRetrySave.coreSpill)}`
+  );
 
   const mixedProtectedFallbackSim = new RoomSimulation({
     ...baseLevel,

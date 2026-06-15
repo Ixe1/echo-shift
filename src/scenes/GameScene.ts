@@ -1758,7 +1758,7 @@ export class GameScene extends Phaser.Scene {
 
   private resetFiniteCoreBonusProgress(): void {
     if (!levelUsesFiniteLives(this.level)) return;
-    resetCampaignCoreBonusProgress();
+    resetCampaignCoreBonusProgress({ preserveAwarded: this._simulation?.snapshot().bossCheckpointActive === true });
   }
 
   private restoreFiniteCoreBonusProgress(): void {
@@ -4479,7 +4479,9 @@ export class GameScene extends Phaser.Scene {
         .setPosition(Math.round(center.x), Math.round(center.y))
         .setScale(0.3)
         .setAlpha(0.9);
-      if (this.diagnosticsEnabled) this.coreSpriteFrames.push(`${spriteId}:${textureKey}:${frame}:spill`);
+      if (this.diagnosticsEnabled) {
+        this.coreSpriteFrames.push(`${spriteId}:${textureKey}:${frame}:spill:${Math.round(core.x)},${Math.round(core.y)}`);
+      }
       activeIds.add(spriteId);
     }
 
