@@ -67,3 +67,13 @@ export const bossFrameForKind = (kind: BossKind, state: BossSpriteState = "idle"
 
 export const monsterFrameForKind = (kind: MonsterKind, animationFrame = 0): number =>
   (monsterBaseFrames[kind] ?? monsterBaseFrames["sprout-hopper"]) + (((Math.round(animationFrame) % MONSTER_FRAMES_PER_KIND) + MONSTER_FRAMES_PER_KIND) % MONSTER_FRAMES_PER_KIND);
+
+export const monsterSpriteFlipX = (kind: MonsterKind, facingLeft: boolean): boolean => {
+  if (kind === "copper-leech") return !facingLeft;
+  return facingLeft;
+};
+
+export const monsterRenderedFacingLeft = (kind: MonsterKind, flipX: boolean): boolean => {
+  if (kind === "copper-leech") return !flipX;
+  return flipX;
+};

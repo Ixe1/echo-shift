@@ -356,21 +356,45 @@ const verifyExtraLifeSfxContract = () => {
   );
 };
 
-const verifyMonsterFacingRenderContract = () => {
-  const source = readFileSync("src/scenes/GameScene.ts", "utf8");
-  const syncBody = gameSceneMethodBody(source, "syncMonsterSprite");
-  const flipBody = gameSceneMethodBody(source, "monsterSpriteFlipX");
+const verifyMonsterFacingRenderContract = (monsterRectAt, monsterMovementFacingLeft, monsterRenderedFacingLeft, monsterSpriteFlipX) => {
+  const movingCopperLeech = { id: "moving-copper", kind: "copper-leech", x: 20, y: 50, w: 28, h: 24, axis: "x", distance: 80, period: 120, phase: 0 };
+  const copperRightRect = monsterRectAt(movingCopperLeech, 30);
+  const copperRightMovingLeft = monsterMovementFacingLeft(movingCopperLeech, copperRightRect, 30);
+  const copperRightFlipX = monsterSpriteFlipX(movingCopperLeech.kind, copperRightMovingLeft);
+  assert(!copperRightMovingLeft, "Expected copper leech moving right to report movement facing right");
+  assert(copperRightFlipX, "Expected copper leech moving right to flip its left-facing base art");
   assert(
-    syncBody.includes("const facingLeft = this.monsterFacingLeft(monster, rect, tick);") &&
-      syncBody.includes("const flipX = this.monsterSpriteFlipX(kind, facingLeft);") &&
-      syncBody.includes(".setRotation(visual.rotation * (flipX ? -1 : 1))") &&
-      syncBody.includes(".setFlipX(flipX)") &&
-      syncBody.includes(':flip${flipX ? "1" : "0"}:'),
-    "Expected GameScene syncMonsterSprite to drive monster flip, mirrored rotation, and diagnostics from the resolved render flip"
+    !monsterRenderedFacingLeft(movingCopperLeech.kind, copperRightFlipX),
+    "Expected copper leech moving right to render facing right"
   );
+  const copperLeftRect = monsterRectAt(movingCopperLeech, 90);
+  const copperLeftMovingLeft = monsterMovementFacingLeft(movingCopperLeech, copperLeftRect, 90);
+  const copperLeftFlipX = monsterSpriteFlipX(movingCopperLeech.kind, copperLeftMovingLeft);
+  assert(copperLeftMovingLeft, "Expected copper leech moving left to report movement facing left");
+  assert(!copperLeftFlipX, "Expected copper leech moving left to keep its left-facing base art unflipped");
   assert(
-    flipBody.includes('if (kind === "copper-leech") return !facingLeft;') && flipBody.includes("return facingLeft;"),
-    "Expected GameScene monsterSpriteFlipX to invert copper leech art while preserving the default monster flip path"
+    monsterRenderedFacingLeft(movingCopperLeech.kind, copperLeftFlipX),
+    "Expected copper leech moving left to render facing left"
+  );
+
+  const movingSprout = { id: "moving-sprout", kind: "sprout-hopper", x: 20, y: 86, w: 28, h: 34, axis: "x", distance: 80, period: 120, phase: 0 };
+  const sproutRightRect = monsterRectAt(movingSprout, 30);
+  const sproutRightMovingLeft = monsterMovementFacingLeft(movingSprout, sproutRightRect, 30);
+  const sproutRightFlipX = monsterSpriteFlipX(movingSprout.kind, sproutRightMovingLeft);
+  assert(!sproutRightMovingLeft, "Expected non-copper monster moving right to report movement facing right");
+  assert(!sproutRightFlipX, "Expected non-copper monster moving right to keep its right-facing art unflipped");
+  assert(
+    !monsterRenderedFacingLeft(movingSprout.kind, sproutRightFlipX),
+    "Expected non-copper monster moving right to render facing right"
+  );
+  const sproutLeftRect = monsterRectAt(movingSprout, 90);
+  const sproutLeftMovingLeft = monsterMovementFacingLeft(movingSprout, sproutLeftRect, 90);
+  const sproutLeftFlipX = monsterSpriteFlipX(movingSprout.kind, sproutLeftMovingLeft);
+  assert(sproutLeftMovingLeft, "Expected non-copper monster moving left to report movement facing left");
+  assert(sproutLeftFlipX, "Expected non-copper monster moving left to use the default flip path");
+  assert(
+    monsterRenderedFacingLeft(movingSprout.kind, sproutLeftFlipX),
+    "Expected non-copper monster moving left to render facing left"
   );
 };
 
@@ -1585,10 +1609,12 @@ try {
     defaultMonsterSpeedForKind,
     monsterAnimationProfileForKind,
     monsterKinds,
+    monsterMovementFacingLeft,
     monsterRectAt,
     monsterScore,
     monsterVisualTransformForKind
   } = await server.ssrLoadModule("/src/game/enemies.ts");
+  const { monsterRenderedFacingLeft, monsterSpriteFlipX } = await server.ssrLoadModule("/src/game/enemySprites.ts");
   const { SynthAudio } = await server.ssrLoadModule("/src/game/audio.ts");
 
   const bossNeedsAttackDodge = (boss) => {
@@ -2071,7 +2097,7 @@ try {
   );
   verifyGameSceneAudioCleanupHooks();
   verifyExtraLifeSfxContract();
-  verifyMonsterFacingRenderContract();
+  verifyMonsterFacingRenderContract(monsterRectAt, monsterMovementFacingLeft, monsterRenderedFacingLeft, monsterSpriteFlipX);
   await verifyAudioUnlockRetry(SynthAudio, soundtracks);
 
   const previousWindow = globalThis.window;

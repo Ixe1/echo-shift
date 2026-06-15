@@ -578,6 +578,17 @@ export const monsterRectAt = (monster: Monster, tick: number): Rect => {
   };
 };
 
+export const monsterMovementFacingLeft = (monster: Monster, rect: Rect, tick: number): boolean => {
+  if (monster.axis !== "x" || !monster.distance || monster.distance <= 0) return false;
+  const previous = monsterRectAt(monster, Math.max(0, tick - 1));
+  const dx = rect.x - previous.x;
+  if (Math.abs(dx) > 0.05) return dx < 0;
+  const next = monsterRectAt(monster, tick + 1);
+  const nextDx = next.x - rect.x;
+  if (Math.abs(nextDx) > 0.05) return nextDx < 0;
+  return false;
+};
+
 export const actorKillsMonster = (actor: ActorBody, previousY: number, monster: Monster, rect: Rect): boolean => {
   if (!monsterKillable(monster) || !rectsOverlap(actor, rect)) return false;
   const vulnerability = monsterVulnerability(monster);

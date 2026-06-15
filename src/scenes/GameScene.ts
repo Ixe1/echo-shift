@@ -12,6 +12,7 @@ import {
   bossAttackWindupFramesFor,
   bossIsVulnerable,
   monsterAnimationProfileForKind,
+  monsterMovementFacingLeft,
   monsterRectAt,
   monsterVisualTransformForKind
 } from "../game/enemies";
@@ -36,6 +37,8 @@ import {
   bossFrameForKind,
   bossStateFrameForCleanSheet,
   monsterFrameForKind,
+  monsterRenderedFacingLeft,
+  monsterSpriteFlipX,
   type BossSpriteState
 } from "../game/enemySprites";
 import { rectCenter, rectsOverlap } from "../game/geometry";
@@ -3519,8 +3522,9 @@ export class GameScene extends Phaser.Scene {
     const visual = monsterVisualTransformForKind(kind, animationTick, animationFrame);
     const width = Math.max(44, rect.w * 2.15);
     const height = Math.max(44, rect.h * 2.25);
-    const facingLeft = this.monsterFacingLeft(monster, rect, tick);
-    const flipX = this.monsterSpriteFlipX(kind, facingLeft);
+    const movingLeft = monsterMovementFacingLeft(monster, rect, tick);
+    const flipX = monsterSpriteFlipX(kind, movingLeft);
+    const renderedFacingLeft = monsterRenderedFacingLeft(kind, flipX);
     const sprite = this.assetFor(`monster:${id}`, "image", frame, MONSTER_ATLAS_KEY) as Phaser.GameObjects.Image;
     sprite
       .setVisible(true)
@@ -3536,25 +3540,9 @@ export class GameScene extends Phaser.Scene {
     this.activeObjectAssetIds.add(`monster:${id}`);
     if (this.diagnosticsEnabled) {
       this.monsterSpriteFrames.push(
-        `${id}:${MONSTER_ATLAS_KEY}:${frame}:anim${animationFrame}:${facingLeft ? "left" : "right"}:flip${flipX ? "1" : "0"}:${Math.round(width)}x${Math.round(height)}:${animation.style}:y${Math.round(visual.yOffset)}`
+        `${id}:${MONSTER_ATLAS_KEY}:${frame}:anim${animationFrame}:${renderedFacingLeft ? "left" : "right"}:${Math.round(width)}x${Math.round(height)}:${animation.style}:y${Math.round(visual.yOffset)}`
       );
     }
-  }
-
-  private monsterSpriteFlipX(kind: Monster["kind"], facingLeft: boolean): boolean {
-    if (kind === "copper-leech") return !facingLeft;
-    return facingLeft;
-  }
-
-  private monsterFacingLeft(monster: Monster, rect: Rect, tick: number): boolean {
-    if (monster.axis !== "x" || !monster.distance || monster.distance <= 0) return false;
-    const previous = monsterRectAt(monster, Math.max(0, tick - 1));
-    const dx = rect.x - previous.x;
-    if (Math.abs(dx) > 0.05) return dx < 0;
-    const next = monsterRectAt(monster, tick + 1);
-    const nextDx = next.x - rect.x;
-    if (Math.abs(nextDx) > 0.05) return nextDx < 0;
-    return false;
   }
 
   private drawBosses(bosses: BossSnapshot[]): void {
