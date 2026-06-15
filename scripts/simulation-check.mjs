@@ -226,7 +226,7 @@ const verifyGameSceneAudioCleanupHooks = () => {
     "Expected bonus-life progress to sync from current carried cores after pickup/spill frames resolve"
   );
   assert(
-    handleEventsBody.includes("this.resetFiniteCoreBonusProgress();"),
+    handleEventsBody.includes("this.resetFiniteCoreBonusProgress(true);"),
     "Expected finite core bonus progress to reset when the player dies"
   );
   const finishDeathBody = gameSceneMethodBody(source, "finishDeathPresentation");
@@ -242,7 +242,7 @@ const verifyGameSceneAudioCleanupHooks = () => {
     audioSource.includes("const EFFECT_PRELOAD_TIMEOUT_MS = MUSIC_START_TIMEOUT_MS;"),
     "Expected sampled SFX warmup timeout to stay within the music-start gate budget"
   );
-  assert(source.includes("this.resetFiniteCoreBonusProgress();\n    this.simulation = new RoomSimulation"), "Expected new level init to reset core bonus progress before play");
+  assert(source.includes("this.resetFiniteCoreBonusProgress(false);\n    this.simulation = new RoomSimulation"), "Expected new level init to fully reset core bonus progress before play");
   assert(source.includes("const effectWarmup = audio.preloadEffects();"), "Expected GameScene to warm sampled gameplay SFX before level intro");
 };
 

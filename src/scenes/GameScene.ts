@@ -482,7 +482,7 @@ export class GameScene extends Phaser.Scene {
     this.level = this.tutorialMode ? tutorialLevel : getLevel(this.levelIndex);
     this.scoreEligible = data.scoreEligible === true && !this.tutorialMode && !isDraftPlaytestActive();
     if (typeof document !== "undefined") document.documentElement.dataset.echoShiftScoreEligible = this.scoreEligible ? "true" : "false";
-    this.resetFiniteCoreBonusProgress();
+    this.resetFiniteCoreBonusProgress(false);
     this.simulation = new RoomSimulation(this.level, { lives: campaignLivesForLevel(this.level) });
     this.accumulator = 0;
     this.pausedByHud = false;
@@ -1722,7 +1722,7 @@ export class GameScene extends Phaser.Scene {
     }
     if (events.died) {
       this.syncFiniteCampaignLives();
-      this.resetFiniteCoreBonusProgress();
+      this.resetFiniteCoreBonusProgress(true);
       const lives = this.simulation.livesRemaining();
       this.startDeathPresentation(lives !== null && lives <= 0, events.playerLaserVaporized);
     } else if (coreInventoryChanged) {
@@ -1756,9 +1756,9 @@ export class GameScene extends Phaser.Scene {
     syncCampaignLives(this.simulation.livesRemaining());
   }
 
-  private resetFiniteCoreBonusProgress(): void {
+  private resetFiniteCoreBonusProgress(preserveAwarded: boolean): void {
     if (!levelUsesFiniteLives(this.level)) return;
-    resetCampaignCoreBonusProgress({ preserveAwarded: this._simulation?.snapshot().bossCheckpointActive === true });
+    resetCampaignCoreBonusProgress({ preserveAwarded });
   }
 
   private restoreFiniteCoreBonusProgress(): void {

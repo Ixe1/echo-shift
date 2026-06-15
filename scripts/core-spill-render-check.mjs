@@ -68,6 +68,14 @@ const level = {
     { id: "spill-core-b", x: 24, y: 438, w: 18, h: 18 },
     { id: "spill-core-c", x: 24, y: 438, w: 18, h: 18 },
     { id: "spill-core-d", x: 24, y: 438, w: 18, h: 18 },
+    { id: "spill-core-e", x: 24, y: 438, w: 18, h: 18 },
+    { id: "spill-core-f", x: 24, y: 438, w: 18, h: 18 },
+    { id: "spill-core-g", x: 24, y: 438, w: 18, h: 18 },
+    { id: "spill-core-h", x: 24, y: 438, w: 18, h: 18 },
+    { id: "spill-core-i", x: 24, y: 438, w: 18, h: 18 },
+    { id: "spill-core-j", x: 24, y: 438, w: 18, h: 18 },
+    { id: "spill-core-k", x: 24, y: 438, w: 18, h: 18 },
+    { id: "spill-core-l", x: 24, y: 438, w: 18, h: 18 },
     { id: "spill-large-key", x: 24, y: 438, w: 24, h: 24, size: "large" }
   ],
   hazards: [{ id: "spill-spark", x: 128, y: 436, w: 62, h: 38 }],
@@ -202,13 +210,11 @@ try {
       return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
     });
   assert(
-    spillPositions.length > 0 && spillPositions.every(Boolean),
+    spillPositions.length >= 2 && spillPositions.every(Boolean),
     `Expected spilled core diagnostics to include positions, got ${spillDiagnostics.coreFrames}`
   );
-  if (spillPositions.length > 1) {
-    const xs = spillPositions.map((position) => position.x);
-    assert(Math.max(...xs) - Math.min(...xs) >= 8, `Expected spilled core positions to visibly separate, got ${JSON.stringify(spillPositions)}`);
-  }
+  const xs = spillPositions.map((position) => position.x);
+  assert(Math.max(...xs) - Math.min(...xs) >= 8, `Expected spilled core positions to visibly separate, got ${JSON.stringify(spillPositions)}`);
   assert(spillDiagnostics.invulnerabilityFrames > 0, `Expected active core-save invulnerability, got ${spillDiagnostics.invulnerabilityFrames}`);
   assert(spillDiagnostics.hudCores === "1", `Expected HUD to show only carried cores immediately after spill, got ${spillDiagnostics.hudCores}`);
   assert(!spillDiagnostics.hudCores.includes("/"), `HUD should not include map-total core count, got ${spillDiagnostics.hudCores}`);
