@@ -3061,6 +3061,96 @@ try {
     `Loose spilled core should pass through a door held by a core-saved player, got ${JSON.stringify(savedPlayerOpenedLooseCore)}`
   );
 
+  const pickupSavedPlayerOpeningSpillSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 18, y: 86 },
+    plates: [{ id: "pickup-saved-player-spill-plate", x: 18, y: 86, w: 24, h: 34 }],
+    doors: [{ id: "pickup-saved-player-spill-door", x: 92, y: 70, w: 10, h: 58, opensWith: ["pickup-saved-player-spill-plate"] }],
+    hazards: [{ id: "pickup-saved-player-spill-spark", x: 18, y: 86, w: 24, h: 34 }],
+    cores: [{ id: "pickup-saved-player-core", x: 18, y: 86, w: 18, h: 18 }]
+  });
+  Object.assign(pickupSavedPlayerOpeningSpillSim.player, { x: 18, y: 86, vx: 0, vy: 0, onGround: true });
+  pickupSavedPlayerOpeningSpillSim.objectState = {
+    ...pickupSavedPlayerOpeningSpillSim.objectState,
+    spilledCores: new Map([
+      [
+        "manual-pickup-saved-player-door-loose",
+        {
+          id: "manual-pickup-saved-player-door-loose",
+          sourceId: "manual-pickup-saved-player-door-core",
+          x: 70,
+          y: 90,
+          w: 18,
+          h: 18,
+          vx: 5,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 8
+        }
+      ]
+    ])
+  };
+  const pickupSavedPlayerOpeningStep = pickupSavedPlayerOpeningSpillSim.step(idle);
+  assert(
+    !pickupSavedPlayerOpeningStep.died && pickupSavedPlayerOpeningStep.coreSpill,
+    "Expected same-frame pickup to save the player on the controller"
+  );
+  assert(
+    pickupSavedPlayerOpeningSpillSim.objectState.openDoors.has("pickup-saved-player-spill-door"),
+    "Same-frame pickup-saved player should drive loose-core doors"
+  );
+  const pickupSavedPlayerOpenedLooseCore = pickupSavedPlayerOpeningSpillSim.objectState.spilledCores.get("manual-pickup-saved-player-door-loose");
+  assert(pickupSavedPlayerOpenedLooseCore, "Expected pickup-saved player loose core to remain after pass-through");
+  assert(
+    pickupSavedPlayerOpenedLooseCore.x > 74.1 && pickupSavedPlayerOpenedLooseCore.vx > 0,
+    `Loose spilled core should pass through a door held by a same-frame pickup-saved player, got ${JSON.stringify(pickupSavedPlayerOpenedLooseCore)}`
+  );
+
+  const triggerSafePlayerOpeningSpillSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 18, y: 86 },
+    plates: [{ id: "trigger-safe-player-spill-plate", x: 18, y: 86, w: 24, h: 34 }],
+    doors: [{ id: "trigger-safe-player-spill-door", x: 92, y: 70, w: 10, h: 58, opensWith: ["trigger-safe-player-spill-plate"] }],
+    lasers: [{ id: "trigger-safe-player-laser", x: 18, y: 86, w: 24, h: 34, disabledBy: ["trigger-safe-player-spill-plate"] }],
+    cores: []
+  });
+  Object.assign(triggerSafePlayerOpeningSpillSim.player, { x: 18, y: 86, vx: 0, vy: 0, onGround: true });
+  triggerSafePlayerOpeningSpillSim.objectState = {
+    ...triggerSafePlayerOpeningSpillSim.objectState,
+    spilledCores: new Map([
+      [
+        "manual-trigger-safe-player-door-loose",
+        {
+          id: "manual-trigger-safe-player-door-loose",
+          sourceId: "manual-trigger-safe-player-door-core",
+          x: 70,
+          y: 90,
+          w: 18,
+          h: 18,
+          vx: 5,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 8
+        }
+      ]
+    ])
+  };
+  const triggerSafePlayerOpeningStep = triggerSafePlayerOpeningSpillSim.step(idle);
+  assert(
+    !triggerSafePlayerOpeningStep.died && !triggerSafePlayerOpeningStep.playerLaserVaporized,
+    "Expected same-frame trigger to disable the player-overlapping laser"
+  );
+  assert(
+    triggerSafePlayerOpeningSpillSim.objectState.openDoors.has("trigger-safe-player-spill-door"),
+    "Same-frame trigger-safe player should drive loose-core doors"
+  );
+  const triggerSafePlayerOpenedLooseCore = triggerSafePlayerOpeningSpillSim.objectState.spilledCores.get("manual-trigger-safe-player-door-loose");
+  assert(triggerSafePlayerOpenedLooseCore, "Expected trigger-safe player loose core to remain after pass-through");
+  assert(
+    triggerSafePlayerOpenedLooseCore.x > 74.1 && triggerSafePlayerOpenedLooseCore.vx > 0,
+    `Loose spilled core should pass through a door held by a same-frame trigger-safe player, got ${JSON.stringify(triggerSafePlayerOpenedLooseCore)}`
+  );
+
   const echoVaporizedDoorSpillSim = new RoomSimulation({
     ...baseLevel,
     start: { x: 18, y: 20 },
@@ -3317,6 +3407,20 @@ try {
   const coreLaserDeathEvent = coreLaserDeathSim.step(idle);
   assert(coreLaserDeathSim.dead && coreLaserDeathEvent.playerLaserVaporized, "Laser should bypass core-save and kill the player");
   assert(!coreLaserDeathEvent.coreSpill, "Laser death should not spill cores as a save event");
+
+  const laserPickupRollbackSim = new RoomSimulation({
+    ...baseLevel,
+    doors: [{ id: "laser-pickup-rollback-door", x: 72, y: 70, w: 10, h: 58, requiresCore: "laser-pickup-rollback-core" }],
+    cores: [{ id: "laser-pickup-rollback-core", x: 18, y: 86, w: 18, h: 18 }],
+    lasers: [{ id: "laser-pickup-rollback-beam", x: 18, y: 86, w: 30, h: 34, startsOn: true }]
+  });
+  const laserPickupRollbackEvent = laserPickupRollbackSim.step(idle);
+  assert(laserPickupRollbackSim.dead && laserPickupRollbackEvent.playerLaserVaporized, "Laser pickup rollback fixture should kill the player");
+  assert(laserPickupRollbackEvent.cores.length === 0 && !laserPickupRollbackEvent.core, "Laser death should discard same-frame core pickup events");
+  assert(!laserPickupRollbackSim.objectState.collectedCores.has("laser-pickup-rollback-core"), "Laser death should not retain same-frame picked up core");
+  assert(!laserPickupRollbackSim.objectState.claimedCores.has("laser-pickup-rollback-core"), "Laser death should not claim same-frame picked up core");
+  assert(!laserPickupRollbackSim.objectState.openDoors.has("laser-pickup-rollback-door"), "Laser death should not keep core-gated doors open from same-frame pickup");
+  assert(laserPickupRollbackSim.score === 0, `Laser death should not award score for same-frame pickup, got ${laserPickupRollbackSim.score}`);
 
   const postSaveLaserDeathSim = new RoomSimulation({
     ...baseLevel,
@@ -3988,12 +4092,38 @@ try {
   assert(deathPresentationEchoSim.dead && !deathPresentationEchoSim.player.alive, "Expected death-presentation echo fixture to remain dead before respawn");
   assert(deathPresentationEchoSim.objectState.activePlates.has("death-presentation-echo-sensor"), "Expected echo-driven sensor active before death-presentation cleanup");
   assert(deathPresentationEchoSim.objectState.openDoors.has("death-presentation-echo-door"), "Expected echo-driven door open before death-presentation cleanup");
+  deathPresentationEchoSim.objectState = {
+    ...deathPresentationEchoSim.objectState,
+    coreOffsets: new Map([["death-presentation-offset-core", { x: 12, y: -4, vx: 1, vy: -0.5 }]]),
+    spilledCores: new Map([
+      [
+        "death-presentation-loose-core",
+        {
+          id: "death-presentation-loose-core",
+          sourceId: "death-presentation-source-core",
+          x: 74,
+          y: 86,
+          w: 18,
+          h: 18,
+          vx: 0,
+          vy: 0,
+          ttlFrames: 120,
+          pickupDelayFrames: 8
+        }
+      ]
+    ])
+  };
   deathPresentationEchoSim.clearEchoesForDeathPresentation();
   assert(deathPresentationEchoSim.dead && !deathPresentationEchoSim.player.alive, "Death-presentation echo cleanup should not respawn the player");
   assert(deathPresentationEchoSim.snapshot().echoes.length === 0, "Death-presentation echo cleanup should clear active echoes immediately");
   assert(deathPresentationEchoSim.echoRecordings.length === 0, "Death-presentation echo cleanup should clear stored echo recordings immediately");
   assert(!deathPresentationEchoSim.objectState.activePlates.has("death-presentation-echo-sensor"), "Death-presentation echo cleanup should clear echo-driven sensor state immediately");
   assert(!deathPresentationEchoSim.objectState.openDoors.has("death-presentation-echo-door"), "Death-presentation echo cleanup should close doors opened only by cleared echoes immediately");
+  assert(deathPresentationEchoSim.objectState.coreOffsets.size === 0, "Death-presentation cleanup should clear frozen placed-core magnet offsets");
+  assert(
+    deathPresentationEchoSim.objectState.spilledCores.has("death-presentation-loose-core"),
+    "Death-presentation cleanup should preserve loose recovery cores"
+  );
 
   const exhaustedLivesSim = new RoomSimulation(deathLevel, { lives: 2 });
   const firstDeath = exhaustedLivesSim.step(idle);
@@ -6405,6 +6535,23 @@ try {
   assert(
     ledgeDoomedEchoSim.player.onGround && ledgeDoomedEchoSim.player.y === 66,
     `Doomed echo should not block ledge forgiveness before vaporization, got ${JSON.stringify(ledgeDoomedEchoSim.player)}`
+  );
+
+  const ledgeSwitchableEchoSim = new RoomSimulation({
+    ...ledgeForgivenessLevel,
+    plates: [{ id: "ledge-switchable-echo-plate", x: 58, y: 80, w: 42, h: 40 }],
+    lasers: [{ id: "ledge-switchable-echo-laser", x: 100, y: 66, w: 8, h: 34, startsOn: true, disabledBy: ["ledge-switchable-echo-plate"] }]
+  });
+  ledgeSwitchableEchoSim.echoRecordings.push({ id: "ledge-switchable-echo", frames: [], createdAtFrame: 0 });
+  ledgeSwitchableEchoSim.echoes = [makeActor("ledge-switchable-echo", "echo", { x: 80, y: 66 })];
+  Object.assign(ledgeSwitchableEchoSim.player, { x: 56, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  const ledgeSwitchableEchoStep = ledgeSwitchableEchoSim.step(right);
+  assert(ledgeSwitchableEchoStep.echoLaserVaporized === 0, "Expected same-frame plate-disabled laser echo to survive");
+  assert(ledgeSwitchableEchoSim.snapshot().echoes.length === 1, "Expected switchable-laser echo to stay alive after plate disables the beam");
+  assert(!ledgeSwitchableEchoSim.player.onGround, "Live switchable-laser echo should still block ledge forgiveness");
+  assert(
+    ledgeSwitchableEchoSim.player.y !== 66,
+    `Switchable-laser echo should block ledge forgiveness while alive, got ${JSON.stringify(ledgeSwitchableEchoSim.player)}`
   );
 
   const ledgeReplayEchoSim = new RoomSimulation(ledgeForgivenessLevel);

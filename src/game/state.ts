@@ -38,7 +38,11 @@ import {
   collectOpenDoors,
   createObjectState,
   doorRequiredCoreIds,
+  droneIsActive,
+  droneRectAt,
   isMajorCore,
+  laserIsActive,
+  movingLaserRectAt,
   updateObjects,
   type ObjectState
 } from "./objects";
@@ -377,7 +381,10 @@ export class RoomSimulation {
     return { activePlates, timedSwitchTimers };
   }
 
-  private recomputeObjectStateForActors(actors: ActorBody[], clearTransientCores: boolean): void {
+  private recomputeObjectStateForActors(
+    actors: ActorBody[],
+    options: { clearCoreOffsets?: boolean; clearSpilledCores?: boolean } = {}
+  ): void {
     const defeatedBossIds = new Set(this.currentAttemptDefeatedBossIds.keys());
     const { activePlates, timedSwitchTimers } = this.triggersForActors(actors);
     const latchedPlates = new Set(this.objectState.latchedPlates);
@@ -392,13 +399,16 @@ export class RoomSimulation {
       timedSwitchTimers,
       openDoors: collectOpenDoors(this.level.doors || [], activePlates, this.objectState.collectedCores, defeatedBossIds),
       blockedLasers: collectBlockedLasers([...(this.level.lasers || []), ...(this.level.movingLasers || [])], crateRects, activePlates, this.tick),
-      coreOffsets: clearTransientCores ? new Map() : this.objectState.coreOffsets,
-      spilledCores: clearTransientCores ? new Map() : this.objectState.spilledCores
+      coreOffsets: options.clearCoreOffsets ? new Map() : this.objectState.coreOffsets,
+      spilledCores: options.clearSpilledCores ? new Map() : this.objectState.spilledCores
     };
   }
 
   private recomputeObjectStateWithoutEchoes(includePlayer: boolean, clearTransientCores: boolean): void {
-    this.recomputeObjectStateForActors(includePlayer && this.player.alive ? [this.player] : [], clearTransientCores);
+    this.recomputeObjectStateForActors(includePlayer && this.player.alive ? [this.player] : [], {
+      clearCoreOffsets: clearTransientCores,
+      clearSpilledCores: clearTransientCores
+    });
   }
 
   private clearCheckpointEchoesAndObjectState(): void {
@@ -408,7 +418,7 @@ export class RoomSimulation {
 
   clearEchoesForDeathPresentation(): void {
     this.clearEchoes();
-    this.recomputeObjectStateWithoutEchoes(false, false);
+    this.recomputeObjectStateForActors([], { clearCoreOffsets: true });
   }
 
   private playerForRewindTarget(): ActorBody {
@@ -493,9 +503,10 @@ export class RoomSimulation {
       crates: this.objectState.crates,
       ice: this.currentBossFloorIceRects()
     };
+    const movementDoomedEchoIds = this.movementDoomedEchoIds();
     const dynamicFor = (actor: ActorBody) => ({
       ...baseDynamic,
-      actorBlockers: [this.player, ...this.echoes].filter((other) => this.actorCanBlockMovementFor(actor, other))
+      actorBlockers: [this.player, ...this.echoes].filter((other) => this.actorCanBlockMovementFor(actor, other, movementDoomedEchoIds))
     });
 
     for (let index = 0; index < this.echoes.length; index += 1) {
@@ -555,6 +566,9 @@ export class RoomSimulation {
     }
 
     if (!this.dead && actorTouchesLaser(this.level, this.player, this.objectState, this.tick)) {
+      this.discardCurrentFrameCorePickups(objectUpdate.cores, previousObjectState);
+      events.core = null;
+      events.cores = [];
       events.playerLaserVaporized = true;
       this.markPlayerDead(events);
     }
@@ -1234,42 +1248,73 @@ export class RoomSimulation {
     });
   }
 
-  private actorCanBlockMovementFor(actor: ActorBody, other: ActorBody): boolean {
+  private actorCanBlockMovementFor(actor: ActorBody, other: ActorBody, movementDoomedEchoIds: ReadonlySet<string>): boolean {
     if (other === actor || !other.alive) return false;
-    if (other.kind === "echo" && actorTouchesHazard(this.level, other, this.objectState, this.tick)) return false;
+    if (other.kind === "echo" && movementDoomedEchoIds.has(other.id)) return false;
     return true;
+  }
+
+  private movementDoomedEchoIds(): Set<string> {
+    const doomed = new Set<string>();
+    for (const echo of this.aliveEchoes()) {
+      if (this.echoTouchesNonSwitchableHazard(echo)) doomed.add(echo.id);
+    }
+    return doomed;
+  }
+
+  private echoTouchesNonSwitchableHazard(echo: ActorBody): boolean {
+    if ((this.level.hazards || []).some((hazard) => rectsOverlap(echo, hazard))) return true;
+    for (const laser of this.level.lasers || []) {
+      if ((laser.disabledBy || []).length > 0) continue;
+      if (!laserIsActive(laser, this.objectState.activePlates)) continue;
+      if (this.objectState.blockedLasers.has(laser.id)) continue;
+      if (rectsOverlap(echo, laser)) return true;
+    }
+    for (const laser of this.level.movingLasers || []) {
+      if ((laser.disabledBy || []).length > 0) continue;
+      if (!laserIsActive(laser, this.objectState.activePlates)) continue;
+      if (this.objectState.blockedLasers.has(laser.id)) continue;
+      if (rectsOverlap(echo, movingLaserRectAt(laser, this.tick))) return true;
+    }
+    for (const drone of this.level.drones || []) {
+      if ((drone.disabledBy || []).length > 0) continue;
+      if (droneIsActive(drone, this.objectState.activePlates) && rectsOverlap(echo, droneRectAt(drone, this.tick))) return true;
+    }
+    return false;
   }
 
   private objectActors(): ActorBody[] {
     return [this.player, ...this.echoes].filter((actor) => actor.alive);
   }
 
-  private hasCoreSaveAvailable(): boolean {
-    return [...this.objectState.collectedCores].some((id) => this.coreCanSpill(id) || this.coreCanProtectOnce(id));
+  private hasCoreSaveAvailable(objectState: ObjectState = this.objectState): boolean {
+    return [...objectState.collectedCores].some((id) => this.coreCanSpill(id) || this.coreCanProtectOnce(id));
   }
 
-  private currentDamageWouldKillPlayer(): boolean {
-    return this.coreInvulnerabilityFrames <= 0 && !this.hasCoreSaveAvailable();
+  private currentDamageWouldKillPlayer(objectState: ObjectState = this.objectState): boolean {
+    return this.coreInvulnerabilityFrames <= 0 && !this.hasCoreSaveAvailable(objectState);
   }
 
-  private playerHazardContactWouldKill(): boolean {
-    const hazardContact = actorHazardContact(this.level, this.player, this.objectState, this.tick);
+  private playerHazardContactWouldKill(objectState: ObjectState): boolean {
+    const hazardContact = actorHazardContact(this.level, this.player, objectState, this.tick);
     if (!hazardContact) return false;
-    return hazardContact.kind === "laser" || this.currentDamageWouldKillPlayer();
+    return hazardContact.kind === "laser" || this.currentDamageWouldKillPlayer(objectState);
   }
 
-  private playerMonsterContactWouldKill(previousPlayerY: number): boolean {
+  private playerMonsterContactWouldKill(previousPlayerY: number, objectState: ObjectState): boolean {
+    if (!this.currentDamageWouldKillPlayer(objectState)) return false;
     for (const monster of this.level.monsters || []) {
       if (this.killedMonsterIds.has(monster.id)) continue;
       const rect = monsterRectAt(monster, this.tick);
       if (!rectsOverlap(this.player, rect)) continue;
       if (actorKillsMonster(this.player, previousPlayerY, monster, rect)) return false;
-      return this.currentDamageWouldKillPlayer();
+      return true;
     }
     return false;
   }
 
-  private playerBossContactWouldKill(previousPlayerY: number): boolean {
+  private playerBossContactWouldKill(previousPlayerY: number, objectState: ObjectState): boolean {
+    if (!this.currentDamageWouldKillPlayer(objectState)) return false;
     for (const boss of this.level.bosses || []) {
       const currentState = this.bossStates.get(boss.id);
       if (!currentState || currentState.phase === "defeated" || currentState.phase === "departing") continue;
@@ -1306,16 +1351,16 @@ export class RoomSimulation {
         bossBodyDamages(state) && rectsOverlap(this.player, body)
           ? body
           : attacks.find((attack) => rectsOverlap(this.player, attack)) || floorShocks.find((shock) => rectsOverlap(this.player, shock));
-      if (damageSource) return this.currentDamageWouldKillPlayer();
+      if (damageSource) return true;
     }
     return false;
   }
 
-  private playerShouldDriveSpilledCoreDoors(previousPlayerY: number): boolean {
+  private playerShouldDriveSpilledCoreDoors(previousPlayerY: number, objectState: ObjectState): boolean {
     if (this.dead || !this.player.alive) return false;
-    if (this.playerHazardContactWouldKill()) return false;
-    if (this.playerMonsterContactWouldKill(previousPlayerY)) return false;
-    if (this.playerBossContactWouldKill(previousPlayerY)) return false;
+    if (this.playerHazardContactWouldKill(objectState)) return false;
+    if (this.playerMonsterContactWouldKill(previousPlayerY, objectState)) return false;
+    if (this.playerBossContactWouldKill(previousPlayerY, objectState)) return false;
     return true;
   }
 
@@ -1327,7 +1372,23 @@ export class RoomSimulation {
     events.died = true;
     const remaining = this.livesRemaining();
     events.livesExhausted = remaining !== null && remaining <= 0;
-    this.recomputeObjectStateForActors(this.aliveEchoes(), false);
+    this.recomputeObjectStateForActors(this.aliveEchoes());
+  }
+
+  private discardCurrentFrameCorePickups(coreEvents: StepEvents["cores"], previousObjectState: ObjectState): void {
+    if (coreEvents.length === 0) return;
+    for (const core of coreEvents) {
+      this.removeCoreScore(core.id);
+      if (core.recovered) this.recoveredSpillCoreIds.delete(core.id);
+    }
+    const restored = cloneObjectState(previousObjectState);
+    this.objectState = {
+      ...this.objectState,
+      collectedCores: restored.collectedCores,
+      claimedCores: restored.claimedCores,
+      coreOffsets: restored.coreOffsets,
+      spilledCores: restored.spilledCores
+    };
   }
 
   private applyPlayerDamage(events: StepEvents, source: Rect): void {
@@ -1481,13 +1542,13 @@ export class RoomSimulation {
   }
 
   private spilledCoreDoorRects(defeatedBossIds: ReadonlySet<string>, previousPlayerY: number): Rect[] {
-    let actors = [
-      ...(this.playerShouldDriveSpilledCoreDoors(previousPlayerY) ? [this.player] : []),
-      ...this.aliveEchoes()
-    ];
+    let actors = [this.player, ...this.aliveEchoes()].filter((actor) => actor.alive);
     let projected = this.projectObjectStateForSpilledCoreDoors(actors, defeatedBossIds);
     for (;;) {
-      const survivors = actors.filter((actor) => actor.kind !== "echo" || !actorTouchesHazard(this.level, actor, projected, this.tick));
+      const survivors = actors.filter((actor) => {
+        if (actor.kind === "player") return this.playerShouldDriveSpilledCoreDoors(previousPlayerY, projected);
+        return actor.kind !== "echo" || !actorTouchesHazard(this.level, actor, projected, this.tick);
+      });
       if (survivors.length === actors.length) break;
       actors = survivors;
       projected = this.projectObjectStateForSpilledCoreDoors(actors, defeatedBossIds);
