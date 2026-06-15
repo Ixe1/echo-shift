@@ -144,10 +144,18 @@ try {
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await page.keyboard.down("ArrowRight");
   await page.waitForFunction(
-    () =>
-      Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
-      (document.documentElement.dataset.echoShiftCoreSpriteFrames || "").includes("spill:") &&
-      document.querySelector("[data-cores]")?.textContent?.trim() === "1",
+    () => {
+      const playerSpriteState = document.documentElement.dataset.echoShiftPlayerSpriteState || "";
+      const playerAlpha = Number((playerSpriteState.match(/alpha:([0-9.]+)/) || [])[1] || "1");
+      return (
+        Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
+        (document.documentElement.dataset.echoShiftCoreSpriteFrames || "").includes("spill:") &&
+        document.querySelector("[data-cores]")?.textContent?.trim() === "1" &&
+        playerSpriteState.includes("visible:1") &&
+        playerSpriteState.includes("tint:ffe35a") &&
+        playerAlpha < 0.95
+      );
+    },
     null,
     { timeout: 7000 }
   );
@@ -159,6 +167,7 @@ try {
     toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
     tutorialHint: document.querySelector("[data-tutorial-hint]")?.textContent?.trim() || "",
     deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || "",
+    playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || "",
     canvas: {
       width: document.querySelector("canvas")?.clientWidth || 0,
       height: document.querySelector("canvas")?.clientHeight || 0
@@ -173,6 +182,10 @@ try {
   assert(!/scatter|scattered|spill|lost/i.test(spillDiagnostics.toast), `Expected no scattered-core toast, got ${spillDiagnostics.toast}`);
   assert(!/scatter|scattered|spill|lost/i.test(spillDiagnostics.tutorialHint), `Expected no scattered-core hint, got ${spillDiagnostics.tutorialHint}`);
   assert(spillDiagnostics.deathPresentation === "idle", `Core-save should not enter death presentation, got ${spillDiagnostics.deathPresentation}`);
+  assert(
+    /visible:1:alpha:0\.[0-9]+:tint:ffe35a/.test(spillDiagnostics.playerSpriteState),
+    `Expected player sprite flicker/tint during core-save invulnerability, got ${spillDiagnostics.playerSpriteState}`
+  );
   assert(spillDiagnostics.canvas.width > 0 && spillDiagnostics.canvas.height > 0, `Expected visible canvas, got ${JSON.stringify(spillDiagnostics.canvas)}`);
 
   const screenshot = `${outDir}/core-spill-render-qa.png`;
@@ -190,11 +203,19 @@ try {
   await page.locator("canvas").click({ position: { x: 480, y: 280 } });
   await page.keyboard.down("ArrowRight");
   await page.waitForFunction(
-    () =>
-      Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
-      !(document.documentElement.dataset.echoShiftCoreSpriteFrames || "").includes("spill:") &&
-      (document.documentElement.dataset.echoShiftDoorAssetTransforms || "").includes("door:protected-door:9") &&
-      document.querySelector("[data-cores]")?.textContent?.trim() === "1",
+    () => {
+      const playerSpriteState = document.documentElement.dataset.echoShiftPlayerSpriteState || "";
+      const playerAlpha = Number((playerSpriteState.match(/alpha:([0-9.]+)/) || [])[1] || "1");
+      return (
+        Number(document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames || "0") > 0 &&
+        !(document.documentElement.dataset.echoShiftCoreSpriteFrames || "").includes("spill:") &&
+        (document.documentElement.dataset.echoShiftDoorAssetTransforms || "").includes("door:protected-door:9") &&
+        document.querySelector("[data-cores]")?.textContent?.trim() === "1" &&
+        playerSpriteState.includes("visible:1") &&
+        playerSpriteState.includes("tint:ffe35a") &&
+        playerAlpha < 0.95
+      );
+    },
     null,
     { timeout: 7000 }
   );
@@ -205,7 +226,8 @@ try {
     hudCores: document.querySelector("[data-cores]")?.textContent?.trim() || "",
     toast: document.querySelector("[data-toast]")?.textContent?.trim() || "",
     tutorialHint: document.querySelector("[data-tutorial-hint]")?.textContent?.trim() || "",
-    deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || ""
+    deathPresentation: document.documentElement.dataset.echoShiftDeathPresentation || "",
+    playerSpriteState: document.documentElement.dataset.echoShiftPlayerSpriteState || ""
   }));
   await page.keyboard.up("ArrowRight");
 
@@ -217,6 +239,10 @@ try {
   assert(!/scatter|scattered|spill|lost/i.test(protectedDiagnostics.toast), `Expected no protected-save scatter toast, got ${protectedDiagnostics.toast}`);
   assert(!/scatter|scattered|spill|lost/i.test(protectedDiagnostics.tutorialHint), `Expected no protected-save scatter hint, got ${protectedDiagnostics.tutorialHint}`);
   assert(protectedDiagnostics.deathPresentation === "idle", `Protected save should not enter death presentation, got ${protectedDiagnostics.deathPresentation}`);
+  assert(
+    /visible:1:alpha:0\.[0-9]+:tint:ffe35a/.test(protectedDiagnostics.playerSpriteState),
+    `Expected protected-save player sprite flicker/tint during invulnerability, got ${protectedDiagnostics.playerSpriteState}`
+  );
 
   const protectedScreenshot = `${outDir}/protected-core-save-render-qa.png`;
   await page.screenshot({ path: protectedScreenshot, fullPage: true });

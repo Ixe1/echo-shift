@@ -475,7 +475,7 @@ export const collectOpenDoors = (
   return open;
 };
 
-const collectBlockedLasers = (lasers: Laser[], crates: Rect[], activePlates: Set<string>, tick: number): Set<string> => {
+export const collectBlockedLasers = (lasers: Laser[], crates: Rect[], activePlates: Set<string>, tick: number): Set<string> => {
   const blocked = new Set<string>();
   for (const laser of lasers) {
     const startsOn = laser.startsOn !== false;

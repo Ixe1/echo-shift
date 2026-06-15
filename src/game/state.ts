@@ -34,6 +34,7 @@ import {
   actorTouchesLaser,
   actorTouchesHazard,
   closedDoorRects,
+  collectBlockedLasers,
   collectOpenDoors,
   createObjectState,
   doorRequiredCoreIds,
@@ -108,6 +109,11 @@ const cloneObjectState = (state: ObjectState): ObjectState => ({
   spilledCores: new Map([...state.spilledCores.entries()].map(([id, core]) => [id, { ...core }])),
   blockedLasers: new Set(state.blockedLasers),
   crates: new Map([...state.crates.entries()].map(([id, rect]) => [id, { ...rect }]))
+});
+
+const cloneCheckpointObjectState = (state: ObjectState): ObjectState => ({
+  ...cloneObjectState(state),
+  spilledCores: new Map()
 });
 
 const setsMatch = (a: Set<string>, b: Set<string>): boolean => {
@@ -288,19 +294,45 @@ export class RoomSimulation {
     this.currentRecording = [];
   }
 
+  private activeCheckpointPlatesWithoutEchoes(): Set<string> {
+    const activePlates = new Set<string>();
+    const crateRects = [...this.objectState.crates.values()];
+    for (const id of this.objectState.latchedPlates) activePlates.add(id);
+    for (const [id, remaining] of this.objectState.timedSwitchTimers) {
+      if (remaining > 0) activePlates.add(id);
+    }
+    for (const plate of this.level.plates || []) {
+      if (rectsOverlap(this.player, plate) || crateRects.some((crate) => rectsOverlap(crate, plate))) {
+        activePlates.add(plate.id);
+      }
+    }
+    for (const sensor of this.level.echoSensors || []) {
+      const actorMode = sensor.actors || "echo";
+      if ((actorMode === "player" || actorMode === "both") && rectsOverlap(this.player, sensor)) {
+        activePlates.add(sensor.id);
+      }
+    }
+    return activePlates;
+  }
+
   private clearCheckpointEchoesAndObjectState(): void {
     this.clearEchoes();
     const defeatedBossIds = new Set(this.currentAttemptDefeatedBossIds.keys());
-    const baseline: ObjectState = {
+    const activePlates = this.activeCheckpointPlatesWithoutEchoes();
+    const latchedPlates = new Set(this.objectState.latchedPlates);
+    for (const plate of this.level.plates || []) {
+      if (plate.once && activePlates.has(plate.id)) latchedPlates.add(plate.id);
+    }
+    const crateRects = [...this.objectState.crates.values()];
+    this.objectState = {
       ...this.objectState,
-      activePlates: new Set(),
-      latchedPlates: new Set(),
-      timedSwitchTimers: new Map(),
-      openDoors: collectOpenDoors(this.level.doors || [], new Set(), this.objectState.collectedCores, defeatedBossIds),
-      blockedLasers: new Set(),
-      coreOffsets: new Map(this.objectState.coreOffsets)
+      activePlates,
+      latchedPlates,
+      openDoors: collectOpenDoors(this.level.doors || [], activePlates, this.objectState.collectedCores, defeatedBossIds),
+      blockedLasers: collectBlockedLasers([...(this.level.lasers || []), ...(this.level.movingLasers || [])], crateRects, activePlates, this.tick),
+      coreOffsets: new Map([...this.objectState.coreOffsets.entries()].map(([id, offset]) => [id, { ...offset }])),
+      spilledCores: new Map()
     };
-    this.objectState = updateObjects(this.level, [this.player], baseline, this.tick, defeatedBossIds, { collectCores: false }).state;
   }
 
   private playerForRewindTarget(): ActorBody {
@@ -556,7 +588,7 @@ export class RoomSimulation {
       echoes: this.echoes.map(cloneActor),
       echoRecordings: cloneEchoRecordings(this.echoRecordings),
       currentRecording: [...this.currentRecording],
-      objectState: cloneObjectState(this.objectState),
+      objectState: cloneCheckpointObjectState(this.objectState),
       killedMonsterIds: new Set(this.killedMonsterIds),
       bossStates: this.checkpointBossStates(),
       currentAttemptCollectedCoreIds: new Set(this.currentAttemptCollectedCoreIds),

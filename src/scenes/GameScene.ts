@@ -4261,6 +4261,13 @@ export class GameScene extends Phaser.Scene {
   private exposeRenderDiagnostics(snapshot: RenderView): void {
     if (!this.diagnosticsEnabled) return;
     const formatRect = (rect: Rect) => `${Math.round(rect.x)},${Math.round(rect.y)},${Math.round(rect.w)},${Math.round(rect.h)}`;
+    const playerSprite = this.actorSprites.get("player") as
+      | (Phaser.GameObjects.Image & { isTinted?: boolean; tintTopLeft?: number })
+      | undefined;
+    const playerTint =
+      playerSprite && playerSprite.isTinted !== false && typeof playerSprite.tintTopLeft === "number"
+        ? playerSprite.tintTopLeft.toString(16)
+        : "none";
     document.documentElement.dataset.echoShiftVisibleEchoTints = snapshot.echoes
       .map((echo) => `${echo.id}:${this.echoTint(echo).toString(16)}`)
       .join(",");
@@ -4278,6 +4285,9 @@ export class GameScene extends Phaser.Scene {
     document.documentElement.dataset.echoShiftDoorAssetTransforms = this.doorAssetTransforms.join("|");
     document.documentElement.dataset.echoShiftCoreSpriteFrames = this.coreSpriteFrames.join("|");
     document.documentElement.dataset.echoShiftCoreInvulnerabilityFrames = String(snapshot.coreInvulnerabilityFrames);
+    document.documentElement.dataset.echoShiftPlayerSpriteState = playerSprite
+      ? `visible:${playerSprite.visible ? "1" : "0"}:alpha:${playerSprite.alpha.toFixed(3)}:tint:${playerTint}`
+      : "";
     document.documentElement.dataset.echoShiftExitUnlocked = snapshot.exitUnlocked ? "true" : "false";
     document.documentElement.dataset.echoShiftBossCheckpoint = snapshot.bossCheckpointActive ? "active" : "idle";
     document.documentElement.dataset.echoShiftPlayerRect = formatRect(snapshot.player);

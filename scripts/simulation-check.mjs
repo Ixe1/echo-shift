@@ -2322,7 +2322,10 @@ try {
   assert(coreSaveSim.objectState.collectedCores.size === 1, `Expected only the large/key core to remain carried, got ${[...coreSaveSim.objectState.collectedCores].join(",")}`);
   assert(coreSaveSim.objectState.spilledCores.size === 1, "Expected spilled core to become a temporary loose pickup");
   assert(coreSaveSim.score === 100, `Expected all eligible small-core score to be removed, got ${coreSaveSim.score}`);
-  assert(coreSaveSim.player.vy < 0 && Math.abs(coreSaveSim.player.vx) > 0, "Saved hit should bounce the player away from damage");
+  assert(
+    coreSaveSim.player.vy < 0 && coreSaveSim.player.vx < 0,
+    `Saved hit should bounce the player up and away from the right-side damage source, got vx=${coreSaveSim.player.vx}, vy=${coreSaveSim.player.vy}`
+  );
   coreSaveSim.level.hazards = [];
   Object.assign(coreSaveSim.player, { x: 180, y: 86, vx: 0, vy: 0, onGround: true });
   runFrames(coreSaveSim, 34, idle);
@@ -4818,6 +4821,52 @@ try {
   assert(checkpointEchoStateSim.snapshot().echoes.length === 0, "Checkpoint life reset should clear active echoes");
   assert(!checkpointEchoStateSim.objectState.activePlates.has("checkpoint-echo-sensor"), "Checkpoint life reset should clear echo-driven sensor state");
   assert(!checkpointEchoStateSim.objectState.openDoors.has("checkpoint-echo-door"), "Checkpoint life reset should close doors opened only by cleared echoes");
+
+  const checkpointTriggerStateSim = new RoomSimulation({
+    ...baseLevel,
+    plates: [{ id: "checkpoint-once", x: 18, y: 112, w: 50, h: 8, once: true }],
+    timedSwitches: [{ id: "checkpoint-timer", x: 18, y: 112, w: 50, h: 8, duration: 40 }],
+    doors: [
+      { id: "checkpoint-once-door", x: 150, y: 68, w: 20, h: 52, opensWith: ["checkpoint-once"] },
+      { id: "checkpoint-timer-door", x: 180, y: 68, w: 20, h: 52, opensWith: ["checkpoint-timer"] }
+    ],
+    bosses: [{ id: "checkpoint-trigger-boss", kind: "clockwork-regent", x: 78, y: 20, w: 190, h: 130, entrySide: "right", weakSpot: "core", introSeconds: 1, health: 2, score: 2000 }]
+  });
+  checkpointTriggerStateSim.step(idle);
+  assert(checkpointTriggerStateSim.objectState.latchedPlates.has("checkpoint-once"), "Expected once plate to latch before checkpoint");
+  assert(checkpointTriggerStateSim.objectState.timedSwitchTimers.has("checkpoint-timer"), "Expected timed switch to run before checkpoint");
+  Object.assign(checkpointTriggerStateSim.player, { x: 76, y: 86, vx: 0, vy: 0, onGround: true });
+  const checkpointTriggerActivated = checkpointTriggerStateSim.step(idle);
+  assert(checkpointTriggerActivated.bossCheckpointActivated === "checkpoint-trigger-boss", "Expected trigger-state fixture to activate boss checkpoint");
+  const checkpointTimerRemaining = checkpointTriggerStateSim.objectState.timedSwitchTimers.get("checkpoint-timer");
+  assert(checkpointTriggerStateSim.objectState.openDoors.has("checkpoint-once-door"), "Expected checkpoint snapshot to have once-plate door open");
+  assert(checkpointTriggerStateSim.objectState.openDoors.has("checkpoint-timer-door"), "Expected checkpoint snapshot to have timed-switch door open");
+  checkpointTriggerStateSim.resetLifeAttempt();
+  assert(checkpointTriggerStateSim.objectState.latchedPlates.has("checkpoint-once"), "Checkpoint life reset should preserve latched once plates");
+  assert(
+    checkpointTriggerStateSim.objectState.timedSwitchTimers.get("checkpoint-timer") === checkpointTimerRemaining,
+    `Checkpoint life reset should preserve timed-switch timer ${checkpointTimerRemaining}, got ${checkpointTriggerStateSim.objectState.timedSwitchTimers.get("checkpoint-timer")}`
+  );
+  assert(checkpointTriggerStateSim.objectState.activePlates.has("checkpoint-once"), "Checkpoint life reset should preserve active once-plate dependency");
+  assert(checkpointTriggerStateSim.objectState.activePlates.has("checkpoint-timer"), "Checkpoint life reset should preserve active timed-switch dependency");
+  assert(checkpointTriggerStateSim.objectState.openDoors.has("checkpoint-once-door"), "Checkpoint life reset should keep once-plate door open");
+  assert(checkpointTriggerStateSim.objectState.openDoors.has("checkpoint-timer-door"), "Checkpoint life reset should keep timed-switch door open");
+
+  const checkpointSpillStateSim = new RoomSimulation({
+    ...baseLevel,
+    cores: [{ id: "checkpoint-temp-core", x: 18, y: 86, w: 18, h: 18 }],
+    hazards: [{ id: "checkpoint-temp-spark", x: 18, y: 86, w: 36, h: 34 }],
+    bosses: [{ id: "checkpoint-spill-boss", kind: "clockwork-regent", x: 78, y: 20, w: 190, h: 130, entrySide: "right", weakSpot: "core", introSeconds: 1, health: 2, score: 2000 }]
+  });
+  const checkpointTempSpill = checkpointSpillStateSim.step(idle);
+  assert(checkpointTempSpill.coreSpill?.coreIds.length === 1, `Expected checkpoint spill fixture to create one loose core, got ${JSON.stringify(checkpointTempSpill.coreSpill)}`);
+  checkpointSpillStateSim.level.hazards = [];
+  Object.assign(checkpointSpillStateSim.player, { x: 76, y: 86, vx: 0, vy: 0, onGround: true });
+  const checkpointWithLooseCore = checkpointSpillStateSim.step(idle);
+  assert(checkpointWithLooseCore.bossCheckpointActivated === "checkpoint-spill-boss", "Expected loose-core fixture to activate boss checkpoint");
+  assert(checkpointSpillStateSim.objectState.spilledCores.size === 1, "Live attempt should keep temporary loose cores until they expire or are picked up");
+  checkpointSpillStateSim.resetLifeAttempt();
+  assert(checkpointSpillStateSim.objectState.spilledCores.size === 0, "Checkpoint life reset should not restore temporary loose recovery cores");
 
   const checkpointRewindTarget = { x: bossCheckpointSim.player.x, y: bossCheckpointSim.player.y };
   const checkpointRewindScore = bossCheckpointSim.score;

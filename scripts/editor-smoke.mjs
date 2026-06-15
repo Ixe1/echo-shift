@@ -1139,6 +1139,11 @@ try {
         label: document.getElementById(labelId)?.textContent || ""
       };
     };
+    const modalCoreText = () =>
+      Array.from(document.querySelectorAll("[data-modal] .score-cell"))
+        .find((cell) => cell.querySelector("strong")?.textContent?.trim() === "Cores")
+        ?.querySelector("span")
+        ?.textContent?.trim() || "";
     const dialogScore = {
       levelId: "dialog-smoke",
       score: 100,
@@ -1152,8 +1157,11 @@ try {
     const pauseDialog = dialogSnapshot();
     document.querySelector("[data-options]").click();
     const optionsDialog = dialogSnapshot();
+    hud.showComplete({ ...dialogScore, cores: 4 }, false, { scoreEligible: false, campaignSummary: null, leaderboardEntries: [] });
+    const roomCompleteCoreText = modalCoreText();
     hud.showTutorialComplete(dialogScore);
     const tutorialDialog = dialogSnapshot();
+    const tutorialCoreText = modalCoreText();
     hud.showGameOver("Dialog Smoke");
     const gameOverDialog = dialogSnapshot();
     hud.showComplete(
@@ -1184,6 +1192,7 @@ try {
     const finalDialogRole = panel.getAttribute("role");
     const finalDialogModal = panel.getAttribute("aria-modal");
     const finalDialogLabel = document.getElementById(panel.getAttribute("aria-labelledby") || "")?.textContent || "";
+    const finalCoreText = modalCoreText();
     const input = document.querySelector("[data-leaderboard-name]");
     input.value = "<Ace>&!!!";
     const form = document.querySelector("[data-leaderboard-form]");
@@ -1312,10 +1321,13 @@ try {
       pauseDialog,
       optionsDialog,
       tutorialDialog,
+      roomCompleteCoreText,
+      tutorialCoreText,
       gameOverDialog,
       finalDialogRole,
       finalDialogModal,
       finalDialogLabel,
+      finalCoreText,
       failedEntryStorage,
       failedButtonText,
       failedButtonDisabled,
@@ -2391,6 +2403,12 @@ try {
     leaderboardHarnessResult.initialFinalFocus.includes("Save Score"),
     `Expected final leaderboard modal to focus Save Score instead of scrolling to the exit row, got ${leaderboardHarnessResult.initialFinalFocus}`
   );
+  assert(leaderboardHarnessResult.roomCompleteCoreText === "4", `Expected room-clear cores cell to show carried count 4, got ${leaderboardHarnessResult.roomCompleteCoreText}`);
+  assert(!leaderboardHarnessResult.roomCompleteCoreText.includes("/"), `Expected room-clear cores cell to omit map total, got ${leaderboardHarnessResult.roomCompleteCoreText}`);
+  assert(leaderboardHarnessResult.tutorialCoreText === "0", `Expected tutorial-complete cores cell to show carried count 0, got ${leaderboardHarnessResult.tutorialCoreText}`);
+  assert(!leaderboardHarnessResult.tutorialCoreText.includes("/"), `Expected tutorial-complete cores cell to omit map total, got ${leaderboardHarnessResult.tutorialCoreText}`);
+  assert(leaderboardHarnessResult.finalCoreText === "4", `Expected final complete cores cell to show carried count 4, got ${leaderboardHarnessResult.finalCoreText}`);
+  assert(!leaderboardHarnessResult.finalCoreText.includes("/"), `Expected final complete cores cell to omit map total, got ${leaderboardHarnessResult.finalCoreText}`);
   assert(leaderboardHarnessResult.summaryTopVisible, "Expected final leaderboard summary to stay visible when the modal opens");
   for (const [name, snapshot] of Object.entries({
     pause: leaderboardHarnessResult.pauseDialog,
