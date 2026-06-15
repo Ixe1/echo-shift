@@ -111,6 +111,7 @@ const TIME_RUNNER_KEY = "time-runner";
 const TIME_EFFECTS_KEY = "time-effects";
 const CORE_MAJOR_KEY = "core-major";
 const OBJECT_ATLAS_KEY = "object-atlas";
+const PORTAL_EFFECT_DEPTH = 9;
 const LAUNCH_PAD_KEY = "launch-pad";
 const LAUNCH_PAD_FRAME_WIDTH = 256;
 const LAUNCH_PAD_FRAME_HEIGHT = 192;
@@ -150,6 +151,7 @@ const GAME_SCENE_DIAGNOSTIC_KEYS = [
   "echoShiftCoreInvulnerabilityFrames",
   "echoShiftPlayerSpriteState",
   "echoShiftExitUnlocked",
+  "echoShiftPortalEffectDepth",
   "echoShiftBossCheckpoint",
   "echoShiftPlayerRect",
   "echoShiftBossWeakSpotRects",
@@ -311,6 +313,7 @@ export class GameScene extends Phaser.Scene {
   private _world: Phaser.GameObjects.Graphics | null = null;
   private _backgroundFx: Phaser.GameObjects.Graphics | null = null;
   private _structureOutlines: Phaser.GameObjects.Graphics | null = null;
+  private _portalFx: Phaser.GameObjects.Graphics | null = null;
   private _fx: Phaser.GameObjects.Graphics | null = null;
   private accumulator = 0;
   private pausedByHud = false;
@@ -507,6 +510,15 @@ export class GameScene extends Phaser.Scene {
 
   private set structureOutlines(structureOutlines: Phaser.GameObjects.Graphics) {
     this._structureOutlines = structureOutlines;
+  }
+
+  private get portalFx(): Phaser.GameObjects.Graphics {
+    if (!this._portalFx) throw new Error("GameScene portal FX graphics unavailable");
+    return this._portalFx;
+  }
+
+  private set portalFx(portalFx: Phaser.GameObjects.Graphics) {
+    this._portalFx = portalFx;
   }
 
   private get fx(): Phaser.GameObjects.Graphics {
@@ -858,6 +870,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.lowChurnGraphics) this.drawBackgroundDetail();
     this.world = this.add.graphics().setDepth(0);
     this.structureOutlines = this.add.graphics().setDepth(2);
+    this.portalFx = this.add.graphics().setDepth(PORTAL_EFFECT_DEPTH);
     this.fx = this.add.graphics().setDepth(30);
     this.syncStaticLevelAssets();
     this.keys = this.createKeys();
@@ -2244,6 +2257,7 @@ export class GameScene extends Phaser.Scene {
     this._world = null;
     this._backgroundFx = null;
     this._structureOutlines = null;
+    this._portalFx = null;
     this._fx = null;
     this.echoTrails.clear();
     this.actorSprites.clear();
@@ -2312,6 +2326,7 @@ export class GameScene extends Phaser.Scene {
     this.beginObjectAssetSync();
     this.world.clear();
     this.structureOutlines.clear();
+    this.portalFx.clear();
     this.fx.clear();
     if (!this.lowChurnGraphics) this.syncBackgroundAmbience(snapshot.tick);
     this.syncRuntimeSolids(snapshot.solids);
@@ -4145,25 +4160,26 @@ export class GameScene extends Phaser.Scene {
   private drawExit(exit: Rect, won: boolean): void {
     const center = rectCenter(exit);
     const spin = this.time.now / 260;
-    this.world.fillStyle(won ? 0xffe35a : 0x43f7ff, 0.13);
-    this.world.fillEllipse(center.x, center.y, exit.w * 1.4, exit.h * 1.2);
-    this.world.fillStyle(0xbd5cff, 0.12);
-    this.world.fillEllipse(center.x, center.y, exit.w * 1.1, exit.h * 0.88);
-    this.world.lineStyle(3, won ? 0xffe35a : 0x43f7ff, 0.82);
-    this.world.strokeEllipse(center.x, center.y, exit.w, exit.h);
-    this.world.lineStyle(1, 0xffffff, 0.3);
-    this.world.strokeEllipse(center.x, center.y, exit.w * 0.7, exit.h * 0.7);
-    this.world.lineStyle(2, 0xbd5cff, 0.72);
-    this.world.beginPath();
+    const portalFx = this.portalFx;
+    portalFx.fillStyle(won ? 0xffe35a : 0x43f7ff, 0.13);
+    portalFx.fillEllipse(center.x, center.y, exit.w * 1.4, exit.h * 1.2);
+    portalFx.fillStyle(0xbd5cff, 0.12);
+    portalFx.fillEllipse(center.x, center.y, exit.w * 1.1, exit.h * 0.88);
+    portalFx.lineStyle(3, won ? 0xffe35a : 0x43f7ff, 0.82);
+    portalFx.strokeEllipse(center.x, center.y, exit.w, exit.h);
+    portalFx.lineStyle(1, 0xffffff, 0.3);
+    portalFx.strokeEllipse(center.x, center.y, exit.w * 0.7, exit.h * 0.7);
+    portalFx.lineStyle(2, 0xbd5cff, 0.72);
+    portalFx.beginPath();
     for (let i = 0; i < 5; i += 1) {
       const angle = spin + i * 1.26;
       const x = center.x + Math.cos(angle) * exit.w * 0.32;
       const y = center.y + Math.sin(angle) * exit.h * 0.42;
-      if (i === 0) this.world.moveTo(x, y);
-      else this.world.lineTo(x, y);
+      if (i === 0) portalFx.moveTo(x, y);
+      else portalFx.lineTo(x, y);
     }
-    this.world.closePath();
-    this.world.strokePath();
+    portalFx.closePath();
+    portalFx.strokePath();
   }
 
   private drawEchoes(echoes: ActorBody[]): void {
@@ -4342,6 +4358,7 @@ export class GameScene extends Phaser.Scene {
       ? `visible:${playerSprite.visible ? "1" : "0"}:alpha:${playerSprite.alpha.toFixed(3)}:tint:${playerTint}`
       : "";
     document.documentElement.dataset.echoShiftExitUnlocked = snapshot.exitUnlocked ? "true" : "false";
+    document.documentElement.dataset.echoShiftPortalEffectDepth = this.portalFx.depth.toFixed(3);
     document.documentElement.dataset.echoShiftBossCheckpoint = snapshot.bossCheckpointActive ? "active" : "idle";
     document.documentElement.dataset.echoShiftPlayerRect = formatRect(snapshot.player);
     document.documentElement.dataset.echoShiftBossWeakSpotRects = snapshot.bosses

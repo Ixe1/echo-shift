@@ -246,12 +246,13 @@ const level = {
   subtitle: "Placement and readability",
   motionModel: "anchored",
   start: { x: 24, y: 438 },
-  exit: { x: 850, y: 438, w: 28, h: 38 },
+  exit: { x: 790, y: 438, w: 28, h: 38 },
   bounds: { x: 0, y: 0, w: 900, h: 540 },
   solids: [
     { id: "floor-a", x: 0, y: 480, w: 300, h: 40, sprite: "floor", tone: "steel" },
     { id: "floor-b", x: 300, y: 480, w: 300, h: 40, sprite: "floor", tone: "steel" },
     { id: "floor-c", x: 600, y: 480, w: 300, h: 40, sprite: "floor", tone: "steel" },
+    { id: "exit-decor-wall", x: 778, y: 410, w: 52, h: 70, sprite: "wall", material: "glass-energy", collision: "decorative", decorDensity: "off" },
     { id: "left-wall-upper", x: -20, y: 0, w: 20, h: 260, sprite: "wall", tone: "glass" },
     { id: "left-wall-lower", x: -20, y: 260, w: 20, h: 280, sprite: "wall", tone: "glass" },
     { id: "right-wall", x: 900, y: 0, w: 20, h: 540, sprite: "wall", tone: "glass" },
@@ -384,7 +385,9 @@ try {
     canvas: {
       width: document.querySelector("canvas")?.clientWidth || 0,
       height: document.querySelector("canvas")?.clientHeight || 0
-    }
+    },
+    exitUnlocked: document.documentElement.dataset.echoShiftExitUnlocked || "",
+    portalEffectDepth: Number(document.documentElement.dataset.echoShiftPortalEffectDepth || "NaN")
   }));
 
   const doorEntries = diagnostics.doors.split("|").filter(Boolean);
@@ -502,16 +505,25 @@ try {
   const upperFloorCover = solidDiagnosticsById.get("upper-floor-cover");
   const lowerSolidFloor = solidDiagnosticsById.get("lower-solid-floor");
   const upperTopOnlyCover = solidDiagnosticsById.get("upper-top-only-cover");
+  const exitDecorWall = solidDiagnosticsById.get("exit-decor-wall");
   assert(topOnlyOverlay, `Missing top-only overlay solid diagnostic: ${diagnostics.solids}`);
   assert(solidCover, `Missing solid cover diagnostic: ${diagnostics.solids}`);
   assert(lowerFloorOverlay, `Missing lower floor overlay diagnostic: ${diagnostics.solids}`);
   assert(upperFloorCover, `Missing upper floor cover diagnostic: ${diagnostics.solids}`);
   assert(lowerSolidFloor, `Missing lower solid floor diagnostic: ${diagnostics.solids}`);
   assert(upperTopOnlyCover, `Missing upper top-only cover diagnostic: ${diagnostics.solids}`);
+  assert(exitDecorWall, `Missing exit decorative wall diagnostic: ${diagnostics.solids}`);
   assert(topOnlyOverlay.collision === "top-only", `Expected top-only overlay collision diagnostic, got ${JSON.stringify(topOnlyOverlay)}`);
   assert(solidCover.collision === "solid", `Expected solid cover collision diagnostic, got ${JSON.stringify(solidCover)}`);
   assert(lowerSolidFloor.collision === "solid", `Expected lower floor to stay solid, got ${JSON.stringify(lowerSolidFloor)}`);
   assert(upperTopOnlyCover.collision === "top-only", `Expected upper cover to be top-only, got ${JSON.stringify(upperTopOnlyCover)}`);
+  assert(exitDecorWall.collision === "decorative", `Expected exit overlap wall to be decorative, got ${JSON.stringify(exitDecorWall)}`);
+  assert(diagnostics.exitUnlocked === "true", `Expected exit portal to be unlocked for portal layering QA, got ${diagnostics.exitUnlocked}`);
+  assert(Number.isFinite(diagnostics.portalEffectDepth), `Expected portal effect depth diagnostic, got ${diagnostics.portalEffectDepth}`);
+  assert(
+    diagnostics.portalEffectDepth > exitDecorWall.depth,
+    `Expected portal effect depth to render above overlapping decorative wall, got portal ${diagnostics.portalEffectDepth} vs wall ${exitDecorWall.depth}`
+  );
   assert(topOnlyOverlay.depth > solidCover.depth, `Expected top-only terrain to render above overlapping solid terrain, got ${JSON.stringify({ topOnlyOverlay, solidCover })}`);
   assert(lowerFloorOverlay.depth > upperFloorCover.depth, `Expected lower floor terrain to render above taller overlapping floor terrain, got ${JSON.stringify({ lowerFloorOverlay, upperFloorCover })}`);
   assert(lowerSolidFloor.depth > upperTopOnlyCover.depth, `Expected lower solid floor to render above higher top-only floor terrain, got ${JSON.stringify({ lowerSolidFloor, upperTopOnlyCover })}`);
