@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { inflateSync } from "node:zlib";
 import { chromium } from "playwright";
 
 const url = process.env.PLAYTEST_URL || "http://localhost:5173/";
@@ -11,6 +12,121 @@ mkdirSync(outDir, { recursive: true });
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
+};
+
+const paethPredictor = (left, up, upLeft) => {
+  const estimate = left + up - upLeft;
+  const leftDistance = Math.abs(estimate - left);
+  const upDistance = Math.abs(estimate - up);
+  const upLeftDistance = Math.abs(estimate - upLeft);
+  if (leftDistance <= upDistance && leftDistance <= upLeftDistance) return left;
+  return upDistance <= upLeftDistance ? up : upLeft;
+};
+
+const decodePng = (buffer) => {
+  assert(buffer.subarray(0, 8).toString("hex") === "89504e470d0a1a0a", "Expected PNG screenshot buffer");
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let bitDepth = 0;
+  let colorType = 0;
+  const idatChunks = [];
+  while (offset < buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.subarray(offset + 4, offset + 8).toString("ascii");
+    const data = buffer.subarray(offset + 8, offset + 8 + length);
+    offset += 12 + length;
+    if (type === "IHDR") {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      bitDepth = data[8];
+      colorType = data[9];
+      assert(data[12] === 0, "Interlaced PNG screenshots are not supported by this QA parser");
+    } else if (type === "IDAT") {
+      idatChunks.push(data);
+    } else if (type === "IEND") {
+      break;
+    }
+  }
+  assert(width > 0 && height > 0, "Expected PNG screenshot dimensions");
+  assert(bitDepth === 8 && (colorType === 2 || colorType === 6), `Unsupported PNG format bitDepth=${bitDepth} colorType=${colorType}`);
+  const bytesPerPixel = colorType === 6 ? 4 : 3;
+  const stride = width * bytesPerPixel;
+  const inflated = inflateSync(Buffer.concat(idatChunks));
+  const pixels = Buffer.alloc(width * height * 4);
+  const row = Buffer.alloc(stride);
+  const previousRow = Buffer.alloc(stride);
+  let inputOffset = 0;
+  for (let y = 0; y < height; y += 1) {
+    const filter = inflated[inputOffset];
+    inputOffset += 1;
+    for (let x = 0; x < stride; x += 1) {
+      const raw = inflated[inputOffset];
+      inputOffset += 1;
+      const left = x >= bytesPerPixel ? row[x - bytesPerPixel] : 0;
+      const up = previousRow[x] || 0;
+      const upLeft = x >= bytesPerPixel ? previousRow[x - bytesPerPixel] || 0 : 0;
+      if (filter === 0) row[x] = raw;
+      else if (filter === 1) row[x] = (raw + left) & 255;
+      else if (filter === 2) row[x] = (raw + up) & 255;
+      else if (filter === 3) row[x] = (raw + Math.floor((left + up) / 2)) & 255;
+      else if (filter === 4) row[x] = (raw + paethPredictor(left, up, upLeft)) & 255;
+      else throw new Error(`Unsupported PNG filter ${filter}`);
+    }
+    for (let x = 0; x < width; x += 1) {
+      const source = x * bytesPerPixel;
+      const target = (y * width + x) * 4;
+      pixels[target] = row[source];
+      pixels[target + 1] = row[source + 1];
+      pixels[target + 2] = row[source + 2];
+      pixels[target + 3] = colorType === 6 ? row[source + 3] : 255;
+    }
+    previousRow.set(row);
+  }
+  return { width, height, pixels };
+};
+
+const sampleCyanOutlinePixels = (buffer, cameraWorldView, rect, sides) => {
+  const png = decodePng(buffer);
+  const view = cameraWorldView.split(",").map(Number);
+  assert(view.length === 4 && view.every((value) => Number.isFinite(value)), `Expected camera world view, got ${cameraWorldView}`);
+  const [viewX, viewY, viewW, viewH] = view;
+  const toPng = (x, y) => ({
+    x: Math.round(((x - viewX) / viewW) * png.width),
+    y: Math.round(((y - viewY) / viewH) * png.height)
+  });
+  const isCyanOutlinePixel = (r, g, b, a) => a > 80 && r <= 145 && g >= 95 && b >= 110 && g > r + 32 && b > r + 38;
+  const points = [];
+  const pushHorizontal = (y) => {
+    for (let x = rect.x + 3; x <= rect.x + rect.w - 3; x += 4) points.push(toPng(x, y));
+  };
+  const pushVertical = (x) => {
+    for (let y = rect.y + 3; y <= rect.y + rect.h - 3; y += 4) points.push(toPng(x, y));
+  };
+  if (sides.includes("top")) pushHorizontal(rect.y + 0.5);
+  if (sides.includes("bottom")) pushHorizontal(rect.y + rect.h - 0.5);
+  if (sides.includes("left")) pushVertical(rect.x + 0.5);
+  if (sides.includes("right")) pushVertical(rect.x + rect.w - 0.5);
+  let matchingPixels = 0;
+  let sampledPixels = 0;
+  let maxChannel = 0;
+  for (const point of points) {
+    for (let y = point.y - 1; y <= point.y + 1; y += 1) {
+      if (y < 0 || y >= png.height) continue;
+      for (let x = point.x - 1; x <= point.x + 1; x += 1) {
+        if (x < 0 || x >= png.width) continue;
+        const pixelIndex = (y * png.width + x) * 4;
+        const r = png.pixels[pixelIndex];
+        const g = png.pixels[pixelIndex + 1];
+        const b = png.pixels[pixelIndex + 2];
+        const a = png.pixels[pixelIndex + 3];
+        sampledPixels += 1;
+        maxChannel = Math.max(maxChannel, r, g, b);
+        if (isCyanOutlinePixel(r, g, b, a)) matchingPixels += 1;
+      }
+    }
+  }
+  return { matchingPixels, sampledPixels, maxChannel, points: points.length, rect, sides };
 };
 
 const isAllowedBrowserMessage = (msg) =>
@@ -179,6 +295,7 @@ try {
     objectAtlasFilter: document.documentElement.dataset.echoShiftObjectAtlasFilter || "",
     terrainTileFilter: document.documentElement.dataset.echoShiftTerrainTileFilter || "",
     terrainDecorPropFilter: document.documentElement.dataset.echoShiftTerrainDecorPropFilter || "",
+    cameraWorldView: document.documentElement.dataset.echoShiftCameraWorldView || "",
     canvas: {
       width: document.querySelector("canvas")?.clientWidth || 0,
       height: document.querySelector("canvas")?.clientHeight || 0
@@ -187,6 +304,7 @@ try {
 
   const doorEntries = diagnostics.doors.split("|").filter(Boolean);
   const solidEntries = diagnostics.solids.split(",").filter(Boolean);
+  const levelSolidsById = new Map(level.solids.map((solid) => [solid.id, solid]));
   const solidDiagnosticsById = new Map(solidEntries.map((entry) => {
     const [id, frame, material, tileCount, collision, depth] = entry.split(":");
     return [id, {
@@ -694,7 +812,19 @@ try {
 
   const fullGraphicsScreenshot = `${outDir}/door-solid-render-qa.png`;
   const lowChurnScreenshot = `${outDir}/door-solid-render-low-churn-qa.png`;
-  await page.screenshot({ path: fullGraphicsScreenshot, fullPage: true });
+  const fullGraphicsScreenshotBuffer = await page.screenshot({ path: fullGraphicsScreenshot, fullPage: true });
+  const floorCyanSamples = sampleCyanOutlinePixels(fullGraphicsScreenshotBuffer, diagnostics.cameraWorldView, levelSolidsById.get("floor-a"), ["top"]);
+  const wallCyanSamples = sampleCyanOutlinePixels(fullGraphicsScreenshotBuffer, diagnostics.cameraWorldView, levelSolidsById.get("thin-wall"), ["top", "bottom", "left", "right"]);
+  assert(
+    floorCyanSamples.matchingPixels >= 12,
+    `Expected visible cyan floor outline pixels so wall pixel sampling is meaningful, got ${JSON.stringify(floorCyanSamples)}`
+  );
+  assert(
+    wallCyanSamples.matchingPixels <= 20 && floorCyanSamples.matchingPixels >= wallCyanSamples.matchingPixels * 4,
+    `Expected thin wall perimeter to omit cyan outline pixels, got ${JSON.stringify(wallCyanSamples)}`
+  );
+  diagnostics.floorCyanSamples = floorCyanSamples;
+  diagnostics.wallCyanSamples = wallCyanSamples;
   writeFileSync(`${outDir}/door-solid-render-qa.json`, JSON.stringify({ diagnostics, messages }, null, 2));
 
   const lowChurnMessageStart = messages.length;
@@ -712,6 +842,9 @@ try {
   }));
   assert(lowChurnDiagnostics.doors.includes("door:tall-closed-26:8:logic:468,180,26,300:pos:481,180:origin:0.5,0:box:459,180,45,300:orientation:vertical:rotation:0"), `Expected low-churn door diagnostics, got ${lowChurnDiagnostics.doors}`);
   assert(lowChurnDiagnostics.outlines.includes("floor-b:300,480:300x40:43f7ff:2:top:300-410;top:538-600;bottom:300-600"), `Expected low-churn merged floor outline diagnostics, got ${lowChurnDiagnostics.outlines}`);
+  for (const id of ["left-wall-upper", "left-wall-lower", "right-wall", "thin-wall", "rain-glass-optin-wall", "cryo-wall-decor-base", "timber-wall-decor-base"]) {
+    assert(!lowChurnDiagnostics.outlines.includes(`${id}:`), `Expected low-churn ${id} to omit all outline segments, got ${lowChurnDiagnostics.outlines}`);
+  }
   assert(lowChurnDiagnostics.sensors.includes("echo-sensor:active-sensor:hidden:active"), `Expected low-churn hidden sensor diagnostics, got ${lowChurnDiagnostics.sensors}`);
   assert(lowChurnDiagnostics.hazards.includes("hazard-vent:qa-vent:0:"), `Expected low-churn hazard vent diagnostics, got ${lowChurnDiagnostics.hazards}`);
   assert(!lowChurnDiagnostics.sensors.includes(":9:"), `Low-churn hidden echo sensor diagnostics should not use door-open frame 9, got ${lowChurnDiagnostics.sensors}`);

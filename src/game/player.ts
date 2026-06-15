@@ -201,6 +201,10 @@ export const moveActor = (
   const previousY = actor.y;
   actor.y += actor.vy;
   resolveAxis(actor, [...collisionRects, ...oneWayRects, ...crateRects], "y", bounds, dynamic.crates, previousY, dynamic.actorBlockers);
+  if (actor.y + actor.h > bounds.y + bounds.h) {
+    actor.alive = false;
+    return { jumped, landed: false };
+  }
   if (actor.kind === "player" && !actor.onGround && Math.abs(attemptedVx) >= 0.05 && actor.vy > 0) {
     tryApplyLedgeForgiveness(
       actor,
@@ -223,9 +227,7 @@ export const moveActor = (
   );
 
   actor.x = clamp(actor.x, bounds.x, bounds.x + bounds.w - actor.w);
-  if (actor.y + actor.h > bounds.y + bounds.h) {
-    actor.alive = false;
-  }
+  if (actor.y + actor.h > bounds.y + bounds.h) actor.alive = false;
 
   const landed = !wasGrounded && actor.onGround;
   return { jumped, landed };

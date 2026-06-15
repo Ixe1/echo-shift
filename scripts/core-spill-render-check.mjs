@@ -40,7 +40,7 @@ const spillWorldRectsFromFrames = (frames) =>
     .filter((frame) => frame.includes(":spill:"))
     .map((frame) => {
       const match = frame.match(/:spill:(-?\d+),(-?\d+)$/);
-      return match ? { x: Number(match[1]), y: Number(match[2]), w: 18, h: 18 } : null;
+      return match ? { x: Number(match[1]), y: Number(match[2]), w: 18, h: 18, pad: 2 } : null;
     })
     .filter(Boolean);
 
@@ -129,7 +129,7 @@ const samplePngWorldRegions = (buffer, regions, cameraWorldView, mode) => {
     const max = Math.max(r, g, b);
     const min = Math.min(r, g, b);
     if (mode === "playerTint") return r > 130 && g > 95 && b < 170 && r >= b && max - min > 30;
-    return (max > 78 && max - min > 24 && (g > r + 8 || b > r + 8)) || (max > 185 && min > 135);
+    return g > 95 && b > 120 && r < 150 && g > r + 24 && b > r + 38 && max - min > 48;
   };
   const samples = regions.map((region) => {
     const pad = region.pad ?? 8;
@@ -519,7 +519,7 @@ try {
   const screenshot = `${outDir}/core-spill-render-qa.png`;
   const screenshotBuffer = await page.screenshot({ path: screenshot, fullPage: true });
   const visibleSpillSamples = samplePngWorldRegions(screenshotBuffer, spillWorldRectsFromFrames(spillDiagnostics.coreFrames), spillDiagnostics.cameraWorldView, "core");
-  const visibleSpillRegions = visibleSpillSamples.samples.filter((sample) => sample.matchingPixels >= 4);
+  const visibleSpillRegions = visibleSpillSamples.samples.filter((sample) => sample.matchingPixels >= 16);
   assert(
     visibleSpillSamples.ok && visibleSpillRegions.length >= 2,
     `Expected spilled core sprites to be visible in rendered canvas pixels, got ${JSON.stringify(visibleSpillSamples)}`

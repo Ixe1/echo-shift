@@ -304,8 +304,10 @@ const verifyGameSceneAudioCleanupHooks = () => {
   );
   assert(
     objectsSource.includes("let magnetBlockers: Rect[] | null = null") &&
-      objectsSource.includes("const unclaimedCores = (level.cores || []).filter"),
-    "Expected object updates to lazily build magnet blockers only for unclaimed authored cores"
+      objectsSource.includes("const unclaimedCores = (level.cores || []).filter") &&
+      objectsSource.includes("const nearMagnetTarget = Boolean(target && target.distance <= CORE_MAGNET_RADIUS)") &&
+      objectsSource.includes("nearMagnetTarget ? blockerRects() : []"),
+    "Expected object updates to lazily build magnet blockers only for nearby unclaimed authored cores"
   );
   const audioGateBody = gameSceneMethodBody(source, "startLevelWhenAudioReady");
   assert(audioGateBody.includes("audio.waitForMusicStart"), "Expected level start gate to wait for requested music playback");
@@ -2601,6 +2603,18 @@ try {
   coreMagnetSim.step(idle);
   const magnetOffset = coreMagnetSim.snapshot().coreOffsets.get("magnet-core");
   assert(magnetOffset && magnetOffset.x < 0, `Expected nearby placed core to drift toward player, got ${JSON.stringify(magnetOffset)}`);
+  const farMagnetSim = new RoomSimulation({
+    ...baseLevel,
+    bounds: { x: 0, y: 0, w: 520, h: 180 },
+    solids: [
+      { id: "floor", x: 0, y: 120, w: 520, h: 40 },
+      { id: "left-wall", x: -20, y: 0, w: 20, h: 180 },
+      { id: "right-wall", x: 520, y: 0, w: 20, h: 180 }
+    ],
+    cores: [{ id: "far-magnet-core", x: 430, y: 90, w: 18, h: 18 }]
+  });
+  farMagnetSim.step(idle);
+  assert(!farMagnetSim.snapshot().coreOffsets.has("far-magnet-core"), "Placed cores outside magnet radius should not create per-frame magnet offsets");
   const clonedMagnetSnapshot = coreMagnetSim.snapshot();
   const renderMagnetSnapshot = coreMagnetSim.snapshot({ cloneTransientCoreState: false });
   assert(clonedMagnetSnapshot.coreOffsets !== coreMagnetSim.objectState.coreOffsets, "Default snapshot should clone core magnet offsets");
@@ -5977,6 +5991,23 @@ try {
   const fallBottomEdgeDeath = fallBottomEdgeSim.step(idle);
   assert(fallBottomEdgeSim.dead && fallBottomEdgeDeath.died, "Falling even partly below the playable area should be instant death");
   assert(!fallBottomEdgeDeath.coreSpill, `Bottom-edge void death should not create core spill, got ${JSON.stringify(fallBottomEdgeDeath.coreSpill)}`);
+
+  const fallLedgeForgivenessSim = new RoomSimulation({
+    ...baseLevel,
+    start: { x: 56, y: 74 },
+    bounds: { x: 0, y: 0, w: 220, h: 100 },
+    solids: [{ id: "void-edge-ledge", x: 80, y: 100, w: 96, h: 20 }]
+  });
+  Object.assign(fallLedgeForgivenessSim.player, { x: 56, y: 74, vx: 0, vy: 1, onGround: false, coyote: 0 });
+  const fallLedgeForgivenessDeath = fallLedgeForgivenessSim.step(right);
+  assert(
+    fallLedgeForgivenessSim.dead && fallLedgeForgivenessDeath.died,
+    "Below-level death should happen before ledge forgiveness can snap the player back onto a nearby ledge"
+  );
+  assert(
+    !fallLedgeForgivenessSim.player.onGround && fallLedgeForgivenessSim.player.y !== 66,
+    `Void-edge ledge forgiveness should not snap the player alive, got ${JSON.stringify(fallLedgeForgivenessSim.player)}`
+  );
 
   const fallWithCoreSim = new RoomSimulation({
     ...fallLevel,

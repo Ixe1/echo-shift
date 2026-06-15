@@ -245,7 +245,12 @@ export const updateObjects = (
     for (const item of unclaimedCores) {
       const previousOffset = previous.coreOffsets.get(item.id);
       const wasCollected = Boolean(playerActor && rectsOverlap(playerActor, offsetCoreRect(item, previousOffset)));
-      const nextOffset = wasCollected ? null : advanceCoreMagnetState(item, previousOffset, playerActor, blockerRects());
+      const target = playerActor?.alive ? coreMagnetTarget(item, previousOffset || { x: 0, y: 0 }, playerActor) : null;
+      const nearMagnetTarget = Boolean(target && target.distance <= CORE_MAGNET_RADIUS);
+      const shouldAdvanceMagnet = Boolean(previousOffset) || nearMagnetTarget;
+      const nextOffset = wasCollected || !shouldAdvanceMagnet
+        ? null
+        : advanceCoreMagnetState(item, previousOffset, playerActor, nearMagnetTarget ? blockerRects() : []);
       const collected = wasCollected || Boolean(playerActor && rectsOverlap(playerActor, offsetCoreRect(item, nextOffset || undefined)));
       if (collected && playerActor) {
         claimedCores.add(item.id);
