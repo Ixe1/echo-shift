@@ -295,11 +295,17 @@ export class RoomSimulation {
     this.currentRecording = [];
   }
 
-  private activeCheckpointPlatesWithoutEchoes(): Set<string> {
+  private checkpointTriggersWithoutEchoes(): { activePlates: Set<string>; timedSwitchTimers: Map<string, number> } {
     const activePlates = new Set<string>();
     const crateRects = [...this.objectState.crates.values()];
+    const timedSwitchTimers = new Map(this.objectState.timedSwitchTimers);
+    for (const timedSwitch of this.level.timedSwitches || []) {
+      if (rectsOverlap(this.player, timedSwitch) || crateRects.some((crate) => rectsOverlap(crate, timedSwitch))) {
+        timedSwitchTimers.set(timedSwitch.id, Math.max(1, Math.round(timedSwitch.duration)));
+      }
+    }
     for (const id of this.objectState.latchedPlates) activePlates.add(id);
-    for (const [id, remaining] of this.objectState.timedSwitchTimers) {
+    for (const [id, remaining] of timedSwitchTimers) {
       if (remaining > 0) activePlates.add(id);
     }
     for (const plate of this.level.plates || []) {
@@ -313,13 +319,13 @@ export class RoomSimulation {
         activePlates.add(sensor.id);
       }
     }
-    return activePlates;
+    return { activePlates, timedSwitchTimers };
   }
 
   private clearCheckpointEchoesAndObjectState(): void {
     this.clearEchoes();
     const defeatedBossIds = new Set(this.currentAttemptDefeatedBossIds.keys());
-    const activePlates = this.activeCheckpointPlatesWithoutEchoes();
+    const { activePlates, timedSwitchTimers } = this.checkpointTriggersWithoutEchoes();
     const latchedPlates = new Set(this.objectState.latchedPlates);
     for (const plate of this.level.plates || []) {
       if (plate.once && activePlates.has(plate.id)) latchedPlates.add(plate.id);
@@ -329,6 +335,7 @@ export class RoomSimulation {
       ...this.objectState,
       activePlates,
       latchedPlates,
+      timedSwitchTimers,
       openDoors: collectOpenDoors(this.level.doors || [], activePlates, this.objectState.collectedCores, defeatedBossIds),
       blockedLasers: collectBlockedLasers([...(this.level.lasers || []), ...(this.level.movingLasers || [])], crateRects, activePlates, this.tick),
       coreOffsets: new Map(),
@@ -616,6 +623,22 @@ export class RoomSimulation {
       protectedCoreSaveIds: new Set(this.protectedCoreSaveIds)
     };
     events.bossCheckpointActivated = boss.id;
+  }
+
+  private checkpointPlayerForRollover(bossId: string): ActorBody {
+    const boss = (this.level.bosses || []).find((candidate) => candidate.id === bossId);
+    const checkpointX = boss && Number.isFinite(boss.checkpoint?.x) ? Number(boss.checkpoint?.x) : this.player.x;
+    const checkpointY = boss && Number.isFinite(boss.checkpoint?.y) ? Number(boss.checkpoint?.y) : this.player.y;
+    return {
+      ...cloneActor(this.player),
+      x: checkpointX,
+      y: checkpointY,
+      vx: 0,
+      vy: 0,
+      onGround: true,
+      standingOn: null,
+      alive: true
+    };
   }
 
   private refreshDoorStateForDefeatedBosses(events?: StepEvents): void {
@@ -955,6 +978,7 @@ export class RoomSimulation {
             return state?.phase === "intro" || state?.phase === "active";
           })?.id;
     if (nextBossId) {
+      const checkpointRolledToNewBoss = nextBossId !== this.bossCheckpoint.bossId;
       const objectState = cloneObjectState(this.objectState);
       objectState.openDoors = collectOpenDoors(
         this.level.doors || [],
@@ -965,6 +989,17 @@ export class RoomSimulation {
       this.bossCheckpoint = {
         ...this.bossCheckpoint,
         bossId: nextBossId,
+        ...(checkpointRolledToNewBoss
+          ? {
+              player: this.checkpointPlayerForRollover(nextBossId),
+              echoes: this.echoes.map(cloneActor),
+              echoRecordings: cloneEchoRecordings(this.echoRecordings),
+              currentRecording: [...this.currentRecording],
+              tick: this.tick,
+              totalFrames: this.totalFrames,
+              deaths: this.deaths
+            }
+          : {}),
         objectState,
         killedMonsterIds: new Set(this.killedMonsterIds),
         bossStates: this.checkpointBossStates(),

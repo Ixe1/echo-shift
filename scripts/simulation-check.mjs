@@ -2567,6 +2567,45 @@ try {
   assert(coreLaserDeathSim.dead && coreLaserDeathEvent.playerLaserVaporized, "Laser should bypass core-save and kill the player");
   assert(!coreLaserDeathEvent.coreSpill, "Laser death should not spill cores as a save event");
 
+  const postSaveLaserDeathSim = new RoomSimulation({
+    ...baseLevel,
+    cores: [{ id: "post-save-laser-core", x: 18, y: 86, w: 18, h: 18 }],
+    hazards: [{ id: "post-save-laser-spark", x: 18, y: 86, w: 36, h: 34 }]
+  });
+  const postSaveLaserSave = postSaveLaserDeathSim.step(idle);
+  assert(postSaveLaserSave.coreSpill && postSaveLaserDeathSim.snapshot().coreInvulnerabilityFrames > 0, "Expected post-save laser fixture to enter core-save invulnerability");
+  postSaveLaserDeathSim.level.hazards = [];
+  Object.assign(postSaveLaserDeathSim.player, { x: 18, y: 86, vx: 0, vy: 0, onGround: true });
+  postSaveLaserDeathSim.level.lasers = [{ id: "post-save-laser-beam", x: 12, y: 80, w: 56, h: 56, startsOn: true }];
+  const postSaveLaserDeath = postSaveLaserDeathSim.step(idle);
+  assert(postSaveLaserDeathSim.dead && postSaveLaserDeath.playerLaserVaporized, "Laser should bypass active core-save invulnerability");
+  assert(!postSaveLaserDeath.coreSpill, `Post-save laser death should not create another core-save event, got ${JSON.stringify(postSaveLaserDeath.coreSpill)}`);
+
+  const postSaveVoidDeathSim = new RoomSimulation({
+    ...baseLevel,
+    cores: [{ id: "post-save-void-core", x: 18, y: 86, w: 18, h: 18 }],
+    hazards: [{ id: "post-save-void-spark", x: 18, y: 86, w: 36, h: 34 }]
+  });
+  const postSaveVoidSave = postSaveVoidDeathSim.step(idle);
+  assert(postSaveVoidSave.coreSpill && postSaveVoidDeathSim.snapshot().coreInvulnerabilityFrames > 0, "Expected post-save void fixture to enter core-save invulnerability");
+  postSaveVoidDeathSim.level.hazards = [];
+  const postSaveVoidSpillCount = postSaveVoidDeathSim.objectState.spilledCores.size;
+  Object.assign(postSaveVoidDeathSim.player, {
+    x: 20,
+    y: postSaveVoidDeathSim.level.bounds.y + postSaveVoidDeathSim.level.bounds.h + 125,
+    vx: 0,
+    vy: 0,
+    onGround: false,
+    alive: true
+  });
+  const postSaveVoidDeath = postSaveVoidDeathSim.step(idle);
+  assert(postSaveVoidDeathSim.dead && postSaveVoidDeath.died, "Falling below playable area should bypass active core-save invulnerability");
+  assert(!postSaveVoidDeath.coreSpill, `Post-save void death should not create another core-save event, got ${JSON.stringify(postSaveVoidDeath.coreSpill)}`);
+  assert(
+    postSaveVoidDeathSim.objectState.spilledCores.size === postSaveVoidSpillCount,
+    "Post-save void death should not create additional loose recovery cores"
+  );
+
   const coreMonsterLaserDeathSim = new RoomSimulation({
     ...baseLevel,
     cores: [{ id: "monster-laser-core", x: 18, y: 86, w: 18, h: 18 }]
@@ -4897,6 +4936,12 @@ try {
   const simultaneousCheckpointDefeatB = upwardHitBoss(simultaneousCheckpointSim, simultaneousBossVulnerableB);
   assert(simultaneousCheckpointDefeatB.bossDefeated?.id === "boss-b", "Expected checkpoint-owning second boss defeat");
   assert(simultaneousCheckpointSim.bossCheckpointActive(), "Expected checkpoint to remain active while first simultaneous boss is still active");
+  assert(simultaneousCheckpointSim.bossCheckpointBossId() === "boss-a", "Expected checkpoint to roll to remaining active boss after checkpoint owner defeat");
+  const rolledCheckpointTarget = {
+    x: simultaneousCheckpointSim.player.x,
+    y: simultaneousCheckpointSim.player.y,
+    totalFrames: simultaneousCheckpointSim.totalFrames - 1
+  };
   const simultaneousBossAAfterB = simultaneousCheckpointSim.bossSnapshots().find((boss) => boss.id === "boss-a");
   assert(simultaneousBossAAfterB, "Expected first simultaneous boss to remain active after second boss defeat");
   const simultaneousBossAttackA = runBossUntilAttack(simultaneousCheckpointSim, "boss-a");
@@ -4914,6 +4959,15 @@ try {
   simultaneousCheckpointSim.resetLifeAttempt();
   assert(simultaneousCheckpointSim.bossFightInProgress(), "Expected checkpoint restore to preserve an in-progress simultaneous boss fight");
   assert(simultaneousCheckpointSim.bossCheckpointBossId() === "boss-a", "Expected checkpoint restore to reassign checkpoint ownership to remaining boss");
+  assert(
+    Math.abs(simultaneousCheckpointSim.player.x - rolledCheckpointTarget.x) <= 0.001 &&
+      Math.abs(simultaneousCheckpointSim.player.y - rolledCheckpointTarget.y) <= 0.001,
+    `Expected checkpoint rollover restore to use newer player position ${JSON.stringify(rolledCheckpointTarget)}, got ${JSON.stringify(simultaneousCheckpointSim.player)}`
+  );
+  assert(
+    simultaneousCheckpointSim.totalFrames === rolledCheckpointTarget.totalFrames,
+    `Expected checkpoint rollover restore to use newer frame count ${rolledCheckpointTarget.totalFrames}, got ${simultaneousCheckpointSim.totalFrames}`
+  );
   assert(simultaneousCheckpointSim.bossStates.get("boss-b")?.phase === "defeated", "Expected checkpoint restore to preserve defeated second boss");
   assert(simultaneousCheckpointSim.objectState.openDoors.has("boss-b-door"), "Expected checkpoint restore to preserve door opened by defeated second boss");
 
@@ -5052,6 +5106,42 @@ try {
   assert(checkpointTriggerStateSim.objectState.activePlates.has("checkpoint-timer"), "Checkpoint life reset should preserve active timed-switch dependency");
   assert(checkpointTriggerStateSim.objectState.openDoors.has("checkpoint-once-door"), "Checkpoint life reset should keep once-plate door open");
   assert(checkpointTriggerStateSim.objectState.openDoors.has("checkpoint-timer-door"), "Checkpoint life reset should keep timed-switch door open");
+
+  const checkpointTimedRespawnSim = new RoomSimulation({
+    ...baseLevel,
+    timedSwitches: [{ id: "checkpoint-respawn-timer", x: 18, y: 86, w: 50, h: 34, duration: 45 }],
+    doors: [{ id: "checkpoint-respawn-door", x: 150, y: 68, w: 20, h: 52, opensWith: ["checkpoint-respawn-timer"] }],
+    bosses: [
+      {
+        id: "checkpoint-respawn-timer-boss",
+        kind: "clockwork-regent",
+        x: 78,
+        y: 20,
+        w: 190,
+        h: 130,
+        entrySide: "right",
+        weakSpot: "core",
+        introSeconds: 1,
+        health: 2,
+        score: 2000,
+        checkpoint: { x: 18, y: 86 }
+      }
+    ]
+  });
+  Object.assign(checkpointTimedRespawnSim.player, { x: 76, y: 86, vx: 0, vy: 0, onGround: true });
+  const checkpointTimedRespawnActivated = checkpointTimedRespawnSim.step(idle);
+  assert(checkpointTimedRespawnActivated.bossCheckpointActivated === "checkpoint-respawn-timer-boss", "Expected timed-switch respawn fixture to activate boss checkpoint");
+  assert(!checkpointTimedRespawnSim.objectState.timedSwitchTimers.has("checkpoint-respawn-timer"), "Expected timer to be inactive before checkpoint respawn");
+  checkpointTimedRespawnSim.level.hazards = [{ id: "checkpoint-respawn-timer-kill", x: 76, y: 86, w: 36, h: 34 }];
+  const checkpointTimedRespawnDeath = checkpointTimedRespawnSim.step(idle);
+  assert(checkpointTimedRespawnDeath.died, "Expected timed-switch respawn fixture to die before reset");
+  checkpointTimedRespawnSim.resetLifeAttempt();
+  assert(
+    checkpointTimedRespawnSim.objectState.timedSwitchTimers.get("checkpoint-respawn-timer") === 45,
+    `Expected checkpoint respawn standing on timed switch to arm full timer, got ${checkpointTimedRespawnSim.objectState.timedSwitchTimers.get("checkpoint-respawn-timer")}`
+  );
+  assert(checkpointTimedRespawnSim.objectState.activePlates.has("checkpoint-respawn-timer"), "Checkpoint respawn should immediately expose timed switch as active");
+  assert(checkpointTimedRespawnSim.objectState.openDoors.has("checkpoint-respawn-door"), "Checkpoint respawn should immediately open doors controlled by the timed switch");
 
   const checkpointSpillStateSim = new RoomSimulation({
     ...baseLevel,
