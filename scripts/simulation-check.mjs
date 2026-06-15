@@ -281,8 +281,9 @@ const verifyGameSceneAudioCleanupHooks = () => {
   );
   assert(
     stateSource.includes("this.resetRewindCoreSaveState()") &&
-      stateSource.includes("this.protectedCoreSaveIds.clear()"),
-    "Expected rewind to clear transient core-save invulnerability and protected-core save state"
+      gameSceneMethodBody(stateSource, "resetRewindCoreSaveState").includes("this.coreInvulnerabilityFrames = 0;") &&
+      !gameSceneMethodBody(stateSource, "resetRewindCoreSaveState").includes("this.protectedCoreSaveIds.clear()"),
+    "Expected rewind to clear temporary core-save invulnerability without re-arming spent protected cores"
   );
   assert(
     stateSource.includes("checkpointPlayerSnapshot") &&
@@ -2587,10 +2588,10 @@ try {
     rewindProtectedSaveSim.snapshot().coreInvulnerabilityFrames === 0,
     `Rewind should clear temporary core-save invulnerability, got ${rewindProtectedSaveSim.snapshot().coreInvulnerabilityFrames}`
   );
-  const rewindProtectedSecondSave = rewindProtectedSaveSim.step(idle);
+  const rewindProtectedSecondHit = rewindProtectedSaveSim.step(idle);
   assert(
-    rewindProtectedSecondSave.coreSpill?.protectedCoreIds.includes("rewind-protected-core") && !rewindProtectedSaveSim.dead,
-    `Rewind should start a fresh protected-core save attempt, got ${JSON.stringify(rewindProtectedSecondSave.coreSpill)}`
+    rewindProtectedSaveSim.dead && rewindProtectedSecondHit.died && !rewindProtectedSecondHit.coreSpill,
+    `Rewind should not re-arm a spent protected-core save inside the same life attempt, got ${JSON.stringify(rewindProtectedSecondHit.coreSpill)}`
   );
 
   const coreMagnetSim = new RoomSimulation({
@@ -6011,6 +6012,18 @@ try {
   assert(
     ledgeEchoBlockedSim.player.y !== 66,
     `Echo-blocked ledge forgiveness should not snap to the ledge top, got ${JSON.stringify(ledgeEchoBlockedSim.player)}`
+  );
+
+  const ledgeReplayEchoSim = new RoomSimulation(ledgeForgivenessLevel);
+  ledgeReplayEchoSim.echoRecordings.push({ id: "ledge-replay-echo", frames: [right], createdAtFrame: 0 });
+  const ledgeReplayEcho = makeActor("ledge-replay-echo", "echo", { x: 56, y: 74 });
+  Object.assign(ledgeReplayEcho, { vx: 0, vy: 1, onGround: false, coyote: 0 });
+  ledgeReplayEchoSim.echoes = [ledgeReplayEcho];
+  ledgeReplayEchoSim.step(idle);
+  assert(!ledgeReplayEchoSim.echoes[0].onGround, "Replay echoes should not receive player-only ledge forgiveness");
+  assert(
+    ledgeReplayEchoSim.echoes[0].y !== 66,
+    `Replay echo should not snap to the ledge top, got ${JSON.stringify(ledgeReplayEchoSim.echoes[0])}`
   );
 
   const leftLedgeForgivenessLevel = {

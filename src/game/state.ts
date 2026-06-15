@@ -330,7 +330,6 @@ export class RoomSimulation {
 
   private resetRewindCoreSaveState(): void {
     this.coreInvulnerabilityFrames = 0;
-    this.protectedCoreSaveIds.clear();
   }
 
   private hasUnclaimedPlacedCores(): boolean {
