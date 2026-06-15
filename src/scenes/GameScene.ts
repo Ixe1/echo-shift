@@ -1673,8 +1673,9 @@ export class GameScene extends Phaser.Scene {
       const lostCount = events.coreSpill.lostCoreIds.length;
       const scatteredCount = events.coreSpill.coreIds.length;
       this.cameras.main.shake(150, 0.004);
-      this.addFxBurst(events.coreSpill.x, events.coreSpill.y, 0xffe35a, `-${scatteredCount + lostCount}`);
-      coreInventoryChanged = true;
+      const spentCount = scatteredCount + lostCount;
+      this.addFxBurst(events.coreSpill.x, events.coreSpill.y, 0xffe35a, spentCount > 0 ? `-${spentCount}` : "SAVE");
+      if (spentCount > 0) coreInventoryChanged = true;
     }
     for (let index = 0; index < events.echoLaserVaporized; index += 1) audio.play("echoLaserVaporized");
     for (const cue of events.bossSoundCues) this.playBossSoundCue(cue.cue);

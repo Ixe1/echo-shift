@@ -2295,6 +2295,7 @@ try {
   assert(!coreSaveSim.dead && !coreSaveEvent.died, "Core-carrying player should survive non-laser hazard contact");
   assert(coreSaveEvent.coreSpill?.coreIds.length === 1, `Expected one core to spill from two eligible small cores, got ${JSON.stringify(coreSaveEvent.coreSpill)}`);
   assert(coreSaveEvent.coreSpill.lostCoreIds.length === 1, `Expected the other eligible core to be lost, got ${JSON.stringify(coreSaveEvent.coreSpill)}`);
+  assert(coreSaveEvent.coreSpill.protectedCoreIds.length === 0, `Normal core spill should not spend protected cores, got ${JSON.stringify(coreSaveEvent.coreSpill)}`);
   assert(coreSaveSim.deaths === 0 && coreSaveSim.livesRemaining() === 3, "Saved core hit should not consume lives or count deaths");
   assert(coreSaveSim.objectState.collectedCores.has("shield-key"), "Large/key core should stay carried during core-save spill");
   assert(coreSaveSim.objectState.collectedCores.size === 1, `Expected only the large/key core to remain carried, got ${[...coreSaveSim.objectState.collectedCores].join(",")}`);
@@ -2308,7 +2309,10 @@ try {
   assert(recoverableCore, "Expected spilled core to persist through pickup delay");
   Object.assign(coreSaveSim.player, { x: recoverableCore.x - 8, y: recoverableCore.y - 16, vx: 0, vy: 0, onGround: false });
   const recoveryEvent = coreSaveSim.step(idle);
-  assert(recoveryEvent.cores.some((core) => core.id === "shield-core-b" && core.recovered), `Expected spilled core recovery event, got ${JSON.stringify(recoveryEvent.cores)}`);
+  assert(
+    recoveryEvent.cores.some((core) => core.id === coreSaveEvent.coreSpill.coreIds[0] && core.recovered),
+    `Expected spilled core recovery event, got ${JSON.stringify(recoveryEvent.cores)}`
+  );
   assert(coreSaveSim.objectState.spilledCores.size === 0, "Recovered spilled core should be removed from loose pickups");
   assert(coreSaveSim.objectState.collectedCores.size === 2, "Recovered spilled core should return to carried cores while the lost core stays gone");
   assert(coreSaveSim.score === 200, `Recovered spilled core should restore only recoverable score, got ${coreSaveSim.score}`);
@@ -2365,14 +2369,52 @@ try {
   assert(coreLaserDeathSim.dead && coreLaserDeathEvent.playerLaserVaporized, "Laser should bypass core-save and kill the player");
   assert(!coreLaserDeathEvent.coreSpill, "Laser death should not spill cores as a save event");
 
-  const largeOnlyDeathSim = new RoomSimulation({
+  const largeOnlySaveSim = new RoomSimulation({
     ...baseLevel,
     cores: [{ id: "required-key-only", x: 18, y: 86, w: 24, h: 24, size: "large" }],
+    doors: [{ id: "required-key-door", x: 152, y: 68, w: 20, h: 52, requiresCore: "required-key-only" }],
     hazards: [{ id: "key-spark", x: 18, y: 86, w: 36, h: 34 }]
   });
-  const largeOnlyDeathEvent = largeOnlyDeathSim.step(idle);
-  assert(largeOnlyDeathSim.dead && largeOnlyDeathEvent.died, "Large/key-only cores should not be spent as core-save buffer");
-  assert(!largeOnlyDeathEvent.coreSpill, "Large/key-only death should not emit a core spill");
+  const largeOnlySaveEvent = largeOnlySaveSim.step(idle);
+  assert(!largeOnlySaveSim.dead && !largeOnlySaveEvent.died, "Large/key-only cores should absorb one saveable hit");
+  assert(
+    largeOnlySaveEvent.coreSpill?.protectedCoreIds.includes("required-key-only") &&
+      largeOnlySaveEvent.coreSpill.coreIds.length === 0 &&
+      largeOnlySaveEvent.coreSpill.lostCoreIds.length === 0,
+    `Expected large/key core to protect once without scattering, got ${JSON.stringify(largeOnlySaveEvent.coreSpill)}`
+  );
+  assert(largeOnlySaveSim.objectState.collectedCores.has("required-key-only"), "Protected large/key core should stay carried for doors");
+  assert(largeOnlySaveSim.objectState.openDoors.has("required-key-door"), "Protected large/key core should keep its door open after absorbing a hit");
+  largeOnlySaveSim.level.hazards = [];
+  runFrames(largeOnlySaveSim, 100, idle);
+  largeOnlySaveSim.level.hazards = [{ id: "key-spark-second", x: largeOnlySaveSim.player.x, y: largeOnlySaveSim.player.y, w: 36, h: 34 }];
+  const largeOnlySecondHit = largeOnlySaveSim.step(idle);
+  assert(largeOnlySaveSim.dead && largeOnlySecondHit.died, "Protected large/key core should not provide indefinite repeated saves");
+
+  const mixedProtectedFallbackSim = new RoomSimulation({
+    ...baseLevel,
+    cores: [
+      { id: "normal-boss-buffer", x: 18, y: 86, w: 18, h: 18 },
+      { id: "archive-key-buffer", x: 34, y: 86, w: 24, h: 24, size: "large" }
+    ],
+    doors: [{ id: "archive-key-door", x: 152, y: 68, w: 20, h: 52, requiresCore: "archive-key-buffer" }],
+    hazards: [{ id: "mixed-first-hit", x: 18, y: 86, w: 42, h: 34 }]
+  });
+  const mixedFirstHit = mixedProtectedFallbackSim.step(idle);
+  assert(
+    mixedFirstHit.coreSpill?.coreIds.includes("normal-boss-buffer") && mixedProtectedFallbackSim.objectState.collectedCores.has("archive-key-buffer"),
+    `Expected first mixed hit to drop the normal core and keep the archive key, got ${JSON.stringify(mixedFirstHit.coreSpill)}`
+  );
+  mixedProtectedFallbackSim.level.hazards = [];
+  runFrames(mixedProtectedFallbackSim, 100, idle);
+  mixedProtectedFallbackSim.level.hazards = [
+    { id: "mixed-second-hit", x: mixedProtectedFallbackSim.player.x, y: mixedProtectedFallbackSim.player.y, w: 36, h: 34 }
+  ];
+  const mixedSecondHit = mixedProtectedFallbackSim.step(idle);
+  assert(
+    !mixedProtectedFallbackSim.dead && mixedSecondHit.coreSpill?.protectedCoreIds.includes("archive-key-buffer"),
+    `Expected remaining archive key core to absorb the next saveable hit once, got ${JSON.stringify(mixedSecondHit.coreSpill)}`
+  );
 
   const requiredSmallCoreSaveSim = new RoomSimulation({
     ...baseLevel,
@@ -2867,7 +2909,7 @@ try {
   const lifeResetLevel = {
     ...baseLevel,
     cores: [{ id: "life-reset-core", x: 24, y: 86, w: 28, h: 34, size: "large" }],
-    hazards: [{ id: "life-reset-loss", x: 90, y: 86, w: 28, h: 34 }]
+    lasers: [{ id: "life-reset-loss", x: 90, y: 86, w: 28, h: 34, startsOn: true }]
   };
   const lifeResetSim = new RoomSimulation(lifeResetLevel);
   lifeResetSim.step(idle);
@@ -4635,10 +4677,16 @@ try {
     ...baseLevel,
     score: { ...baseLevel.score, coreScore: 1000 },
     cores: [{ id: "pre-boss-core", x: 20, y: 86, w: 18, h: 18, size: "large" }],
+    hazards: [{ id: "pre-boss-protected-save-spend", x: 20, y: 86, w: 18, h: 18 }],
     bosses: [{ id: "checkpoint-boss", kind: "clockwork-regent", x: 78, y: 20, w: 190, h: 130, entrySide: "right", weakSpot: "core", introSeconds: 1, health: 2, score: 2000 }]
   };
   const bossCheckpointSim = new RoomSimulation(bossCheckpointLevel);
-  bossCheckpointSim.step(idle);
+  const preBossProtectedSave = bossCheckpointSim.step(idle);
+  assert(
+    preBossProtectedSave.coreSpill?.protectedCoreIds.includes("pre-boss-core") && !bossCheckpointSim.dead,
+    `Expected pre-boss large core to spend its one protected save before checkpoint, got ${JSON.stringify(preBossProtectedSave.coreSpill)}`
+  );
+  bossCheckpointSim.level.hazards = [];
   assert(bossCheckpointSim.objectState.collectedCores.has("pre-boss-core"), "Expected pre-boss core to be collected before checkpoint");
   assert(bossCheckpointSim.score === 1000, `Expected pre-boss score before checkpoint, got ${bossCheckpointSim.score}`);
   Object.assign(bossCheckpointSim.player, { x: 76, y: 86, vx: 0, vy: 0, onGround: true });

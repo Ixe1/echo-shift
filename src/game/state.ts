@@ -67,6 +67,7 @@ const CORE_SPILL_GRAVITY = 0.42;
 const CORE_SPILL_MAX_FALL_SPEED = 7.6;
 const CORE_SPILL_DRAG = 0.982;
 const CORE_SPILL_BOUNCE = 0.56;
+const CORE_SPILL_MAX_RECOVERABLE = 8;
 const CORE_SAVE_BOUNCE_SPEED = -8.8;
 const CORE_SAVE_KNOCKBACK_SPEED = 4.2;
 
@@ -91,6 +92,7 @@ type BossCheckpoint = {
   score: number;
   deaths: number;
   coreSpillSerial: number;
+  protectedCoreSaveIds: Set<string>;
 };
 
 const cloneActor = (actor: ActorBody): ActorBody => ({ ...actor });
@@ -183,6 +185,7 @@ export class RoomSimulation {
   private remainingLives: number | null;
   private coreInvulnerabilityFrames = 0;
   private coreSpillSerial = 0;
+  private readonly protectedCoreSaveIds = new Set<string>();
 
   constructor(level: Level, options: RoomSimulationOptions = {}) {
     this.level = level;
@@ -205,6 +208,7 @@ export class RoomSimulation {
     this.currentAttemptDefeatedBossIds.clear();
     this.coreInvulnerabilityFrames = 0;
     this.coreSpillSerial = 0;
+    this.protectedCoreSaveIds.clear();
     this.resetAttempt(false);
   }
 
@@ -240,6 +244,7 @@ export class RoomSimulation {
     this.resetRuntimeTerrain();
     this.coreInvulnerabilityFrames = 0;
     this.coreSpillSerial = 0;
+    this.protectedCoreSaveIds.clear();
     if (!keepRecording) this.currentRecording = [];
   }
 
@@ -310,6 +315,7 @@ export class RoomSimulation {
     this.currentAttemptDefeatedBossIds.clear();
     this.coreInvulnerabilityFrames = 0;
     this.coreSpillSerial = 0;
+    this.protectedCoreSaveIds.clear();
   }
 
   step(input: InputFrame): StepEvents {
@@ -545,7 +551,8 @@ export class RoomSimulation {
       totalFrames: this.totalFrames,
       score: this.score,
       deaths: this.deaths,
-      coreSpillSerial: this.coreSpillSerial
+      coreSpillSerial: this.coreSpillSerial,
+      protectedCoreSaveIds: new Set(this.protectedCoreSaveIds)
     };
     events.bossCheckpointActivated = boss.id;
   }
@@ -610,6 +617,8 @@ export class RoomSimulation {
     for (const key of checkpoint.handledArchiveImpactSoundKeys) this.handledArchiveImpactSoundKeys.add(key);
     this.coreInvulnerabilityFrames = 0;
     this.coreSpillSerial = checkpoint.coreSpillSerial;
+    this.protectedCoreSaveIds.clear();
+    for (const id of checkpoint.protectedCoreSaveIds) this.protectedCoreSaveIds.add(id);
   }
 
   private resetRuntimeTerrain(): void {
@@ -904,7 +913,8 @@ export class RoomSimulation {
         handledArchiveImpactKeys: new Set(this.handledArchiveImpactKeys),
         handledArchiveImpactSoundKeys: new Set(this.handledArchiveImpactSoundKeys),
         score: this.score,
-        coreSpillSerial: this.coreSpillSerial
+        coreSpillSerial: this.coreSpillSerial,
+        protectedCoreSaveIds: new Set(this.protectedCoreSaveIds)
       };
     }
     else this.bossCheckpoint = null;
@@ -980,11 +990,12 @@ export class RoomSimulation {
 
   private trySavePlayerWithCores(events: StepEvents, source: Rect): boolean {
     const spillableCoreIds = [...this.objectState.collectedCores].filter((id) => this.coreCanSpill(id));
-    if (spillableCoreIds.length === 0) return false;
-    const spillCount = Math.max(1, Math.floor(spillableCoreIds.length / 2));
-    const spilledIds = spillableCoreIds.slice(-spillCount);
+    const protectedCoreIds = [...this.objectState.collectedCores].filter((id) => this.coreCanProtectOnce(id));
+    if (spillableCoreIds.length === 0 && protectedCoreIds.length === 0) return false;
+    const spilledIds = this.recoverableSpillCoreIds(spillableCoreIds);
     const spilledIdSet = new Set(spilledIds);
     const lostCoreIds = spillableCoreIds.filter((id) => !spilledIdSet.has(id));
+    const protectedSaveIds = spillableCoreIds.length === 0 ? protectedCoreIds.slice(0, 1) : [];
     const nextCollectedCores = new Set(this.objectState.collectedCores);
     const nextSpilledCores = new Map([...this.objectState.spilledCores.entries()].map(([id, core]) => [id, { ...core }]));
     const playerCenter = this.rectCenter(this.player);
@@ -996,6 +1007,7 @@ export class RoomSimulation {
       nextCollectedCores.delete(sourceId);
       this.removeCoreScore(sourceId);
     }
+    for (const sourceId of protectedSaveIds) this.protectedCoreSaveIds.add(sourceId);
 
     for (let index = 0; index < spilledIds.length; index += 1) {
       const sourceId = spilledIds[index];
@@ -1038,6 +1050,7 @@ export class RoomSimulation {
     events.coreSpill = {
       coreIds: spilledIds,
       lostCoreIds,
+      protectedCoreIds: protectedSaveIds,
       x: playerCenter.x,
       y: playerCenter.y
     };
@@ -1047,6 +1060,31 @@ export class RoomSimulation {
   private coreCanSpill(coreId: string): boolean {
     const core = this.coreById(coreId);
     return core ? !isMajorCore(core, this.requiredCoreIds) : false;
+  }
+
+  private coreCanProtectOnce(coreId: string): boolean {
+    if (this.protectedCoreSaveIds.has(coreId)) return false;
+    const core = this.coreById(coreId);
+    return core ? isMajorCore(core, this.requiredCoreIds) : false;
+  }
+
+  private recoverableSpillCoreIds(coreIds: string[]): string[] {
+    if (coreIds.length === 0) return [];
+    const maxRecoverable = Math.min(CORE_SPILL_MAX_RECOVERABLE, coreIds.length, Math.max(1, Math.ceil(coreIds.length / 2)));
+    const count = 1 + (this.coreSpillHash(coreIds.join("|")) % maxRecoverable);
+    return [...coreIds]
+      .sort((left, right) => this.coreSpillHash(left) - this.coreSpillHash(right))
+      .slice(0, count);
+  }
+
+  private coreSpillHash(value: string): number {
+    let hash = 2166136261;
+    const seed = `${this.tick}:${Math.round(this.player.x)},${Math.round(this.player.y)}:${this.coreSpillSerial}:${value}`;
+    for (let index = 0; index < seed.length; index += 1) {
+      hash ^= seed.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
   }
 
   private coreById(coreId: string): Core | undefined {

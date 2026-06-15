@@ -395,6 +395,7 @@ export type SpilledCore = Rect & {
 export type CoreSpillEvent = Vec2 & {
   coreIds: string[];
   lostCoreIds: string[];
+  protectedCoreIds: string[];
 };
 
 export type StepEvents = {
