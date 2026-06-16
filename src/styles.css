@@ -763,6 +763,8 @@ button {
   line-height: 1;
   pointer-events: auto;
   touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
   user-select: none;
 }
 

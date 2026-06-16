@@ -2202,8 +2202,11 @@ export class GameScene extends Phaser.Scene {
     const camera = this.cameras.main;
     camera.setZoom(this.baseCameraZoom());
     camera.setRoundPixels(true);
+    const visibleWorldWidth = camera.width / Math.max(0.01, camera.zoomX);
+    const horizontalDeadzoneTarget = Math.min(340, Math.max(190, this.scale.width * 0.24));
+    const horizontalDeadzoneCap = Math.max(128, visibleWorldWidth * 0.52);
     camera.setDeadzone(
-      Math.min(340, Math.max(190, this.scale.width * 0.24)),
+      Math.min(horizontalDeadzoneTarget, horizontalDeadzoneCap),
       Math.min(170, Math.max(96, this.scale.height * 0.2))
     );
     this.recordCameraDiagnostics();
