@@ -4154,6 +4154,31 @@ try {
   );
   assert(!launchSim.step(idle).launched, "Launch pad re-fired while actor was still in spring launch cooldown");
 
+  const launchApexY = (input) => {
+    const sim = new RoomSimulation({
+      ...launchLevel,
+      bounds: { ...launchLevel.bounds, y: -320, h: 500 }
+    });
+    let fired = false;
+    for (let i = 0; i < 40 && !fired; i += 1) {
+      fired = sim.step(input).launched;
+    }
+    assert(fired, `Launch pad did not fire for held-input apex check: ${JSON.stringify(input)}`);
+    let apexY = sim.player.y;
+    for (let i = 0; i < 90; i += 1) {
+      sim.step(input);
+      apexY = Math.min(apexY, sim.player.y);
+      if (sim.player.vy >= 0) break;
+    }
+    return apexY;
+  };
+  const idleLaunchApexY = launchApexY(idle);
+  const heldJumpLaunchApexY = launchApexY(jump);
+  assert(
+    Math.abs(heldJumpLaunchApexY - idleLaunchApexY) < 0.01,
+    `Holding jump changed launch pad apex: idle=${idleLaunchApexY}, held=${heldJumpLaunchApexY}`
+  );
+
   const launchFloatLandingLevel = {
     ...baseLevel,
     start: { x: 26, y: 38 },

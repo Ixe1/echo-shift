@@ -156,7 +156,8 @@ export const moveActor = (
     jumped = true;
   }
 
-  if (!launchControlLocked && !input.jump && actor.vy < -4.6) {
+  const jumpHeldForVariableHeight = launchFloatActive ? false : input.jump;
+  if (!launchControlLocked && !jumpHeldForVariableHeight && actor.vy < -4.6) {
     actor.vy *= 0.82;
   }
 
