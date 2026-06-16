@@ -179,6 +179,10 @@ const LEVEL_INTRO_OUTRO_MS = 820;
 const BOSS_MUSIC_FADE_MS = 620;
 const PLAYER_CAMERA_REFERENCE_HEIGHT = 540;
 const PLAYER_CAMERA_ZOOM = 1.152;
+const CAMERA_FOLLOW_LERP_X = 0.12;
+const CAMERA_FOLLOW_LERP_Y = 0.08;
+const TOUCH_CAMERA_FOLLOW_LERP_X = 1;
+const TOUCH_CAMERA_MAX_VIEWPORT_WIDTH = 760;
 const TERRAIN_SURFACE_CAP_OVERLAP = 16;
 const TERRAIN_DECOR_MIN_SOLID_HEIGHT = 28;
 const TERRAIN_DECOR_MIN_SEGMENT_WIDTH = 96;
@@ -866,7 +870,8 @@ export class GameScene extends Phaser.Scene {
     this.createBackgroundImages();
     this.configureWorldTextureFilters();
     this.cameraTarget = this.add.zone(this.level.start.x, this.level.start.y, 1, 1);
-    this.cameras.main.startFollow(this.cameraTarget, true, 0.12, 0.08);
+    const followLerp = this.cameraFollowLerp();
+    this.cameras.main.startFollow(this.cameraTarget, true, followLerp.x, followLerp.y);
     this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.recordCameraDiagnostics, this);
     this.backgroundFx = this.add.graphics().setDepth(-15);
     this.backgroundDetail = this.add.graphics().setDepth(-10);
@@ -2202,15 +2207,36 @@ export class GameScene extends Phaser.Scene {
     const camera = this.cameras.main;
     camera.setZoom(this.baseCameraZoom());
     camera.setRoundPixels(true);
+    const verticalDeadzone = Math.min(170, Math.max(96, this.scale.height * 0.2));
+    const followLerp = this.cameraFollowLerp();
+    camera.setLerp(followLerp.x, followLerp.y);
+    if (this.shouldUseCenteredTouchCamera()) {
+      camera.setDeadzone(0, verticalDeadzone);
+      this.recordCameraDiagnostics();
+      return;
+    }
     const visibleWorldWidth = camera.width / Math.max(0.01, camera.zoomX);
     const horizontalDeadzoneTarget = Math.min(340, Math.max(190, this.scale.width * 0.24));
     const horizontalDeadzoneCap = Math.max(128, visibleWorldWidth * 0.52);
-    camera.setDeadzone(
-      Math.min(horizontalDeadzoneTarget, horizontalDeadzoneCap),
-      Math.min(170, Math.max(96, this.scale.height * 0.2))
-    );
+    camera.setDeadzone(Math.min(horizontalDeadzoneTarget, horizontalDeadzoneCap), verticalDeadzone);
     this.recordCameraDiagnostics();
   };
+
+  private cameraFollowLerp(): { x: number; y: number } {
+    return {
+      x: this.shouldUseCenteredTouchCamera() ? TOUCH_CAMERA_FOLLOW_LERP_X : CAMERA_FOLLOW_LERP_X,
+      y: CAMERA_FOLLOW_LERP_Y
+    };
+  }
+
+  private shouldUseCenteredTouchCamera(): boolean {
+    const coarsePointer =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(pointer: coarse)").matches;
+    const touchCapable = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
+    return coarsePointer || touchCapable || this.scale.width <= TOUCH_CAMERA_MAX_VIEWPORT_WIDTH;
+  }
 
   private baseCameraZoom(): number {
     return Math.max(0.1, (this.scale.height / PLAYER_CAMERA_REFERENCE_HEIGHT) * PLAYER_CAMERA_ZOOM);
