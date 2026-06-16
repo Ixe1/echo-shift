@@ -15,7 +15,7 @@ This summary is provided for convenience only. The license terms below control.
 The source code in this repository is licensed under the PolyForm
 Noncommercial License 1.0.0:
 
-https://polyformproject.org/licenses/noncommercial/1.0.0/
+https://polyformproject.org/licenses/noncommercial/1.0.0
 
 Required Notice: Copyright (c) 2026 Paul Lewis
 Required Notice: Echo Shift by Paul Lewis (Ixe1)
