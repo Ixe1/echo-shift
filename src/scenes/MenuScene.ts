@@ -2,6 +2,9 @@ import Phaser from "phaser";
 import { readEditorDraftCurrentIndex } from "../data/editorDraft";
 import { isDraftPlaytestActive, levels } from "../data/levels";
 import { audio } from "../game/audio";
+import { formatFrames } from "../game/geometry";
+import { getLocalLeaderboardState, type LeaderboardEntry } from "../game/leaderboard";
+import { formatScore } from "../game/scoring";
 import { isSecretAccessUnlocked, secretInputFromKeyboardEvent, secretSequence, unlockSecretAccess } from "../game/secretAccess";
 import { resetCampaignVitals } from "../game/session";
 import { bindImageFallbacks, clearUi, currentEchoShiftLogoSrc, ECHO_SHIFT_LOGO_FALLBACK_SRC, icon, uiRoot } from "../ui/dom";
@@ -64,6 +67,7 @@ export class MenuScene extends Phaser.Scene {
             <div class="button-grid">
               <button class="ui-button primary" data-play>${icon("play")} ${draftPlaytest ? "Play Draft" : "Play"}</button>
               ${draftPlaytest ? "" : `<button class="ui-button" data-tutorial>${icon("play")} Tutorial</button>`}
+              ${draftPlaytest ? "" : `<button class="ui-button" data-leaderboard>${icon("levels")} Local Leaderboard</button>`}
               ${levelSelectButton}
               ${editorButton}
               <button class="ui-button" data-options>Options</button>
@@ -89,6 +93,7 @@ export class MenuScene extends Phaser.Scene {
       resetCampaignVitals();
       this.scene.start("GameScene", { tutorial: true, scoreEligible: false });
     });
+    root.querySelector("[data-leaderboard]")?.addEventListener("click", () => this.showLeaderboard());
     root.querySelector("[data-editor]")?.addEventListener("click", () => {
       audio.play("select");
       const url = new URL(window.location.href);
@@ -123,6 +128,30 @@ export class MenuScene extends Phaser.Scene {
           <p class="credits-text">Built with Codex-assisted development for the Community Dev Challenge.</p>
           <p class="credits-text">Source code is available for non-commercial use under the PolyForm Noncommercial License 1.0.0. Game assets and creative content are licensed under CC BY-NC 4.0 unless otherwise noted.</p>
           <p class="credits-text">Non-commercial reuse must credit: Echo Shift by Paul Lewis (Ixe1). Commercial use requires prior written permission.</p>
+          <div class="button-grid">
+            <button class="ui-button primary" data-back>${icon("back")} Back</button>
+          </div>
+        </section>
+      </main>
+    `;
+    root.querySelector("[data-back]")?.addEventListener("click", () => this.create());
+    this.bindMenuNavigation(() => this.create());
+  }
+
+  private showLeaderboard(): void {
+    audio.play("select");
+    this.secretCodeEnabled = false;
+    this.destroyMenuNavigation();
+    const leaderboard = getLocalLeaderboardState();
+    const root = uiRoot();
+    root.innerHTML = `
+      <main class="screen art-screen menu-screen">
+        <section class="panel menu-panel">
+          <h1>Local Leaderboard</h1>
+          <p>Top local campaign clears saved in this browser.</p>
+          <div class="leaderboard-list">
+            ${this.leaderboardListHtml(leaderboard.entries, leaderboard.ok ? undefined : leaderboard.message)}
+          </div>
           <div class="button-grid">
             <button class="ui-button primary" data-back>${icon("back")} Back</button>
           </div>
@@ -191,5 +220,40 @@ export class MenuScene extends Phaser.Scene {
     }
     rootButton.click();
     window.setTimeout(() => this.menuNavigation?.focusFirst(), 0);
+  }
+
+  private leaderboardListHtml(entries: LeaderboardEntry[], message?: string): string {
+    if (message) return `<p class="credits-text">${this.escapeHtml(message)}</p>`;
+    if (entries.length === 0) return `<p class="credits-text">No local campaign scores yet.</p>`;
+    return entries
+      .map(
+        (entry, index) => `
+          <div class="leaderboard-entry">
+            <strong>${index + 1}. ${this.escapeHtml(entry.nickname)}</strong>
+            <span>${formatScore(entry.score)}</span>
+            <small>${formatFrames(entry.frames)} · ${entry.deaths}D · ${entry.cores}C</small>
+          </div>
+        `
+      )
+      .join("");
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, (char) => {
+      switch (char) {
+        case "&":
+          return "&amp;";
+        case "<":
+          return "&lt;";
+        case ">":
+          return "&gt;";
+        case '"':
+          return "&quot;";
+        case "'":
+          return "&#39;";
+        default:
+          return char;
+      }
+    });
   }
 }
