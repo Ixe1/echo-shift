@@ -2,6 +2,11 @@
 
 A compact rewind puzzle-platformer built for the Community Dev Challenge. Rewind to leave echoes from previous attempts, then cooperate with them to hold plates, trigger sensors, open doors, and route through four time-shift rooms plus a tutorial.
 
+## Play Online
+
+- Play: `https://echo-shift-mauve.vercel.app/`
+- Source: `https://github.com/Ixe1/echo-shift`
+
 ## Play Locally
 
 - `npm install`
@@ -56,6 +61,10 @@ Campaign progress is stored in `localStorage`. Best level scores prefer higher s
 Run `npm run dev` and open `http://localhost:5173/?editor=1`. The editor loads the current level schema, saves browser drafts in `localStorage`, validates object references, and exports JSON for deliberate source updates. The grouped palette includes one-grid-thick Floor and Wall presets plus entity toolkit controls.
 
 Level settings include soundtrack key, background key, completion mode, rewind-disabled mode, finite or unlimited lives, core score, time-bonus target seconds, and score per saved second. Use the editor's Playtest button to boot the current saved draft in game mode; draft clears and scores are not written to normal campaign progress.
+
+## How Codex Helped
+
+Echo Shift was built with Codex as a pair-programming assistant across the project. Codex helped with the Phaser/TypeScript/Vite foundation, rewind and puzzle-object systems, level-editor tooling, UI and HUD work, sprite/background/audio integration, boss and monster behavior, scoring/lives/progress systems, mobile touch and gamepad support, loading reliability, QA scripts, documentation, licensing, GitHub cleanup, and Vercel deployment preparation.
 
 ## Deploy
 
